@@ -28,6 +28,7 @@ import os
 import re
 import secrets
 import socketserver
+import subprocess
 import sys
 import threading
 import time
@@ -906,6 +907,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json(jobstore.update_job(
                     WORKSPACE, payload.pop("id", ""), payload))
+            if u.path == "/api/reveal":
+                target = WORKSPACE
+                sub_ = payload.get("path")
+                if sub_:
+                    target = safe_path(sub_)
+                try:
+                    if sys.platform == "win32":
+                        os.startfile(target)  # noqa: S606
+                    elif sys.platform == "darwin":
+                        subprocess.Popen(["open", str(target)])
+                    else:
+                        subprocess.Popen(["xdg-open", str(target)])
+                except Exception as exc:
+                    return self._json({"error": str(exc)}, 500)
+                return self._json({"ok": True})
             if u.path == "/api/jobs/delete":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -1144,6 +1160,48 @@ body.analytics-on .gut[data-target="1"]{display:none}
 .an-note{color:var(--ink-3);font-size:12px;margin:14px 0 0;max-width:64ch;line-height:1.65}
 .an-actions{margin-top:22px;display:flex;gap:8px}
 
+/* ---------- settings --------------------------------------------------- */
+/* A fixed content column overflowed in a narrow window and pushed the controls
+   off-screen; let it flex, and stack the rail when there is no room beside it. */
+.set-wrap{display:grid;grid-template-columns:146px minmax(0,1fr);gap:34px;max-width:820px}
+.set-rail{display:flex;flex-direction:column;gap:1px;position:sticky;top:30px;align-self:start}
+@media(max-width:820px){
+  .set-wrap{grid-template-columns:1fr;gap:16px}
+  .set-rail{flex-direction:row;flex-wrap:wrap;position:static;gap:2px;
+    border-bottom:1px solid var(--rule);padding-bottom:10px;margin-bottom:4px}
+  .srow{flex-wrap:wrap;gap:10px}
+}
+.set-rail button{text-align:left;padding:6px 10px;font-size:13px;color:var(--ink-3);
+  border-radius:var(--r);position:relative}
+.set-rail button:hover{background:var(--card);color:var(--ink)}
+.set-rail button[aria-selected=true]{color:var(--ink);font-weight:530;background:var(--card)}
+.sp h3{font-size:15px;font-weight:560;margin:0 0 4px;letter-spacing:-.01em}
+.sp[hidden]{display:none}
+.sp-lede{color:var(--ink-3);font-size:12.5px;line-height:1.65;margin:0 0 18px;max-width:60ch}
+.sp-note{color:var(--ink-3);font-size:12px;line-height:1.65;margin:14px 0 0;max-width:60ch}
+/* a settings row: label and explanation on the left, the control on the right */
+.srow{display:flex;align-items:center;gap:20px;padding:13px 0;border-top:1px solid var(--rule-2)}
+.srow>div{flex:1;min-width:0}
+.srow b{display:block;font-size:13px;font-weight:530;margin-bottom:2px}
+.srow span{display:block;color:var(--ink-3);font-size:12px;line-height:1.55;
+  overflow-wrap:anywhere}
+.srow .mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+.srow select{border:1px solid var(--rule);border-radius:var(--r);padding:5px 8px;
+  background:var(--sunk);color:var(--ink);font-size:12.5px}
+.btnlink{text-decoration:none;padding:5px 9px;font-size:12.5px;display:inline-block}
+.steps{margin:0 0 14px;padding-left:18px;font-size:13px;line-height:1.7}
+.steps li{margin-bottom:4px} .steps li::marker{color:var(--ink-3)}
+/* a switch reads as a setting; a bare checkbox reads as a form field */
+.tgl{position:relative;display:inline-block;width:34px;height:20px;flex:none;cursor:pointer}
+.tgl input{opacity:0;width:0;height:0}
+.tgl span{position:absolute;inset:0;background:var(--rule);border-radius:99px;
+  transition:background .16s}
+.tgl span::before{content:"";position:absolute;width:14px;height:14px;left:3px;top:3px;
+  background:var(--card);border-radius:50%;transition:transform .16s}
+.tgl input:checked+span{background:var(--ink)}
+.tgl input:checked+span::before{transform:translateX(14px)}
+.tgl input:focus-visible+span{outline:1px solid var(--focus);outline-offset:2px}
+
 /* ---------- jobs table ------------------------------------------------- */
 .jt{width:100%;border-collapse:collapse;margin:0 0 8px}
 .jt th{text-align:left;font-size:11px;font-weight:450;color:var(--ink-3);padding:0 10px 8px 0;
@@ -1318,6 +1376,104 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
   <div class="prev" id="preview"></div>
   <div class="analytics" id="analytics" hidden></div>
   <div class="analytics" id="jobsview" hidden></div>
+  <div class="analytics" id="setview" hidden>
+    <div class="set-wrap">
+      <nav class="set-rail" id="set-rail">
+        <button data-s="workspace" aria-selected="true">Workspace</button>
+        <button data-s="editor" aria-selected="false">Editor</button>
+        <button data-s="ai" aria-selected="false">Claude Desktop</button>
+        <button data-s="api" aria-selected="false">API</button>
+        <button data-s="updates" aria-selected="false">Updates</button>
+        <button data-s="about" aria-selected="false">About</button>
+      </nav>
+      <div class="set-body">
+
+        <section class="sp" id="sp-workspace">
+          <h3>Workspace</h3>
+          <p class="sp-lede">Everything lives in one folder you own. CVs and letters are
+            plain YAML; applications are a single SQLite file. Copy the folder and you
+            have copied everything.</p>
+          <div class="srow">
+            <div><b>Folder</b><span id="s-ws" class="mono"></span></div>
+            <button class="ghost" id="s-open">Open folder</button>
+          </div>
+          <div class="srow"><div><b>Documents</b><span id="s-count"></span></div></div>
+          <div class="srow"><div><b>Applications database</b>
+            <span>applications.db, queryable and exportable</span></div>
+            <button class="ghost" id="s-exp">Export JSON</button></div>
+        </section>
+
+        <section class="sp" id="sp-editor" hidden>
+          <h3>Editor</h3>
+          <p class="sp-lede">Defaults for how the editor behaves. These are remembered
+            on this machine.</p>
+          <div class="srow">
+            <div><b>Live preview</b><span>Re-render as you type. Your file is only
+              written when you save.</span></div>
+            <label class="tgl"><input type="checkbox" id="s-live"><span></span></label>
+          </div>
+          <div class="srow">
+            <div><b>Preview delay</b><span>How long to wait after you stop typing.</span></div>
+            <select id="s-delay">
+              <option value="400">400 ms</option><option value="700">700 ms</option>
+              <option value="1200">1.2 s</option><option value="2000">2 s</option>
+            </select>
+          </div>
+          <div class="srow">
+            <div><b>New documents use</b><span>Theme applied to anything you create.</span></div>
+            <select id="s-deftheme"></select>
+          </div>
+        </section>
+
+        <section class="sp" id="sp-ai" hidden>
+          <h3>Claude Desktop</h3>
+          <p class="sp-lede">CV Studio includes an MCP server. Once connected, Claude can
+            read your CVs, edit fields, create tailored copies, and see the rendered page
+            to check the layout.</p>
+          <ol class="steps">
+            <li>Open Claude Desktop, then <b>Settings, Developer, Edit Config</b>.</li>
+            <li>Paste this in and restart Claude Desktop.</li>
+          </ol>
+          <pre id="s-mcp" class="code"></pre>
+          <button class="ghost" data-copy="s-mcp">Copy config</button>
+          <p class="sp-note">This is the same program you are using now, started in a
+            different mode. Nothing extra to install.</p>
+        </section>
+
+        <section class="sp" id="sp-api" hidden>
+          <h3>API</h3>
+          <p class="sp-lede">Drive CV Studio from your own scripts. It accepts local
+            connections only, unless started with a token.</p>
+          <div class="srow"><div><b>Base URL</b><span id="s-base" class="mono"></span></div>
+            <a class="ghost btnlink" id="s-spec" href="#" target="_blank">API reference</a></div>
+          <div class="srow"><div><b>Authentication</b><span id="s-auth"></span></div></div>
+          <pre id="s-curl" class="code"></pre>
+          <button class="ghost" data-copy="s-curl">Copy example</button>
+        </section>
+
+        <section class="sp" id="sp-updates" hidden>
+          <h3>Updates</h3>
+          <div class="srow"><div><b>Version</b><span id="s-ver"></span></div>
+            <button class="ghost" id="s-check">Check now</button></div>
+          <div class="srow"><div><b>Status</b><span id="u-state">Not checked yet.</span></div></div>
+          <div id="u-actions"></div>
+          <p class="sp-note">Updates are signed. An installed copy verifies each package
+            against a key built into it, so a compromised release host cannot push
+            anything it will accept.</p>
+        </section>
+
+        <section class="sp" id="sp-about" hidden>
+          <h3>About</h3>
+          <p class="sp-lede">A local CV editor built on RenderCV and Typst. No account,
+            no telemetry, no network access except when you check for updates.</p>
+          <div class="srow"><div><b>Licence</b><span>MIT</span></div></div>
+          <div class="srow"><div><b>Bundled</b><span>RenderCV (MIT), Typst (Apache-2.0),
+            d3-sankey (BSD-3-Clause), RenderCV fonts (OFL / Apache-2.0)</span></div></div>
+        </section>
+
+      </div>
+    </div>
+  </div>
 </main>
 
 <div id="toasts" aria-live="polite"></div>
@@ -1331,81 +1487,6 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
     <button id="job-cancel" class="ghost">Cancel</button>
     <button id="job-save" class="primary">Save</button>
   </div>
-</dialog>
-
-<dialog id="setdlg" class="wide">
-  <div class="dh"><h3>Settings &amp; setup</h3>
-    <p>Everything here runs on your machine. Nothing is sent anywhere.</p></div>
-  <div class="stabs" role="tablist">
-    <button class="stab" aria-selected="true" data-s="start">Getting started</button>
-    <button class="stab" aria-selected="false" data-s="ai">Claude Desktop</button>
-    <button class="stab" aria-selected="false" data-s="api">API</button>
-    <button class="stab" aria-selected="false" data-s="about">About</button>
-  </div>
-  <div class="db sbody" id="s-start">
-    <h4>Writing a CV</h4>
-    <ol>
-      <li>Pick a CV on the left, or press <b>+ New</b>. Duplicate an existing one to
-          tailor it for a specific job, one file per application.</li>
-      <li>Edit in the <b>Form</b> tab, or the <b>YAML</b> tab for full control.</li>
-      <li>With <b>Live</b> on, the preview re-renders as you type. Your file is only
-          written when you press <b>Save</b> (<kbd>Ctrl</kbd>+<kbd>S</kbd>).</li>
-      <li>Watch the page count. Two pages is normal for ten years of experience;
-          one page if the employer asks for it.</li>
-    </ol>
-    <h4>Two mistakes that break rendering</h4>
-    <p><b>A colon inside a bullet.</b> <code>- Built the thing: it worked</code> is read
-    by YAML as a field, not text. Put it in quotes, or use an en dash instead.</p>
-    <p><b>An implausible phone number.</b> Numbers are checked against real numbering
-    plans, not just their shape, so a well-formed but unassigned number is rejected.
-    Use the full international form.</p>
-    <h4>Where your files live</h4>
-    <p>Plain YAML in <code id="s-ws"></code>, with no database. Back them up by copying the
-    folder; put it in git and you get full history.</p>
-  </div>
-  <div class="db sbody" id="s-ai" hidden>
-    <h4>Let Claude Desktop edit and render your CVs</h4>
-    <p>CV Studio includes an MCP server. Once connected, Claude can read your CVs, edit
-    fields, create tailored copies, and <b>see</b> the rendered page to check the layout.</p>
-    <ol>
-      <li>Open Claude Desktop → <b>Settings → Developer → Edit Config</b>.</li>
-      <li>Paste this in, then restart Claude Desktop.</li>
-    </ol>
-    <pre id="s-mcp" class="code"></pre>
-    <button class="mini" data-copy="s-mcp">Copy config</button>
-    <p class="muted">The tools then appear under the connectors icon. This is the same
-    program you are using now, started in a different mode. Nothing extra to install.</p>
-  </div>
-  <div class="db sbody" id="s-api" hidden>
-    <h4>Local HTTP API</h4>
-    <p>Drive CV Studio from your own scripts. It listens on loopback only.</p>
-    <table class="api">
-      <tr><td><code>GET /api/state</code></td><td>Workspace, documents, themes, fonts</td></tr>
-      <tr><td><code>GET /api/doc?path=</code></td><td>Read one CV</td></tr>
-      <tr><td><code>POST /api/save</code></td><td>Save whole YAML, or field patches</td></tr>
-      <tr><td><code>POST /api/render</code></td><td>Render to PDF + PNG</td></tr>
-      <tr><td><code>POST /api/preview</code></td><td>Render unsaved content</td></tr>
-      <tr><td><code>POST /api/new</code></td><td>Create a CV</td></tr>
-      <tr><td><code>GET /api/asset?path=</code></td><td>Fetch a rendered file</td></tr>
-    </table>
-    <p>Base URL <code id="s-base"></code> · <a id="s-spec" href="#" target="_blank">open the
-      API reference</a>, where every endpoint can be run against this server.</p>
-    <h4>Example</h4>
-    <pre id="s-curl" class="code"></pre>
-    <button class="mini" data-copy="s-curl">Copy</button>
-    <p class="muted" id="s-auth"></p>
-  </div>
-  <div class="db sbody" id="s-about" hidden>
-    <h4>Updates</h4>
-    <p id="u-state" class="muted">Checking for updates…</p>
-    <div id="u-actions" style="margin:10px 0 4px"></div>
-    <h4>CV Studio <span id="s-ver"></span></h4>
-    <p>A local CV editor built on RenderCV and Typst. No account, no telemetry,
-    no network access.</p>
-    <p class="muted">MIT licensed. Bundles RenderCV (MIT), Typst (Apache-2.0) and the
-    RenderCV font set (SIL Open Font License / Apache-2.0).</p>
-  </div>
-  <div class="df"><button id="setclose" class="primary">Done</button></div>
 </dialog>
 
 <dialog id="newdlg">
@@ -1631,7 +1712,7 @@ let liveTimer=null, liveToken=0;
 function scheduleLive(){
   if(!$("#live").checked||!S.path) return;
   clearTimeout(liveTimer);
-  liveTimer=setTimeout(runLive,700);
+  liveTimer=setTimeout(runLive, prefs().delay || 700);
 }
 async function runLive(){
   if(!S.path||!$("#live").checked) return;
@@ -1910,7 +1991,7 @@ async function openJobs(){
   document.body.classList.add("analytics-on");
   $$(".doc").forEach(b=>b.classList.remove("active"));
   $("#nav-jobs").classList.add("active");
-  $("#analytics").hidden=true;
+  $("#analytics").hidden=true; $("#setview").hidden=true;
   const host=$("#jobsview"); host.hidden=false;
   host.innerHTML='<p class="an-sub"><span class="spin"></span> Loading…</p>';
   try{
@@ -2054,7 +2135,7 @@ async function openAnalytics(){
   document.body.classList.add("analytics-on");
   $$(".doc").forEach(b=>b.classList.remove("active"));
   $("#nav-analytics").classList.add("active");
-  $("#jobsview").hidden=true;
+  $("#jobsview").hidden=true; $("#setview").hidden=true;
   const host=$("#analytics"); host.hidden=false;
   host.innerHTML='<p class="an-sub"><span class="spin"></span> Loading…</p>';
   let f;
@@ -2137,6 +2218,7 @@ function closeAnalytics(){
   document.body.classList.remove("analytics-on");
   $("#analytics").hidden=true;
   $("#jobsview").hidden=true;
+  $("#setview").hidden=true;
   $("#nav-analytics").classList.remove("active");
   $("#nav-jobs").classList.remove("active");
 }
@@ -2204,15 +2286,35 @@ async function checkUpdates(loud){
 /* Quiet check shortly after launch, so it never blocks first paint. */
 setTimeout(()=>{ if(window.__TAURI__&&window.__TAURI__.updater) checkUpdates(false) }, 4000);
 
-/* ---- settings ---- */
-const setdlg=$("#setdlg");
-$("#settings").onclick=()=>{fillSettings();setdlg.showModal()};
-$("#setclose").onclick=()=>setdlg.close();
-$$(".stab").forEach(b=>b.onclick=()=>{
-  $$(".stab").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
-  ["start","ai","api","about"].forEach(k=>$("#s-"+k).hidden = k!==b.dataset.s);
-  if(b.dataset.s==="about") checkUpdates(true);
+/* ---- settings ----
+   Preferences are per-machine conveniences, so they live in localStorage
+   rather than in the workspace: a workspace copied to another machine should
+   carry documents, not window preferences. Reads are guarded because storage
+   throws outright in some privacy modes. */
+const PREFS_KEY="cvstudio.prefs";
+function prefs(){
+  try{ return JSON.parse(localStorage.getItem(PREFS_KEY)||"{}") }catch{ return {} }
+}
+function setPref(k,v){
+  try{ const p=prefs(); p[k]=v; localStorage.setItem(PREFS_KEY,JSON.stringify(p)) }catch{}
+}
+
+function openSettings(){
+  document.body.classList.add("analytics-on");
+  $$(".doc").forEach(b=>b.classList.remove("active"));
+  $("#analytics").hidden=true; $("#jobsview").hidden=true;
+  $("#setview").hidden=false;
+  fillSettings();
+}
+$("#settings").onclick=()=>{ if($("#setview").hidden) openSettings(); else closeAnalytics() };
+
+$$("#set-rail button").forEach(b=>b.onclick=()=>{
+  $$("#set-rail button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
+  ["workspace","editor","ai","api","updates","about"].forEach(k=>
+    $("#sp-"+k).hidden = k!==b.dataset.s);
+  if(b.dataset.s==="updates") checkUpdates(true);
 });
+
 $$("[data-copy]").forEach(b=>b.onclick=async()=>{
   try{ await navigator.clipboard.writeText($("#"+b.dataset.copy).textContent);
        toast("Copied") }
@@ -2220,38 +2322,61 @@ $$("[data-copy]").forEach(b=>b.onclick=async()=>{
 });
 
 function fillSettings(){
-  const st=S.state||{};
-  const base=location.origin;
+  const st=S.state||{}, base=location.origin, pr=prefs();
+
   $("#s-ws").textContent = st.workspace||"";
+  $("#s-count").textContent = (st.documents||[]).length+" documents";
   $("#s-base").textContent = base;
   $("#s-spec").href = base+"/api/docs"+(st.api_token?"?token="+encodeURIComponent(st.api_token):"");
-  $("#s-ver").textContent = "v"+(st.version||"");
+  $("#s-ver").textContent = "CV Studio "+(st.version||"");
 
-  /* Claude Desktop needs a JSON-escaped command path; on Windows that means
-     doubled backslashes, which is the single most common reason a pasted
-     config silently fails. */
+  $("#s-open").onclick=async()=>{
+    try{ await api("/api/reveal",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({})}); }
+    catch(e){ toast(e.message,true) }
+  };
+  $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
+  $("#s-check").onclick=()=>checkUpdates(true);
+
+  /* Editor preferences */
+  const live=$("#s-live");
+  live.checked = pr.live!==false;
+  live.onchange=()=>{ setPref("live",live.checked); $("#live").checked=live.checked };
+  const delay=$("#s-delay");
+  delay.value=String(pr.delay||700);
+  delay.onchange=()=>setPref("delay",Number(delay.value));
+  const dt=$("#s-deftheme");
+  if(dt && !dt.dataset.filled){
+    dt.innerHTML=(st.themes||[]).map(t=>"<option>"+esc(t)+"</option>").join("");
+    dt.dataset.filled="1";
+  }
+  if(dt) { dt.value = pr.theme || (st.themes||[])[0] || ""; dt.onchange=()=>setPref("theme",dt.value) }
+
+  /* Claude Desktop needs command and args separately; a single string holding
+     "python script.py" is not runnable. */
   const L=st.server_launch||{command:"cv-studio-server",args:[]};
   const args=[...(L.args||[]),"--mcp"];
   if(st.workspace) args.push("--workspace",st.workspace);
-  const cfg={mcpServers:{"cv-studio":{command:L.command,args}}};
-  $("#s-mcp").textContent=JSON.stringify(cfg,null,2);
+  $("#s-mcp").textContent=JSON.stringify(
+    {mcpServers:{"cv-studio":{command:L.command,args}}},null,2);
 
-  const auth = st.api_token ? ` \
-  -H "X-API-Key: ${st.api_token}"` : "";
+  const auth = st.api_token ? ' \\\n  -H "X-API-Key: '+st.api_token+'"' : "";
   $("#s-curl").textContent =
-    `curl ${base}/api/state${auth}
-
-`+
-    `curl -X POST ${base}/api/render${auth} \
-`+
-    `  -H "Content-Type: application/json" \
-`+
-    `  -d '{"path":"profile/my-cv.yaml"}'`;
+    "curl "+base+"/api/state"+auth+"\n\n"+
+    "curl -X POST "+base+"/api/render"+auth+" \\\n"+
+    '  -H "Content-Type: application/json" \\\n'+
+    "  -d '{\"path\":\"profile/my-cv.yaml\"}'";
   $("#s-auth").textContent = st.api_token
-    ? "This server requires an X-API-Key header, shown above."
-    : "No key needed: the server accepts only local connections. Start it with "+
-      "--token to require one, or --host to expose it (which forces a token).";
+    ? "An X-API-Key header is required; the key is shown in the example below."
+    : "None needed. The server accepts local connections only. Start it with "+
+      "--token to require a key, or --host to expose it, which forces one.";
 }
+
+/* Apply saved preferences at startup so they are not settings in name only. */
+(function(){
+  const pr=prefs();
+  if(pr.live===false) $("#live").checked=false;
+})();
 
 const dlg=$("#newdlg");
 $("#new").onclick=()=>{$("#newname").value="";dlg.showModal();$("#newname").focus()};
@@ -2261,7 +2386,8 @@ async function create(from){
   if(!name){ $("#newname").focus(); return }
   try{
     const r=await api("/api/new",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name,from,kind:$("#newkind").value})});
+      body:JSON.stringify({name,from,kind:$("#newkind").value,
+                           theme:prefs().theme||null})});
     dlg.close();
     const st=await api("/api/state"); renderSidebar(st.documents);
     openDoc(r.path); toast("Created "+name);
