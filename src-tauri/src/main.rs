@@ -91,6 +91,21 @@ fn main() {
                 .focused(false)
                 .build()?;
 
+            // Development escape hatch: attach to an already-running dev server
+            // instead of spawning a packaged one. That makes the shell itself
+            // (frameless title bar, window controls, updater) testable against
+            // live-reloading Python, with no repackaging in between.
+            //     python server/dev.py --no-open
+            //     CVSTUDIO_DEV_URL=http://127.0.0.1:8722 cargo run
+            if let Ok(dev_url) = std::env::var("CVSTUDIO_DEV_URL") {
+                let w = window.clone();
+                std::thread::spawn(move || {
+                    let url = dev_url.trim_end_matches('/').to_string();
+                    let _ = w.eval(&format!("location.replace('{url}/')"));
+                });
+                return Ok(());
+            }
+
             let server = locate_server(&handle);
 
             std::thread::spawn(move || {

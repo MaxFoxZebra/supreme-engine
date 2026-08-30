@@ -9,6 +9,53 @@ Chromium (Electron: ~150MB). Supervising a child process instead keeps the binar
 at 3.7MB and preserves the comment-preserving YAML round-trip. A Rust YAML crate
 would have silently dropped the comments in `master-profile.yaml`.
 
+## Developing
+
+Almost nothing here needs a build. The interface, the renderer wrapper, the job
+store and the API are all Python and served HTML.
+
+### The everyday loop
+
+```bash
+cd server
+python dev.py
+```
+
+Serves on 127.0.0.1:8722, opens a browser, and restarts whenever you save
+`studio.py`, `cv_render.py`, `jobs.py`, `mcp_server.py` or the vendored JS. Edit,
+save, refresh: about two seconds. If you introduce a syntax error it says so and
+waits for the next save rather than restart-looping.
+
+Useful flags: `--no-open` to keep it from stealing focus, `--workspace DIR` to
+work against a scratch workspace instead of your real CVs, `--port N`.
+
+### Testing the shell itself
+
+The browser cannot exercise the frameless title bar, the window controls or the
+updater. Attach the real shell to the dev server instead of repackaging:
+
+```bash
+python server/dev.py --no-open          # terminal 1
+CVSTUDIO_DEV_URL=http://127.0.0.1:8722 cargo run   # terminal 2, in src-tauri
+```
+
+The shell skips spawning its own packaged server and points the webview at the
+live one, so Python still hot-restarts underneath it.
+
+### When you actually need to build
+
+| Change | Command | Roughly |
+|---|---|---|
+| Python or the interface | nothing, `dev.py` restarts | 2s |
+| `main.rs` | `cargo build` | 15s incremental |
+| Verify the frozen bundle | PyInstaller, then run `dist/cv-studio-server` | 60s |
+| Produce an installer | `npx @tauri-apps/cli build --bundles nsis` | 3min |
+| Signed release, all platforms | `git tag vX.Y.Z && git push --tags` | ~15min in CI |
+
+Repackage when something outside the Python source changes: a new dependency,
+new files under `server/static`, or anything added with `--add-data`. A pure
+edit to existing Python never needs it.
+
 ## Sizes
 
 | Artifact | Size |
