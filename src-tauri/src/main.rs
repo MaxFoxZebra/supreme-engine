@@ -108,6 +108,9 @@ fn main() {
                 // kill on window close, because a crashed parent never gets to
                 // run that handler.
                 cmd.arg("--parent-pid").arg(std::process::id().to_string());
+                // Single source of truth for the version shown in About and the
+                // API spec: whatever this build actually is.
+                cmd.arg("--app-version").arg(env!("CARGO_PKG_VERSION"));
                 if let Some(dir) = server.parent() {
                     cmd.current_dir(dir);
                 }

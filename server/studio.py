@@ -71,7 +71,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 def server_launch() -> dict:
@@ -1944,7 +1944,17 @@ async function checkUpdates(loud){
     }
     if(!loud) toast("Version "+up.version+" is available (Settings to install)");
   }catch(e){
-    if(st) st.textContent="Could not check for updates: "+e;
+    /* A 404 here almost always means no release has been published yet, or the
+       repository is private so the asset cannot be fetched without credentials.
+       Saying that is more useful than relaying the transport error. */
+    const raw=String(e);
+    const missing=/release JSON|404|not found/i.test(raw);
+    if(st){
+      st.innerHTML = missing
+        ? 'No published release to update to yet.<br><span class="muted">Updates begin '+
+          'working once a version is tagged and the release is publicly downloadable.</span>'
+        : "Could not check for updates: "+esc(raw);
+    }
   }
 }
 /* Quiet check shortly after launch, so it never blocks first paint. */
@@ -2027,7 +2037,7 @@ class Server(socketserver.ThreadingTCPServer):
 
 
 def main() -> int:
-    global WORKSPACE, FIRST_RUN, API_TOKEN
+    global WORKSPACE, FIRST_RUN, API_TOKEN, VERSION
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -2042,10 +2052,14 @@ def main() -> int:
     ap.add_argument("--token", default=None,
                     help="Require this X-API-Key on every /api request.")
     ap.add_argument("--open", action="store_true")
+    ap.add_argument("--app-version", default=None,
+                    help="Version reported by the shell, so this cannot drift.")
     ap.add_argument("--parent-pid", type=int, default=None,
                     help="Exit when this process does, so we cannot be orphaned.")
     args = ap.parse_args()
 
+    if args.app_version:
+        VERSION = args.app_version
     if args.parent_pid:
         watch_parent(args.parent_pid)
 
