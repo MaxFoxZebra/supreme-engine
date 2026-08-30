@@ -96,7 +96,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The key was generated without a password, and GitHub will not accept
+          # an empty secret value. Setting it here keeps the signer from
+          # prompting in CI, and an empty password is not a secret anyway.
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "CV Studio ${{ github.ref_name }}"

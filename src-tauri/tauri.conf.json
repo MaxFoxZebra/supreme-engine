@@ -35,7 +35,7 @@
     "longDescription": "A local editor for RenderCV CV files with live preview, theme switching and page-budget feedback. Runs entirely on your machine.",
     "publisher": "CV Studio",
     "category": "Productivity",
-    "copyright": "",
+    "copyright": "Copyright (c) 2026 Maxime Bidault. MIT licensed.",
     "licenseFile": "../LICENSE",
     "windows": {
       "nsis": {

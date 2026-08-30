@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 CV Studio contributors
+Copyright (c) 2026 Maxime Bidault
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This application bundles third-party components:
-  RenderCV      - MIT License  - https://github.com/rendercv/rendercv
-  Typst         - Apache-2.0   - https://github.com/typst/typst
-  RenderCV fonts - see rendercv_fonts for the licences of each family
-                   (SIL Open Font License / Apache-2.0)
