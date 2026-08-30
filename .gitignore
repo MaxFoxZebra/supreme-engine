@@ -1,0 +1,16 @@
+# build output
+src-tauri/target/
+src-tauri/server-dist/
+src-tauri/gen/
+server/build/
+server/dist/
+server/.venv/
+node_modules/
+
+# signing keys never belong in the repo
+*.key
+*.key.pub
+
+# local scratch
+__pycache__/
+*.spec
