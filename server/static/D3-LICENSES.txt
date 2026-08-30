@@ -1,0 +1,8 @@
+Bundled d3 modules, used for the application funnel chart.
+
+d3-sankey  BSD-3-Clause  Copyright 2015, Mike Bostock
+d3-array   BSD-3-Clause  Copyright 2010-2023, Mike Bostock
+d3-shape   ISC           Copyright 2010-2022, Mike Bostock
+d3-path    ISC           Copyright 2015-2022, Mike Bostock
+
+Full texts: https://github.com/d3/<module>/blob/main/LICENSE

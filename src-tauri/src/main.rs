@@ -104,6 +104,10 @@ fn main() {
 
                 let mut cmd = Command::new(&server);
                 cmd.arg("--port").arg(port.to_string());
+                // Let the renderer exit with us. Belt and braces alongside the
+                // kill on window close, because a crashed parent never gets to
+                // run that handler.
+                cmd.arg("--parent-pid").arg(std::process::id().to_string());
                 if let Some(dir) = server.parent() {
                     cmd.current_dir(dir);
                 }

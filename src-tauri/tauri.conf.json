@@ -47,7 +47,8 @@
         "languages": [
           "English"
         ],
-        "compression": "lzma"
+        "compression": "lzma",
+        "installerHooks": "installer/hooks.nsh"
       }
     }
   },

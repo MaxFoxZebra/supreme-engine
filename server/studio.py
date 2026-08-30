@@ -24,6 +24,7 @@ import argparse
 import http.server
 import json
 import mimetypes
+import os
 import re
 import secrets
 import socketserver
@@ -46,6 +47,17 @@ for _cand in (_HERE, _HERE.parents[1] / "cv-studio-resume" / "scripts"):
         sys.path.insert(0, str(_cand))
         break
 from cv_render import render_file  # noqa: E402
+
+try:
+    import jobs as jobstore
+except ImportError:  # the store lives beside the packaged server
+    jobstore = None
+
+# Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
+# unpacks data files under _MEIPASS; in a checkout they sit next to this file.
+STATIC_DIR = Path(getattr(sys, "_MEIPASS", str(_HERE))) / "static"
+if not STATIC_DIR.is_dir():
+    STATIC_DIR = _HERE / "static"
 
 THEMES = ["engineeringclassic", "engineeringresumes", "classic", "sb2nov", "moderncv"]
 PAGE_SIZES = ["a4", "us-letter"]
@@ -148,6 +160,42 @@ settings:
 # --------------------------------------------------------------------------
 # workspace
 # --------------------------------------------------------------------------
+
+def watch_parent(pid: int) -> None:
+    """Exit when the process that launched us goes away.
+
+    Without this the renderer can outlive the window that spawned it (a crash,
+    a force-quit, a killed parent) and keep holding its own DLLs open. The
+    visible symptom is an installer failing with "Error opening file for
+    writing" on the next upgrade, which is a confusing way to learn about an
+    orphaned process.
+    """
+    def alive() -> bool:
+        if sys.platform == "win32":
+            import ctypes
+            SYNCHRONIZE = 0x00100000
+            h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if not h:
+                return False
+            try:
+                # WAIT_OBJECT_0 means the process has already exited.
+                return ctypes.windll.kernel32.WaitForSingleObject(h, 0) != 0
+            finally:
+                ctypes.windll.kernel32.CloseHandle(h)
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, OSError):
+            return False
+
+    def loop() -> None:
+        while True:
+            time.sleep(2)
+            if not alive():
+                os._exit(0)
+
+    threading.Thread(target=loop, daemon=True).start()
+
 
 def bootstrap(workspace: Path) -> bool:
     """Create and seed the workspace. Returns True when this was a first run."""
@@ -491,6 +539,24 @@ def openapi_spec() -> dict:
             "/api/new": {"post": {"summary": "Create a CV, blank or duplicated",
                 "requestBody": body({"name": {"type": "string"},
                                      "from": {"type": "string"}}), "responses": ok}},
+            "/api/jobs": {
+                "get": {"summary": "List job applications", "responses": ok},
+                "post": {"summary": "Create a job application",
+                         "requestBody": body({"title": {"type": "string"},
+                                              "company": {"type": "string"},
+                                              "status": {"type": "string"}}),
+                         "responses": ok}},
+            "/api/jobs/update": {"post": {"summary":
+                "Update a job; a status change appends to its history",
+                "requestBody": body({"id": {"type": "string"},
+                                     "status": {"type": "string"}}), "responses": ok}},
+            "/api/funnel": {"get": {"summary":
+                "Application funnel: node counts, flows and conversion rates",
+                "responses": ok}},
+            "/api/jobs/export": {"get": {"summary": "Export every job as JSON or CSV",
+                "parameters": [{"name": "format", "in": "query",
+                                "schema": {"type": "string", "enum": ["json", "csv"]}}],
+                "responses": ok}},
             "/api/asset": {"get": {"summary": "Fetch a rendered PDF or PNG",
                 "parameters": [{"name": "path", "in": "query", "required": True,
                                 "schema": {"type": "string"}}], "responses": ok}},
@@ -503,6 +569,144 @@ def openapi_spec() -> dict:
 # --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
+
+DOCS_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CV Studio API</title>
+<style>
+:root{--paper:#f4f3ef;--card:#fbfaf7;--sunk:#eeece6;--ink:#15141a;--ink-2:#514f4a;
+ --ink-3:#6d6a62;--rule:#e2dfd7;--rule-2:#eceae4;--ok:#3f7d52;--bad:#a33a22;--r:5px}
+@media(prefers-color-scheme:dark){:root{--paper:#0f0f10;--card:#161617;--sunk:#1c1c1e;
+ --ink:#e8e6e1;--ink-2:#a5a29a;--ink-3:#8a877f;--rule:#262628;--rule-2:#1f1f21;
+ --ok:#7fb08c;--bad:#d98166}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);letter-spacing:-.004em;
+ font:13.5px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:52px 28px 90px}
+h1{font-size:21px;font-weight:560;margin:0 0 6px;letter-spacing:-.015em}
+.lede{color:var(--ink-3);margin:0 0 8px;max-width:62ch}
+.base{font:11.5px ui-monospace,Consolas,monospace;color:var(--ink-3);margin:0 0 40px}
+.base b{color:var(--ink);font-weight:500}
+section{border-top:1px solid var(--rule-2);padding:22px 0}
+.row{display:flex;align-items:baseline;gap:12px;cursor:pointer}
+.verb{font:10.5px ui-monospace,Consolas,monospace;font-weight:600;letter-spacing:.04em;
+ color:var(--ink-3);width:44px;flex:none;text-transform:uppercase}
+.verb.post{color:var(--ok)}
+.path{font:12.5px ui-monospace,Consolas,monospace;color:var(--ink);font-weight:500}
+.sum{color:var(--ink-3);font-size:12.5px;margin-left:auto;text-align:right}
+.body{margin:16px 0 0 56px;display:none}
+section.open .body{display:block}
+h4{font-size:11.5px;font-weight:560;color:var(--ink-3);margin:0 0 7px}
+table{width:100%;border-collapse:collapse;margin:0 0 16px}
+td{padding:5px 0;border-bottom:1px solid var(--rule-2);vertical-align:top;font-size:12.5px}
+td:first-child{width:150px;font:11.5px ui-monospace,Consolas,monospace;color:var(--ink)}
+td:last-child{color:var(--ink-3)}
+.req{color:var(--bad);font-size:10.5px;margin-left:5px}
+textarea,input{width:100%;border:1px solid var(--rule);border-radius:var(--r);padding:8px 10px;
+ background:var(--sunk);color:var(--ink);font:11.5px/1.6 ui-monospace,Consolas,monospace;
+ resize:vertical}
+textarea:focus,input:focus{background:var(--card);border-color:var(--ink-3);outline:none}
+button{cursor:pointer;border:0;border-radius:var(--r);background:var(--ink);color:var(--paper);
+ font:inherit;font-size:12.5px;font-weight:530;padding:6px 13px;margin:10px 0 0}
+button:hover{opacity:.86}
+button:disabled{opacity:.4;cursor:default}
+pre.out{background:var(--sunk);border-radius:var(--r);padding:12px 14px;margin:12px 0 0;
+ font:11.5px/1.65 ui-monospace,Consolas,monospace;max-height:340px;overflow:auto;white-space:pre-wrap}
+.status{font:11.5px ui-monospace,Consolas,monospace;margin-left:10px}
+.s-ok{color:var(--ok)} .s-bad{color:var(--bad)}
+a{color:var(--ink)}
+footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--rule-2);
+ color:var(--ink-3);font-size:12px}
+</style></head><body><div class="wrap">
+<h1>CV Studio API</h1>
+<p class="lede">Read, edit and render CVs over HTTP. Everything runs on your machine;
+the server accepts local connections only unless you start it with a token.</p>
+<p class="base">Base <b id="base"></b> &nbsp;·&nbsp; <a href="/api/openapi.json">openapi.json</a></p>
+<div id="eps"></div>
+<footer id="foot"></footer>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const TOKEN=new URLSearchParams(location.search).get("token");
+$("#base").textContent=location.origin;
+
+/* A plausible body built from the schema, so Run works on the first click
+   instead of making you author JSON before you can see anything. */
+function sample(schema){
+  const props=(schema&&schema.properties)||{};
+  const out={};
+  for(const k of Object.keys(props)){
+    if(k==="path") out[k]="profile/my-cv.yaml";
+    else if(props[k].type==="array") out[k]=[];
+    else if(props[k].type==="string") out[k]="";
+  }
+  if("yaml" in out) delete out.yaml;
+  if("patches" in out) delete out.patches;
+  return out;
+}
+
+fetch("/api/openapi.json"+(TOKEN?"?token="+encodeURIComponent(TOKEN):""))
+ .then(r=>r.json()).then(spec=>{
+  $("#foot").textContent=spec.info.title+" v"+spec.info.version;
+  const host=$("#eps");
+  Object.entries(spec.paths).forEach(([path,ops])=>{
+    Object.entries(ops).forEach(([verb,op])=>{
+      const sec=document.createElement("section");
+      const params=op.parameters||[];
+      const bodySchema=((op.requestBody||{}).content||{})["application/json"];
+      const props=bodySchema?bodySchema.schema.properties:null;
+      sec.innerHTML=
+        '<div class="row"><span class="verb '+verb+'">'+verb+'</span>'+
+        '<span class="path">'+esc(path)+'</span>'+
+        '<span class="sum">'+esc(op.summary||"")+'</span></div>'+
+        '<div class="body">'+
+        (params.length?'<h4>Query parameters</h4><table>'+params.map(p=>
+          '<tr><td>'+esc(p.name)+(p.required?'<span class="req">required</span>':'')+
+          '</td><td>'+esc((p.schema||{}).type||"")+'</td></tr>').join("")+'</table>':'')+
+        (props?'<h4>Request body</h4><table>'+Object.entries(props).map(([k,v])=>
+          '<tr><td>'+esc(k)+'</td><td>'+esc(v.description||v.type||"")+'</td></tr>').join("")+
+          '</table><textarea rows="4">'+esc(JSON.stringify(sample(bodySchema.schema),null,2))+
+          '</textarea>':'')+
+        (params.length?'<h4>Try it</h4>'+params.map(p=>
+          '<input data-p="'+esc(p.name)+'" placeholder="'+esc(p.name)+'" value="'+
+          (p.name==="path"?"profile/my-cv.yaml":"")+'">').join(""):'')+
+        '<div><button>Run</button><span class="status"></span></div>'+
+        '<pre class="out" hidden></pre></div>';
+      sec.querySelector(".row").onclick=()=>sec.classList.toggle("open");
+      const btn=sec.querySelector("button"), out=sec.querySelector(".out"),
+            st=sec.querySelector(".status"), ta=sec.querySelector("textarea");
+      btn.onclick=async e=>{
+        e.stopPropagation(); btn.disabled=true; st.textContent="…"; st.className="status";
+        let url=location.origin+path, opts={method:verb.toUpperCase(),headers:{}};
+        const qs=new URLSearchParams();
+        sec.querySelectorAll("[data-p]").forEach(i=>{ if(i.value) qs.set(i.dataset.p,i.value) });
+        if(TOKEN) opts.headers["X-API-Key"]=TOKEN;
+        if(ta){ opts.headers["Content-Type"]="application/json"; opts.body=ta.value }
+        if([...qs].length) url+="?"+qs.toString();
+        const t0=performance.now();
+        try{
+          const r=await fetch(url,opts);
+          const ms=Math.round(performance.now()-t0);
+          const ct=r.headers.get("content-type")||"";
+          let text;
+          if(ct.includes("json")) text=JSON.stringify(await r.json(),null,2);
+          else text="("+ct+", "+(r.headers.get("content-length")||"?")+" bytes)";
+          st.textContent=r.status+" · "+ms+"ms";
+          st.className="status "+(r.ok?"s-ok":"s-bad");
+          out.hidden=false; out.textContent=text.slice(0,20000);
+        }catch(err){
+          st.textContent="failed"; st.className="status s-bad";
+          out.hidden=false; out.textContent=String(err);
+        }finally{ btn.disabled=false }
+      };
+      host.append(sec);
+    });
+  });
+ })
+ .catch(e=>{ $("#eps").textContent="Could not load the spec: "+e });
+</script></body></html>"""
+
 
 class Handler(http.server.BaseHTTPRequestHandler):
     server_version = "CVStudio"
@@ -539,7 +743,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if u.path.startswith("/api/") and not self._authed():
+        if u.path.startswith("/api/") and u.path != "/api/docs" and not self._authed():
             return self._json({"error": "unauthorised: supply X-API-Key"}, 401)
         try:
             if u.path == "/":
@@ -560,6 +764,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "api_token": API_TOKEN,
                     "port": self.server.server_address[1],
                 })
+            if u.path.startswith("/static/"):
+                name = u.path.split("/static/", 1)[1]
+                # Serve only the vendored assets; never anything else on disk.
+                if "/" in name or ".." in name:
+                    return self._json({"error": "not found"}, 404)
+                f = STATIC_DIR / name
+                if not f.is_file():
+                    return self._json({"error": "not found"}, 404)
+                ctype = "application/javascript" if f.suffix == ".js" else "text/plain"
+                return self._send(200, f.read_bytes(), ctype + "; charset=utf-8")
+            if u.path == "/api/jobs":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                return self._json({"jobs": jobstore.list_jobs(
+                    WORKSPACE, q.get("status", [None])[0], q.get("q", [None])[0]),
+                    "statuses": jobstore.STATUSES})
+            if u.path == "/api/funnel":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                return self._json(jobstore.funnel(WORKSPACE))
+            if u.path == "/api/jobs/export":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                fmt = q.get("format", ["json"])[0]
+                body = jobstore.export(WORKSPACE, fmt).encode("utf-8")
+                return self._send(200, body,
+                                  "text/csv" if fmt == "csv" else "application/json")
+            if u.path == "/api/docs":
+                return self._send(200, DOCS_HTML.encode("utf-8"), "text/html; charset=utf-8")
             if u.path == "/api/design-schema":
                 return self._json(design_schema(q.get("theme", ["classic"])[0]))
             if u.path == "/api/openapi.json":
@@ -601,6 +834,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(preview(safe_path(payload["path"]),
                                           payload.get("yaml"),
                                           payload.get("patches")))
+            if u.path == "/api/jobs":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                return self._json(jobstore.add_job(WORKSPACE, payload))
+            if u.path == "/api/jobs/update":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                return self._json(jobstore.update_job(
+                    WORKSPACE, payload.pop("id", ""), payload))
+            if u.path == "/api/jobs/delete":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                jobstore.delete_job(WORKSPACE, payload.get("id", ""))
+                return self._json({"ok": True})
             if u.path == "/api/new":
                 raw = payload.get("name") or "new-cv"
                 name = "".join(c for c in raw if c.isalnum() or c in "-_ ").strip()
@@ -808,6 +1055,28 @@ aside h2{font-size:11px;font-weight:450;color:var(--ink-3);margin:18px 16px 5px;
 .dctl .hex{font:11px ui-monospace,Consolas,monospace;color:var(--ink-3);flex:none}
 .dnote{color:var(--ink-3);font-size:12px;margin:0 0 4px;line-height:1.65;max-width:56ch}
 
+/* ---------- analytics -------------------------------------------------- */
+.side-foot{margin-top:18px;padding-top:10px;border-top:1px solid var(--rule-2)}
+.analytics{grid-column:3 / -1;overflow-y:auto;background:var(--paper);padding:30px 34px 70px}
+.analytics[hidden]{display:none}
+body.analytics-on .mid,body.analytics-on .prev,
+body.analytics-on .gut[data-target="1"]{display:none}
+.an-h{font-size:15px;font-weight:560;margin:0 0 3px;letter-spacing:-.01em}
+.an-sub{color:var(--ink-3);font-size:12.5px;margin:0 0 26px;max-width:60ch}
+.stats{display:flex;gap:34px;flex-wrap:wrap;margin:0 0 30px}
+.stat b{display:block;font-size:23px;font-weight:500;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;line-height:1.2}
+.stat span{font-size:11.5px;color:var(--ink-3)}
+.chart{margin:0 0 12px;overflow-x:auto}
+.chart svg{display:block;max-width:100%;height:auto}
+.sk-node{stroke:none}
+.sk-link{fill:none;transition:opacity .15s}
+.sk-link:hover{opacity:.95!important}
+.sk-label{font:11.5px ui-sans-serif,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
+.sk-count{font:11px ui-monospace,Consolas,monospace;fill:var(--ink-3)}
+.an-note{color:var(--ink-3);font-size:12px;margin:14px 0 0;max-width:64ch;line-height:1.65}
+.an-actions{margin-top:22px;display:flex;gap:8px}
+
 /* ---------- preview ---------------------------------------------------- */
 .pbar{position:sticky;top:0;z-index:3;display:flex;align-items:baseline;gap:16px;
   padding:13px 20px;background:var(--paper);border-bottom:1px solid var(--rule);
@@ -937,6 +1206,9 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
   <aside>
     <div class="side-hd"><b>Documents</b><button id="new" class="ghost" title="New CV">+ New</button></div>
     <div id="files"></div>
+    <div class="side-foot">
+      <button class="doc" id="nav-analytics"><span>Analytics</span></button>
+    </div>
   </aside>
   <div class="gut" data-target="0"></div>
   <div class="mid">
@@ -954,6 +1226,7 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
   </div>
   <div class="gut" data-target="1"></div>
   <div class="prev" id="preview"></div>
+  <div class="analytics" id="analytics" hidden></div>
 </main>
 
 <div id="toasts" aria-live="polite"></div>
@@ -1013,8 +1286,8 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
       <tr><td><code>POST /api/new</code></td><td>Create a CV</td></tr>
       <tr><td><code>GET /api/asset?path=</code></td><td>Fetch a rendered file</td></tr>
     </table>
-    <p>Base URL <code id="s-base"></code> · full spec at
-      <a id="s-spec" href="#" target="_blank">/api/openapi.json</a></p>
+    <p>Base URL <code id="s-base"></code> · <a id="s-spec" href="#" target="_blank">open the
+      API reference</a>, where every endpoint can be run against this server.</p>
     <h4>Example</h4>
     <pre id="s-curl" class="code"></pre>
     <button class="mini" data-copy="s-curl">Copy</button>
@@ -1103,6 +1376,7 @@ $("#files").onclick=e=>{
 };
 
 async function openDoc(path){
+  closeAnalytics();
   S.path=path; S.dirty=false; markDirty();
   $$(".doc").forEach(b=>b.classList.toggle("active",b.dataset.path===path));
   $("#pane-form").innerHTML=`<div class="skel" style="height:118px;margin-bottom:11px"></div>
@@ -1500,6 +1774,130 @@ $("#pane-design").addEventListener("change",function(){S.dirty=true;markDirty();
   });
 })();
 
+/* ---- analytics ----
+   The funnel uses the real d3-sankey layout, vendored locally (60KB, BSD/ISC)
+   rather than reimplemented, so the flow geometry is correct rather than
+   approximated. Scripts load on first open so the editor start-up pays nothing
+   for a view that may never be used. */
+let d3ready=null;
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const el=document.createElement("script");
+    el.src=src; el.onload=res; el.onerror=()=>rej(new Error("could not load "+src));
+    document.head.append(el);
+  });
+}
+async function ensureD3(){
+  if(d3ready) return d3ready;
+  // order matters: sankey depends on array, shape depends on path
+  d3ready=(async()=>{
+    for(const m of ["d3-array","d3-path","d3-shape","d3-sankey"]){
+      await loadScript("/static/"+m+".min.js");
+    }
+  })();
+  return d3ready;
+}
+
+/* Colour appears only where it carries meaning: an outcome. Everything still
+   in flight stays in the neutral ink ramp. */
+function flowTone(id){
+  if(id==="accepted") return "var(--live)";
+  if(id==="rejected") return "var(--bad)";
+  if(id==="ghosted"||id==="refused") return "var(--ink-3)";
+  return "var(--ink)";
+}
+const FLOW_ALPHA={all:.10,pending:.16,applied_s:.30,awaiting:.22,interview_s:.34,
+  still_iv:.26,offer_s:.40,deciding:.30,accepted:.55,refused:.20,rejected:.42,ghosted:.18};
+
+async function openAnalytics(){
+  document.body.classList.add("analytics-on");
+  $$(".doc").forEach(b=>b.classList.remove("active"));
+  $("#nav-analytics").classList.add("active");
+  const host=$("#analytics"); host.hidden=false;
+  host.innerHTML='<p class="an-sub"><span class="spin"></span> Loading…</p>';
+  let f;
+  try{
+    await ensureD3();
+    f=await api("/api/funnel");
+  }catch(e){ host.innerHTML='<div class="empty"><h3>Could not load analytics</h3><p>'+
+    esc(e.message)+'</p></div>'; return }
+
+  if(!f.totals.total){
+    host.innerHTML='<h2 class="an-h">Applications</h2>'+
+      '<div class="empty"><h3>Nothing tracked yet</h3><p>Add applications and the funnel '+
+      'will show how far they get: how many reach an interview, how many convert to an '+
+      'offer, and where the rest drop out.</p></div>';
+    return;
+  }
+  const t=f.totals;
+  host.innerHTML=
+    '<h2 class="an-h">Applications</h2>'+
+    '<p class="an-sub">Where your applications actually go. Each band is sized by how '+
+    'many roles reached that stage.</p>'+
+    '<div class="stats">'+
+      stat(t.total,"tracked")+stat(t.applied,"applied")+
+      stat(t.interviewed,"interviewed")+stat(t.offers,"offers")+
+      stat(t.interview_rate+"%","applied to interview")+
+      stat(t.offer_rate+"%","interview to offer")+
+    '</div><div class="chart" id="chart"></div>'+
+    '<p class="an-note">Rejections and ghostings are shown separately for each stage, '+
+    'because being turned down after interviews means something very different from '+
+    'never hearing back at all.</p>'+
+    '<div class="an-actions">'+
+      '<button class="ghost" id="ex-json">Export JSON</button>'+
+      '<button class="ghost" id="ex-csv">Export CSV</button></div>';
+  $("#ex-json").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
+  $("#ex-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
+  drawFunnel(f);
+}
+const tok=()=>API_TOKEN?"&token="+encodeURIComponent(API_TOKEN):"";
+const stat=(v,l)=>'<div class="stat"><b>'+esc(v)+'</b><span>'+esc(l)+'</span></div>';
+
+function drawFunnel(f){
+  const nodes=f.nodes.filter(n=>n.count>0);
+  const idx=new Map(nodes.map((n,i)=>[n.id,i]));
+  const links=f.links.filter(l=>idx.has(l.source)&&idx.has(l.target))
+    .map(l=>({source:idx.get(l.source),target:idx.get(l.target),value:l.value,tid:l.target}));
+  if(!links.length){ $("#chart").innerHTML=""; return }
+
+  const W=840,H=Math.max(260,nodes.length*34),PAD=170;
+  const layout=d3.sankey().nodeWidth(9).nodePadding(15).nodeAlign(d3.sankeyJustify)
+    .extent([[0,8],[W-PAD,H-8]]);
+  const graph=layout({nodes:nodes.map(n=>({...n})),links:links.map(l=>({...l}))});
+  const path=d3.sankeyLinkHorizontal();
+
+  const band=graph.links.map(l=>{
+    const tone=flowTone(l.tid), a=FLOW_ALPHA[l.tid]??.28;
+    return '<path class="sk-link" d="'+path(l)+'" stroke="'+tone+'" stroke-opacity="'+a+
+      '" stroke-width="'+Math.max(1,l.width)+'"><title>'+esc(l.source.label)+' \u2192 '+
+      esc(l.target.label)+': '+l.value+'</title></path>';
+  }).join("");
+
+  const rect=graph.nodes.map(n=>
+    '<rect class="sk-node" x="'+n.x0+'" y="'+n.y0+'" width="'+(n.x1-n.x0)+
+    '" height="'+Math.max(1,n.y1-n.y0)+'" fill="'+flowTone(n.id)+
+    '" fill-opacity="'+(n.id==="accepted"||n.id==="rejected"?.9:.55)+'"/>').join("");
+
+  const text=graph.nodes.map(n=>{
+    const y=(n.y0+n.y1)/2, right=n.x0>(W-PAD)*0.55;
+    const x=right?n.x1+9:n.x1+9;
+    return '<text class="sk-label" x="'+x+'" y="'+(y-1)+'" dominant-baseline="middle">'+
+      esc(n.label)+'</text>'+
+      '<text class="sk-count" x="'+x+'" y="'+(y+12)+'" dominant-baseline="middle">'+
+      n.count+'</text>';
+  }).join("");
+
+  $("#chart").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+
+    '" role="img" aria-label="Application funnel">'+band+rect+text+'</svg>';
+}
+
+function closeAnalytics(){
+  document.body.classList.remove("analytics-on");
+  $("#analytics").hidden=true;
+  $("#nav-analytics").classList.remove("active");
+}
+$("#nav-analytics").onclick=openAnalytics;
+
 /* ---- updates ----
    Tauri's updater verifies a signature against the public key baked into the
    build, so a compromised release host still cannot push a package this app
@@ -1572,7 +1970,7 @@ function fillSettings(){
   const base=location.origin;
   $("#s-ws").textContent = st.workspace||"";
   $("#s-base").textContent = base;
-  $("#s-spec").href = base+"/api/openapi.json"+(st.api_token?"?token="+encodeURIComponent(st.api_token):"");
+  $("#s-spec").href = base+"/api/docs"+(st.api_token?"?token="+encodeURIComponent(st.api_token):"");
   $("#s-ver").textContent = "v"+(st.version||"");
 
   /* Claude Desktop needs a JSON-escaped command path; on Windows that means
@@ -1644,7 +2042,12 @@ def main() -> int:
     ap.add_argument("--token", default=None,
                     help="Require this X-API-Key on every /api request.")
     ap.add_argument("--open", action="store_true")
+    ap.add_argument("--parent-pid", type=int, default=None,
+                    help="Exit when this process does, so we cannot be orphaned.")
     args = ap.parse_args()
+
+    if args.parent_pid:
+        watch_parent(args.parent_pid)
 
     WORKSPACE = Path(args.workspace).resolve() if args.workspace else DEFAULT_WORKSPACE
     FIRST_RUN = bootstrap(WORKSPACE)
