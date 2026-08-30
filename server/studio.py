@@ -72,7 +72,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 
 def server_launch() -> dict:
