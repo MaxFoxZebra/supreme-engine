@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   salary_currency  TEXT NOT NULL DEFAULT 'EUR',
   status_history   TEXT NOT NULL DEFAULT '[]',
   cv_path          TEXT,
+  letter_path      TEXT,
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL
 );
@@ -105,7 +106,7 @@ CREATE INDEX IF NOT EXISTS jobs_company ON jobs(company);
 FIELDS = [
     "title", "company", "location", "country", "description", "url", "source",
     "score", "status", "notes", "followup_date", "salary_expected",
-    "salary_offered", "salary_currency", "cv_path",
+    "salary_offered", "salary_currency", "cv_path", "letter_path",
 ]
 
 
@@ -121,6 +122,11 @@ def connect(workspace: Path) -> sqlite3.Connection:
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")
     con.executescript(SCHEMA)
+    have = {r["name"] for r in con.execute("PRAGMA table_info(jobs)")}
+    for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT")):
+        if col not in have:
+            con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
+    con.commit()
     return con
 
 

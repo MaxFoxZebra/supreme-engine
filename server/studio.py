@@ -1140,7 +1140,11 @@ aside h2{font-size:11px;font-weight:450;color:var(--ink-3);margin:18px 16px 5px;
 
 /* ---------- analytics -------------------------------------------------- */
 .side-foot{margin-top:18px;padding-top:10px;border-top:1px solid var(--rule-2)}
-.analytics{grid-column:3 / -1;overflow-y:auto;background:var(--paper);padding:30px 34px 70px}
+.analytics{grid-column:3 / -1;overflow-y:auto;background:var(--paper);padding:28px 34px 70px}
+/* Content stretches with the window but stops before lines get unreadable.
+   The chart is exempt: it should take everything it can get. */
+.an-inner{max-width:1180px}
+.chart{max-width:none}
 .analytics[hidden]{display:none}
 body.analytics-on .mid,body.analytics-on .prev,
 body.analytics-on .gut[data-target="1"]{display:none}
@@ -1212,6 +1216,14 @@ body.analytics-on .gut[data-target="1"]{display:none}
 .jt .co{font-weight:530}
 .jt .ro{color:var(--ink-3)}
 .jt .when{color:var(--ink-3);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.jt .links{display:flex;gap:10px}
+.jt .links a{color:var(--ink-3);text-decoration:none;font-size:11.5px;white-space:nowrap}
+.jt .links a:hover{color:var(--ink);text-decoration:underline}
+.jt .links .none{color:var(--rule)}
+@media(max-width:900px){
+  .jt .ro,.jt th:nth-child(2){display:none}      /* role folds into company */
+  .jt .when,.jt th:nth-child(4){display:none}
+}
 .jt select{border:1px solid transparent;border-radius:var(--r);padding:3px 6px;font-size:12px;
   background:var(--sunk);color:var(--ink);max-width:150px}
 .jt select:hover{border-color:var(--rule)}
@@ -1979,6 +1991,14 @@ const JOB_FIELDS=[
   ["source","Source"],["salary_expected","Salary expected"],["followup_date","Follow up on"],
   ["notes","Notes"],
 ];
+/* Documents are listed fresh each time the dialog opens, so a CV created a
+   minute ago is selectable without reloading the app. */
+function docOptions(group,current){
+  const docs=((S.state&&S.state.documents)||[]).filter(d=>d.group===group);
+  return '<option value="">Not linked</option>'+docs.map(d=>
+    '<option value="'+esc(d.path)+'"'+(d.path===current?" selected":"")+'>'+
+    esc(d.label)+'</option>').join("");
+}
 const STATUS_TONE=id=>
   id==="accepted"?"var(--live)":
   /^(rejected|refused)/.test(id)?"var(--bad)":
@@ -2007,6 +2027,7 @@ function drawJobs(filter){
   const rows=(filter?JOBS.filter(j=>(j.company+" "+j.title+" "+(j.notes||""))
     .toLowerCase().includes(filter.toLowerCase())):JOBS);
   host.innerHTML=
+    '<div class="an-inner">'+
     '<h2 class="an-h">Applications</h2>'+
     '<p class="an-sub">Every role you are tracking. Changing a status here records it '+
     'with a timestamp, which is what the funnel is built from.</p>'+
@@ -2015,7 +2036,7 @@ function drawJobs(filter){
     '<button class="primary" id="job-add">Add application</button></div>'+
     (rows.length?
       '<table class="jt"><thead><tr><th>Company</th><th>Role</th><th>Status</th>'+
-      '<th>Updated</th><th></th></tr></thead><tbody>'+
+      '<th>Updated</th><th>Documents</th><th></th></tr></thead><tbody>'+
       rows.map(j=>
         '<tr data-id="'+esc(j.id)+'">'+
         '<td class="co"><span class="sd" style="background:'+STATUS_TONE(j.status)+'"></span>'+
@@ -2025,18 +2046,27 @@ function drawJobs(filter){
           STATUSES.map(s=>'<option value="'+s+'"'+(s===j.status?" selected":"")+'>'+
             esc(prettyStatus(s))+'</option>').join("")+'</select></td>'+
         '<td class="when">'+esc((j.updated_at||"").slice(0,10))+'</td>'+
+        '<td><div class="links">'+
+          (j.cv_path?'<a href="#" data-open="'+esc(j.cv_path)+'">CV</a>'
+                    :'<span class="none">CV</span>')+
+          (j.letter_path?'<a href="#" data-open="'+esc(j.letter_path)+'">Letter</a>'
+                        :'<span class="none">Letter</span>')+
+        '</div></td>'+
         '<td><button class="ghost edit" data-edit="'+esc(j.id)+'">Edit</button></td>'+
         '</tr>').join("")+'</tbody></table>'
       :'<div class="empty"><h3>'+(filter?"Nothing matches":"No applications yet")+'</h3>'+
        '<p>'+(filter?"Try a different filter.":
          "Add the roles you are applying for. Once a few have moved through the stages, "+
-         "Analytics will show where they actually go.")+'</p></div>');
+         "Analytics will show where they actually go.")+'</p></div>')+'</div>';
 
   $("#job-add").onclick=()=>editJob(null);
   const q=$("#job-q");
   q.oninput=()=>{ const v=q.value; drawJobs(v); const nq=$("#job-q");
     nq.focus(); nq.setSelectionRange(v.length,v.length) };
   $$("[data-edit]").forEach(b=>b.onclick=()=>editJob(b.dataset.edit));
+  // Clicking a linked document leaves the tracker and opens it in the editor,
+  // which is the whole point of linking them.
+  $$("[data-open]").forEach(a=>a.onclick=e=>{ e.preventDefault(); openDoc(a.dataset.open) });
   $$("[data-status-for]").forEach(sel=>sel.onchange=async()=>{
     try{
       await api("/api/jobs/update",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -2048,8 +2078,9 @@ function drawJobs(filter){
   });
 }
 
-function editJob(id){
+async function editJob(id){
   const j=id?JOBS.find(x=>x.id===id):null;
+  try{ S.state=await api("/api/state") }catch{}   // pick up newly created documents
   $("#job-title").textContent=j?"Edit application":"Add an application";
   $("#job-del").hidden=!j;
   $("#job-form").innerHTML=
@@ -2063,6 +2094,11 @@ function editJob(id){
     '<div class="f" style="grid-template-columns:120px 1fr"><label>Status</label>'+
     '<select data-j="status">'+STATUSES.map(s=>'<option value="'+s+'"'+
       (j&&s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+'</option>').join("")+
+    '</select></div>'+
+    '<div class="f" style="grid-template-columns:120px 1fr"><label>CV</label>'+
+    '<select data-j="cv_path">'+docOptions("My CVs",j&&j.cv_path)+'</select></div>'+
+    '<div class="f" style="grid-template-columns:120px 1fr"><label>Cover letter</label>'+
+    '<select data-j="letter_path">'+docOptions("Cover letters",j&&j.letter_path)+
     '</select></div>';
   const dlg=$("#jobdlg");
   $("#job-cancel").onclick=()=>dlg.close();
@@ -2095,6 +2131,15 @@ function editJob(id){
   dlg.showModal();
 }
 $("#nav-jobs").onclick=openJobs;
+
+/* Re-lay the funnel on resize. Debounced, because sankey layout on every
+   pixel of a drag is wasted work. */
+let sizeTimer=null;
+window.addEventListener("resize",()=>{
+  if($("#analytics").hidden||!LAST_FUNNEL) return;
+  clearTimeout(sizeTimer);
+  sizeTimer=setTimeout(()=>drawFunnel(LAST_FUNNEL),140);
+});
 
 /* ---- analytics ----
    The funnel uses the real d3-sankey layout, vendored locally (60KB, BSD/ISC)
@@ -2176,14 +2221,22 @@ async function openAnalytics(){
 const tok=()=>API_TOKEN?"&token="+encodeURIComponent(API_TOKEN):"";
 const stat=(v,l)=>'<div class="stat"><b>'+esc(v)+'</b><span>'+esc(l)+'</span></div>';
 
+let LAST_FUNNEL=null;
 function drawFunnel(f){
+  LAST_FUNNEL=f;
   const nodes=f.nodes.filter(n=>n.count>0);
   const idx=new Map(nodes.map((n,i)=>[n.id,i]));
   const links=f.links.filter(l=>idx.has(l.source)&&idx.has(l.target))
     .map(l=>({source:idx.get(l.source),target:idx.get(l.target),value:l.value,tid:l.target}));
   if(!links.length){ $("#chart").innerHTML=""; return }
 
-  const W=840,H=Math.max(260,nodes.length*34),PAD=170;
+  /* Fill the window rather than sitting at a fixed 840px in the corner. The
+     right pad is reserved for the terminal labels, which live outside the
+     sankey extent. */
+  const host=$("#chart");
+  const W=Math.max(620,(host&&host.clientWidth)||840);
+  const H=Math.max(300,Math.min(620,nodes.length*46));
+  const PAD=Math.max(150,Math.min(230,W*0.17));
   const layout=d3.sankey().nodeWidth(9).nodePadding(15).nodeAlign(d3.sankeyJustify)
     .extent([[0,8],[W-PAD,H-8]]);
   const graph=layout({nodes:nodes.map(n=>({...n})),links:links.map(l=>({...l}))});
@@ -2210,8 +2263,9 @@ function drawFunnel(f){
       n.count+'</text>';
   }).join("");
 
-  $("#chart").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+
-    '" role="img" aria-label="Application funnel">'+band+rect+text+'</svg>';
+  host.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+
+    '" preserveAspectRatio="xMidYMid meet" role="img" '+
+    'aria-label="Application funnel">'+band+rect+text+'</svg>';
 }
 
 function closeAnalytics(){
