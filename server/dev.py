@@ -26,6 +26,31 @@ HERE = Path(__file__).resolve().parent
 WATCH = ["studio.py", "cv_render.py", "jobs.py", "mcp_server.py"]
 
 
+def _reexec_in_venv() -> None:
+    """Re-run under the project venv if the current interpreter cannot serve.
+
+    Running `python dev.py` with a system interpreter fails later and less
+    clearly, when studio.py cannot import ruamel.yaml. Detect it here and switch
+    interpreters, so the obvious command works whichever Python is on PATH.
+    """
+    try:
+        import ruamel.yaml  # noqa: F401
+        return
+    except ImportError:
+        pass
+    for candidate in (HERE / ".venv" / "Scripts" / "python.exe",
+                      HERE / ".venv" / "bin" / "python"):
+        if candidate.exists() and str(candidate) != sys.executable:
+            os.execv(str(candidate), [str(candidate), str(HERE / "dev.py"), *sys.argv[1:]])
+    sys.stderr.write(
+        "This interpreter cannot run the server: ruamel.yaml is missing and no "
+        "project venv was found next to dev.py." + os.linesep + os.linesep +
+        "Create one with:" + os.linesep +
+        "    uv venv .venv --python 3.13" + os.linesep +
+        "    uv pip install --python .venv \"rendercv[full]\" ruamel.yaml mcp" + os.linesep)
+    raise SystemExit(1)
+
+
 def stamps() -> dict[str, float]:
     out = {}
     for name in WATCH:
@@ -46,6 +71,7 @@ def spawn(args) -> subprocess.Popen:
 
 
 def main() -> int:
+    _reexec_in_venv()
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8722)
     ap.add_argument("--workspace", default=None)
