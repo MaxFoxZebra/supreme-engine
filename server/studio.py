@@ -157,6 +157,63 @@ settings:
 """
 
 
+STARTER_LETTER = """# A cover letter, written as a RenderCV document so it renders with the same
+# letterhead and typography as your CV. The section title becomes the subject
+# line. Keep it under about 350 words and on one page.
+cv:
+  name: Your Name
+  location: City, Country
+  email: you@example.com
+  phone: "+33-6-12-34-56-78"
+
+  sections:
+    Re Solutions Engineer at Company:
+      - Dear Hiring Team,
+      - >-
+        Open with something only you could write about this company: a specific
+        problem their product implies, or a genuine connection to your work. If
+        this paragraph could be pasted into another application, it is not
+        doing its job.
+      - >-
+        Then the strongest matching evidence, with a number in it, and one line
+        of context the CV had no room for: what was hard about it, what the
+        constraint was.
+      - >-
+        If there is a real gap, address it once, briefly, from strength. Name
+        the adjacent experience that transfers. Do not apologise for it.
+      - >-
+        Close with what you would like to happen next. No flourish.
+      - Kind regards,
+      - Your Name
+
+design:
+  theme: engineeringclassic
+  page:
+    size: a4
+    top_margin: 2cm
+    bottom_margin: 2cm
+    left_margin: 2cm
+    right_margin: 2cm
+    show_footer: false
+  colors:
+    name: rgb(0, 0, 0)
+    section_titles: rgb(0, 0, 0)
+    connections: rgb(70, 70, 70)
+  typography:
+    line_spacing: 0.75em
+    alignment: left
+    font_family:
+      body: Source Sans 3
+      name: Source Sans 3
+
+locale:
+  language: english
+
+settings:
+  current_date: today
+"""
+
+
 # --------------------------------------------------------------------------
 # workspace
 # --------------------------------------------------------------------------
@@ -202,6 +259,7 @@ def bootstrap(workspace: Path) -> bool:
     created = not workspace.exists()
     (workspace / "profile").mkdir(parents=True, exist_ok=True)
     (workspace / "applications").mkdir(exist_ok=True)
+    (workspace / "letters").mkdir(exist_ok=True)
     (workspace / "assets").mkdir(exist_ok=True)
     if not any((workspace / "profile").glob("*.y*ml")):
         (workspace / "profile" / "my-cv.yaml").write_text(STARTER_CV, encoding="utf-8")
@@ -240,6 +298,11 @@ def list_documents() -> list[dict]:
         for f in sorted(profile_dir.glob("*.y*ml")):
             if not f.name.startswith(".") and is_cv_yaml(f):
                 docs.append({"path": rel(f), "label": f.stem, "group": "My CVs"})
+    letters_dir = WORKSPACE / "letters"
+    if letters_dir.is_dir():
+        for f in sorted(letters_dir.glob("*.y*ml")):
+            if not f.name.startswith(".") and is_cv_yaml(f):
+                docs.append({"path": rel(f), "label": f.stem, "group": "Cover letters"})
     apps = WORKSPACE / "applications"
     if apps.is_dir():
         for app_dir in sorted(apps.iterdir(), reverse=True):
@@ -380,7 +443,7 @@ def _shape(result: dict) -> dict:
 
 
 def render(path: Path) -> dict:
-    out_dir = (path.parent / "output") if path.parent.name != "profile"         else (WORKSPACE / "assets" / path.stem)
+    out_dir = (WORKSPACE / "assets" / path.stem) if path.parent.name in ("profile", "letters") else (path.parent / "output")
     return _shape(render_file(path, out_dir))
 
 
@@ -849,17 +912,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 jobstore.delete_job(WORKSPACE, payload.get("id", ""))
                 return self._json({"ok": True})
             if u.path == "/api/new":
-                raw = payload.get("name") or "new-cv"
+                raw = payload.get("name") or "untitled"
                 name = "".join(c for c in raw if c.isalnum() or c in "-_ ").strip()
                 if not name:
-                    return self._json({"error": "Please give the CV a name."}, 400)
-                dest = safe_path(f"profile/{name}.yaml")
+                    return self._json({"error": "Please give it a name."}, 400)
+                kind = payload.get("kind") or "cv"
+                folder = "letters" if kind == "letter" else "profile"
+                dest = safe_path(f"{folder}/{name}.yaml")
                 if dest.exists():
-                    return self._json({"error": "A CV with that name already exists."}, 409)
+                    return self._json({"error": "Something with that name already exists."}, 409)
                 src = payload.get("from")
-                dest.write_text(
-                    safe_path(src).read_text(encoding="utf-8") if src else STARTER_CV,
-                    encoding="utf-8")
+                if src:
+                    body = safe_path(src).read_text(encoding="utf-8")
+                else:
+                    body = STARTER_LETTER if kind == "letter" else STARTER_CV
+                dest.write_text(body, encoding="utf-8")
                 return self._json({"ok": True, "path": rel(dest)})
             return self._json({"error": "not found"}, 404)
         except PermissionError as exc:
@@ -1077,6 +1144,28 @@ body.analytics-on .gut[data-target="1"]{display:none}
 .an-note{color:var(--ink-3);font-size:12px;margin:14px 0 0;max-width:64ch;line-height:1.65}
 .an-actions{margin-top:22px;display:flex;gap:8px}
 
+/* ---------- jobs table ------------------------------------------------- */
+.jt{width:100%;border-collapse:collapse;margin:0 0 8px}
+.jt th{text-align:left;font-size:11px;font-weight:450;color:var(--ink-3);padding:0 10px 8px 0;
+  border-bottom:1px solid var(--rule)}
+.jt td{padding:9px 10px 9px 0;border-bottom:1px solid var(--rule-2);font-size:13px;
+  vertical-align:middle}
+.jt tr:hover td{background:var(--card)}
+.jt .co{font-weight:530}
+.jt .ro{color:var(--ink-3)}
+.jt .when{color:var(--ink-3);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.jt select{border:1px solid transparent;border-radius:var(--r);padding:3px 6px;font-size:12px;
+  background:var(--sunk);color:var(--ink);max-width:150px}
+.jt select:hover{border-color:var(--rule)}
+.jt .edit{opacity:0;font-size:11.5px}
+.jt tr:hover .edit{opacity:1}
+/* status dot carries the outcome, so the table scans without reading */
+.sd{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:7px;flex:none}
+.jt-bar{display:flex;align-items:center;gap:10px;margin:0 0 18px}
+.jt-bar input{flex:1;max-width:280px;border:1px solid var(--rule);border-radius:var(--r);
+  padding:6px 9px;background:var(--sunk);color:var(--ink);font-size:13px}
+.jt-bar input:focus{background:var(--card);border-color:var(--ink-3);outline:none}
+
 /* ---------- preview ---------------------------------------------------- */
 .pbar{position:sticky;top:0;z-index:3;display:flex;align-items:baseline;gap:16px;
   padding:13px 20px;background:var(--paper);border-bottom:1px solid var(--rule);
@@ -1207,6 +1296,7 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
     <div class="side-hd"><b>Documents</b><button id="new" class="ghost" title="New CV">+ New</button></div>
     <div id="files"></div>
     <div class="side-foot">
+      <button class="doc" id="nav-jobs"><span>Applications</span></button>
       <button class="doc" id="nav-analytics"><span>Analytics</span></button>
     </div>
   </aside>
@@ -1227,9 +1317,21 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
   <div class="gut" data-target="1"></div>
   <div class="prev" id="preview"></div>
   <div class="analytics" id="analytics" hidden></div>
+  <div class="analytics" id="jobsview" hidden></div>
 </main>
 
 <div id="toasts" aria-live="polite"></div>
+
+<dialog id="jobdlg">
+  <div class="dh"><h3 id="job-title">Add an application</h3>
+    <p>Only the company and role are required. Everything else can come later.</p></div>
+  <div class="db" id="job-form"></div>
+  <div class="df">
+    <button id="job-del" class="ghost" style="margin-right:auto" hidden>Delete</button>
+    <button id="job-cancel" class="ghost">Cancel</button>
+    <button id="job-save" class="primary">Save</button>
+  </div>
+</dialog>
 
 <dialog id="setdlg" class="wide">
   <div class="dh"><h3>Settings &amp; setup</h3>
@@ -1307,13 +1409,25 @@ table.api td:last-child{color:var(--ink-3);font-size:12.5px}
 </dialog>
 
 <dialog id="newdlg">
-  <div class="dh"><h3>New CV</h3><p>Saved as a plain YAML file in your workspace. Duplicate the
-   one you have open, or start from a blank template.</p></div>
-  <div class="db"><input type="text" id="newname" placeholder="e.g. cv-english" autocomplete="off"></div>
+  <div class="dh"><h3>New document</h3><p>Saved as a plain YAML file in your workspace.
+   A cover letter renders with the same letterhead as your CV, so the two arrive
+   looking like a pair.</p></div>
+  <div class="db">
+    <div class="f" style="grid-template-columns:74px 1fr;margin-bottom:10px">
+      <label>Type</label>
+      <select id="newkind"><option value="cv">CV</option>
+        <option value="letter">Cover letter</option></select>
+    </div>
+    <div class="f" style="grid-template-columns:74px 1fr">
+      <label>Name</label>
+      <input type="text" id="newname" placeholder="e.g. adyen-solutions-engineer"
+        autocomplete="off">
+    </div>
+  </div>
   <div class="df">
     <button id="newcancel" class="ghost">Cancel</button>
     <button id="newdup">Duplicate current</button>
-    <button id="newblank" class="primary">Create blank</button>
+    <button id="newblank" class="primary">Create</button>
   </div>
 </dialog>
 
@@ -1774,6 +1888,133 @@ $("#pane-design").addEventListener("change",function(){S.dirty=true;markDirty();
   });
 })();
 
+/* ---- applications ----
+   The records live in SQLite rather than YAML because they are queried,
+   filtered and appended to on every status change. A status change appends to
+   the job's history rather than replacing it, which is what makes the funnel
+   meaningful later. */
+const JOB_FIELDS=[
+  ["company","Company"],["title","Role"],["location","Location"],["url","Posting URL"],
+  ["source","Source"],["salary_expected","Salary expected"],["followup_date","Follow up on"],
+  ["notes","Notes"],
+];
+const STATUS_TONE=id=>
+  id==="accepted"?"var(--live)":
+  /^(rejected|refused)/.test(id)?"var(--bad)":
+  /ghosted/.test(id)?"var(--ink-3)":"var(--ink)";
+const prettyStatus=s=>s.replace(/_/g," ").replace(/\bs\b/,"");
+
+let JOBS=[], STATUSES=[];
+
+async function openJobs(){
+  document.body.classList.add("analytics-on");
+  $$(".doc").forEach(b=>b.classList.remove("active"));
+  $("#nav-jobs").classList.add("active");
+  $("#analytics").hidden=true;
+  const host=$("#jobsview"); host.hidden=false;
+  host.innerHTML='<p class="an-sub"><span class="spin"></span> Loading…</p>';
+  try{
+    const d=await api("/api/jobs");
+    JOBS=d.jobs; STATUSES=d.statuses;
+  }catch(e){ host.innerHTML='<div class="empty"><h3>Could not load</h3><p>'+esc(e.message)+
+    '</p></div>'; return }
+  drawJobs();
+}
+
+function drawJobs(filter){
+  const host=$("#jobsview");
+  const rows=(filter?JOBS.filter(j=>(j.company+" "+j.title+" "+(j.notes||""))
+    .toLowerCase().includes(filter.toLowerCase())):JOBS);
+  host.innerHTML=
+    '<h2 class="an-h">Applications</h2>'+
+    '<p class="an-sub">Every role you are tracking. Changing a status here records it '+
+    'with a timestamp, which is what the funnel is built from.</p>'+
+    '<div class="jt-bar"><input id="job-q" placeholder="Filter by company, role or notes" '+
+    'value="'+esc(filter||"")+'">'+
+    '<button class="primary" id="job-add">Add application</button></div>'+
+    (rows.length?
+      '<table class="jt"><thead><tr><th>Company</th><th>Role</th><th>Status</th>'+
+      '<th>Updated</th><th></th></tr></thead><tbody>'+
+      rows.map(j=>
+        '<tr data-id="'+esc(j.id)+'">'+
+        '<td class="co"><span class="sd" style="background:'+STATUS_TONE(j.status)+'"></span>'+
+        esc(j.company)+'</td>'+
+        '<td class="ro">'+esc(j.title)+'</td>'+
+        '<td><select data-status-for="'+esc(j.id)+'">'+
+          STATUSES.map(s=>'<option value="'+s+'"'+(s===j.status?" selected":"")+'>'+
+            esc(prettyStatus(s))+'</option>').join("")+'</select></td>'+
+        '<td class="when">'+esc((j.updated_at||"").slice(0,10))+'</td>'+
+        '<td><button class="ghost edit" data-edit="'+esc(j.id)+'">Edit</button></td>'+
+        '</tr>').join("")+'</tbody></table>'
+      :'<div class="empty"><h3>'+(filter?"Nothing matches":"No applications yet")+'</h3>'+
+       '<p>'+(filter?"Try a different filter.":
+         "Add the roles you are applying for. Once a few have moved through the stages, "+
+         "Analytics will show where they actually go.")+'</p></div>');
+
+  $("#job-add").onclick=()=>editJob(null);
+  const q=$("#job-q");
+  q.oninput=()=>{ const v=q.value; drawJobs(v); const nq=$("#job-q");
+    nq.focus(); nq.setSelectionRange(v.length,v.length) };
+  $$("[data-edit]").forEach(b=>b.onclick=()=>editJob(b.dataset.edit));
+  $$("[data-status-for]").forEach(sel=>sel.onchange=async()=>{
+    try{
+      await api("/api/jobs/update",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:sel.dataset.statusFor,status:sel.value})});
+      const d=await api("/api/jobs"); JOBS=d.jobs;
+      toast("Status updated");
+      drawJobs($("#job-q") ? $("#job-q").value : "");
+    }catch(e){ toast(e.message,true) }
+  });
+}
+
+function editJob(id){
+  const j=id?JOBS.find(x=>x.id===id):null;
+  $("#job-title").textContent=j?"Edit application":"Add an application";
+  $("#job-del").hidden=!j;
+  $("#job-form").innerHTML=
+    JOB_FIELDS.map(([k,label])=>
+      '<div class="f" style="grid-template-columns:120px 1fr"><label>'+esc(label)+'</label>'+
+      (k==="notes"
+        ? '<textarea data-j="'+k+'" rows="3">'+esc(j?(j[k]||""):"")+'</textarea>'
+        : '<input data-j="'+k+'"'+(k==="followup_date"?' type="date"':"")+
+          ' value="'+esc(j?(j[k]==null?"":j[k]):"")+'">')+
+      '</div>').join("")+
+    '<div class="f" style="grid-template-columns:120px 1fr"><label>Status</label>'+
+    '<select data-j="status">'+STATUSES.map(s=>'<option value="'+s+'"'+
+      (j&&s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+'</option>').join("")+
+    '</select></div>';
+  const dlg=$("#jobdlg");
+  $("#job-cancel").onclick=()=>dlg.close();
+  $("#job-del").onclick=async()=>{
+    if(!confirm("Delete this application? This cannot be undone.")) return;
+    try{
+      await api("/api/jobs/delete",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:j.id})});
+      dlg.close(); const d=await api("/api/jobs"); JOBS=d.jobs; drawJobs(); toast("Deleted");
+    }catch(e){ toast(e.message,true) }
+  };
+  $("#job-save").onclick=async()=>{
+    const data={};
+    $$("#job-form [data-j]").forEach(el=>{
+      let v=el.value.trim();
+      if(el.dataset.j==="salary_expected") v=v===""?null:Number(v)||null;
+      data[el.dataset.j]=v===""?null:v;
+    });
+    if(!data.company||!data.title){ toast("Company and role are required",true); return }
+    try{
+      if(j) await api("/api/jobs/update",{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:j.id,...data})});
+      else await api("/api/jobs",{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+      dlg.close();
+      const d=await api("/api/jobs"); JOBS=d.jobs; drawJobs();
+      toast(j?"Saved":"Added "+data.company);
+    }catch(e){ toast(e.message,true) }
+  };
+  dlg.showModal();
+}
+$("#nav-jobs").onclick=openJobs;
+
 /* ---- analytics ----
    The funnel uses the real d3-sankey layout, vendored locally (60KB, BSD/ISC)
    rather than reimplemented, so the flow geometry is correct rather than
@@ -1813,6 +2054,7 @@ async function openAnalytics(){
   document.body.classList.add("analytics-on");
   $$(".doc").forEach(b=>b.classList.remove("active"));
   $("#nav-analytics").classList.add("active");
+  $("#jobsview").hidden=true;
   const host=$("#analytics"); host.hidden=false;
   host.innerHTML='<p class="an-sub"><span class="spin"></span> Loading…</p>';
   let f;
@@ -1894,7 +2136,9 @@ function drawFunnel(f){
 function closeAnalytics(){
   document.body.classList.remove("analytics-on");
   $("#analytics").hidden=true;
+  $("#jobsview").hidden=true;
   $("#nav-analytics").classList.remove("active");
+  $("#nav-jobs").classList.remove("active");
 }
 $("#nav-analytics").onclick=openAnalytics;
 
@@ -2017,7 +2261,7 @@ async function create(from){
   if(!name){ $("#newname").focus(); return }
   try{
     const r=await api("/api/new",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name,from})});
+      body:JSON.stringify({name,from,kind:$("#newkind").value})});
     dlg.close();
     const st=await api("/api/state"); renderSidebar(st.documents);
     openDoc(r.path); toast("Created "+name);
