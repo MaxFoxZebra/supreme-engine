@@ -842,7 +842,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json({"jobs": jobstore.list_jobs(
-                    WORKSPACE, q.get("status", [None])[0], q.get("q", [None])[0]),
+                    WORKSPACE, q.get("status", [None])[0], q.get("q", [None])[0],
+                    q.get("node", [None])[0]),
                     "statuses": jobstore.STATUSES})
             if u.path == "/api/funnel":
                 if jobstore is None:
@@ -1160,6 +1161,13 @@ body.analytics-on .gut[data-target="1"]{display:none}
 .sk-link{fill:none;transition:opacity .15s}
 .sk-link:hover{opacity:.95!important}
 .sk-label{font:11.5px ui-sans-serif,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}
+.sk-hit{cursor:pointer}
+.sk-hit:hover .sk-node{fill-opacity:.95}
+.sk-dim{opacity:.22}
+.sel-bar{display:flex;align-items:baseline;gap:12px;margin:20px 0 10px;flex-wrap:wrap}
+.sel-bar h4{margin:0;font-size:13px;font-weight:560}
+.sel-bar span{color:var(--ink-3);font-size:12px}
+.sel-bar button{margin-left:auto}
 .sk-count{font:11px ui-monospace,Consolas,monospace;fill:var(--ink-3)}
 .an-note{color:var(--ink-3);font-size:12px;margin:14px 0 0;max-width:64ch;line-height:1.65}
 .an-actions{margin-top:22px;display:flex;gap:8px}
@@ -2207,7 +2215,7 @@ async function openAnalytics(){
       stat(t.interviewed,"interviewed")+stat(t.offers,"offers")+
       stat(t.interview_rate+"%","applied to interview")+
       stat(t.offer_rate+"%","interview to offer")+
-    '</div><div class="chart" id="chart"></div>'+
+    '</div><div class="chart" id="chart"></div><div id="drill"></div>'+
     '<p class="an-note">Rejections and ghostings are shown separately for each stage, '+
     'because being turned down after interviews means something very different from '+
     'never hearing back at all.</p>'+
@@ -2221,7 +2229,7 @@ async function openAnalytics(){
 const tok=()=>API_TOKEN?"&token="+encodeURIComponent(API_TOKEN):"";
 const stat=(v,l)=>'<div class="stat"><b>'+esc(v)+'</b><span>'+esc(l)+'</span></div>';
 
-let LAST_FUNNEL=null;
+let LAST_FUNNEL=null, SEL_NODE=null;
 function drawFunnel(f){
   LAST_FUNNEL=f;
   const nodes=f.nodes.filter(n=>n.count>0);
@@ -2242,34 +2250,89 @@ function drawFunnel(f){
   const graph=layout({nodes:nodes.map(n=>({...n})),links:links.map(l=>({...l}))});
   const path=d3.sankeyLinkHorizontal();
 
+  /* When a stage is selected, everything that does not touch it fades back so
+     the chosen path reads at a glance. */
+  const touches=l=>!SEL_NODE||l.source.id===SEL_NODE||l.target.id===SEL_NODE;
   const band=graph.links.map(l=>{
     const tone=flowTone(l.tid), a=FLOW_ALPHA[l.tid]??.28;
-    return '<path class="sk-link" d="'+path(l)+'" stroke="'+tone+'" stroke-opacity="'+a+
+    return '<path class="sk-link'+(touches(l)?"":" sk-dim")+'" d="'+path(l)+
+      '" stroke="'+tone+'" stroke-opacity="'+a+
       '" stroke-width="'+Math.max(1,l.width)+'"><title>'+esc(l.source.label)+' \u2192 '+
       esc(l.target.label)+': '+l.value+'</title></path>';
   }).join("");
 
-  const rect=graph.nodes.map(n=>
-    '<rect class="sk-node" x="'+n.x0+'" y="'+n.y0+'" width="'+(n.x1-n.x0)+
-    '" height="'+Math.max(1,n.y1-n.y0)+'" fill="'+flowTone(n.id)+
-    '" fill-opacity="'+(n.id==="accepted"||n.id==="rejected"?.9:.55)+'"/>').join("");
+  /* The bar alone is a 9px target, so each node gets a generous invisible hit
+     area covering its label too. */
+  const rect=graph.nodes.map(n=>{
+    const dim=SEL_NODE&&SEL_NODE!==n.id?" sk-dim":"";
+    const h=Math.max(1,n.y1-n.y0);
+    return '<g class="sk-hit'+dim+'" data-node="'+esc(n.id)+'" role="button" tabindex="0">'+
+      '<title>'+esc(n.label)+': '+n.count+' \u2014 click to list them</title>'+
+      '<rect x="'+(n.x0-6)+'" y="'+(n.y0-6)+'" width="'+((n.x1-n.x0)+PAD)+
+      '" height="'+(h+12)+'" fill="transparent"/>'+
+      '<rect class="sk-node" x="'+n.x0+'" y="'+n.y0+'" width="'+(n.x1-n.x0)+
+      '" height="'+h+'" fill="'+flowTone(n.id)+
+      '" fill-opacity="'+(n.id===SEL_NODE?1:(n.id==="accepted"||n.id==="rejected"?.9:.55))+
+      '"/></g>';
+  }).join("");
 
   const text=graph.nodes.map(n=>{
-    const y=(n.y0+n.y1)/2, right=n.x0>(W-PAD)*0.55;
-    const x=right?n.x1+9:n.x1+9;
-    return '<text class="sk-label" x="'+x+'" y="'+(y-1)+'" dominant-baseline="middle">'+
+    const y=(n.y0+n.y1)/2, x=n.x1+9;
+    const dim=SEL_NODE&&SEL_NODE!==n.id?" sk-dim":"";
+    return '<g class="'+dim.trim()+'" pointer-events="none">'+
+      '<text class="sk-label" x="'+x+'" y="'+(y-1)+'" dominant-baseline="middle">'+
       esc(n.label)+'</text>'+
       '<text class="sk-count" x="'+x+'" y="'+(y+12)+'" dominant-baseline="middle">'+
-      n.count+'</text>';
+      n.count+'</text></g>';
   }).join("");
 
   host.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+
     '" preserveAspectRatio="xMidYMid meet" role="img" '+
     'aria-label="Application funnel">'+band+rect+text+'</svg>';
+  host.querySelectorAll("[data-node]").forEach(g=>{
+    const pick=()=>selectNode(g.dataset.node===SEL_NODE?null:g.dataset.node);
+    g.onclick=pick;
+    g.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); pick() } };
+  });
+}
+
+async function selectNode(id){
+  SEL_NODE=id;
+  if(LAST_FUNNEL) drawFunnel(LAST_FUNNEL);
+  const panel=$("#drill");
+  if(!panel) return;
+  if(!id){ panel.innerHTML=""; return }
+  const label=((LAST_FUNNEL&&LAST_FUNNEL.nodes)||[]).find(n=>n.id===id);
+  panel.innerHTML='<div class="sel-bar"><h4>'+esc(label?label.label:id)+'</h4>'+
+    '<span><span class="spin"></span> loading</span></div>';
+  let jobs=[];
+  try{ jobs=(await api("/api/jobs?node="+encodeURIComponent(id))).jobs }
+  catch(e){ panel.innerHTML='<p class="an-note">'+esc(e.message)+'</p>'; return }
+  panel.innerHTML=
+    '<div class="sel-bar"><h4>'+esc(label?label.label:id)+'</h4>'+
+    '<span>'+jobs.length+' application'+(jobs.length===1?"":"s")+'</span>'+
+    '<button class="ghost" id="drill-clear">Clear</button></div>'+
+    (jobs.length?
+      '<table class="jt"><tbody>'+jobs.map(x=>
+        '<tr data-jid="'+esc(x.id)+'"><td class="co">'+
+        '<span class="sd" style="background:'+STATUS_TONE(x.status)+'"></span>'+
+        esc(x.company)+'</td><td class="ro">'+esc(x.title)+'</td>'+
+        '<td class="ro">'+esc(prettyStatus(x.status))+'</td>'+
+        '<td class="when">'+esc((x.updated_at||"").slice(0,10))+'</td></tr>').join("")+
+      '</tbody></table>'
+      :'<p class="an-note">Nothing at this stage yet.</p>');
+  const clear=$("#drill-clear"); if(clear) clear.onclick=()=>selectNode(null);
+  // Opening one from here needs the full list loaded, since the tracker edits
+  // from JOBS rather than refetching a single record.
+  panel.querySelectorAll("[data-jid]").forEach(tr=>tr.onclick=async()=>{
+    try{ JOBS=(await api("/api/jobs")).jobs; STATUSES=(await api("/api/jobs")).statuses }catch{}
+    editJob(tr.dataset.jid);
+  });
 }
 
 function closeAnalytics(){
   document.body.classList.remove("analytics-on");
+  SEL_NODE=null;
   $("#analytics").hidden=true;
   $("#jobsview").hidden=true;
   $("#setview").hidden=true;

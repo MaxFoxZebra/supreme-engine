@@ -143,11 +143,16 @@ def _row(r: sqlite3.Row) -> dict:
     return d
 
 
-def list_jobs(workspace: Path, status: str | None = None, q: str | None = None) -> list[dict]:
+def list_jobs(workspace: Path, status: str | None = None, q: str | None = None,
+              node: str | None = None) -> list[dict]:
     con = connect(workspace)
     sql = "SELECT * FROM jobs"
     args: list = []
     where = []
+    if node and node in NODE_STATUSES:
+        wanted = NODE_STATUSES[node]
+        where.append(f"status IN ({', '.join('?' * len(wanted))})")
+        args += wanted
     if status:
         where.append("status = ?")
         args.append(status)
