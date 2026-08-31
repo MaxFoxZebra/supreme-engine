@@ -1,6 +1,6 @@
 [package]
 name = "cv-studio"
-version = "0.2.1"
+version = "0.3.0"
 description = "CV Studio, a local RenderCV editor"
 authors = ["CV Studio contributors"]
 edition = "2021"
