@@ -81,24 +81,32 @@ def edit_cv_fields(path: str, edits: list[dict]) -> str:
 
 
 @mcp.tool()
-def create_cv(name: str, copy_from: str | None = None) -> str:
-    """Create a CV, either blank or duplicated from an existing one.
+def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
+    """Create a CV or a cover letter, blank or duplicated from an existing one.
 
     Duplicating is the normal way to tailor: copy the base CV, then edit the
     copy for a specific job so the original stays intact.
+
+    `kind` is "cv" or "letter". It decides the folder, and the folder is what
+    the app reads to tell the two apart -- a letter written into profile/ would
+    be listed as a CV.
     """
     safe = "".join(c for c in name if c.isalnum() or c in "-_ ").strip()
     if not safe:
-        raise ValueError("Give the CV a name.")
-    dest = studio.safe_path(f"profile/{safe}.yaml")
+        raise ValueError("Give it a name.")
+    if kind not in ("cv", "letter"):
+        raise ValueError('kind must be "cv" or "letter".')
+    folder = "letters" if kind == "letter" else "profile"
+    dest = studio.safe_path(f"{folder}/{safe}.yaml")
     if dest.exists():
-        raise ValueError(f"{safe}.yaml already exists.")
+        raise ValueError(f"{folder}/{safe}.yaml already exists.")
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(
         studio.safe_path(copy_from).read_text(encoding="utf-8") if copy_from
-        else studio.STARTER_CV,
+        else (studio.STARTER_LETTER if kind == "letter" else studio.STARTER_CV),
         encoding="utf-8",
     )
-    return f"Created profile/{safe}.yaml"
+    return f"Created {folder}/{safe}.yaml"
 
 
 @mcp.tool()
@@ -110,9 +118,7 @@ def render_cv(path: str, page: int = 1) -> list:
     reporting success: page-break damage does not show up in the YAML.
     """
     p = studio.safe_path(path)
-    out = (p.parent / "output") if p.parent.name != "profile" \
-        else (_ws() / "assets" / p.stem)
-    result = render_file(p, out)
+    result = render_file(p, studio.output_dir(p))
 
     if not result.get("ok"):
         log = (result.get("log") or "render failed")[-2500:]
@@ -142,8 +148,10 @@ def render_cv(path: str, page: int = 1) -> list:
 @mcp.tool()
 def design_options() -> dict:
     """The themes, fonts and page sizes available for the design block."""
+    # available_themes() asks RenderCV rather than trusting the fallback list,
+    # which is what the Design screen shows -- the two should not disagree.
     return {
-        "themes": studio.THEMES,
+        "themes": studio.available_themes(),
         "fonts": studio.font_families(),
         "page_sizes": studio.PAGE_SIZES,
         "note": "Set these under design.theme, design.typography.font_family.body "

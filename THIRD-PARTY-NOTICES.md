@@ -24,8 +24,8 @@ distributing this application under the MIT licence.
 
 ## Bundled in the interface
 
-Used for the application funnel chart, served locally so the app works offline.
-Licence texts ship alongside them in `server/static/D3-LICENSES.txt`.
+Served locally so the app works offline. Licence texts ship alongside them in
+`server/static/D3-LICENSES.txt` and `server/static/fonts/OFL.txt`.
 
 | Component | Licence |
 |---|---|
@@ -33,6 +33,11 @@ Licence texts ship alongside them in `server/static/D3-LICENSES.txt`.
 | [d3-array](https://github.com/d3/d3-array) | BSD-3-Clause |
 | [d3-shape](https://github.com/d3/d3-shape) | ISC |
 | [d3-path](https://github.com/d3/d3-path) | ISC |
+| [IBM Plex Sans / IBM Plex Mono](https://github.com/IBM/plex) | SIL Open Font License 1.1 |
+
+The Plex files are the latin and latin-ext WOFF2 subsets published by Google
+Fonts. They are the interface typefaces; the typefaces a CV is *rendered* in
+come from rendercv-fonts above.
 
 ## Build tooling
 

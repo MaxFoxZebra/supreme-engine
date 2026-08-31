@@ -13,7 +13,7 @@ to one rendered by clicking Save.
 | `read_cv` | Read a CV's YAML source |
 | `edit_cv_fields` | Change individual fields, **keeping your comments** |
 | `write_cv` | Replace a whole file (blunt; prefer `edit_cv_fields`) |
-| `create_cv` | New blank CV, or duplicate one. This is how you tailor per application |
+| `create_cv` | New blank CV or cover letter, or a duplicate of one. This is how you tailor per application |
 | `render_cv` | Render to PDF and **return the page as an image** |
 | `design_options` | Available themes, fonts and page sizes |
 | `workspace_info` | Where the workspace is and what is in it |
@@ -22,6 +22,14 @@ to one rendered by clicking Save.
 *look* at the rendered page and catch what only shows up visually: a bullet
 stranded alone on page two, a heading orphaned at a page break, a lopsided final
 page. None of that is visible in the YAML.
+
+Everything the AI does lands in the same files the app is showing, in the same
+places: a CV rendered here writes the PDF the app's **Export PDF** opens, and a
+cover letter created with `create_cv(kind="letter")` appears in the app's
+document list as a letter. There is nothing to sync.
+
+The job tracker is deliberately not exposed here. Applications are the user's
+record of what they sent and when; the AI's job is the documents.
 
 ## Setting it up in Claude Desktop
 

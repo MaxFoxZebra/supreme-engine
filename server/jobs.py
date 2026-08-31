@@ -34,6 +34,11 @@ STATUSES = [
 
 # Each funnel node is the set of statuses that have reached that stage, so the
 # chart shows cumulative progress rather than only where things sit right now.
+#
+# Rejections and ghostings are two nodes each, before and after interviews.
+# They could be one, but then a single node would be the target of two
+# different stages, which makes the sankey ambiguous to read -- and the two
+# say very different things about a CV.
 NODE_STATUSES: dict[str, list[str]] = {
     "all":         STATUSES,
     "pending":     ["pending"],
@@ -47,16 +52,19 @@ NODE_STATUSES: dict[str, list[str]] = {
     "deciding":    ["offer"],
     "accepted":    ["accepted"],
     "refused":     ["refused"],
-    "rejected":    ["rejected", "rejected_interviewing"],
-    "ghosted":     ["ghosted", "ghosted_interviewing"],
+    "rejected":    ["rejected"],
+    "ghosted":     ["ghosted"],
+    "rejected_iv": ["rejected_interviewing"],
+    "ghosted_iv":  ["ghosted_interviewing"],
 }
 
 LABELS = {
     "all": "All jobs", "pending": "Draft", "applied_s": "Applied",
-    "awaiting": "Awaiting", "interview_s": "Interviewing",
+    "awaiting": "Awaiting reply", "interview_s": "Interviewed",
     "still_iv": "Still interviewing", "offer_s": "Offer", "deciding": "Deciding",
     "accepted": "Accepted", "refused": "Declined", "rejected": "Rejected",
-    "ghosted": "Ghosted",
+    "ghosted": "Ghosted", "rejected_iv": "Rejected after interview",
+    "ghosted_iv": "Ghosted after interview",
 }
 
 # source, target, and the statuses that flow along that edge.
@@ -69,8 +77,8 @@ FLOWS: list[tuple[str, str, list[str]]] = [
     ("applied_s", "ghosted", ["ghosted"]),
     ("interview_s", "still_iv", ["interviewing"]),
     ("interview_s", "offer_s", NODE_STATUSES["offer_s"]),
-    ("interview_s", "rejected", ["rejected_interviewing"]),
-    ("interview_s", "ghosted", ["ghosted_interviewing"]),
+    ("interview_s", "rejected_iv", ["rejected_interviewing"]),
+    ("interview_s", "ghosted_iv", ["ghosted_interviewing"]),
     ("offer_s", "deciding", ["offer"]),
     ("offer_s", "accepted", ["accepted"]),
     ("offer_s", "refused", ["refused"]),
@@ -239,14 +247,66 @@ def delete_job(workspace: Path, job_id: str) -> None:
         con.close()
 
 
-def funnel(workspace: Path) -> dict:
-    """Node counts and flow volumes for the application funnel."""
+def _reply_days(history: list[dict]) -> int | None:
+    """Days between applying and the first thing that happened next.
+
+    Only a real answer counts: a job still sitting at `applied` has not had a
+    reply yet, and folding those in as zero would flatter the median.
+    """
+    applied_at = None
+    for event in history:
+        at = event.get("at")
+        if not at:
+            continue
+        if event.get("status") == "applied":
+            applied_at = at
+            continue
+        if applied_at:
+            try:
+                a = time.strptime(applied_at[:19], "%Y-%m-%dT%H:%M:%S")
+                b = time.strptime(at[:19], "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                return None
+            return max(0, round((time.mktime(b) - time.mktime(a)) / 86400))
+    return None
+
+
+def _median(values: list[int]) -> int | None:
+    if not values:
+        return None
+    values = sorted(values)
+    mid = len(values) // 2
+    if len(values) % 2:
+        return values[mid]
+    return round((values[mid - 1] + values[mid]) / 2)
+
+
+def funnel(workspace: Path, since: str | None = None) -> dict:
+    """Node counts and flow volumes for the application funnel.
+
+    `since` is an ISO date; jobs created before it are left out, which is what
+    the range control on the funnel screen selects.
+    """
     con = connect(workspace)
+    where, args = "", []
+    if since:
+        where, args = " WHERE created_at >= ?", [since]
     try:
-        counts = {r["status"]: r["n"] for r in
-                  con.execute("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}
+        counts = {r["status"]: r["n"] for r in con.execute(
+            "SELECT status, COUNT(*) n FROM jobs" + where + " GROUP BY status", args)}
+        histories = [r["status_history"] for r in con.execute(
+            "SELECT status_history FROM jobs" + where, args)]
     finally:
         con.close()
+
+    replies = []
+    for raw in histories:
+        try:
+            days = _reply_days(json.loads(raw or "[]"))
+        except json.JSONDecodeError:
+            days = None
+        if days is not None:
+            replies.append(days)
 
     total = sum(counts.values())
     nodes = [{"id": nid, "label": LABELS[nid],
@@ -270,8 +330,12 @@ def funnel(workspace: Path) -> dict:
             "interviewed": interviewed, "offers": offers,
             "interview_rate": rate(interviewed, applied),
             "offer_rate": rate(offers, interviewed),
+            "accept_rate": rate(counts.get("accepted", 0), offers),
+            "median_reply_days": _median(replies),
+            "replied": len(replies),
         },
         "by_status": counts,
+        "since": since,
     }
 
 

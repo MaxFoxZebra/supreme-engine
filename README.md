@@ -28,18 +28,35 @@ Nothing else is required. Python, RenderCV, Typst and the fonts are all bundled.
 On first launch it creates a workspace at `~/Documents/CV Studio` with a starter
 CV, and opens it.
 
+There are three screens, switched from the control at the top left.
+
+**CVs** is the editor. The left rail lists your documents and, under them, an
+outline of the open one. The middle column shows the rendered page, the whole
+form, or the raw YAML. The right panel edits whatever you have selected in the
+outline: its fields, and its bullets one row at a time. Selecting a section or
+an entry anywhere moves the selection everywhere.
+
 | | |
 |---|---|
-| **Form tab** | Edit fields directly, no YAML knowledge needed |
-| **YAML tab** | The raw file, with syntax highlighting, for full control |
-| **Preview** | Re-renders on save. Shows page count and the word count an ATS reads |
-| **Theme / Font / Page** | Five themes, fourteen font families, A4 or US Letter |
-| **Live** | On by default. The preview re-renders as you type, without saving |
-| **Save & Render** | Or `Ctrl`/`Cmd` + `S` |
-| **+ New** | Blank CV, or duplicate the one you have open, one file per application |
+| **Page / Form / YAML** | The rendered page, every field at once, or the raw file with syntax highlighting |
+| **Inspector** | The selected entry's fields and bullets, with `+` and `−` to add or drop one |
+| **Page budget** | Page count, the word count an ATS reads, and how full the last page is — measured off the render |
+| **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
+| **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
 
-Panels are draggable. The preview zooms. Comments you write in the YAML survive
-edits made through the form.
+**Jobs** is `applications.db`: filter by status down the left, six columns of
+what matters across the middle, and one application's details on the right —
+status, source, fit, its documents, its history and your notes. A filename in
+the Documents column opens that CV in the editor.
+
+**Funnel** shows where the applications went, cumulatively: how many reached an
+interview, how many converted, and where the rest dropped out. Rejections and
+ghostings are split by whether they happened before or after an interview,
+because those say very different things. Clicking a band opens Jobs filtered to
+it.
+
+Live preview is on by default: the preview re-renders as you type, without
+saving. Comments you write in the YAML survive edits made through the form.
 
 Live preview renders a scratch copy, so your file is only written when you
 actually save. While you are mid-edit and the YAML is momentarily invalid, the
@@ -67,7 +84,11 @@ with a real text layer, which is what makes them parse correctly.
 **Errors come with an explanation.** The two that catch everyone: a colon
 followed by a space inside a bullet (YAML reads it as a new field), and a phone
 number that is well-formed but not actually dialable in its country. Both are
-explained in the preview pane when they happen.
+explained where they happen, with the line number when there is one.
+
+**One accent colour, used once per region.** Ochre marks the selected item, the
+primary action, or the live metric — never three things at once. Everything else
+is neutral, so what it marks is never in doubt.
 
 ## Building from source
 
@@ -89,5 +110,6 @@ discard.
 
 ## Licence
 
-MIT. Bundles RenderCV (MIT), Typst (Apache-2.0), and the RenderCV font set
-(SIL Open Font License / Apache-2.0). See [LICENSE](LICENSE).
+MIT. Bundles RenderCV (MIT), Typst (Apache-2.0), the RenderCV font set and
+IBM Plex (SIL Open Font License / Apache-2.0). See [LICENSE](LICENSE) and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

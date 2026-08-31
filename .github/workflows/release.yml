@@ -62,8 +62,15 @@ jobs:
           pip install "rendercv[full]" "ruamel.yaml" mcp pyinstaller
           # rendercv_fonts, typst and mcp ship binaries and package data that
           # PyInstaller does not discover on its own.
+          #
+          # server/static holds the vendored d3 modules and the interface fonts,
+          # which the server reads from _MEIPASS at runtime. Without --add-data
+          # they are simply absent from the bundle: the funnel chart fails to
+          # load its scripts and the interface falls back to a system face.
+          SEP=":"; [ "$RUNNER_OS" = "Windows" ] && SEP=";"
           PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
             --name cv-studio-server \
+            --add-data "static${SEP}static" \
             --collect-all rendercv \
             --collect-all rendercv_fonts \
             --collect-all typst \
