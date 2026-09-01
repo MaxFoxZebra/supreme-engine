@@ -73,7 +73,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 
 
 def server_launch() -> dict:
@@ -1020,25 +1020,80 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 :root{
   /* chrome */
   --c900:#161513; --c800:#1b1a17; --c700:#232220; --c650:#2b2a26; --c600:#33312b;
-  --c550:#343229; --c500:#3a3833; --c450:#3d3b34; --c400:#4a4842; --c300:#7d7869;
+  --c550:#343229; --c500:#3a3833; --c450:#3d3b34; --c400:#4a4842; --c300:#9d998b;
   --c200:#a5a091; --c100:#cfcabd; --c050:#f0ede5; --cw:#f5f2ea; --c-hover:#5c594f;
   /* paper */
   --app:#f7f6f3; --panel:#f2efe8; --bar:#efece4; --canvas:#e4e1d8; --row-alt:#fbfaf7;
   --field:#ffffff; --page:#fffefc;
   --rule:#ddd8cc; --rule-strong:#d3cfc3; --bd-field:#cfcabd; --bd-inner:#e6e2d8;
-  --t900:#1b1a17; --t800:#33302a; --t700:#4a463d; --t600:#615d52; --t500:#8a8577;
-  --t400:#a8a294; --dot-idle:#b9b3a3; --dot-dead:#d6d1c4; --paper-hover:#e9e5da;
+  --t900:#1b1a17; --t800:#33302a; --t700:#4a463d; --t600:#5b574d; --t500:#686459;
+  --t400:#70695b; --dot-idle:#8f8878; --dot-dead:#b3ad9d; --paper-hover:#e9e5da;
   /* accent -- used sparingly */
-  --acc:#c08a3e; --acc-hover:#d09a4c; --acc-text:#9a5f1c; --acc-text-dark:#e8bc7c;
+  --acc:#c08a3e; --acc-hover:#d09a4c; --acc-text:#8a5316; --acc-text-dark:#e8bc7c;
   --acc-wash:rgba(192,138,62,.10); --acc-ring:rgba(192,138,62,.18);
   --acc-line:rgba(192,138,62,.6);
+  /* the funnel, which is drawn rather than styled inline so it follows the theme */
+  --fn-total:#33312b; --fn-neutral:#7d7767; --fn-positive:#a8752c; --fn-label:#33312b;
+  --fn-band:.34;
+  --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
+  --row-hover:#f1eee6; --spine:#c8c2b3; --bad-line:#e6cfc5;
   /* YAML syntax: the same muted ramp, retuned for a warm ground. Deliberately
      not ochre -- the accent already means "selected" everywhere else. */
-  --tk-key:#3f5a73; --tk-str:#4a6b4f; --tk-num:#6a4a7a; --tk-bool:#a04a28;
-  --tk-com:#a8a294; --tk-punc:#c0bbae; --tk-blk:#8a5a1e; --tk-sel:rgba(192,138,62,.22);
-  --bad:#a33a22; --bad-bg:#f7ece7;
+  --tk-key:#33506b; --tk-str:#3d5f42; --tk-num:#5d3f6d; --tk-bool:#8f3f21;
+  --tk-com:#70695b; --tk-punc:#8b8578; --tk-blk:#7a4f19; --tk-sel:rgba(192,138,62,.22);
+  --bad:#8f3119; --bad-bg:#f7ece7;
 }
 
+/* ---------------------------------------------------------------------------
+   Dark.
+
+   The chrome barely moves -- it was already dark. What inverts is the content:
+   paper becomes a warm near-black and the text ramp climbs instead of falling.
+   Each rung is solved against the *lightest* content surface, so a value that
+   passes on the panel still passes on an input.
+
+   The rendered CV page stays white. It is a document, not a surface: darkening
+   it would misrepresent what the PDF actually looks like.
+--------------------------------------------------------------------------- */
+:root[data-theme=dark]{
+  --app:#22211d; --panel:#1d1c19; --bar:#282621; --canvas:#141310; --row-alt:#26241f;
+  --field:#2b2924; --page:#fffefc;
+  --rule:#38352e; --rule-strong:#454239; --bd-field:#4a473e; --bd-inner:#322f2a;
+  --t900:#f4f2ef; --t800:#dad6cc; --t700:#c6c0b0; --t600:#b6af9b; --t500:#a79e86;
+  --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
+  --acc-text:#e8bc7c;
+  --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
+  --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#c08a3e; --fn-label:#c6c0b0;
+  --fn-band:.42;
+  --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
+  --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
+  --bad:#f0a189; --bad-bg:#2e1c15;
+  --seg-track:#141310; --seg-on:#413d34; --knob:#e8e4da;
+  --row-hover:#2c2a24; --spine:#5c574b; --bad-line:#4a2a1e;
+  --c-hover:#6f6b60;
+}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme=light]){
+    --app:#22211d; --panel:#1d1c19; --bar:#282621; --canvas:#141310; --row-alt:#26241f;
+    --field:#2b2924; --page:#fffefc;
+    --rule:#38352e; --rule-strong:#454239; --bd-field:#4a473e; --bd-inner:#322f2a;
+    --t900:#f4f2ef; --t800:#dad6cc; --t700:#c6c0b0; --t600:#b6af9b; --t500:#a79e86;
+    --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
+    --acc-text:#e8bc7c;
+    --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
+    --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#c08a3e; --fn-label:#c6c0b0;
+    --fn-band:.42;
+    --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
+    --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
+    --bad:#f0a189; --bad-bg:#2e1c15;
+    --seg-track:#141310; --seg-on:#413d34; --knob:#e8e4da;
+    --row-hover:#2c2a24; --spine:#5c574b; --bad-line:#4a2a1e;
+    --c-hover:#6f6b60;
+  }
+}
+:root{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{
@@ -1151,10 +1206,10 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
   background:var(--canvas)}
 .subbar{height:33px;flex:none;display:flex;align-items:center;gap:11px;padding:0 12px;
   background:var(--bar);border-bottom:1px solid var(--rule-strong)}
-.seg.light{background:#dedbd0}
+.seg.light{background:var(--seg-track)}
 .seg.light button{color:var(--t600);padding:3px 12px;font-size:12px}
 .seg.light button:hover{color:var(--t900)}
-.seg.light button[aria-selected=true]{background:#fff;color:var(--t900);font-weight:500}
+.seg.light button[aria-selected=true]{background:var(--seg-on);color:var(--t900);font-weight:500}
 .meta{font-size:11px;color:var(--t500);display:flex;align-items:center;gap:6px}
 .meta button{font-size:12px;color:var(--t500);padding:0 3px;line-height:1}
 .meta button:hover:not(:disabled){color:var(--t900)}
@@ -1248,7 +1303,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .tl{display:flex;flex-direction:column}
 .tli{display:flex;gap:10px}
 .tli .spine{display:flex;flex-direction:column;align-items:center;width:9px;flex:none}
-.tli .spine i{width:7px;height:7px;border-radius:50%;background:#c8c2b3;margin-top:4px;flex:none}
+.tli .spine i{width:7px;height:7px;border-radius:50%;background:var(--spine);margin-top:4px;flex:none}
 .tli .spine u{flex:1;width:1px;background:var(--rule)}
 .tli:last-child .spine u{display:none}
 .tli:last-child .spine i{background:var(--acc)}
@@ -1283,7 +1338,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .trow{height:32px;font-size:12.5px;border-bottom:1px solid var(--bd-inner);width:100%;
   text-align:left;color:var(--t900)}
 .trow:nth-child(even){background:var(--row-alt)}
-.trow:hover{background:#f1eee6}
+.trow:hover{background:var(--row-hover)}
 .trow .role{display:flex;gap:8px;align-items:baseline;min-width:0}
 .trow .role b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trow .role i{font-style:normal;font-size:11.5px;color:var(--t500);flex:none}
@@ -1310,11 +1365,14 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .fn-head b{font-size:15px;font-weight:600}
 .fn-head span{font-size:12.5px;color:var(--t600)}
 #chart svg{width:100%;height:auto;display:block}
-.sk-link{transition:opacity .15s}
+.sk-link{transition:opacity .15s;fill:none;stroke-opacity:var(--fn-band)}
 .sk-hit{cursor:pointer}
 .sk-hit:hover .sk-node{opacity:.8}
 .sk-dim{opacity:.25}
-.sk-label{font:12px 'IBM Plex Sans',sans-serif;fill:#33312b}
+.sk-label{font:12px 'IBM Plex Sans',sans-serif;fill:var(--fn-label)}
+.t-total{fill:var(--fn-total)} .t-neutral{fill:var(--fn-neutral)}
+.t-positive{fill:var(--fn-positive)}
+.b-neutral{stroke:var(--fn-neutral)} .b-positive{stroke:var(--fn-positive)}
 
 /* ---------- sheets and overlays ------------------------------------------ */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:39}
@@ -1336,9 +1394,9 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .sbtn.danger:hover{background:var(--bad-bg)}
 
 /* segmented control on paper */
-.seg.paper{background:var(--canvas);width:fit-content}
+.seg.paper{background:var(--seg-track);width:fit-content}
 .seg.paper button{color:var(--t700);padding:4px 15px;font-size:12.5px}
-.seg.paper button[aria-selected=true]{background:#fff;color:var(--t900);font-weight:500}
+.seg.paper button[aria-selected=true]{background:var(--seg-on);color:var(--t900);font-weight:500}
 .seg.paper.acc button[aria-selected=true]{background:var(--acc);color:var(--c800)}
 
 .check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t800);
@@ -1383,10 +1441,10 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .slider input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:var(--rule)}
 .slider input[type=range]::-moz-range-progress{height:3px;border-radius:2px;background:var(--acc)}
 .slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
-  border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(30,26,18,.45);margin-top:-5.5px;
+  border-radius:50%;background:var(--knob);box-shadow:0 1px 3px rgba(30,26,18,.45);margin-top:-5.5px;
   cursor:pointer}
 .slider input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;
-  background:#fff;box-shadow:0 1px 3px rgba(30,26,18,.45);cursor:pointer}
+  background:var(--knob);box-shadow:0 1px 3px rgba(30,26,18,.45);cursor:pointer}
 .slider .val{font-size:12px;color:var(--t700);flex:none;min-width:52px;text-align:right}
 
 .dgrid{display:grid;grid-template-columns:158px 1fr;gap:10px 12px;align-items:center}
@@ -1432,7 +1490,7 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
 .tgl input{opacity:0;width:0;height:0;position:absolute}
 .tgl i{position:absolute;inset:0;background:var(--rule);border-radius:99px;transition:background .16s}
 .tgl i::before{content:"";position:absolute;width:14px;height:14px;left:3px;top:3px;
-  background:#fff;border-radius:50%;transition:transform .16s}
+  background:var(--knob);border-radius:50%;transition:transform .16s}
 .tgl input:checked+i{background:var(--acc)}
 .tgl input:checked+i::before{transform:translateX(14px)}
 .tgl input:focus-visible+i{outline:2px solid var(--acc);outline-offset:2px}
@@ -1448,7 +1506,7 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
 .t-key{color:var(--tk-key)}.t-str{color:var(--tk-str)}.t-num{color:var(--tk-num)}
 .t-bool{color:var(--tk-bool)}.t-com{color:var(--tk-com)}
 .t-punc{color:var(--tk-punc)}.t-blk{color:var(--tk-blk)}
-.yamlerr{flex:none;background:var(--bad-bg);border-bottom:1px solid #e6cfc5;padding:8px 18px;
+.yamlerr{flex:none;background:var(--bad-bg);border-bottom:1px solid var(--bad-line);padding:8px 18px;
   font-size:12px;color:var(--bad);display:flex;gap:10px;align-items:baseline}
 .yamlerr button{font-size:12px;color:var(--bad);text-decoration:underline;flex:none;
   margin-left:auto}
@@ -1489,6 +1547,13 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
   .set-rail{flex-direction:row;flex-wrap:wrap;position:static}
 }
 </style></head><body>
+<script>
+/* Ahead of everything else: a chosen theme should not flash the other one
+   first. Guarded because storage throws outright in some privacy modes. */
+try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
+    if(_p.appearance==="dark"||_p.appearance==="light")
+      document.documentElement.dataset.theme=_p.appearance}catch(e){}
+</script>
 
 <header id="chrome" data-tauri-drag-region>
   <div class="lights" id="lights" hidden>
@@ -1683,6 +1748,13 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
         <div class="srow"><div><b>Theme for new documents</b>
           <span>Applied when you create a CV or a letter.</span></div>
           <select id="s-deftheme"></select></div>
+        <div class="srow"><div><b>Appearance</b>
+          <span>Follows your system unless you choose one. The rendered CV page
+            stays white either way &#8212; it is a document, not a surface.</span></div>
+          <select id="s-appearance">
+            <option value="system">Match system</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option></select></div>
       </section>
 
       <section class="sp" id="sp-ai" hidden>
@@ -2853,7 +2925,7 @@ function ensureD3(){
    something. Totals are dark; every other outcome is neutral. */
 const FN_POSITIVE=new Set(["interview_s","offer_s","accepted"]);
 const FN_TOTAL=new Set(["all","applied_s"]);
-const fnTone=id=>FN_POSITIVE.has(id)?"#c08a3e":FN_TOTAL.has(id)?"#33312b":"#a9a394";
+const fnTone=id=>FN_POSITIVE.has(id)?"t-positive":FN_TOTAL.has(id)?"t-total":"t-neutral";
 
 $$("#range button").forEach(b=>b.onclick=()=>{
   $$("#range button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
@@ -2921,9 +2993,9 @@ function drawFunnel(){
   const touches=l=>!S.fnode||l.sid===S.fnode||l.tid===S.fnode;
 
   const bands=graph.links.map(l=>
-    '<path class="sk-link'+(touches(l)?"":" sk-dim")+'" d="'+path(l)+'" fill="none" stroke="'+
-    (FN_POSITIVE.has(l.tid)&&FN_POSITIVE.has(l.sid)||FN_POSITIVE.has(l.tid)?"#c08a3e":"#a9a394")+
-    '" stroke-opacity=".34" stroke-width="'+Math.max(1,l.width)+'"><title>'+
+    '<path class="sk-link '+(FN_POSITIVE.has(l.tid)?"b-positive":"b-neutral")+
+    (touches(l)?"":" sk-dim")+'" d="'+path(l)+
+    '" stroke-width="'+Math.max(1,l.width)+'"><title>'+
     esc(l.source.label)+' → '+esc(l.target.label)+': '+l.value+'</title></path>').join("");
 
   /* The bar alone is a 9px target, so each node gets a hit area over its label
@@ -2934,8 +3006,8 @@ function drawFunnel(){
       '<title>'+esc(n.label)+': '+n.count+' — click to list them</title>'+
       '<rect x="'+(n.x0-6)+'" y="'+(n.y0-8)+'" width="'+((n.x1-n.x0)+PAD)+'" height="'+
       (h+16)+'" fill="transparent"/>'+
-      '<rect class="sk-node" x="'+n.x0+'" y="'+n.y0+'" width="'+(n.x1-n.x0)+'" height="'+h+
-      '" fill="'+fnTone(n.id)+'"/></g>';
+      '<rect class="sk-node '+fnTone(n.id)+'" x="'+n.x0+'" y="'+n.y0+'" width="'+
+      (n.x1-n.x0)+'" height="'+h+'"/></g>';
   }).join("");
 
   const labels=graph.nodes.map(n=>{
@@ -3376,6 +3448,15 @@ function prefs(){
 function setPref(k,v){
   try{ const p=prefs(); p[k]=v; localStorage.setItem(PREFS_KEY,JSON.stringify(p)) }catch(e){}
 }
+/* "system" means take the attribute off and let prefers-color-scheme decide;
+   anything else pins it. Everything downstream is a CSS variable, so nothing
+   needs redrawing -- including the funnel, which is styled rather than filled. */
+function applyAppearance(){
+  const a=prefs().appearance||"system";
+  if(a==="system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme=a;
+}
+applyAppearance();
 
 $("#btn-settings").onclick=()=>{
   if($("#ovl-settings").hidden){
@@ -3414,6 +3495,9 @@ function fillSettings(){
   const delay=$("#s-delay");
   delay.value=String(pr.delay||700);
   delay.onchange=()=>setPref("delay",Number(delay.value));
+  const ap=$("#s-appearance");
+  ap.value=pr.appearance||"system";
+  ap.onchange=()=>{ setPref("appearance",ap.value); applyAppearance() };
   const dt=$("#s-deftheme");
   if(dt&&!dt.dataset.filled){
     dt.innerHTML=(st.themes||[]).map(t=>"<option>"+esc(t)+"</option>").join("");

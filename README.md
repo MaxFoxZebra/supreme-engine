@@ -43,6 +43,7 @@ an entry anywhere moves the selection everywhere.
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is — measured off the render |
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
+| **Appearance** | Light or dark, or follow the system. In Settings. The rendered CV page stays white either way — it is a document, not a surface |
 
 **Jobs** is `applications.db`: filter by status down the left, six columns of
 what matters across the middle, and one application's details on the right —
