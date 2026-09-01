@@ -25,7 +25,11 @@ jobs:
           - os: macos-14 # Apple Silicon
             args: "--target aarch64-apple-darwin"
             artifact: macos-arm64
-          - os: macos-13 # Intel
+          # macos-13 is retired: that label gets no runner, so the job sat
+          # queued for the 24-hour limit and then cancelled the whole run.
+          # macos-15-intel is its replacement, and the last Intel image --
+          # GitHub drops x86_64 macOS after it retires in autumn 2027.
+          - os: macos-15-intel # Intel
             args: "--target x86_64-apple-darwin"
             artifact: macos-x64
 
