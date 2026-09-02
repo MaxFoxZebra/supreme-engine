@@ -37,16 +37,22 @@ Open Claude Desktop → Settings → Developer → Edit Config, and add:
 
 **Windows**
 
+The installer is per-user (NSIS `currentUser` mode, so it never asks for admin),
+which means the app lands under `%LOCALAPPDATA%`, not in `Program Files`:
+
 ```json
 {
   "mcpServers": {
     "cv-studio": {
-      "command": "C:\\Program Files\\CV Studio\\server-dist\\cv-studio-server.exe",
+      "command": "C:\\Users\\YOU\\AppData\\Local\\Programs\\CV Studio\\server-dist\\cv-studio-server.exe",
       "args": ["--mcp"]
     }
   }
 }
 ```
+
+Replace `YOU` with your Windows username. JSON has no environment-variable
+expansion, so `%LOCALAPPDATA%` will not work here — the path has to be literal.
 
 **macOS**
 
@@ -112,8 +118,9 @@ it will install.
 
 Publishing an update:
 
-1. Bump `version` in `src-tauri/tauri.conf.json`.
-2. Tag and push: `git tag v0.2.0 && git push --tags`.
+1. Bump `version` in `src-tauri/tauri.conf.json` **and** `src-tauri/Cargo.toml`.
+   They must agree.
+2. Tag and push: `git tag v0.4.0 && git push origin v0.4.0`.
 3. CI builds Windows, Apple Silicon and Intel, signs them, and attaches
    `latest.json` to the GitHub release. Installed copies pick it up from there.
 
