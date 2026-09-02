@@ -41,7 +41,12 @@ def _reexec_in_venv() -> None:
     for candidate in (HERE / ".venv" / "Scripts" / "python.exe",
                       HERE / ".venv" / "bin" / "python"):
         if candidate.exists() and str(candidate) != sys.executable:
-            os.execv(str(candidate), [str(candidate), str(HERE / "dev.py"), *sys.argv[1:]])
+            # Not os.execv: on Windows it flattens argv into one command line
+            # without quoting, so a checkout under a path containing a space
+            # ("AI Projects") splits the interpreter path and the child tries to
+            # run the tail of it as a script. subprocess quotes properly.
+            proc = subprocess.run([str(candidate), str(HERE / "dev.py"), *sys.argv[1:]])
+            raise SystemExit(proc.returncode)
     sys.stderr.write(
         "This interpreter cannot run the server: ruamel.yaml is missing and no "
         "project venv was found next to dev.py." + os.linesep + os.linesep +
