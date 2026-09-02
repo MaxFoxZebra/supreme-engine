@@ -37,14 +37,15 @@ Open Claude Desktop → Settings → Developer → Edit Config, and add:
 
 **Windows**
 
-The installer is per-user (NSIS `currentUser` mode, so it never asks for admin),
-which means the app lands under `%LOCALAPPDATA%`, not in `Program Files`:
+The installer is per-user (NSIS `currentUser` mode, so it never asks for admin).
+Tauri's template installs that to `%LOCALAPPDATA%\CV Studio` — not `Program
+Files`, and not under `Programs`:
 
 ```json
 {
   "mcpServers": {
     "cv-studio": {
-      "command": "C:\\Users\\YOU\\AppData\\Local\\Programs\\CV Studio\\server-dist\\cv-studio-server.exe",
+      "command": "C:\\Users\\YOU\\AppData\\Local\\CV Studio\\server-dist\\cv-studio-server.exe",
       "args": ["--mcp"]
     }
   }
