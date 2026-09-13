@@ -153,7 +153,8 @@ be built first, because the Tauri bundle config lists it as a resource.
 
 ```bash
 cd server
-pip install "rendercv[full]" "ruamel.yaml" mcp pyinstaller
+pip install "rendercv[full]==2.8" "ruamel.yaml==0.19.1" "mcp==2.2.0" \
+  "pyinstaller==6.22.3"
 
 # rendercv_fonts, typst and mcp ship binaries and package data PyInstaller does
 # not discover on its own. server/static holds the vendored d3 modules and the
@@ -185,7 +186,16 @@ npx @tauri-apps/cli build --bundles nsis
 
 Output: `src-tauri/target/release/bundle/nsis/CV Studio_<version>_x64-setup.exe`.
 
-Needs Rust, MSVC Build Tools and WebView2 on Windows.
+Needs Python 3.12 or newer, Rust, MSVC Build Tools and WebView2 on Windows.
+CI builds on 3.14, which is the newest every dependency here claims: RenderCV
+requires 3.12 at minimum and lists 3.14 as its ceiling.
+
+The versions are pinned deliberately. RenderCV changes its design schema inside
+a major version and its models forbid unknown keys, so the starter CV that
+renders under 2.8 is rejected outright by 2.3. Unpinned, the day upstream
+renames another design key is the day a tagged release fails its smoke test.
+Raising them should be an edit you make and test, not something a build picks
+up on its own.
 
 The shell also falls back to `server/dist/cv-studio-server/` relative to the
 executable, so `cargo run` finds a freshly frozen server without staging it.

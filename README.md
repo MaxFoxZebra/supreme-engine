@@ -134,7 +134,7 @@ is neutral, so what it marks is never in doubt.
 
 ## Building from source
 
-See [BUILD.md](BUILD.md). In short: `pip install "rendercv[full]" pyinstaller`,
+See [BUILD.md](BUILD.md). In short: `pip install "rendercv[full]==2.8" pyinstaller`,
 run PyInstaller to produce the server, copy it to `src-tauri/server-dist`, then
 `npx @tauri-apps/cli build`. The GitHub Actions workflow in `.github/workflows`
 does all of this for Windows, Apple Silicon and Intel Macs.
