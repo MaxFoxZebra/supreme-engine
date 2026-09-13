@@ -182,6 +182,28 @@ def render_cv(path: str, page: int = 1) -> list:
 
 
 @tool
+def set_company_logo(company: str, image_path: str) -> str:
+    """Give a company a logo, and use it on every application to that company.
+
+    `image_path` is a file on this machine (png, jpg, svg, webp or gif). It is
+    copied into the workspace, so the workspace stays self-contained and the app
+    never has to fetch anything over the network to draw it.
+
+    There is no logo lookup here on purpose: this app makes no network calls. If
+    you have downloaded or been given an image, point this at it. If you have
+    not, leave it alone -- a company with no logo shows its initials, which is a
+    deliberate look rather than a gap.
+    """
+    saved = studio.save_logo(company, image_path)
+    n = studio.jobstore.set_company_logo(_ws(), company, saved["logo"])
+    if not n:
+        return (f"Saved {saved['logo']} ({saved['kb']} KB), but no application "
+                f"lists {company!r} yet, so nothing uses it.")
+    return (f"{company}: {saved['logo']} ({saved['kb']} KB), now shown on "
+            f"{n} application{'' if n == 1 else 's'}.")
+
+
+@tool
 def design_options() -> dict:
     """The themes, fonts and page sizes available for the design block."""
     # available_themes() asks RenderCV rather than trusting the fallback list,

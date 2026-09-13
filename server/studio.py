@@ -725,6 +725,66 @@ def is_cv_yaml(p: Path) -> bool:
     return "cv:" in head and ("sections:" in head or "design:" in head)
 
 
+# --------------------------------------------------------------------------
+# Company logos
+#
+# Local files only. The app makes no network calls, and pointing an <img> at a
+# remote logo would quietly break that: every render would tell someone else's
+# server which companies you are applying to.
+#
+# So a logo is a file in the workspace, and a job names it. A company with no
+# logo gets a monogram instead, which is most of them and has to look
+# deliberate rather than broken.
+# --------------------------------------------------------------------------
+
+LOGO_DIR = "assets/logos"
+LOGO_TYPES = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"}
+
+
+def logo_dir() -> Path:
+    return WORKSPACE / "assets" / "logos"
+
+
+def list_logos() -> list[str]:
+    d = logo_dir()
+    if not d.is_dir():
+        return []
+    return sorted(f.name for f in d.iterdir()
+                  if f.is_file() and f.suffix.lower() in LOGO_TYPES)
+
+
+def logo_url(name: str | None) -> str | None:
+    """The asset URL for a stored logo, or None if it is not a real one."""
+    if not name:
+        return None
+    f = logo_dir() / Path(name).name
+    if not f.is_file() or f.suffix.lower() not in LOGO_TYPES:
+        return None
+    return f"/api/asset?path={rel(f)}"
+
+
+def save_logo(company: str, source: str) -> dict:
+    """Copy an image into the workspace and hand back the name to store.
+
+    `source` is a path on this machine. Copying rather than referencing means
+    the workspace stays self-contained: back it up, move it, and the logos come
+    with it.
+    """
+    src = Path(source).expanduser()
+    if not src.is_file():
+        raise ValueError(f"No file at {src}")
+    if src.suffix.lower() not in LOGO_TYPES:
+        raise ValueError(
+            f"{src.suffix or 'That'} is not an image type this can show. "
+            f"Use one of: {', '.join(sorted(LOGO_TYPES))}")
+    safe = "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
+    dest = logo_dir() / f"{safe}{src.suffix.lower()}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dest)
+    return {"ok": True, "logo": dest.name, "path": rel(dest),
+            "kb": round(dest.stat().st_size / 1024, 1)}
+
+
 def document_files() -> list[tuple[Path, str, str]]:
     """Every candidate document file, as (path, label, group).
 
@@ -1449,12 +1509,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/jobs":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
-                return self._json({"jobs": jobstore.list_jobs(
+                jobs_out = jobstore.list_jobs(
                     WORKSPACE, q.get("status", [None])[0], q.get("q", [None])[0],
-                    q.get("node", [None])[0]),
-                    "statuses": jobstore.STATUSES,
-                    "nodes": jobstore.NODE_STATUSES,
-                    "labels": jobstore.LABELS})
+                    q.get("node", [None])[0])
+                # A stored logo is a filename; the interface needs a URL it
+                # can put in an <img>, and None when the file has gone.
+                for j in jobs_out:
+                    j["logo_url"] = logo_url(j.get("logo"))
+                return self._json({"jobs": jobs_out,
+                                   "statuses": jobstore.STATUSES,
+                                   "nodes": jobstore.NODE_STATUSES,
+                                   "labels": jobstore.LABELS,
+                                   "logos": list_logos()})
             if u.path == "/api/funnel":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -2022,11 +2088,20 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .tablewrap{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;
   background:var(--app)}
 .thead,.trow{display:grid;
-  grid-template-columns:minmax(0,2.1fr) minmax(0,1.35fr) 186px 92px 86px 96px;
+  grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,1.15fr) 186px 86px 96px;
   align-items:center}
 .thead{height:26px;flex:none;background:var(--bar);border-bottom:1px solid var(--rule-strong);
   font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--t500)}
 .thead>*,.trow>*{padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the company mark, and the column it leads */
+.co{display:flex;align-items:center;gap:9px;min-width:0}
+.con{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.colog{width:20px;height:20px;border-radius:4px;flex:none;object-fit:contain;
+  background:var(--bar)}
+span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
+  color:#fff;letter-spacing:.02em}
+.trow .role b{font-weight:400}
+
 .tbody{flex:1;min-height:0;overflow-y:auto}
 .trow{height:32px;font-size:12.5px;border-bottom:1px solid var(--bd-inner);width:100%;
   text-align:left;color:var(--t900)}
@@ -2062,6 +2137,21 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .fn-bar{height:33px;flex:none;display:flex;align-items:center;padding:0 24px;
   background:var(--bar);border-bottom:1px solid var(--rule-strong)}
 #chart{flex:1;min-height:0;padding:18px 24px 22px;overflow:auto}
+#fn-jobs{flex:none;max-height:42%;overflow-y:auto;border-top:1px solid var(--rule);
+  padding:12px 24px 18px}
+.fn-hint{margin:0;font-size:12px;color:var(--t500)}
+.fn-jhead{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.fn-jhead b{font-size:12.5px}
+.fn-jhead span{font-size:11.5px;color:var(--t500)}
+.fn-jlist{display:flex;flex-direction:column;border:1px solid var(--bd-field);
+  border-radius:8px;overflow:hidden}
+.fn-jrow{display:grid;grid-template-columns:20px minmax(0,1fr) minmax(0,1.4fr) 180px;
+  align-items:center;gap:9px;padding:8px 12px;background:var(--field);
+  text-align:left;width:100%}
+.fn-jrow+.fn-jrow{border-top:1px solid var(--rule)}
+.fn-jrow:hover{background:var(--row-hover)}
+.fj-role{font-size:12.5px;color:var(--t600);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
 .fn-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
 .fn-head b{font-size:12.5px;font-weight:600}
 .fn-head span{font-size:12px;color:var(--t600)}
@@ -2576,8 +2666,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       <div id="savedlist"></div>
     </aside>
     <div class="tablewrap">
-      <div class="thead"><span>Role</span><span>Documents</span><span>Status</span>
-        <span>Salary</span><span>Applied</span><span>Follow-up</span></div>
+      <div class="thead"><span>Company</span><span>Role</span>
+        <span>Documents</span><span>Status</span>
+        <span>Applied</span><span>Follow-up</span></div>
       <div class="tbody" id="jobrows"></div>
     </div>
     <aside class="insp insp-jobs">
@@ -2592,6 +2683,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       <div class="fn-bar"><div class="fn-head"><b id="fn-total"></b>
         <span id="fn-sub"></span></div></div>
       <div id="chart"></div>
+      <div id="fn-jobs"></div>
     </div>
     <aside class="insp insp-funnel">
       <div class="insp-head"><b>Rates</b></div>
@@ -2885,6 +2977,28 @@ const LIVE_STATUS=new Set(Object.keys(STATUS_TONE).filter(
   k=>STATUS_TONE[k]==="live"||STATUS_TONE[k]==="waiting"));
 const DEAD_STATUS=new Set(Object.keys(STATUS_TONE).filter(
   k=>["lost","closed","draft"].includes(STATUS_TONE[k])));
+
+/* A company's mark: its logo if one has been stored, otherwise its initials.
+   Most companies will never have a logo, so the fallback is the common case and
+   has to look chosen rather than missing. The tint is derived from the name, so
+   a company keeps the same colour everywhere without anyone assigning one. */
+const CO_TINTS=["#3a6ea5","#a8761f","#7a5cb8","#007a5e","#a83519","#5b6f8a"];
+function companyTint(name){
+  let h=0;
+  for(const ch of String(name||"")) h=(h*31+ch.charCodeAt(0))>>>0;
+  return CO_TINTS[h%CO_TINTS.length];
+}
+function initials(name){
+  const words=String(name||"").split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if(!words.length) return "?";
+  return (words.length>1?words[0][0]+words[1][0]:words[0].slice(0,2)).toUpperCase();
+}
+function companyMark(j){
+  if(j.logo_url) return '<img class="colog" src="'+esc(j.logo_url)+tok()+
+    '" alt="" loading="lazy">';
+  return '<span class="colog mono" style="background:'+companyTint(j.company)+
+    '">'+esc(initials(j.company))+'</span>';
+}
 
 const money=j=>{
   const v=j.salary_offered||j.salary_expected;
@@ -4221,12 +4335,13 @@ function drawJobs(){
     const due=j.followup_date&&j.followup_date<=isoToday();
     return '<button class="trow'+(DEAD_STATUS.has(j.status)?" dead":"")+
       (S.jsel===j.id?" sel":"")+'" data-id="'+esc(j.id)+'">'+
-      '<span class="role"><b>'+esc(j.title)+'</b><i>'+esc(j.company)+'</i></span>'+
+      '<span class="co">'+companyMark(j)+'<span class="con">'+
+        esc(j.company)+'</span></span>'+
+      '<span class="role"><b>'+esc(j.title)+'</b></span>'+
       '<span>'+(docs?'<span class="docs mono" data-open="'+esc(j.cv_path)+'">'+docs+'</span>'
                     :'<span class="docs none">no CV yet</span>')+'</span>'+
       '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
         esc(prettyStatus(j.status))+'</span>'+
-      '<span class="money mono'+(sal?"":" none")+'">'+(sal?esc(sal):"–")+'</span>'+
       '<span class="when'+(ap?"":" none")+'">'+(ap?esc(shortDate(ap)):"–")+'</span>'+
       '<span class="when'+(j.followup_date?(due?" due":""):" none")+'">'+
         (j.followup_date?esc(shortDate(j.followup_date)):"–")+'</span>'+
@@ -4473,7 +4588,7 @@ function sinceDate(){
 
 async function loadFunnel(){
   const host=$("#chart");
-  if(S.funnel) return drawFunnel();
+  if(S.funnel){ drawFunnel(); return paintFunnelJobs() }
   host.innerHTML='<p class="note"><span class="spin"></span> Loading…</p>';
   try{
     await ensureD3();
@@ -4485,6 +4600,7 @@ async function loadFunnel(){
     return;
   }
   drawFunnel();
+  paintFunnelJobs();
 }
 
 function drawFunnel(){
@@ -4562,16 +4678,52 @@ function drawFunnel(){
     'role="img" aria-label="Application funnel">'+bands+bars+
     '<g pointer-events="none">'+labels+'</g></svg>';
   host.querySelectorAll("[data-node]").forEach(g=>{
-    const pick=()=>{
-      const id=g.dataset.node;
-      S.fnode=id;
-      S.jfilter={kind:"node",value:id};
-      S.jsel=null;
-      $("#jobq").value="";
-      setView("jobs");
-    };
+    const pick=()=>fnPick(g.dataset.node);
     g.onclick=pick;
     g.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); pick() } };
+  });
+}
+
+/* Clicking a band used to throw you onto the Jobs screen, which answered the
+   question and lost the chart that raised it. The answer belongs underneath it:
+   the shape stays on screen while you read what is behind the part you touched. */
+function fnPick(id){
+  S.fnode=S.fnode===id?null:id;   /* clicking the same band again clears it */
+  drawFunnel();
+  paintFunnelJobs();
+}
+function paintFunnelJobs(){
+  const host=$("#fn-jobs");
+  if(!host) return;
+  if(!S.fnode){
+    host.innerHTML='<p class="fn-hint">Click a band to see the applications behind it.</p>';
+    return;
+  }
+  const want=new Set((S.nodes&&S.nodes[S.fnode])||[]);
+  const rows=S.jobs.filter(j=>want.has(j.status));
+  const label=(S.labels&&S.labels[S.fnode])||S.fnode;
+  host.innerHTML='<div class="fn-jhead"><b>'+esc(label)+'</b>'+
+    '<span>'+rows.length+" application"+(rows.length===1?"":"s")+'</span>'+
+    '<div class="grow"></div>'+
+    '<button class="alink" id="fn-clear">Clear</button>'+
+    '<button class="alink" id="fn-open">Open in Jobs</button></div>'+
+    (rows.length
+      ? '<div class="fn-jlist">'+rows.map(j=>
+          '<button class="fn-jrow" data-id="'+esc(j.id)+'">'+
+          companyMark(j)+'<span class="con">'+esc(j.company)+'</span>'+
+          '<span class="fj-role">'+esc(j.title)+'</span>'+
+          '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
+          esc(prettyStatus(j.status))+'</span></button>').join("")+'</div>'
+      : '<p class="fn-hint">Nothing sits at this stage yet.</p>');
+  $("#fn-clear").onclick=()=>{ S.fnode=null; drawFunnel(); paintFunnelJobs() };
+  $("#fn-open").onclick=()=>{
+    S.jfilter={kind:"node",value:S.fnode}; S.jsel=null;
+    $("#jobq").value=""; setView("jobs");
+  };
+  /* Straight to the one you clicked, rather than to a filtered list of it. */
+  host.querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>{
+    S.jfilter={kind:"all",value:""};
+    setView("jobs"); selectJob(b.dataset.id);
   });
 }
 

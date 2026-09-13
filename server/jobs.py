@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   status_history   TEXT NOT NULL DEFAULT '[]',
   cv_path          TEXT,
   letter_path      TEXT,
+  logo             TEXT,
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL
 );
@@ -114,9 +115,26 @@ CREATE INDEX IF NOT EXISTS jobs_company ON jobs(company);
 FIELDS = [
     "title", "company", "location", "country", "description", "url", "source",
     "score", "status", "notes", "followup_date", "salary_expected",
-    "salary_offered", "salary_currency", "cv_path", "letter_path",
+    "salary_offered", "salary_currency", "cv_path", "letter_path", "logo",
 ]
 
+
+
+def set_company_logo(workspace: Path, company: str, logo: str) -> int:
+    """Point every application to one company at the same logo.
+
+    Applications are per-role but a logo belongs to the company, so this is
+    matched on the name rather than set on one row.
+    """
+    con = connect(workspace)
+    try:
+        cur = con.execute(
+            "UPDATE jobs SET logo = ?, updated_at = ? WHERE lower(company) = ?",
+            (logo, _now(), company.strip().lower()))
+        con.commit()
+        return cur.rowcount
+    finally:
+        con.close()
 
 def db_path(workspace: Path) -> Path:
     return workspace / "applications.db"
@@ -131,7 +149,8 @@ def connect(workspace: Path) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys=ON")
     con.executescript(SCHEMA)
     have = {r["name"] for r in con.execute("PRAGMA table_info(jobs)")}
-    for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT")):
+    for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT"),
+                      ("logo", "TEXT")):
         if col not in have:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
     con.commit()
