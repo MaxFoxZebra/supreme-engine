@@ -2542,7 +2542,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="grow"></div>
         <div class="meta mono" id="pmeta">
           <button id="pg-prev" title="Previous page" aria-label="Previous page">&#8249;</button>
-          <span id="pg-idx">&#8212;</span>
+          <span id="pg-idx">&#8211;</span>
           <button id="pg-next" title="Next page" aria-label="Next page">&#8250;</button>
           <span>&#183;</span>
           <button id="z-out" title="Zoom out" aria-label="Zoom out">&#8722;</button>
@@ -2673,7 +2673,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <div class="swatches" id="s-accent"></div></div>
         <div class="srow"><div><b>Appearance</b>
           <span>Follows your system unless you choose one. It changes the surfaces
-            you work <em>on</em> &#8212; the panels, the forms, the tables. The window
+            you work <em>on</em>: the panels, the forms, the tables. The window
             chrome stays dark and the rendered CV page stays white in both, because
             one frames the work and the other <em>is</em> the work.</span></div>
           <select id="s-appearance">
@@ -2695,7 +2695,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="tools">
           <div class="tool lead"><span class="n">render_cv</span>
             <p>Renders the CV <b>and looks at the page</b>. A bullet stranded alone on
-              page two, a heading orphaned at a break, a lopsided last page — none of it
+              page two, a heading orphaned at a break, a lopsided last page. None of it
               is visible in the source, all of it is obvious in the picture. This is the
               point of the whole thing.</p></div>
           <div class="tool"><span class="n">edit_cv_fields</span>
@@ -2726,7 +2726,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 
         <p class="sp-sub">Skills</p>
         <p class="sp-note" style="margin-top:0">Skills are the judgement around the
-          documents — reading a posting, tailoring from a master profile, letters,
+          documents: reading a posting, tailoring from a master profile, letters,
           interview prep. Claude Code reads them off disk and already has them. The
           desktop app does not: there they are uploaded to your account, so the most
           this app can do is hand you archives that are ready to upload.</p>
@@ -2779,7 +2779,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           budget, and lets you fix by hand what is easier pointed at than described.
           Built on RenderCV and Typst.</p>
         <p class="sp-lede">Everything runs on your machine. No account, no server, no
-          telemetry — which matters more, not less, once an AI is editing the files:
+          telemetry, which matters more, not less, once an AI is editing the files:
           your CVs stay plain YAML in a folder you own, and both halves only ever touch
           that folder.</p>
         <p class="sp-note">MIT licensed. Bundles RenderCV (MIT), Typst (Apache-2.0), the
@@ -3004,7 +3004,7 @@ function paintAI(){
   $$("#btn-ai .aic").forEach(el=>{
     const c=aiClient(el.dataset.client), st=(c&&c.state)||"unknown";
     el.dataset.state=st;
-    bits.push((c?c.label:el.dataset.client)+" — "+AI_STATE[st]);
+    bits.push((c?c.label:el.dataset.client)+": "+AI_STATE[st]);
   });
   $("#btn-ai").title=bits.join("\n");
   if(!$("#ovl-settings").hidden) fillAIPanel();
@@ -3023,7 +3023,7 @@ const AI_PILL={
 };
 function aiSay(c){
   if(c.state==="connected") return "Reading and writing the CVs in this workspace.";
-  if(c.state==="absent") return "Not connected yet — one click adds it.";
+  if(c.state==="absent") return "Not connected yet. One click adds it.";
   if(c.state==="elsewhere") return "Set up, but pointing at another copy of CV Studio.";
   if(c.state==="other-workspace")
     return "Set up, but pointing at "+shortPath(c.workspace)+".";
@@ -3204,7 +3204,7 @@ function changedFields(mine,theirs){
   walk((mine||{}).cv,(theirs||{}).cv,[]);
   return out;
 }
-/* "sections.experience.0.company" is precise and unreadable; "Experience —
+/* "sections.experience.0.company" is precise and unreadable; "Experience ·
    Northwind" is what the user is actually looking at. */
 function fieldLabel(path,data){
   if(path[0]==="sections"){
@@ -3212,7 +3212,7 @@ function fieldLabel(path,data){
     const it=(((data||{}).cv||{}).sections||{})[name];
     const entry=it&&it[i];
     const who=entry!==undefined?entryTitle(entry,+i||0):null;
-    return sectionLabel(name)+(who?" — "+who:"")+(key?" · "+String(key).replace(/_/g," "):"");
+    return sectionLabel(name)+(who?" · "+who:"")+(key?" · "+String(key).replace(/_/g," "):"");
   }
   return String(path[path.length-1]).replace(/_/g," ");
 }
@@ -3327,7 +3327,7 @@ async function boot(){
   setInterval(pulse,2500);
   paintStatus();
   if(d.first_run) toast("Workspace created at "+d.workspace+
-    " — connect Claude or ChatGPT to it from Settings");
+    ". Connect Claude or ChatGPT to it from Settings");
 }
 
 /* =========================================================================
@@ -3402,11 +3402,11 @@ function renderDocs(docs){
         const job=S.jobs.find(j=>j.cv_path===d.path||j.letter_path===d.path);
         return '<button class="row'+(d.path===S.path?" sel":"")+
           '" data-path="'+esc(d.path)+'" title="'+esc(d.path)+
-          (job?"\n"+esc(job.title+" — "+job.company):"")+'">'+
+          (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
           '<span class="mark"></span>'+
           '<span class="lbl">'+esc(d.label)+'</span>'+
           (job?'<span class="tie" title="Linked to '+
-            esc(job.title+" — "+job.company)+'"></span>':"")+
+            esc(job.title+" · "+job.company)+'"></span>':"")+
           '<span class="ct mono">'+(pp?pp+"pp":"")+'</span></button>';
       }).join("");
       /* Only worth naming the groups once there is more than one of them. */
@@ -3459,8 +3459,8 @@ function paintTitle(){
   const cv=(S.data&&S.data.cv)||{};
   const doc=(S.state.documents||[]).find(d=>d.path===S.path);
   const link=linkedJob();
-  const name=link?(link.title+" — "+link.company)
-                 :(cv.headline?cv.headline+(cv.name?" — "+cv.name:""):(cv.name||(doc&&doc.label)||""));
+  const name=link?(link.title+" · "+link.company)
+                 :(cv.headline?cv.headline+(cv.name?" · "+cv.name:""):(cv.name||(doc&&doc.label)||""));
   $("#doctitle .t").textContent=name||"";
   $("#doctitle .f").textContent=S.path?S.path.split("/").pop():"";
 }
@@ -3597,7 +3597,7 @@ function buildInspector(){
     wireInspector(); return;
   }
   const it=list[sel.i];
-  head.textContent=sectionLabel(sel.name)+" — "+entryTitle(it,sel.i);
+  head.textContent=sectionLabel(sel.name)+" · "+entryTitle(it,sel.i);
   meta.textContent=wordsIn(it)+" words";
 
   if(it===null||typeof it!=="object"){
@@ -3688,7 +3688,7 @@ function linkJobSheet(){
     'of each.</p></div>'+
     (open.length
       ? '<div class="fg w88"><label>Application</label><select id="lj-job">'+
-        open.map(j=>'<option value="'+esc(j.id)+'">'+esc(j.title)+' — '+
+        open.map(j=>'<option value="'+esc(j.id)+'">'+esc(j.title)+' · '+
           esc(j.company)+'</option>').join("")+'</select></div>'
       : '<div class="fg w88"><p class="note muted">Every application already has '+
         'one. Start a new application, or swap the document over from the Jobs '+
@@ -3727,7 +3727,7 @@ function linkedBlock(){
     inner='<div class="card"><div class="drow">'+
       '<span style="display:flex;align-items:center;gap:8px;min-width:0">'+
       '<span class="dot '+statusTone(j.status)+'"></span>'+
-      '<span style="overflow:hidden;text-overflow:ellipsis">'+esc(j.company)+' — '+
+      '<span style="overflow:hidden;text-overflow:ellipsis">'+esc(j.company)+' · '+
       esc(prettyStatus(j.status))+'</span></span>'+
       '<span style="display:flex;gap:10px;flex:none">'+
       '<button class="alink" data-show-job="'+esc(j.id)+'">Show in Jobs</button>'+
@@ -3901,7 +3901,7 @@ function fitZoom(host,img){
 }
 function paintPage(){
   const host=$("#pane-page"), r=S.render;
-  if(!r||!r.pngs.length){ $("#pg-idx").textContent="—"; return }
+  if(!r||!r.pngs.length){ $("#pg-idx").textContent="–"; return }
   const url=r.pngs[S.page]+tok();
   const draw=img=>{
     if(S.zoomAuto) S.zoom=fitZoom(host,img);
@@ -3940,7 +3940,7 @@ function bandLabel(b){
   const label=sectionLabel(b.name);
   if(b.k==="section") return label;
   const it=((cv.sections||{})[b.name]||[])[b.i];
-  return label+" — "+(it===undefined?("entry "+(b.i+1)):entryTitle(it,b.i));
+  return label+" · "+(it===undefined?("entry "+(b.i+1)):entryTitle(it,b.i));
 }
 
 function paintHits(){
@@ -4038,8 +4038,8 @@ function paintBudget(){
 function fillCaption(pages,pct){
   if(pct==null) return "Page fill could not be measured.";
   const p="Page "+pages+" is "+pct+"% full";
-  if(pct>=96) return p+" — no room left on it.";
-  if(pages>1&&pct<=35) return p+" — most of the last page is empty.";
+  if(pct>=96) return p+". No room left on it.";
+  if(pages>1&&pct<=35) return p+". Most of the last page is empty.";
   return p+".";
 }
 
@@ -4226,10 +4226,10 @@ function drawJobs(){
                     :'<span class="docs none">no CV yet</span>')+'</span>'+
       '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
         esc(prettyStatus(j.status))+'</span>'+
-      '<span class="money mono'+(sal?"":" none")+'">'+(sal?esc(sal):"—")+'</span>'+
-      '<span class="when'+(ap?"":" none")+'">'+(ap?esc(shortDate(ap)):"—")+'</span>'+
+      '<span class="money mono'+(sal?"":" none")+'">'+(sal?esc(sal):"–")+'</span>'+
+      '<span class="when'+(ap?"":" none")+'">'+(ap?esc(shortDate(ap)):"–")+'</span>'+
       '<span class="when'+(j.followup_date?(due?" due":""):" none")+'">'+
-        (j.followup_date?esc(shortDate(j.followup_date)):"—")+'</span>'+
+        (j.followup_date?esc(shortDate(j.followup_date)):"–")+'</span>'+
       '</button>';
   }).join(""):'<div class="empty"><h3>'+
     (S.jobs.length?"Nothing matches":"No applications yet")+'</h3><p>'+
@@ -4280,8 +4280,8 @@ function drawJobInspector(){
       '“New job…”.</p>';
     return;
   }
-  head.textContent=j.company+" — "+j.title;
-  head.title=j.company+" — "+j.title;
+  head.textContent=j.company+" · "+j.title;
+  head.title=j.company+" · "+j.title;
 
   const grid=JOB_GRID.map(([k,label,kind])=>{
     let ctl;
@@ -4539,7 +4539,7 @@ function drawFunnel(){
   const bars=graph.nodes.map(n=>{
     const h=Math.max(1,n.y1-n.y0), dim=S.fnode&&S.fnode!==n.id?" sk-dim":"";
     return '<g class="sk-hit'+dim+'" data-node="'+esc(n.id)+'" role="button" tabindex="0">'+
-      '<title>'+esc(n.label)+': '+n.count+' — click to list them</title>'+
+      '<title>'+esc(n.label)+': '+n.count+'. Click to list them</title>'+
       '<rect x="'+(n.x0-6)+'" y="'+(n.y0-8)+'" width="'+((n.x1-n.x0)+PAD)+'" height="'+
       (h+16)+'" fill="transparent"/>'+
       '<rect class="sk-node '+fnTone(n.id)+'" x="'+n.x0+'" y="'+n.y0+'" width="'+
@@ -4580,7 +4580,7 @@ function drawRates(){
   const rate=(label,value,accent)=>
     '<div class="kv"><span>'+label+'</span><span class="v mono'+(accent?" acc":"")+'">'+
     value+'</span></div>';
-  const reply=t.median_reply_days==null?"—"
+  const reply=t.median_reply_days==null?"–"
     :t.median_reply_days+" day"+(t.median_reply_days===1?"":"s");
   $("#fn-rates").innerHTML=
     rate("Applied → interview",t.interview_rate+"%")+
@@ -4607,7 +4607,7 @@ function readings(t,c){
       late+" after. Only the first group is a CV problem.");
   }
   const ghost=(c.ghosted||0)+(c.ghosted_interviewing||0);
-  if(ghost) out.push(ghost+" application"+(ghost===1?"":"s")+" went unanswered — "+
+  if(ghost) out.push(ghost+" application"+(ghost===1?"":"s")+" went unanswered, "+
     Math.round(ghost/Math.max(1,t.applied)*100)+"% of everything sent.");
   if(t.replied) out.push(t.replied+" of "+t.applied+" applications have had a reply.");
   const waiting=c.applied||0;
@@ -4669,7 +4669,7 @@ function newDocumentSheet(){
     $("#nd-base").innerHTML='<option value="">A blank starter</option>'+
       forKind(kind).map(d=>'<option value="'+esc(d.path)+'"'+
         (d.path===S.path?" selected":"")+'>'+esc(d.label)+
-        (S.pages[d.path]?" — "+S.pages[d.path]+" page"+(S.pages[d.path]===1?"":"s"):"")+
+        (S.pages[d.path]?" · "+S.pages[d.path]+" page"+(S.pages[d.path]===1?"":"s"):"")+
         '</option>').join("");
   };
   $$("#nd-kind button").forEach(b=>{
@@ -4972,12 +4972,12 @@ function paintEffect(){
   else if(known.length)
     note="No other theme tried so far renders this CV any shorter.";
   else
-    note="Pick another theme to see what it does to the page count — each one is "+
+    note="Pick another theme to see what it does to the page count. Each one is "+
       "rendered for real, so the number is the number.";
   $("#dz-effect").innerHTML=
     '<div class="kv"><span>Pages</span><span class="v mono">'+r.pages+'</span></div>'+
     '<div class="kv"><span>Page '+r.pages+' fill</span><span class="v mono'+
-      (pct!=null&&pct>=90?" acc":"")+'">'+(pct==null?"—":pct+"%")+'</span></div>'+
+      (pct!=null&&pct>=90?" acc":"")+'">'+(pct==null?"–":pct+"%")+'</span></div>'+
     '<div class="kv"><span>Words</span><span class="v mono">'+(r.ats_words||0)+
       '</span></div>'+
     '<div class="hr"></div><div class="note">'+esc(note)+'</div>';

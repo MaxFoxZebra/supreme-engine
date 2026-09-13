@@ -30,8 +30,8 @@ document list as a letter. There is nothing to sync.
 
 **And the app is watching.** The client starts the MCP server as its own
 process, so the app cannot talk to it directly; what the two share is the
-workspace folder. Every tool call appends to `.cvstudio-mcp.json` there — tool
-name, file, timestamp, last twenty — and the app polls the file timestamps it
+workspace folder. Every tool call appends to `.cvstudio-mcp.json` there: tool
+name, file, timestamp, last twenty. The app polls the file timestamps it
 has open a few times a minute. So a CV edited here reloads in front of you
 rather than going stale, and if you had unsaved edits of your own it asks
 instead of letting your next save quietly overwrite the model's work. That file
@@ -48,8 +48,9 @@ record of what they sent and when; the AI's job is the documents.
 
 **Open CV Studio, click the marks in the title bar, and press Set up next to
 the client you want.** It writes the entry into that client's config for you,
-keeping whatever else is already in there — other servers, your own comments —
-and backing the file up first. The same panel afterwards tells you whether each
+keeping whatever else is already in there (other servers, your own comments),
+and backing the file up first. The same panel afterwards tells you whether
+each
 client is pointed at this build and this workspace.
 
 Then restart the client: Claude Desktop shows the tools under the connectors
@@ -64,7 +65,7 @@ Settings → Developer → Edit Config, and add:
 **Windows**
 
 The installer is per-user (NSIS `currentUser` mode, so it never asks for admin).
-Tauri's template installs that to `%LOCALAPPDATA%\CV Studio` — not `Program
+Tauri's template installs that to `%LOCALAPPDATA%\CV Studio`, not `Program
 Files`, and not under `Programs`:
 
 ```json
@@ -79,7 +80,7 @@ Files`, and not under `Programs`:
 ```
 
 Replace `YOU` with your Windows username. JSON has no environment-variable
-expansion, so `%LOCALAPPDATA%` will not work here — the path has to be literal.
+expansion, so `%LOCALAPPDATA%` will not work here: the path has to be literal.
 
 **macOS**
 
@@ -154,7 +155,7 @@ state of each.
 
 ## Skills
 
-The MCP tools are the *doing*; the skills are the judgement around it — reading
+The MCP tools are the *doing*; the skills are the judgement around it: reading
 a posting, tailoring from a master profile, letters, interview prep. They are
 delivered differently in each place, which is worth knowing before you go
 looking for them:
@@ -173,7 +174,7 @@ Customize → Skills → **+** and upload each one.
 **A skill that runs a local script cannot work in the desktop app.** Skills
 there execute in Claude's sandbox: no workspace on disk, no Python, no
 `127.0.0.1:8722`. Four of the seven are built that way, and the packaged copy of
-each gets a section appended pointing at the MCP tool that does the same job —
+each gets a section appended pointing at the MCP tool that does the same job:
 `render_cv` instead of a render script, `edit_cv_fields` instead of writing
 YAML, and so on. The originals in `~/.claude/skills/` are never modified. The
 other three are pure judgement and travel unchanged.
@@ -182,7 +183,7 @@ other three are pure judgement and travel unchanged.
 
 The same server works with Claude Code and the Codex CLI, configured the same
 way. Claude Code users get more than the MCP tools: the `~/.claude/skills/`
-directory in this project holds skills for the whole job-search workflow —
+directory in this project holds skills for the whole job-search workflow:
 analysing a posting, tailoring a CV from a master profile, writing cover
 letters, tracking applications and interview prep. The MCP server covers CV
 editing and rendering; the skills cover the judgement around it.

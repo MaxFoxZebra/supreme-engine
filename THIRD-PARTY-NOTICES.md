@@ -14,7 +14,7 @@ distributing this application under the MIT licence.
 | [ruamel.yaml](https://sourceforge.net/projects/ruamel-yaml/) | 0.19.1 | MIT |
 | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | 2.1.1 | MIT |
 | [pydantic](https://github.com/pydantic/pydantic) / pydantic-core | 2.13.5 | MIT |
-| [typer](https://github.com/fastapi/typer), [rich](https://github.com/Textualize/rich), [markdown-it-py](https://github.com/executablebooks/markdown-it-py), annotated-types | — | MIT |
+| [typer](https://github.com/fastapi/typer), [rich](https://github.com/Textualize/rich), [markdown-it-py](https://github.com/executablebooks/markdown-it-py), annotated-types | n/a | MIT |
 | [click](https://github.com/pallets/click) | 8.5.0 | BSD-3-Clause |
 | [Jinja2](https://github.com/pallets/jinja) | 3.1.6 | BSD-3-Clause |
 | [packaging](https://github.com/pypa/packaging) | 26.3 | Apache-2.0 OR BSD-2-Clause |

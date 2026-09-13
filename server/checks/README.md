@@ -30,8 +30,9 @@ python checks/audit.py
 
 Reports, and exits non-zero on: CSS custom properties referenced but never
 defined; **a rule opened inside an unclosed rule** (the browser silently drops
-the whole block, so the class is in the DOM and the style simply never applies —
-this has bitten twice); stray or unbalanced braces; duplicate ids; ids the
+the whole block, so the class is in the DOM and the style simply never
+applies. This has bitten twice); stray or unbalanced braces; duplicate ids;
+ids the
 script addresses that are not in the markup; classes used but never styled;
 functions defined and never called; `S.<prop>` read but never assigned; and
 routes implemented but missing from the OpenAPI spec, or the reverse.
@@ -42,7 +43,7 @@ routes implemented but missing from the OpenAPI spec, or the reverse.
 python checks/mcpclient.py ./.venv/Scripts/python.exe server_main.py --mcp --workspace /tmp/ws
 ```
 
-Handshake, `tools/list`, then every tool called for real — including that
+Handshake, `tools/list`, then every tool called for real, including that
 `render_cv` returns a decodable PNG and that a path outside the workspace is
 refused. Point it at `server_main.py`, never `studio.py`: only the former
 routes `--mcp`.
@@ -57,7 +58,7 @@ node checks/shot.js "http://127.0.0.1:8750/?token=t" ./shots \
 node checks/flow.js "http://127.0.0.1:8750/?token=t"
 ```
 
-Each `shot.js` argument is `name::javascript` — the script runs in the page,
+Each `shot.js` argument is `name::javascript`: the script runs in the page,
 then the frame is saved as `name.png`. `flow.js` exercises clicking a block on
 the rendered page, the selection following into the other views, linking a CV to
 an application, and the document rail's grouping.

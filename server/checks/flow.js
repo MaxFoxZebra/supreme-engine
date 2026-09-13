@@ -100,7 +100,7 @@ async function main() {
   check("rail is grouped by kind",
     r && JSON.stringify(r.groups) === '["CVs","Cover letters"]', JSON.stringify(r.groups));
   check("letters are no longer prefixed in the label",
-    r && !r.rows.some(x => /^Letter —/.test(x)), JSON.stringify(r.rows));
+    r && !r.rows.some(x => /^Letter /.test(x)), JSON.stringify(r.rows));
 
   console.log(fails ? `\n${fails} failure(s)` : "\nall flows pass");
   ws.close(); process.exit(fails ? 1 : 0);

@@ -7,7 +7,7 @@ server and points the OS webview at it.
 alternative was shipping Chromium (Electron, ~150MB on top of everything else)
 for a UI layer that gains nothing from it. Supervising a child process instead
 keeps the Rust shell under 4MB and preserves the comment-preserving YAML
-round-trip — a Rust YAML crate would have silently dropped the comments in
+round-trip: a Rust YAML crate would have silently dropped the comments in
 `master-profile.yaml`.
 
 ## Developing
@@ -74,8 +74,8 @@ git push origin v0.4.0
 `.github/workflows/release.yml` then runs on Windows, Apple Silicon and Intel
 macOS runners. Each freezes the server with PyInstaller, stages it at
 `src-tauri/server-dist`, **smoke-tests that the packaged server can actually
-render a CV** — a build that ships but cannot render is worse than a failed
-build — then builds, signs with the updater key, and publishes a GitHub release
+render a CV**, because a build that ships but cannot render is worse than a
+failed build, then builds, signs with the updater key, and publishes a GitHub release
 including `latest.json`.
 
 Existing installs pick it up through the updater, which polls
@@ -88,7 +88,7 @@ a tag.
 
 Releases are signed with the Tauri updater key, held as the repository secrets
 `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The
-password is deliberately empty — the key was generated without one, GitHub will
+password is deliberately empty: the key was generated without one, GitHub will
 not accept an empty secret value, and setting it explicitly stops the signer
 prompting in CI. The matching public key sits in `tauri.conf.json`.
 
@@ -102,7 +102,7 @@ Only worth it to inspect an installer before tagging. The result is unsigned by
 the updater key, so installed copies will refuse it as an update.
 
 `src-tauri/server-dist/` is gitignored and produced by PyInstaller, so it has to
-be built first — the Tauri bundle config lists it as a resource.
+be built first, because the Tauri bundle config lists it as a resource.
 
 ```bash
 cd server
@@ -184,7 +184,7 @@ because the developer cannot be verified". Right-click → Open, once, clears it
 Proper signing needs a paid Apple Developer account; for a personal tool it is
 not worth it.
 
-**Windows**: SmartScreen may warn on first run — More info, then Run anyway. The
+**Windows**: SmartScreen may warn on first run. Choose More info, then Run anyway. The
 installer is `currentUser` mode, so there is no admin prompt.
 
 ## Project layout
