@@ -93,8 +93,39 @@ not accept an empty secret value, and setting it explicitly stops the signer
 prompting in CI. The matching public key sits in `tauri.conf.json`.
 
 Without those secrets the build still succeeds, but the artifacts cannot be used
-as updates. Neither Apple nor Microsoft code signing is in play; see First
-launch below.
+as updates.
+
+That key is only the updater's. It is unrelated to platform code signing, which
+is a separate axis and covered next.
+
+#### Apple signing and notarization
+
+The macOS jobs sign in two passes, because Tauri copies `server-dist` in as an
+opaque resource tree and never walks it. The workflow signs every Mach-O in the
+frozen Python first, inside out, then Tauri seals the `.app` around it with the
+same identity. `src-tauri/entitlements.plist` carries the three exceptions a
+frozen CPython needs once the hardened runtime is on, and the smoke test runs
+*after* signing so a bundle that builds and then refuses to start fails the
+build rather than the release.
+
+With no secrets set, the identity is ad-hoc (`-`). That produces a valid seal,
+which is what lets the app run at all once quarantine is cleared, but it is not
+a Developer ID and does nothing for Gatekeeper on a downloaded copy.
+
+To make downloads open with no extra step, set these six repository secrets:
+
+| Secret | What it is |
+|---|---|
+| `APPLE_CERTIFICATE` | Developer ID Application `.p12`, base64 encoded |
+| `APPLE_CERTIFICATE_PASSWORD` | its export password |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Name (TEAMID)` |
+| `APPLE_ID` | the Apple ID that owns the account |
+| `APPLE_PASSWORD` | an app-specific password, not the account password |
+| `APPLE_TEAM_ID` | the ten-character team ID |
+
+Present, they switch the identity from ad-hoc to the real one, add a trusted
+timestamp, and turn on notarization. Absent, the build behaves exactly as it
+does today. Nothing else has to change.
 
 ## Building locally
 
@@ -153,11 +184,31 @@ Mac, after the PyInstaller and staging steps above:
 # one-time
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
+# stage with ditto, not cp, so signatures and symlinks survive the copy
+rm -rf src-tauri/server-dist
+ditto server/dist/cv-studio-server src-tauri/server-dist
+
+# what CI does before bundling; without it the .app is sealed around unsigned
+# nested code and macOS calls the result damaged even after quarantine is cleared
+find src-tauri/server-dist -type f \
+  \( -perm -u+x -o -name '*.so' -o -name '*.dylib' \) -print0 |
+  while IFS= read -r -d '' f; do
+    file -b "$f" | grep -q 'Mach-O' &&
+      codesign --force --options runtime --sign - "$f"
+  done
+codesign --force --options runtime --entitlements src-tauri/entitlements.plist \
+  --sign - src-tauri/server-dist/cv-studio-server
+
 npx @tauri-apps/cli build --bundles app,dmg
 ```
 
 Icons are already generated, `src-tauri/icons/icon.icns` included, so nothing
 needs regenerating.
+
+A locally built `.app` is ad-hoc signed, same as CI's. It runs on the machine
+that built it and, copied anywhere by hand, on any other. It is only a download
+that picks up the quarantine flag, and only that needs the `xattr` step under
+First launch.
 
 ## Sizes
 
@@ -179,10 +230,26 @@ bundle and is driven in-process; the `uv tool install "rendercv[full]"` path in
 Neither platform's code signing is paid for, so first launch takes one extra
 step. Both are spelled out in the release notes the workflow writes.
 
-**macOS**: an unsigned `.app` is refused on first open with "cannot be opened
-because the developer cannot be verified". Right-click → Open, once, clears it.
-Proper signing needs a paid Apple Developer account; for a personal tool it is
-not worth it.
+**macOS**: a downloaded copy is refused on first open with "CV Studio.app is
+damaged and can't be opened. You should move it to the Bin." The app is not
+damaged. That is the dialog macOS shows for any quarantined app that Apple has
+not notarized, and it looks identical whether the app is unsigned, ad-hoc
+signed, or genuinely corrupt.
+
+Clearing the quarantine flag is the way in:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/CV Studio.app"
+```
+
+Right-click → Open used to substitute for this and no longer does: macOS 15
+removed it as a Gatekeeper bypass. The System Settings → Privacy & Security
+"Open Anyway" button is the other route, but it only appears for about an hour
+after a failed launch, and it does not appear at all for the "damaged" case, so
+the command is what the release notes tell people to run.
+
+Only notarization removes the step, and notarization needs a paid Apple
+Developer account. The workflow is wired for it already; see Signing above.
 
 **Windows**: SmartScreen may warn on first run. Choose More info, then Run anyway. The
 installer is `currentUser` mode, so there is no admin prompt.
@@ -206,6 +273,7 @@ installer is `currentUser` mode, so there is no admin prompt.
     ├── Cargo.toml          release profile tuned for size (opt-level z, LTO, strip)
     ├── tauri.conf.json     bundle config, updater endpoint and public key
     ├── icons/              generated for every platform incl. .icns
+    ├── entitlements.plist  hardened-runtime exceptions the frozen Python needs
     ├── installer/          NSIS header and sidebar art, install hooks
     ├── server-dist/        gitignored; PyInstaller output, staged before bundling
     └── src/main.rs         process supervision + webview

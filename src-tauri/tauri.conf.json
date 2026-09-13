@@ -38,6 +38,10 @@
     "category": "Productivity",
     "copyright": "Copyright (c) 2026 Maxime Bidault. MIT licensed.",
     "licenseFile": "../LICENSE",
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "minimumSystemVersion": "10.15"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",

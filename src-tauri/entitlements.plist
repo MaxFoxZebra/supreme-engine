@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Signing turns on the hardened runtime, and the hardened runtime's defaults
+    are wrong for a frozen Python interpreter. All three of these are what
+    PyInstaller needs to keep working once the bundle is signed, and all three
+    are accepted by the notary service.
+
+    allow-jit and allow-unsigned-executable-memory: CPython writes and then
+    executes memory, and Typst, which RenderCV shells into, does the same.
+    Without these the server dies at import time.
+
+    disable-library-validation: the server loads .so extension modules that are
+    ad-hoc signed by PyInstaller rather than by our identity. Library validation
+    refuses to load code signed by a different team, so it would reject every
+    compiled extension in the bundle.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

@@ -29,10 +29,20 @@ Download the installer for your platform from Releases.
 
 Windows installs per-user, so there is no admin prompt.
 
-Both builds are unsigned, so the first launch needs one extra step:
+Neither build is signed by its platform vendor, so the first launch needs one
+extra step:
 
-- **macOS**: right-click the app and choose **Open**, then confirm. Double-clicking
-  an unsigned app makes Gatekeeper refuse it outright.
+- **macOS**: drag CV Studio to Applications, then run this once:
+
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/CV Studio.app"
+  ```
+
+  It opens normally after that. Until you do, macOS says the app is **damaged
+  and can't be opened**, which is what it reports for anything downloaded that
+  Apple has not notarized. The app is not damaged and the command disables
+  nothing system-wide: it clears the flag macOS put on that one download.
+  Right-click → **Open** was the old way around this and macOS 15 removed it.
 - **Windows**: SmartScreen may show "Windows protected your PC". Choose
   **More info → Run anyway**.
 

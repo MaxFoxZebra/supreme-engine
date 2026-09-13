@@ -63,6 +63,15 @@ jobs:
         working-directory: server
         run: |
           python -m pip install --upgrade pip
+          # cryptography, which mcp pulls in, has to come from a wheel. Built
+          # from source on the Intel runner it links against Homebrew's OpenSSL,
+          # while PyInstaller bundles the older libssl.3.dylib the runner's
+          # Python uses. The two collide on filename, the frozen _rust.abi3.so
+          # binds to the older one, and importing mcp dies with
+          # "Symbol not found: _SSL_get0_group_name". That is what kept v0.5.0
+          # from shipping an Intel build at all. The published wheels link
+          # OpenSSL statically, so there is no libssl left to collide.
+          pip install --only-binary=:all: cryptography
           pip install "rendercv[full]" "ruamel.yaml" mcp pyinstaller
           # rendercv_fonts, typst and mcp ship binaries and package data that
           # PyInstaller does not discover on its own.
@@ -92,7 +101,87 @@ jobs:
         shell: bash
         run: |
           rm -rf src-tauri/server-dist
-          cp -r server/dist/cv-studio-server src-tauri/server-dist
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # ditto rather than cp: it is the only copy on macOS that preserves
+            # extended attributes and symlinks exactly, and a code signature
+            # that survives the copy is the whole point of the next step.
+            ditto server/dist/cv-studio-server src-tauri/server-dist
+          else
+            cp -r server/dist/cv-studio-server src-tauri/server-dist
+          fi
+
+      # Runs before the smoke test on purpose. Signing turns on the hardened
+      # runtime, which is exactly the kind of change that can leave a binary
+      # that builds and refuses to start, so the smoke test below is what
+      # proves the signed server still renders and still speaks MCP.
+      - name: Sign the frozen server (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          CERT_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          # Ad-hoc unless a Developer ID is in the secrets. An ad-hoc signature
+          # is not a Developer ID and will not get a downloaded copy past
+          # Gatekeeper on its own, but it does give every Mach-O in the bundle a
+          # valid seal. That is what lets the app run once the quarantine flag
+          # is cleared, and it is the shape notarization needs if a certificate
+          # is ever added.
+          IDENTITY="-"
+          TIMESTAMP=""
+          if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+            KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+            security create-keychain -p "" "$KEYCHAIN"
+            security set-keychain-settings "$KEYCHAIN"
+            security unlock-keychain -p "" "$KEYCHAIN"
+            echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+              -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: \
+              -s -k "" "$KEYCHAIN" >/dev/null
+            security list-keychains -d user -s "$KEYCHAIN" \
+              $(security list-keychains -d user | tr -d '"')
+            rm -f "$RUNNER_TEMP/cert.p12"
+            IDENTITY="$CERT_IDENTITY"
+            # A trusted timestamp is required for notarization and refused for
+            # an ad-hoc signature, so it only goes on the real-identity path.
+            # Left unquoted below so that empty expands to no argument at all,
+            # which an array would not do safely under the bash 3.2 that ships
+            # with macOS.
+            TIMESTAMP="--timestamp"
+          fi
+
+          # Hand the identity to the Tauri bundler in the next step so the .app
+          # is sealed by the same one.
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+          # Inside out: nested code first, containers last, because signing
+          # something underneath an existing seal invalidates it. Tauri signs
+          # the .app in the next step; this covers the frozen Python, which it
+          # copies in as an opaque resource tree and never walks.
+          #
+          # Match on the exec bit and on extension: wheels are not consistent
+          # about marking .so files executable, and an unsigned extension
+          # module is enough to fail the whole bundle.
+          find src-tauri/server-dist -type f \
+            \( -perm -u+x -o -name '*.so' -o -name '*.dylib' \) -print0 |
+            while IFS= read -r -d '' f; do
+              file -b "$f" | grep -q 'Mach-O' || continue
+              codesign --force --options runtime $TIMESTAMP \
+                --sign "$IDENTITY" "$f"
+            done
+
+          # The entry point last, and the only one that carries entitlements:
+          # they apply to the process, and codesign ignores them on a library.
+          codesign --force --options runtime $TIMESTAMP \
+            --entitlements src-tauri/entitlements.plist \
+            --sign "$IDENTITY" src-tauri/server-dist/cv-studio-server
+
+          codesign --verify --strict src-tauri/server-dist/cv-studio-server
+          echo "frozen server signed with identity: $IDENTITY"
 
       - name: Smoke-test the packaged server
         shell: bash
@@ -130,14 +219,42 @@ jobs:
           # an empty secret value. Setting it here keeps the signer from
           # prompting in CI, and an empty password is not a secret anyway.
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # APPLE_SIGNING_IDENTITY comes from the signing step above, which put
+          # it in GITHUB_ENV: "-" normally, the Developer ID when one is
+          # configured. Deliberately not passing APPLE_CERTIFICATE here, because
+          # that step has already imported it and tauri-action would import it a
+          # second time.
+          #
+          # These three are what turns on notarization, which is the only thing
+          # that makes a downloaded copy open without the user intervening.
+          # Unset, the build still succeeds and still ships; it just ships
+          # un-notarized, and the release notes below say so.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "CV Studio ${{ github.ref_name }}"
           releaseBody: |
-            Unsigned by Apple and Microsoft, so first launch needs one extra step.
+            Not notarized by Apple or signed by Microsoft, so first launch needs
+            one extra step.
 
-            **macOS**: right-click the app and choose Open the first time.
-            Gatekeeper blocks unsigned apps opened by double-click.
+            **macOS**: open the disk image, drag CV Studio to Applications, then
+            run this once:
+
+            ```
+            xattr -dr com.apple.quarantine "/Applications/CV Studio.app"
+            ```
+
+            After that it opens by double-click like anything else. Without it
+            macOS reports the app as *damaged and can't be opened*, which is
+            what it says about any app that was downloaded and is not notarized.
+            The app is not damaged, and the command does not disable anything
+            system-wide: it clears the flag macOS attached to this one download.
+
+            Right-click then Open used to work instead and no longer does.
+            macOS 15 removed it, so on Sequoia and later the command above is
+            the way in.
 
             **Windows**: SmartScreen may warn on first run. Choose
             More info, then Run anyway. Installs per-user, no admin needed.
@@ -145,6 +262,33 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+      # "Damaged and can't be opened" is also what macOS says about a bundle
+      # whose seal does not match its contents, which is a real thing to ship by
+      # accident and indistinguishable, from the dialog, from merely not being
+      # notarized. Checking here means only one of those two can ever reach a
+      # user, and the release notes already cover that one.
+      - name: Verify the macOS signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # -print -quit rather than piping to head: under pipefail, head
+          # closing the pipe early kills find with SIGPIPE and fails the step.
+          APP=$(find src-tauri/target -type d -name "CV Studio.app" \
+            -path "*/bundle/macos/*" -print -quit)
+          [ -n "$APP" ] || { echo "no .app was produced"; exit 1; }
+
+          # --deep walks the frozen Python as well, so a resource that was
+          # modified after signing fails here rather than on a user's machine.
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --verbose=2 "$APP" 2>&1 |
+            grep -E 'Identifier|Authority|TeamIdentifier|Runtime' || true
+
+          # Informational only. Without notarization this rejects, and that
+          # rejection is precisely what the release notes tell people to expect,
+          # so it must not fail the build.
+          spctl --assess --type execute --verbose=4 "$APP" || true
 
       - uses: actions/upload-artifact@v7
         if: always()
