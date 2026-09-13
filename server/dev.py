@@ -23,7 +23,7 @@ import webbrowser
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-WATCH = ["studio.py", "cv_render.py", "jobs.py", "mcp_server.py"]
+WATCH = ["studio.py", "cv_render.py", "cv_map.py", "jobs.py", "mcp_server.py"]
 
 
 def _reexec_in_venv() -> None:

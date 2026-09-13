@@ -82,6 +82,7 @@ jobs:
             --collect-all mcp \
             --collect-all pydantic \
             --hidden-import cv_render \
+            --hidden-import cv_map \
             --hidden-import studio \
             --hidden-import mcp_server \
             --paths . \
@@ -106,7 +107,19 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"path":"profile/my-cv.yaml"}' -o result.json
           grep -q '"ok": true' result.json || { echo "packaged renderer failed"; cat result.json; exit 1; }
-          echo "packaged renderer OK"
+          # cv_map degrades silently by design, so a render succeeding proves
+          # nothing about it. Assert the block map is really in the response, or
+          # a bundle that lost the module ships with a page you cannot click.
+          grep -q '"map"' result.json || {
+            echo "packaged build renders but produces no block map (cv_map missing?)"
+            cat result.json; exit 1; }
+          echo "packaged renderer and block map OK"
+
+          # And the other half of the binary: the MCP surface Claude Desktop uses.
+          echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' | "$BIN" --mcp --workspace "$RUNNER_TEMP/ws" > mcp.json || true
+          grep -q '"serverInfo"' mcp.json || {
+            echo "packaged MCP server did not complete a handshake"; cat mcp.json; exit 1; }
+          echo "packaged MCP server OK"
 
       - name: Build, sign and publish
         uses: tauri-apps/tauri-action@v0

@@ -94,11 +94,36 @@ def _render_subprocess(yaml_path: Path, out_dir: Path) -> tuple[bool, str]:
     return proc.returncode == 0, (proc.stdout or "") + (proc.stderr or "")
 
 
+def _newest(out_dir: Path, pattern: str) -> list[Path]:
+    """The most recently written match, as a 0- or 1-item list."""
+    found = [f for f in out_dir.glob(pattern) if f.is_file()]
+    if not found:
+        return []
+    return [max(found, key=lambda f: f.stat().st_mtime)]
+
+
+def _page_index(png: Path, stem: str) -> int | None:
+    """The page number off a `<stem>_<n>.png`, or None if it is not one."""
+    tail = png.stem[len(stem) + 1:]
+    return int(tail) if tail.isdigit() else None
+
+
+def _pages_of(out_dir: Path, stem: str | None) -> list[Path]:
+    """This document's page images, ordered by page rather than by name.
+
+    Sorting them as text would put page 10 between pages 1 and 2.
+    """
+    if not stem:
+        return []
+    return [f for f in out_dir.glob(f"{stem}_*.png")
+            if _page_index(f, stem) is not None]
+
+
 def render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
     """Render a RenderCV YAML file and describe the result.
 
-    Returns {ok, pages, png_pages, pdf, markdown, ats_word_count, pdf_kb, log}.
-    `pages` is exact: RenderCV emits one PNG per page.
+    Returns {ok, pages, png_pages, pdf, markdown, typ, ats_word_count, pdf_kb,
+    log}. `pages` is exact: RenderCV emits one PNG per page.
     """
     yaml_path = Path(yaml_path).resolve()
     out_dir = Path(out_dir)
@@ -116,9 +141,19 @@ def render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
         ok, log = _render_subprocess(yaml_path, out_dir)
 
     log = strip_ansi(log)
-    pdfs = sorted(out_dir.glob("*.pdf"))
-    pngs = sorted(out_dir.glob("*.png"))
-    mds = sorted(out_dir.glob("*.md"))
+    # Newest, not alphabetically first: the run that just finished is the one
+    # being described, and a leftover from another document could otherwise
+    # sort ahead of it.
+    pdfs = _newest(out_dir, "*.pdf")
+    mds = _newest(out_dir, "*.md")
+    typs = _newest(out_dir, "*.typ")
+
+    # Only this document's pages. RenderCV names its output after `cv.name`,
+    # and the preview folder is shared by every document, so globbing "*.png"
+    # counts whatever an earlier render or an earlier name left behind --
+    # which reads as extra pages and pages you into someone else's CV.
+    stem = pdfs[0].stem if pdfs else None
+    pngs = sorted(_pages_of(out_dir, stem), key=lambda f: _page_index(f, stem))
 
     if not ok or not pdfs:
         return {"ok": False, "log": log}
@@ -133,6 +168,9 @@ def render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
         "pages": len(pngs),
         "png_pages": [str(p) for p in pngs],
         "markdown": str(mds[0]) if mds else None,
+        # The Typst source RenderCV compiled. It is an ordered transcript of the
+        # document, which is what cv_map reads to make the page clickable.
+        "typ": str(typs[0]) if typs else None,
         "ats_word_count": words,
         "pdf_kb": round(pdfs[0].stat().st_size / 1024, 1),
         "log": log,

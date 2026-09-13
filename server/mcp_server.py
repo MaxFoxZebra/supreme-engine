@@ -16,6 +16,8 @@ Run it with:  cv-studio-server --mcp
 from __future__ import annotations
 
 import base64
+import functools
+import inspect
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -44,19 +46,53 @@ def _ws() -> Path:
     return studio.WORKSPACE
 
 
-@mcp.tool()
+def tool(fn):
+    """Register a tool, and leave a note in the workspace that it ran.
+
+    The app is very likely open on the file being edited, in another process
+    that cannot see this one. The note is how it finds out, so it can offer to
+    reload rather than quietly save over what the model just wrote. Read-only
+    tools are recorded too: "Claude is looking at this" is worth showing.
+    """
+    signature = inspect.signature(fn)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            bound = signature.bind(*args, **kwargs)
+            target = bound.arguments.get("path") or bound.arguments.get("name")
+        except TypeError:
+            target = None
+        # Record what happened, not merely that it was attempted: a refused
+        # call logged like a successful one tells the user the model read a
+        # file it was actually blocked from reading.
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as exc:
+            studio.note_mcp_activity(fn.__name__,
+                                     str(target) if target else None,
+                                     ok=False, error=str(exc)[:200])
+            raise
+        studio.note_mcp_activity(fn.__name__,
+                                 str(target) if target else None)
+        return result
+
+    return mcp.tool()(wrapper)
+
+
+@tool
 def list_cvs() -> list[dict]:
     """List every CV in the workspace, with its path and where it lives."""
     return studio.list_documents()
 
 
-@mcp.tool()
+@tool
 def read_cv(path: str) -> str:
     """Read a CV's YAML source. `path` is relative to the workspace."""
     return studio.safe_path(path).read_text(encoding="utf-8")
 
 
-@mcp.tool()
+@tool
 def write_cv(path: str, content: str) -> str:
     """Overwrite a CV's YAML source with `content`.
 
@@ -68,7 +104,7 @@ def write_cv(path: str, content: str) -> str:
     return f"Wrote {len(content)} characters to {path}"
 
 
-@mcp.tool()
+@tool
 def edit_cv_fields(path: str, edits: list[dict]) -> str:
     """Change individual fields, preserving the rest of the file and its comments.
 
@@ -80,7 +116,7 @@ def edit_cv_fields(path: str, edits: list[dict]) -> str:
     return f"Applied {len(edits)} edit(s) to {path}"
 
 
-@mcp.tool()
+@tool
 def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
     """Create a CV or a cover letter, blank or duplicated from an existing one.
 
@@ -109,7 +145,7 @@ def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
     return f"Created {folder}/{safe}.yaml"
 
 
-@mcp.tool()
+@tool
 def render_cv(path: str, page: int = 1) -> list:
     """Render a CV to PDF and return the page as an image to look at.
 
@@ -145,7 +181,7 @@ def render_cv(path: str, page: int = 1) -> list:
     return out_blocks
 
 
-@mcp.tool()
+@tool
 def design_options() -> dict:
     """The themes, fonts and page sizes available for the design block."""
     # available_themes() asks RenderCV rather than trusting the fallback list,
@@ -159,7 +195,7 @@ def design_options() -> dict:
     }
 
 
-@mcp.tool()
+@tool
 def workspace_info() -> dict:
     """Where the workspace is and what is in it."""
     ws = _ws()

@@ -1,12 +1,27 @@
 # CV Studio
 
-A local CV editor with live PDF preview, built on [RenderCV](https://github.com/rendercv/rendercv)
-and [Typst](https://typst.app). Everything runs on your machine, with no account, no
-server, no telemetry.
+The eyes of a CV written by an AI.
 
-Your CVs are plain YAML files in a folder you own. There is no database, so you
-can read, grep, diff, back up and version them without this app, and take them
-somewhere else whenever you like.
+Claude or ChatGPT reads the posting and writes the YAML, through an MCP server
+that ships inside this app. CV Studio renders it, shows you the page and what it
+costs in space, and lets you fix by hand what is quicker pointed at than
+described — click a block on the page and you are editing it. When the model
+changes a file you have open, the app notices and offers you its version.
+
+It works perfectly well on its own, too: a local CV editor with live PDF
+preview, built on [RenderCV](https://github.com/rendercv/rendercv) and
+[Typst](https://typst.app).
+
+Everything runs on your machine, with no account, no server, no telemetry —
+which matters more once a model is editing the files, not less. Your CVs are
+plain YAML in a folder you own. There is no database, so you can read, grep,
+diff, back up and version them without this app, and take them somewhere else
+whenever you like. Both halves only ever touch that folder.
+
+Connecting a client is one button in **Settings → AI clients** — Claude Desktop,
+or OpenAI, where the same config file covers the ChatGPT app, the Codex CLI and
+the Codex IDE extension. See [MCP.md](MCP.md) for what the model can and cannot
+do.
 
 ## Install
 
@@ -34,16 +49,21 @@ There are three screens, switched from the control at the top left.
 outline of the open one. The middle column shows the rendered page, the whole
 form, or the raw YAML. The right panel edits whatever you have selected in the
 outline: its fields, and its bullets one row at a time. Selecting a section or
-an entry anywhere moves the selection everywhere.
+an entry anywhere moves the selection everywhere — including on the page
+itself, where clicking a block edits it and the current selection is outlined.
 
 | | |
 |---|---|
 | **Page / Form / YAML** | The rendered page, every field at once, or the raw file with syntax highlighting |
+| **Click the page** | Every block on the rendered page is a target: click the job you are reading and the inspector is editing it |
 | **Inspector** | The selected entry's fields and bullets, with `+` and `−` to add or drop one |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is — measured off the render |
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
 | **Appearance** | Light or dark, or follow the system. In Settings. The rendered CV page stays white either way — it is a document, not a surface |
+| **AI clients** | Whether Claude and OpenAI are wired up to this workspace, in the title bar — one mark and one dot each. Clicking sets them up, and shows what the model has been doing in here |
+| **Skills** | The job-search skills, packaged as uploads for the Claude Desktop app. Claude Code reads them off disk already |
+| **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 
 **Jobs** is `applications.db`: filter by status down the left, six columns of
 what matters across the middle, and one application's details on the right —

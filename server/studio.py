@@ -27,11 +27,13 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import socketserver
 import subprocess
 import sys
 import threading
 import time
+import zipfile
 import webbrowser
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -53,6 +55,11 @@ try:
     import jobs as jobstore
 except ImportError:  # the store lives beside the packaged server
     jobstore = None
+
+try:
+    import cv_map
+except ImportError:  # clicking the page is a bonus, not a requirement
+    cv_map = None
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -85,8 +92,433 @@ def server_launch() -> dict:
     """
     if getattr(sys, "frozen", False):
         return {"command": str(Path(sys.executable).resolve()), "args": []}
+    # server_main.py, not this file: --mcp is routed there, and studio.py's own
+    # argument parser rejects it outright. Pointing a client at the wrong one
+    # produces a server that exits before it says hello.
+    entry = Path(__file__).resolve().parent / "server_main.py"
     return {"command": str(Path(sys.executable).resolve()),
-            "args": [str(Path(__file__).resolve())]}
+            "args": [str(entry)]}
+
+
+# --------------------------------------------------------------------------
+# AI clients
+#
+# The MCP server is this same program started with --mcp, in a process the AI
+# client launches and owns. The app therefore cannot talk to it -- the only
+# things the two halves share are the workspace folder and the client's config
+# file. Both are enough: one says whether the connection exists, the other says
+# what the model has been doing in there.
+#
+# Two clients, two config formats. Claude Desktop keeps JSON; OpenAI keeps TOML
+# at ~/.codex/config.toml, which the ChatGPT desktop app, Codex CLI and the IDE
+# extension all read, so configuring it once covers all three.
+# --------------------------------------------------------------------------
+
+MCP_KEY = "cv-studio"
+ACTIVITY_FILE = ".cvstudio-mcp.json"
+ACTIVITY_KEEP = 20
+
+
+def _claude_config_path() -> Path:
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    return base / "Claude" / "claude_desktop_config.json"
+
+
+def _openai_config_path() -> Path:
+    return Path.home() / ".codex" / "config.toml"
+
+
+def ai_entry() -> dict:
+    """The MCP server entry to install, in the shape both formats share.
+
+    A client needs the executable and its arguments separately, which is also
+    why the workspace is passed as an argument rather than assumed: one
+    configured server serves exactly one workspace.
+    """
+    launch = server_launch()
+    return {"command": launch["command"],
+            "args": [*launch["args"], "--mcp", "--workspace", str(WORKSPACE)]}
+
+
+# ---- JSON, the way Claude Desktop keeps it -------------------------------
+
+def _json_read(path: Path) -> dict | None:
+    raw = path.read_text(encoding="utf-8").strip()
+    config = json.loads(raw) if raw else {}
+    if not isinstance(config, dict):
+        raise ValueError("the config file is not a JSON object")
+    entry = (config.get("mcpServers") or {}).get(MCP_KEY)
+    return entry if isinstance(entry, dict) else None
+
+
+def _json_write(path: Path, entry: dict) -> None:
+    raw = path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+    config = json.loads(raw) if raw else {}
+    servers = config.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        raise ValueError('"mcpServers" is not a JSON object')
+    servers[MCP_KEY] = entry
+    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+
+def _json_snippet(entry: dict) -> str:
+    return json.dumps({"mcpServers": {MCP_KEY: entry}}, indent=2)
+
+
+# ---- TOML, the way OpenAI keeps it ---------------------------------------
+
+def _toml_head(line: str) -> str | None:
+    """The table name on this line, if the line opens one."""
+    s = line.strip()
+    if not s.startswith("["):
+        return None
+    s = s[2:] if s.startswith("[[") else s[1:]
+    end = s.find("]")
+    if end < 0:
+        return None
+    return s[:end].strip().replace('"', "").replace("'", "")
+
+
+def _toml_span(text: str, header: str) -> tuple[int, int] | None:
+    """The line range of one table, from its header to the next one."""
+    lines = text.splitlines(keepends=True)
+    start = None
+    for i, line in enumerate(lines):
+        name = _toml_head(line)
+        if name is None:
+            continue
+        if start is None:
+            if name == header:
+                start = i
+        else:
+            return start, i
+    return (start, len(lines)) if start is not None else None
+
+
+def _toml_read(path: Path) -> dict | None:
+    import tomllib
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    entry = (data.get("mcp_servers") or {}).get(MCP_KEY)
+    return entry if isinstance(entry, dict) else None
+
+
+def _toml_snippet(entry: dict) -> str:
+    # JSON string escaping is a subset of TOML's basic strings, which is what
+    # matters on Windows, where every path is full of backslashes.
+    args = ", ".join(json.dumps(a) for a in entry["args"])
+    return (f"[mcp_servers.{MCP_KEY}]\n"
+            f"command = {json.dumps(entry['command'])}\n"
+            f"args = [{args}]\n")
+
+
+def _toml_write(path: Path, entry: dict) -> None:
+    """Rewrite our own table and nothing else.
+
+    Reading the file into a dict and writing it back out would reformat it and
+    drop every comment in it. This is a file people hand-edit, so the edit is
+    made in the text: replace our table where it already is, or append one.
+    """
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    table = _toml_snippet(entry)
+    span = _toml_span(text, f"mcp_servers.{MCP_KEY}")
+    if span:
+        lines = text.splitlines(keepends=True)
+        lines[span[0]:span[1]] = [table]
+        out = "".join(lines)
+    else:
+        out = text
+        if out and not out.endswith("\n"):
+            out += "\n"
+        if out.strip():
+            out += "\n"
+        out += table
+    path.write_text(out, encoding="utf-8")
+
+
+AI_CLIENTS = {
+    "claude": {
+        "label": "Claude Desktop",
+        "path": _claude_config_path,
+        "read": _json_read, "write": _json_write, "snippet": _json_snippet,
+        "restart": "Restart Claude Desktop, and the tools appear under the "
+                   "connectors icon.",
+        "manual": "Claude Desktop → Settings → Developer → Edit config.",
+    },
+    "openai": {
+        "label": "OpenAI",
+        "path": _openai_config_path,
+        "read": _toml_read, "write": _toml_write, "snippet": _toml_snippet,
+        "restart": "Restart the ChatGPT app, or start a new Codex session.",
+        "manual": "The ChatGPT app, Codex CLI and the Codex IDE extension "
+                  "share this file, so this configures all three.",
+    },
+}
+
+
+def _same_file(a: str, b: str) -> bool:
+    try:
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(
+            os.path.realpath(b))
+    except OSError:
+        return os.path.normcase(a) == os.path.normcase(b)
+
+
+def ai_config_path(client: str) -> Path:
+    """Where a client keeps its MCP server list.
+
+    The override exists so a dev server, or a test, can be pointed at a copy:
+    connecting writes into a file the user has other servers in, and that is not
+    something to practise on.
+    """
+    override = os.environ.get(f"CVSTUDIO_{client.upper()}_CONFIG")
+    return Path(override) if override else AI_CLIENTS[client]["path"]()
+
+
+def ai_status(client: str) -> dict:
+    """Whether a client is pointed at this build and this workspace.
+
+    An entry that exists but names a different copy of CV Studio, or a
+    different workspace, is its own answer: reporting that as "connected" is how
+    someone ends up editing one set of CVs and looking at another.
+    """
+    spec = AI_CLIENTS[client]
+    path = ai_config_path(client)
+    want = ai_entry()
+    out = {"id": client, "label": spec["label"], "config_path": str(path),
+           "config_exists": path.is_file(), "state": "absent",
+           "workspace": None, "command": None, "error": None,
+           "restart": spec["restart"], "manual": spec["manual"],
+           "snippet": spec["snippet"](want)}
+    if not out["config_exists"]:
+        return out
+    try:
+        entry = spec["read"](path)
+    except Exception as exc:
+        out["state"], out["error"] = "unreadable", str(exc)
+        return out
+    if not entry or not entry.get("command"):
+        return out
+
+    args = [str(a) for a in (entry.get("args") or [])]
+    workspace = (args[args.index("--workspace") + 1]
+                 if "--workspace" in args and args[-1] != "--workspace"
+                 else str(DEFAULT_WORKSPACE))
+    out["command"] = str(entry["command"])
+    out["workspace"] = workspace
+    if not _same_file(out["command"], want["command"]):
+        out["state"] = "elsewhere"
+    elif not _same_file(workspace, str(WORKSPACE)):
+        out["state"] = "other-workspace"
+    else:
+        out["state"] = "connected"
+    return out
+
+
+def ai_clients() -> list[dict]:
+    return [ai_status(client) for client in AI_CLIENTS]
+
+
+def ai_connect(client: str) -> dict:
+    """Add this workspace to a client's config, leaving the rest alone.
+
+    People keep other servers in these files, so each is read, merged and
+    written back rather than replaced -- and backed up first. A file that is
+    already broken is refused rather than rewritten: overwriting it would
+    silently throw away whatever else was configured. And because the TOML edit
+    is made in the text, the result is read back and checked before it is
+    allowed to stand.
+    """
+    if client not in AI_CLIENTS:
+        raise ValueError(f"unknown client: {client}")
+    spec = AI_CLIENTS[client]
+    path = ai_config_path(client)
+    want = ai_entry()
+
+    before, backup = None, None
+    if path.is_file():
+        try:
+            before = spec["read"](path)
+        except Exception as exc:
+            raise ValueError(
+                f"{spec['label']}'s config file cannot be read, so writing to "
+                "it would lose whatever else is configured there. Fix it "
+                f"first: {path} ({exc})")
+        backup = path.with_suffix(path.suffix + ".bak")
+        shutil.copy2(path, backup)
+    if before == want:
+        return {"ok": True, "action": "unchanged", **ai_status(client)}
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    spec["write"](path, want)
+
+    try:
+        wrote = spec["read"](path)
+    except Exception:
+        wrote = None
+    if wrote != want:
+        if backup is not None:
+            shutil.copy2(backup, path)
+        raise ValueError(
+            f"Writing to {path} did not produce the entry it should have, so "
+            "the file has been put back as it was. Add it by hand instead.")
+    return {"ok": True, "action": "updated" if before else "added",
+            **ai_status(client)}
+
+
+# --------------------------------------------------------------------------
+# Skills
+#
+# Claude Code reads skills off the filesystem; Claude Desktop does not -- there
+# they are uploaded to the account as a zip and synced back down. So the most
+# this app can honestly do is hand over archives that are ready to upload.
+#
+# The split that matters: a skill of pure judgement travels as it is, while one
+# that shells out to a local script cannot work in Desktop's sandbox at all.
+# Those get an appended note pointing at the MCP tools, which are how the same
+# work gets done over there.
+# --------------------------------------------------------------------------
+
+SKILLS_DIR = Path.home() / ".claude" / "skills"
+SKILL_PREFIX = "cv-studio"
+SKILL_JUNK = ("__pycache__", ".pyc", ".pyo", ".DS_Store")
+
+DESKTOP_NOTE = """
+
+---
+
+## Running inside the Claude Desktop app
+
+This copy was packaged by CV Studio. In the desktop app a skill has no local
+filesystem, no Python and no localhost, so any command above that runs a script
+or opens `127.0.0.1` cannot work here. **Use the `cv-studio` MCP tools instead**
+-- they do the same work in the user's real workspace:
+
+| Instead of | Use |
+|---|---|
+| running a render script | `render_cv` -- renders and returns the page as an image to look at |
+| reading or writing a YAML file | `read_cv`, `edit_cv_fields` (keeps comments), `write_cv` |
+| creating or duplicating a document | `create_cv` |
+| listing the workspace | `list_cvs`, `workspace_info` |
+| checking available themes or fonts | `design_options` |
+
+If those tools are not present, say so rather than guessing: the user needs to
+connect CV Studio under Settings, Developer, Edit config.
+"""
+
+
+def _front_matter(text: str) -> dict:
+    """name and description out of a SKILL.md header."""
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end < 0:
+        return {}
+    out, key = {}, None
+    for line in text[3:end].splitlines():
+        m = re.match(r"^(\w[\w-]*):\s*(.*)$", line)
+        if m:
+            key = m.group(1)
+            out[key] = m.group(2).strip().lstrip(">|").strip()
+        elif key and line.strip():
+            out[key] = (out[key] + " " + line.strip()).strip()
+    return out
+
+
+# A skill that runs something local cannot do that inside Desktop's sandbox.
+LOCAL_DEP = re.compile(r"127\.0\.0\.1|localhost|~/\.claude/skills|python .*scripts/|uv run")
+
+
+def skill_folders() -> list[Path]:
+    if not SKILLS_DIR.is_dir():
+        return []
+    return sorted(d for d in SKILLS_DIR.iterdir()
+                  if d.is_dir() and d.name.startswith(SKILL_PREFIX)
+                  and (d / "SKILL.md").is_file())
+
+
+def skills_list() -> dict:
+    out = []
+    for d in skill_folders():
+        text = (d / "SKILL.md").read_text(encoding="utf-8", errors="replace")
+        fm = _front_matter(text)
+        zipped = WORKSPACE / "assets" / "skills" / f"{d.name}.zip"
+        out.append({
+            "name": fm.get("name") or d.name,
+            "description": (fm.get("description") or "")[:220],
+            "needs_mcp": bool(LOCAL_DEP.search(text)),
+            "packaged": zipped.is_file(),
+            "path": rel(zipped) if zipped.is_file() else None,
+        })
+    return {"skills": out, "source": str(SKILLS_DIR),
+            "out_dir": rel(WORKSPACE / "assets" / "skills")}
+
+
+def package_skills() -> dict:
+    """Write one upload-ready zip per skill into the workspace."""
+    folders = skill_folders()
+    if not folders:
+        raise ValueError(
+            f"No CV Studio skills found in {SKILLS_DIR}. They ship with the "
+            "Claude Code setup; there is nothing to package without them.")
+    dest = WORKSPACE / "assets" / "skills"
+    dest.mkdir(parents=True, exist_ok=True)
+    made = []
+    for d in folders:
+        text = (d / "SKILL.md").read_text(encoding="utf-8", errors="replace")
+        needs = bool(LOCAL_DEP.search(text))
+        target = dest / f"{d.name}.zip"
+        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in sorted(d.rglob("*")):
+                if not f.is_file() or any(j in str(f) for j in SKILL_JUNK):
+                    continue
+                arc = Path(d.name) / f.relative_to(d)
+                if f.name == "SKILL.md" and needs:
+                    z.writestr(str(arc).replace("\\", "/"), text + DESKTOP_NOTE)
+                else:
+                    z.write(f, str(arc).replace("\\", "/"))
+        made.append({"name": d.name, "path": rel(target), "needs_mcp": needs,
+                     "kb": round(target.stat().st_size / 1024, 1)})
+    return {"ok": True, "dir": rel(dest), "skills": made}
+
+
+def note_mcp_activity(tool: str, path: str | None = None, ok: bool = True,
+                      error: str | None = None) -> None:
+    """Record what the AI just did, so the app can say so.
+
+    Called from the MCP process, read by the app's. Bookkeeping must never be
+    the thing that breaks a tool call, so every failure here is swallowed.
+    """
+    try:
+        f = WORKSPACE / ACTIVITY_FILE
+        try:
+            log = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            log = []
+        if not isinstance(log, list):
+            log = []
+        entry = {"tool": tool, "path": path, "at": time.time()}
+        if not ok:
+            entry["ok"] = False
+            entry["error"] = error
+        log.append(entry)
+        f.write_text(json.dumps(log[-ACTIVITY_KEEP:]), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def mcp_activity() -> dict:
+    try:
+        log = json.loads((WORKSPACE / ACTIVITY_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        log = []
+    if not isinstance(log, list) or not log:
+        return {"last": None, "recent": []}
+    return {"last": log[-1], "recent": log[-8:][::-1]}
 
 STARTER_CV = """# Your CV. Every field here is editable in the Form tab.
 # One YAML rule worth knowing: if a line of text contains a colon followed by a
@@ -293,27 +725,47 @@ def is_cv_yaml(p: Path) -> bool:
     return "cv:" in head and ("sections:" in head or "design:" in head)
 
 
-def list_documents() -> list[dict]:
-    docs = []
-    profile_dir = WORKSPACE / "profile"
-    if profile_dir.is_dir():
-        for f in sorted(profile_dir.glob("*.y*ml")):
-            if not f.name.startswith(".") and is_cv_yaml(f):
-                docs.append({"path": rel(f), "label": f.stem, "group": "My CVs"})
-    letters_dir = WORKSPACE / "letters"
-    if letters_dir.is_dir():
-        for f in sorted(letters_dir.glob("*.y*ml")):
-            if not f.name.startswith(".") and is_cv_yaml(f):
-                docs.append({"path": rel(f), "label": f.stem, "group": "Cover letters"})
+def document_files() -> list[tuple[Path, str, str]]:
+    """Every candidate document file, as (path, label, group).
+
+    Kept separate from list_documents because the pulse the editor polls only
+    wants names and timestamps: deciding what is really a CV means reading the
+    head of every file, which is too much to do every couple of seconds.
+    """
+    found: list[tuple[Path, str, str]] = []
+    for folder, group in ((WORKSPACE / "profile", "My CVs"),
+                          (WORKSPACE / "letters", "Cover letters")):
+        if folder.is_dir():
+            found += [(f, f.stem, group) for f in sorted(folder.glob("*.y*ml"))
+                      if not f.name.startswith(".")]
     apps = WORKSPACE / "applications"
     if apps.is_dir():
         for app_dir in sorted(apps.iterdir(), reverse=True):
-            if not app_dir.is_dir():
-                continue
-            for f in sorted(app_dir.glob("*.y*ml")):
-                if not f.name.startswith(".") and is_cv_yaml(f):
-                    docs.append({"path": rel(f), "label": app_dir.name, "group": "Applications"})
-    return docs
+            if app_dir.is_dir():
+                found += [(f, app_dir.name, "Applications")
+                          for f in sorted(app_dir.glob("*.y*ml"))
+                          if not f.name.startswith(".")]
+    return found
+
+
+def list_documents() -> list[dict]:
+    return [{"path": rel(f), "label": label, "group": group,
+             "mtime": f.stat().st_mtime}
+            for f, label, group in document_files() if is_cv_yaml(f)]
+
+
+def pulse() -> dict:
+    """What changed in the workspace, cheaply enough to ask about repeatedly.
+
+    This is how the app notices that Claude rewrote the file it is showing.
+    """
+    stamps = {}
+    for f, _, _ in document_files():
+        try:
+            stamps[rel(f)] = f.stat().st_mtime
+        except OSError:
+            pass
+    return {"docs": stamps, "mcp": mcp_activity()}
 
 
 def font_families() -> list[str]:
@@ -354,7 +806,72 @@ def load_doc(path: Path) -> dict:
         data, err = yaml_rt.load(text), None
     except Exception as exc:
         data, err = None, str(exc)
-    return {"yaml": text, "data": to_plain(data) if data else None, "parse_error": err}
+    # The mtime is what lets the editor tell its own writes apart from someone
+    # else's -- Claude's, usually -- and reload rather than overwrite.
+    return {"yaml": text, "data": to_plain(data) if data else None,
+            "parse_error": err, "mtime": path.stat().st_mtime,
+            # Where each block lives in the source, so the YAML tab can show
+            # the same selection the page and the form do.
+            "lines": line_map(data, text) if data else {}}
+
+
+def line_map(doc, text: str) -> dict:
+    """Where each block of the document sits in the YAML source.
+
+    The selection is the thread through every view, and the YAML tab was the one
+    place it could not follow because nothing knew which lines an entry occupied.
+    ruamel keeps the position of every node it parsed, so this is exact rather
+    than a search for a matching string.
+
+    Returns {"header": [start, end], "<section>": [...], "<section>/<i>": [...]}
+    with 0-based, end-exclusive line numbers.
+    """
+    try:
+        cv = doc["cv"]
+    except Exception:
+        return {}
+    total = len(text.splitlines())
+    out: dict[str, list[int]] = {}
+
+    def starts_of(node) -> list[int]:
+        try:
+            return [node.lc.key(k)[0] for k in node]
+        except Exception:
+            return []
+
+    sections = cv.get("sections") if hasattr(cv, "get") else None
+    # The header is everything in `cv` before the sections block begins.
+    try:
+        head_start = cv.lc.line
+        head_end = sections.lc.line - 1 if sections is not None else total
+        out["header"] = [head_start, max(head_start + 1, head_end)]
+    except Exception:
+        pass
+    if sections is None:
+        return out
+
+    names = list(sections)
+    for n, name in enumerate(names):
+        try:
+            key_line = sections.lc.key(name)[0]
+        except Exception:
+            continue
+        nxt = sections.lc.key(names[n + 1])[0] if n + 1 < len(names) else total
+        out[name] = [key_line, nxt]
+        entries = sections[name] or []
+        # An entry runs to the start of the next one, or to the end of the section.
+        starts = []
+        for i in range(len(entries)):
+            try:
+                starts.append(entries.lc.item(i)[0])
+            except Exception:
+                starts.append(None)
+        for i, s in enumerate(starts):
+            if s is None:
+                continue
+            follow = next((x for x in starts[i + 1:] if x is not None), None)
+            out[f"{name}/{i}"] = [s, follow if follow is not None else nxt]
+    return out
 
 
 def apply_patches(path: Path, patches: list[dict]) -> None:
@@ -429,12 +946,38 @@ def friendly(error: str) -> str | None:
     return None
 
 
-def _shape(result: dict) -> dict:
+def outline_of(data: dict | None) -> list[tuple[str, int]]:
+    """A document's sections as (key, entry count), in the order they render."""
+    cv = (data or {}).get("cv") or {}
+    sections = cv.get("sections") or {}
+    return [(k, len(v or [])) for k, v in sections.items()]
+
+
+def block_map(result: dict, source: Path) -> dict | None:
+    """Where each section and entry of a render landed on the page.
+
+    Best effort by design: this only makes the preview clickable, so anything
+    that goes wrong -- no Typst, a source shaped unexpectedly by some theme --
+    costs the click targets and nothing else. The render itself has already
+    succeeded by the time this runs.
+    """
+    if cv_map is None or not result.get("typ"):
+        return None
+    try:
+        outline = outline_of(load_doc(source).get("data"))
+        if not outline:
+            return None
+        return cv_map.build_map(Path(result["typ"]), outline, source.parent)
+    except Exception:
+        return None
+
+
+def _shape(result: dict, source: Path) -> dict:
     if not result.get("ok"):
         log = (result.get("log") or "render failed")[-3000:]
         return {"ok": False, "error": log, "hint": friendly(log)}
     stamp = int(time.time() * 1000)
-    return {
+    shaped = {
         "ok": True,
         "pages": result.get("pages"),
         "ats_words": result.get("ats_word_count"),
@@ -442,6 +985,14 @@ def _shape(result: dict) -> dict:
         "pngs": [f"/api/asset?path={rel(Path(p))}&v={stamp}"
                  for p in result.get("png_pages", [])],
     }
+    blocks = block_map(result, source)
+    if blocks and blocks.get("bands"):
+        shaped["map"] = blocks["bands"]
+        # The column the text sits in, so a click target can hug the writing
+        # rather than stretch across the sheet.
+        if blocks.get("box"):
+            shaped["map_box"] = blocks["box"]
+    return shaped
 
 
 def output_dir(path: Path) -> Path:
@@ -457,7 +1008,7 @@ def output_dir(path: Path) -> Path:
 
 
 def render(path: Path) -> dict:
-    return _shape(render_file(path, output_dir(path)))
+    return _shape(render_file(path, output_dir(path)), path)
 
 
 def preview(path: Path, text: str | None = None,
@@ -476,7 +1027,21 @@ def preview(path: Path, text: str | None = None,
                        else path.read_text(encoding="utf-8"), encoding="utf-8")
         if patches:
             apply_patches(tmp, patches)
-        return _shape(render_file(tmp, WORKSPACE / "assets" / ".preview"))
+        # Shaped against the scratch copy, not the saved file: the block map has
+        # to describe the document as it was just rendered, unsaved edits and
+        # all. `tmp` is still on disk here -- the unlink below runs after.
+        # Every document previews into this one folder, so last time's output
+        # is still sitting in it. Clear it: otherwise the folder grows without
+        # bound and stale pages linger for anything that looks at it.
+        scratch = WORKSPACE / "assets" / ".preview"
+        if scratch.is_dir():
+            for stale in scratch.iterdir():
+                if stale.is_file():
+                    try:
+                        stale.unlink()
+                    except OSError:
+                        pass
+        return _shape(render_file(tmp, scratch), tmp)
     finally:
         try:
             tmp.unlink()
@@ -604,7 +1169,8 @@ def openapi_spec() -> dict:
                         "items": {"type": "object", "properties": {
                             "path": {"type": "array", "items": {}},
                             "value": {}}}}}), "responses": ok}},
-            "/api/render": {"post": {"summary": "Render to PDF and PNG",
+            "/api/render": {"post": {"summary":
+                "Render to PDF and PNG, with a map of where each block landed",
                 "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
             "/api/preview": {"post": {"summary":
                 "Render unsaved content without writing the file",
@@ -633,9 +1199,33 @@ def openapi_spec() -> dict:
                 "parameters": [{"name": "format", "in": "query",
                                 "schema": {"type": "string", "enum": ["json", "csv"]}}],
                 "responses": ok}},
+            "/api/ai": {"get": {"summary":
+                "Whether each AI client is wired up to this build and workspace",
+                "responses": ok}},
+            "/api/ai/connect": {"post": {"summary":
+                "Add this workspace to one AI client's MCP config",
+                "requestBody": body({"client": {"type": "string",
+                                                "enum": ["claude", "openai"]}}),
+                "responses": ok}},
+            "/api/skills": {"get": {"summary":
+                "The CV Studio skills on this machine, and whether they need the MCP",
+                "responses": ok}},
+            "/api/skills/package": {"post": {"summary":
+                "Zip each skill for upload to the Claude Desktop app",
+                "responses": ok}},
+            "/api/pulse": {"get": {"summary":
+                "Document timestamps and recent AI activity, cheap to poll",
+                "responses": ok}},
             "/api/asset": {"get": {"summary": "Fetch a rendered PDF or PNG",
                 "parameters": [{"name": "path", "in": "query", "required": True,
                                 "schema": {"type": "string"}}], "responses": ok}},
+            "/api/jobs/delete": {"post": {"summary": "Delete one job application",
+                "requestBody": body({"id": {"type": "string"}}), "responses": ok}},
+            "/api/reveal": {"post": {"summary":
+                "Open the workspace, or one path inside it, in the file manager",
+                "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
+            "/api/docs": {"get": {"summary": "This reference, as a page",
+                "responses": ok}},
         },
         "components": {"securitySchemes": {"apiKey": {
             "type": "apiKey", "in": "header", "name": "X-API-Key"}}},
@@ -885,6 +1475,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(openapi_spec())
             if u.path == "/api/doc":
                 return self._json(load_doc(safe_path(q["path"][0])))
+            if u.path == "/api/ai":
+                return self._json({"clients": ai_clients()})
+            if u.path == "/api/pulse":
+                return self._json(pulse())
+            if u.path == "/api/skills":
+                return self._json(skills_list())
             if u.path == "/api/asset":
                 p = safe_path(q["path"][0])
                 ctype = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
@@ -914,6 +1510,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 elif "patches" in payload:
                     apply_patches(p, payload["patches"])
                 return self._json({"ok": True, **load_doc(p)})
+            if u.path == "/api/skills/package":
+                try:
+                    return self._json(package_skills())
+                except (ValueError, OSError) as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if u.path == "/api/ai/connect":
+                try:
+                    return self._json(ai_connect(payload.get("client", "")))
+                except (ValueError, OSError) as exc:
+                    return self._json({"error": str(exc)}, 400)
             if u.path == "/api/render":
                 return self._json(render(safe_path(payload["path"])))
             if u.path == "/api/preview":
@@ -1033,7 +1639,8 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --acc-wash:rgba(192,138,62,.10); --acc-ring:rgba(192,138,62,.18);
   --acc-line:rgba(192,138,62,.6);
   /* the funnel, which is drawn rather than styled inline so it follows the theme */
-  --fn-total:#33312b; --fn-neutral:#7d7767; --fn-positive:#a8752c; --fn-label:#33312b;
+  --fn-total:#33312b; --fn-neutral:#7d7767; --fn-positive:#a8761f; --fn-label:#33312b;
+  --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
   --fn-band:.34;
   --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
   --row-hover:#f1eee6; --spine:#c8c2b3; --bad-line:#e6cfc5;
@@ -1063,7 +1670,8 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
   --acc-text:#e8bc7c;
   --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
-  --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#c08a3e; --fn-label:#c6c0b0;
+  --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
+  --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
   --fn-band:.42;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
   --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
@@ -1081,7 +1689,8 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
     --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
     --acc-text:#e8bc7c;
     --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
-    --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#c08a3e; --fn-label:#c6c0b0;
+    --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
+  --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
     --fn-band:.42;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
     --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
@@ -1113,6 +1722,7 @@ button:disabled{opacity:.4;cursor:default}
 
 /* ---------- title bar (46px) ------------------------------------------- */
 #chrome{
+  position:relative;
   height:46px; flex:none; display:flex; align-items:center; gap:12px; padding:0 13px;
   background:var(--c700); border-bottom:1px solid #000;
   -webkit-app-region:drag; user-select:none;
@@ -1132,8 +1742,11 @@ button:disabled{opacity:.4;cursor:default}
 .seg button[aria-selected=true]{background:var(--c500);color:var(--c050);font-weight:500}
 .seg.tight button{padding:4px 12px;font-size:12px}
 
-.doctitle{flex:1;display:flex;align-items:baseline;justify-content:center;gap:9px;
-  min-width:0;overflow:hidden}
+/* Centred on the window, not on whatever space the buttons left over --
+   otherwise it drifts as the per-view actions change width. */
+.doctitle{position:absolute;left:50%;transform:translateX(-50%);
+  display:flex;align-items:baseline;gap:9px;max-width:38%;min-width:0;
+  overflow:hidden;pointer-events:none}
 .doctitle .t{font-size:13px;font-weight:500;color:var(--c050);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 .doctitle .f{font-size:11px;color:var(--c300);white-space:nowrap;flex:none}
@@ -1148,6 +1761,22 @@ button:disabled{opacity:.4;cursor:default}
   border-radius:5px;white-space:nowrap}
 .cbtn:hover:not(:disabled){border-color:var(--c-hover);color:#fff}
 .cbtn.icon{padding:4px 8px;display:grid;place-items:center}
+
+/* The AI clients sit in the chrome because whether they are connected is a
+   running state of the app, not a setting you visit once. One mark each, each
+   with its own dot. Claude's mark keeps its own colour so it reads as Claude's
+   rather than ours; the placeholder ring takes the chrome's. */
+.cbtn.ai{display:flex;align-items:center;gap:10px;padding:4px 9px}
+.aic{display:flex;align-items:center;gap:4px}
+.aic svg{flex:none}
+.aic[data-client=claude] svg{color:#D97757}
+.aic .dot{width:6px;height:6px;border-radius:50%;background:var(--dot-idle);
+  flex:none;transition:background .15s}
+.aic[data-state=connected] .dot{background:var(--fn-won)}
+.aic[data-state=elsewhere] .dot,
+.aic[data-state=other-workspace] .dot,
+.aic[data-state=unreadable] .dot{background:var(--bad)}
+.aic[data-state=absent] svg,.aic[data-state=unknown] svg{opacity:.45}
 .pbtn{font-size:12px;color:var(--c800);padding:5px 13px;border-radius:5px;background:var(--acc);
   font-weight:500;white-space:nowrap}
 .pbtn:hover:not(:disabled){background:var(--acc-hover)}
@@ -1163,6 +1792,15 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .rail-jobs .rail-label{padding:5px 9px 7px}
 .rail-jobs .rail-label+.rail-label,.rail-jobs .rail-label:not(:first-child){padding-top:16px}
 .rail-list{display:flex;flex-direction:column;padding:0 7px}
+/* group headings inside a rail list: quieter than the rail's own label, so
+   the documents stay the thing you read and the kinds just separate them */
+.rail-sub{padding:12px 10px 4px;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--c300)}
+.rail-list>.rail-sub:first-child{padding-top:2px}
+/* a document that belongs to an application wears a small ochre tie */
+.row .tie{width:5px;height:5px;border-radius:50%;background:var(--acc);
+  flex:none;opacity:.75}
+
 
 /* a sidebar row: 3px marker, label, mono count */
 .row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:5px;
@@ -1197,7 +1835,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .budget .pp{font-size:12.5px;color:var(--cw)}
 .budget .ww{font-size:11px;color:var(--c300)}
 .budget .bar{display:flex;gap:2px}
-.budget .bar i{height:5px;flex:1;background:var(--c450)}
+.budget .bar i{height:5px;flex:1;background:var(--c300);border-radius:1px}
 .budget .bar i.on{background:var(--acc)}
 .budget .cap{font-size:11.5px;color:var(--c200);line-height:1.4}
 
@@ -1214,9 +1852,35 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .meta button{font-size:12px;color:var(--t500);padding:0 3px;line-height:1}
 .meta button:hover:not(:disabled){color:var(--t900)}
 
+/* Shown only when the file changed underneath you and you have edits that
+   would overwrite it. Above the tabs, because it is about the document rather
+   than about whichever view of it you happen to be in. */
+.extbar{flex:none;display:flex;align-items:center;gap:9px;padding:7px 12px;
+  font-size:12.5px;color:var(--t900);background:var(--acc-wash);
+  border-bottom:1px solid var(--acc-line)}
+.extbar svg{flex:none;color:var(--acc)}
+.extbar .obtn{padding:3px 10px;font-size:12px}
+
 .pane{flex:1;min-height:0;overflow:auto}
-.pane-page{display:grid;place-items:center;padding:22px}
-.pg{display:block;background:var(--page);box-shadow:0 12px 28px rgba(30,26,18,.32)}
+.pane-page{display:grid;justify-items:center;align-content:start;padding:26px}
+#z-lvl{min-width:42px}
+#z-lvl.auto{color:var(--t900)}
+.pgwrap{position:relative;display:block;line-height:0}
+.pg{display:block;background:var(--page);box-shadow:0 1px 2px rgba(0,0,0,.28),
+  0 10px 34px rgba(0,0,0,.45)}
+
+/* Click targets over the rendered page, one per block. Invisible until you
+   point at one; the selected one keeps a bar down its left edge, the same way
+   the outline rail marks the same state. The tints are fixed rather than
+   themed because the page underneath is always white -- it is a document.
+   Drawn with an inset shadow rather than a pseudo-element: a bar outside the
+   button does not paint reliably, and it belongs inside the band anyway. */
+.hit{position:absolute;padding:0;border:0;border-radius:3px;background:transparent;
+  cursor:pointer;transition:background .1s,box-shadow .1s}
+.hit:hover{background:rgba(192,138,62,.13)}
+.hit.sel{background:rgba(192,138,62,.15);box-shadow:inset 3px 0 0 var(--acc)}
+.hit.sel:hover{background:rgba(192,138,62,.21)}
+.hit:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .pane-form{background:var(--app);padding:16px 20px 40px}
 .pane-yaml{background:var(--app);padding:0;overflow:hidden;display:flex;flex-direction:column}
 
@@ -1231,7 +1895,12 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .grp>summary .count{margin-left:auto;font-size:10.5px;color:var(--t500);font-weight:400;
   text-transform:none}
 .grp .body{padding:0 0 14px}
-.entry{border-left:1px solid var(--rule);padding:2px 0 2px 14px;margin:12px 0}
+.entry{border-left:1px solid var(--rule);padding:2px 0 2px 14px;
+  margin:12px 0 12px -14px}
+/* the same mark the page and the outline use, in the form */
+.formblock{border-radius:4px;transition:background .12s,box-shadow .12s}
+.formblock.on{background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc)}
+.entry.formblock.on{border-left-color:transparent}
 .entry-hd{font-size:12.5px;font-weight:600;margin-bottom:8px;display:flex;gap:8px;
   align-items:baseline}
 .entry-hd button{font-size:12px;color:var(--acc-text);margin-left:auto}
@@ -1240,10 +1909,13 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .fg{display:grid;grid-template-columns:70px 1fr;gap:8px 10px;align-items:center}
 .fg.wide{grid-template-columns:120px 1fr;align-items:start}
 .fg.w88{grid-template-columns:88px 1fr;gap:10px 12px}
-.fg>label{font-size:12px;color:var(--t600);text-align:right;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
+.fg>label{font-size:12px;font-weight:500;color:var(--t600);text-align:left;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fg.wide>label{padding-top:6px}
-.inp,.fg input,.fg select,.fg textarea{background:var(--field);border:1px solid var(--bd-field);
+/* background-COLOR, not the shorthand: the shorthand resets background-image
+   and silently strips the chevron off every select. */
+.inp,.fg input,.fg select,.fg textarea{background-color:var(--field);
+  border:1px solid var(--bd-field);
   border-radius:4px;padding:5px 8px;font-size:12.5px;color:var(--t900);width:100%;min-width:0}
 .fg textarea{font:12.5px/1.5 inherit;resize:vertical;min-height:56px}
 .fg .mono,.fg input.mono,.fg textarea.mono{font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace;
@@ -1266,7 +1938,8 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
   flex-direction:column;gap:14px}
 .block{display:flex;flex-direction:column;gap:7px}
 .block.ruled{padding-top:12px;border-top:1px solid var(--rule)}
-.blabel{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--t500)}
+.blabel{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--t500);font-weight:500}
 
 .card{border:1px solid var(--bd-field);border-radius:4px;background:var(--field);overflow:hidden}
 .card>*+*{border-top:1px solid var(--bd-inner)}
@@ -1293,11 +1966,26 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .obtn:hover:not(:disabled){background:var(--paper-hover)}
 
 /* five bars for a 0-5 fit score */
-.fit{display:flex;gap:3px}
-.fit button{width:16px;height:5px;background:var(--rule);border-radius:1px;padding:0}
+.fit{display:flex;gap:3px;align-items:center}
+.statusctl{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.statusctl select{flex:1;min-width:0}
+.fit button{width:16px;height:6px;background:var(--c400);border-radius:2px;padding:0}
+.fit button:hover{background:var(--t500)}
+.fitv{margin-left:8px;font-size:11.5px;color:var(--t500);white-space:nowrap}
 .fit button.on{background:var(--acc)}
 .dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--dot-idle)}
-.dot.live{background:var(--acc)} .dot.dead{background:var(--dot-dead)}
+.dot.live{background:var(--acc)}
+.dot.won{background:var(--fn-won)} .dot.lost{background:var(--fn-lost)}
+.dot.waiting{background:var(--fn-wait)} .dot.closed{background:var(--fn-closed)}
+/* An offer is a live conversation at its peak -- same family, higher
+   stakes -- so it keeps the amber and earns a ring rather than a sixth
+   hue. The palette is at its useful hue budget; shape is the encoding
+   with room left in it. */
+.dot.offer{background:var(--acc);outline:1.5px solid var(--acc);
+  outline-offset:1.5px}
+/* Draft had the lowest contrast of any dot in the app at 2.2:1 -- the one
+   state you genuinely could not see. */
+.dot.draft{background:var(--t500)}
 
 /* history timeline */
 .tl{display:flex;flex-direction:column}
@@ -1321,15 +2009,20 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .kv .v.acc{color:var(--acc-text)}
 
 /* ---------- status bar (23px) ------------------------------------------- */
-#status{height:23px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;
+#status{height:23px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
   background:var(--c700);font-size:10.5px;color:var(--c300);user-select:none}
 #status .sep::before{content:"\00b7"}
+/* a decision you just took about someone else's edit, not routine chatter */
+#st-right.said{color:var(--acc-text);font-weight:500}
+/* the MCP boundary having just stopped something */
+#st-right.blocked{color:var(--bad);font-weight:500}
 #status .warn{color:var(--acc-text-dark)}
 
 /* ---------- jobs table --------------------------------------------------- */
 .tablewrap{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;
   background:var(--app)}
-.thead,.trow{display:grid;grid-template-columns:2fr 1.5fr 1.2fr 1fr .85fr .85fr;
+.thead,.trow{display:grid;
+  grid-template-columns:minmax(0,2.1fr) minmax(0,1.35fr) 186px 92px 86px 96px;
   align-items:center}
 .thead{height:26px;flex:none;background:var(--bar);border-bottom:1px solid var(--rule-strong);
   font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--t500)}
@@ -1343,6 +2036,9 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .trow .role b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trow .role i{font-style:normal;font-size:11.5px;color:var(--t500);flex:none}
 .trow .docs{font-size:11px;color:var(--acc-text)}
+/* the most repeated string in the table, so it has to clear AA */
+.trow .docs.none{color:var(--t500);font-size:12px}
+.trow.sel .docs.none{color:#cdc6b5}
 .trow .docs:hover{text-decoration:underline}
 .trow .st{display:flex;align-items:center;gap:7px}
 .trow .money{font-size:11.5px}
@@ -1359,11 +2055,16 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .trow.sel .when.none,.trow.sel .money.none{color:#928d80}
 
 /* ---------- funnel ------------------------------------------------------- */
-.fn-left{flex:1;min-width:0;padding:22px 24px;display:flex;flex-direction:column;gap:14px;
-  background:var(--app);overflow:auto}
+.fn-left{flex:1;min-width:0;display:flex;flex-direction:column;
+  background:var(--app);min-height:0}
+/* Matches the inspector's header exactly, so the rule beneath the two of
+   them is one line across the window rather than two that disagree. */
+.fn-bar{height:33px;flex:none;display:flex;align-items:center;padding:0 24px;
+  background:var(--bar);border-bottom:1px solid var(--rule-strong)}
+#chart{flex:1;min-height:0;padding:18px 24px 22px;overflow:auto}
 .fn-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-.fn-head b{font-size:15px;font-weight:600}
-.fn-head span{font-size:12.5px;color:var(--t600)}
+.fn-head b{font-size:12.5px;font-weight:600}
+.fn-head span{font-size:12px;color:var(--t600)}
 #chart svg{width:100%;height:auto;display:block}
 .sk-link{transition:opacity .15s;fill:none;stroke-opacity:var(--fn-band)}
 .sk-hit{cursor:pointer}
@@ -1372,7 +2073,14 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .sk-label{font:12px 'IBM Plex Sans',sans-serif;fill:var(--fn-label)}
 .t-total{fill:var(--fn-total)} .t-neutral{fill:var(--fn-neutral)}
 .t-positive{fill:var(--fn-positive)}
+.t-won{fill:var(--fn-won)} .t-lost{fill:var(--fn-lost)}
+.t-live{fill:var(--fn-positive)} .t-draft{fill:var(--fn-neutral)}
+.t-offer{fill:var(--fn-positive)} .b-offer{stroke:var(--fn-positive)}
+.t-waiting{fill:var(--fn-wait)} .t-closed{fill:var(--fn-closed)}
 .b-neutral{stroke:var(--fn-neutral)} .b-positive{stroke:var(--fn-positive)}
+.b-won{stroke:var(--fn-won)} .b-lost{stroke:var(--fn-lost)}
+.b-live{stroke:var(--fn-positive)} .b-draft{stroke:var(--fn-neutral)}
+.b-waiting{stroke:var(--fn-wait)} .b-closed{stroke:var(--fn-closed)}
 
 /* ---------- sheets and overlays ------------------------------------------ */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:39}
@@ -1418,9 +2126,10 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .ovl-body{flex:1;min-height:0;display:flex}
 .dz-left{flex:1;min-width:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px;
   background:var(--bar);overflow-y:auto}
-.themegrid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.themegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));
+  gap:14px}
 .thumbwrap{display:flex;flex-direction:column;gap:8px;align-items:center}
-.thumb{width:100%;aspect-ratio:.73;background:var(--page);border:1px solid var(--rule);
+.thumb{width:100%;aspect-ratio:1.25;background:var(--page);border:1px solid var(--rule);
   box-shadow:0 6px 14px -8px rgba(30,26,18,.3);padding:10px 9px;display:flex;
   flex-direction:column;gap:4px}
 .thumbwrap.sel .thumb{border-color:transparent;outline:2px solid var(--acc);
@@ -1463,8 +2172,9 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .dctl .hex{font-size:11px;color:var(--t500);flex:none}
 
 /* ---------- settings ----------------------------------------------------- */
-.set-wrap{flex:1;min-height:0;overflow-y:auto;padding:26px 30px 60px}
-.set-inner{display:grid;grid-template-columns:146px minmax(0,1fr);gap:34px;max-width:860px}
+.set-wrap{flex:1;min-height:0;overflow-y:auto;padding:30px 34px 72px}
+.set-inner{display:grid;grid-template-columns:160px minmax(0,1fr);gap:40px;
+  max-width:980px;margin:0 auto}
 .set-rail{display:flex;flex-direction:column;gap:1px;position:sticky;top:0;align-self:start}
 .set-rail button{text-align:left;padding:6px 10px;font-size:13px;color:var(--t600);
   border-radius:5px}
@@ -1473,19 +2183,154 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .sp h3{font-size:15px;font-weight:600;margin:0 0 4px}
 .sp-lede{color:var(--t600);font-size:12.5px;line-height:1.6;margin:0 0 16px;max-width:62ch}
 .sp-note{color:var(--t600);font-size:12px;line-height:1.6;margin:14px 0 0;max-width:62ch}
-.srow{display:flex;align-items:center;gap:20px;padding:13px 0;border-top:1px solid var(--rule)}
-.srow>div{flex:1;min-width:0}
+.srow{display:flex;align-items:center;gap:28px;padding:14px 0;border-top:1px solid var(--rule)}
+.srow>div{flex:1;min-width:0;max-width:56ch}
 .srow b{display:block;font-size:13px;font-weight:500;margin-bottom:2px}
 .srow span{display:block;color:var(--t600);font-size:12px;line-height:1.55;
   overflow-wrap:anywhere}
-.srow select,.srow input{border:1px solid var(--bd-field);border-radius:4px;padding:5px 8px;
-  background:var(--field);font-size:12.5px}
+.srow select,.srow input{border:1px solid var(--bd-field);border-radius:5px;
+  padding:6px 10px;background-color:var(--field);font-size:12.5px}
+/* The column governs where controls END, not how wide they are: stretching
+   a switch to 184px turns it into a progress bar and a button into a box
+   with its label jammed right. `:not(:first-child)` matters -- a row with
+   only a label is its own last child, and would otherwise be flexed. */
+.srow>:last-child:not(:first-child){flex:none;margin-left:auto;display:flex;
+  justify-content:flex-end;align-items:center}
+.srow select{min-width:184px}
+.srow input{min-width:184px}
 .btnlink{text-decoration:none;color:var(--t700)}
+.sp-sub{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:600;
+  color:var(--t500);margin:30px 0 12px;text-transform:uppercase;letter-spacing:.08em}
+.sp-sub::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+/* ---------- AI clients ---------------------------------------------------
+   One card each, because connecting a client is something you do rather than a
+   setting you read: the mark says which, the pill says where it stands, and the
+   button is the only thing you have to understand. */
+.clients{display:flex;flex-direction:column;gap:10px;margin:18px 0 4px}
+.client{display:grid;grid-template-columns:38px 1fr auto;gap:0 14px;
+  padding:14px 16px;border:1px solid var(--bd-field);border-radius:9px;
+  background:var(--field)}
+.client .badge{grid-column:1;grid-row:1/3;align-self:center;width:38px;height:38px;
+  border-radius:9px;display:grid;place-items:center;background:var(--bar)}
+.client[data-client=claude] .badge{background:rgba(217,119,87,.14);color:#D97757}
+.client[data-client=openai] .badge{color:var(--t900)}
+.client .who{grid-column:2;grid-row:1;display:flex;align-items:center;gap:9px;
+  min-width:0;flex-wrap:wrap}
+.client .who b{font-size:13.5px;font-weight:600;color:var(--t900)}
+.client .say{grid-column:2;grid-row:2;font-size:12.5px;color:var(--t600);
+  line-height:1.5;margin-top:3px}
+.client .go{grid-column:3;grid-row:1/3;align-self:center}
+.client .path{grid-column:2/4;grid-row:3;margin-top:11px;padding-top:10px;
+  border-top:1px solid var(--rule);display:flex;align-items:center;gap:10px}
+.client .path span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--t500);
+  font:11.5px/1.4 'IBM Plex Mono',ui-monospace,Consolas,monospace}
+.client .path button{font-size:11.5px;color:var(--t500);padding:1px 4px;flex:none}
+.client .path button:hover{color:var(--t900)}
+
+/* Ochre is what this app already uses for live, so connected wears it; a
+   misconfigured client is a real problem and wears the error colour. */
+.pill{display:inline-flex;align-items:center;gap:5px;flex:none;font-size:11px;
+  font-weight:500;padding:2px 9px 2px 7px;border-radius:99px;
+  background:var(--bar);color:var(--t600)}
+.pill i{width:5px;height:5px;border-radius:50%;background:var(--dot-idle);flex:none}
+/* The same teal the funnel uses for a good outcome, so liveness reads as a
+   state rather than as a selection. */
+.pill[data-state=connected]{background:color-mix(in srgb,var(--fn-won) 15%,transparent);
+  color:var(--t900)}
+.pill[data-state=connected] i{background:var(--fn-won)}
+.pill[data-state=elsewhere],.pill[data-state=other-workspace],
+.pill[data-state=unreadable]{background:var(--bad-bg);color:var(--t900)}
+.pill[data-state=elsewhere] i,.pill[data-state=other-workspace] i,
+.pill[data-state=unreadable] i{background:var(--bad)}
+
+/* ---------- what the model can do --------------------------------------- */
+.tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.tool{padding:11px 13px;border:1px solid var(--bd-field);border-radius:8px;
+  background:var(--field)}
+.tool.lead{grid-column:1/-1;border-color:var(--acc-line);background:var(--acc-wash)}
+.tool .n{display:block;margin-bottom:6px;color:var(--t900);font-weight:500;
+  font:11.5px/1 'IBM Plex Mono',ui-monospace,Consolas,monospace}
+.tool p{margin:0;font-size:12px;line-height:1.55;color:var(--t600)}
+.tool b{font-weight:600;color:var(--t900)}
+
+.caveat{display:flex;gap:11px;margin-top:14px;padding:12px 14px;border-radius:8px;
+  background:var(--bar);font-size:12px;line-height:1.6;color:var(--t600)}
+.caveat p{margin:0}.caveat p+p{margin-top:7px}
+.caveat b{font-weight:600;color:var(--t900)}
+.caveat svg{color:var(--t500)}
+
+.skills{display:flex;flex-direction:column;gap:1px;margin:12px 0 0;
+  border:1px solid var(--bd-field);border-radius:8px;overflow:hidden}
+.skills div{display:flex;align-items:center;gap:10px;padding:9px 13px;
+  background:var(--field);font-size:12.5px}
+.skills div+div{border-top:1px solid var(--rule)}
+.skills .nm{flex:none;color:var(--t900);font-weight:500}
+.skills .ds{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--t500);font-size:11.5px}
+.skills .tag{flex:none;font-size:10.5px;padding:1px 7px;border-radius:99px;
+  background:var(--bar);color:var(--t600)}
+.skills .tag.mcp{background:var(--acc-wash);color:var(--t900)}
+.skillcta{display:flex;gap:8px;margin-top:12px}
+.obtn.primary{background:var(--acc);border-color:transparent;color:var(--c800);
+  font-weight:500}
+.obtn.primary:hover:not(:disabled){background:var(--acc-hover)}
+.mcplog{border:1px solid var(--bd-field);border-radius:8px;overflow:hidden;
+  font-size:12px;color:var(--t600)}
+.mcplog div{display:flex;align-items:center;gap:10px;padding:8px 13px;
+  background:var(--field)}
+.mcplog div+div{border-top:1px solid var(--rule)}
+.mcplog .t{flex:none;color:var(--t900);
+  font:11.5px/1 'IBM Plex Mono',ui-monospace,Consolas,monospace}
+.mcplog .p{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-size:11.5px;color:var(--t500)}
+.mcplog .w{flex:none;color:var(--t500);font-size:11px}
+.mcplog .none{color:var(--t500)}
+/* A call the server refused. It belongs in the record -- an attempt
+   to reach outside the workspace is worth seeing -- but it must not
+   read like something the model actually did. */
+.mcplog div.no{background:var(--bad-bg)}
+.mcplog div.no .t{color:var(--bad)}
+
+.fold{margin-top:26px;border-top:1px solid var(--rule);padding-top:14px}
+.fold summary{font-size:12.5px;color:var(--t600);cursor:pointer;margin-bottom:12px}
+.fold summary:hover{color:var(--t900)}
+.fold h4{font-size:12.5px;font-weight:600;color:var(--t900);margin:16px 0 4px}
 .steps{margin:0 0 14px;padding-left:18px;font-size:13px;line-height:1.7}
 .steps li{margin-bottom:4px}.steps li::marker{color:var(--t500)}
 pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;padding:12px 14px;
   font:11.5px/1.7 'IBM Plex Mono',ui-monospace,Consolas,monospace;overflow-x:auto;margin:0 0 8px;
   white-space:pre}
+.swatches{display:flex;gap:7px;flex:none}
+.swatches button{width:23px;height:23px;border-radius:50%;flex:none;
+  border:2px solid transparent;background-clip:padding-box;
+  transition:transform .1s,box-shadow .1s}
+.swatches button:hover{transform:scale(1.12)}
+.swatches button[aria-pressed=true]{box-shadow:0 0 0 2px var(--panel),
+  0 0 0 3.5px var(--t600)}
+.swatches button:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+/* One select, ours. The OS control brings its own chevron, its own metrics
+   and its own idea of a focus ring, none of which match anything here. */
+select{appearance:none;-webkit-appearance:none;font:inherit;font-size:12.5px;
+  color:var(--t900);background:var(--field);border:1px solid var(--bd-field);
+  border-radius:5px;padding:6px 30px 6px 10px;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8578' stroke-width='2.4' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat;background-position:right 9px center}
+select:hover{border-color:var(--ink-3,var(--t500))}
+select:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* The native date control brings its own chrome and its own glyph. The
+   displayed format follows the OS locale and cannot be overridden without
+   giving up the picker, so match the rest and let the format be. */
+input[type=date]{appearance:none;-webkit-appearance:none;
+  background-color:var(--field);border:1px solid var(--bd-field);
+  border-radius:5px;padding:6px 10px;font:inherit;font-size:12.5px;
+  color:var(--t900)}
+input[type=date]::-webkit-calendar-picker-indicator{opacity:.55;cursor:pointer;
+  filter:grayscale(1)}
+input[type=date]::-webkit-calendar-picker-indicator:hover{opacity:1}
+textarea{resize:vertical}
+.insp textarea,.fg textarea{resize:none}
 .tgl{position:relative;display:inline-block;width:34px;height:20px;flex:none;cursor:pointer}
 .tgl input{opacity:0;width:0;height:0;position:absolute}
 .tgl i{position:absolute;inset:0;background:var(--rule);border-radius:99px;transition:background .16s}
@@ -1503,6 +2348,8 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
 .edwrap pre{pointer-events:none;color:var(--t900)}
 .edwrap textarea{background:transparent;color:transparent;caret-color:var(--t900);resize:none}
 .edwrap textarea::selection{background:var(--tk-sel)}
+.yband{position:absolute;left:0;right:0;pointer-events:none;
+  background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc);z-index:0}
 .t-key{color:var(--tk-key)}.t-str{color:var(--tk-str)}.t-num{color:var(--tk-num)}
 .t-bool{color:var(--tk-bool)}.t-com{color:var(--tk-com)}
 .t-punc{color:var(--tk-punc)}.t-blk{color:var(--tk-blk)}
@@ -1512,9 +2359,10 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
   margin-left:auto}
 
 /* ---------- states -------------------------------------------------------- */
-.empty{padding:56px 26px;color:var(--t600);max-width:48ch}
+.empty{padding:56px 26px;color:var(--t600);max-width:54ch}
 .empty h3{margin:0 0 6px;font-size:13.5px;color:var(--t900);font-weight:600}
 .empty p{margin:0;font-size:13px;line-height:1.7}
+.empty p+p{margin-top:11px}
 .empty .cta{margin-top:18px}
 .err{margin:20px;background:var(--bad-bg);border-left:2px solid var(--bad);padding:14px 16px;
   color:var(--bad);max-width:70ch}
@@ -1524,6 +2372,37 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
   max-height:190px;overflow:auto;color:var(--t600)}
 .spin{display:inline-block;width:9px;height:9px;border:1.5px solid var(--rule);
   border-top-color:var(--t500);border-radius:50%;animation:sp .8s linear infinite}
+
+
+/* The swatch colours, named once so the picker and the themes cannot drift. */
+:root{--sw-ochre:#c08a3e;--sw-indigo:#7095dc;--sw-teal:#0aaab5;
+  --sw-rose:#d27782;--sw-moss:#6aa867}
+/* ---------- accent themes ------------------------------------------------
+   Each is the default ochre rotated in hue at the same OKLCH lightness and
+   chroma, so every contrast pairing the interface already depends on holds
+   whichever one is chosen. Only the accent family changes; the warm greys
+   the app is built from stay put. */
+:root[data-accent="indigo"]{--acc:#7095dc;--acc-hover:#82a8f0;
+  --acc-line:rgba(112,149,220,.6);--acc-ring:rgba(112,149,220,.18);
+  --acc-wash:rgba(112,149,220,.10);--acc-text:#325293;--acc-text-dark:#a3c4ff}
+@media(prefers-color-scheme:dark){:root[data-accent="indigo"]:not([data-theme=light]){--acc-wash:rgba(112,149,220,.16);--acc-ring:rgba(112,149,220,.32);--acc-text:#a3c4ff}}
+:root[data-theme=dark][data-accent="indigo"]{--acc-wash:rgba(112,149,220,.16);--acc-ring:rgba(112,149,220,.32);--acc-text:#a3c4ff}
+:root[data-accent="teal"]{--acc:#0aaab5;--acc-hover:#34bdc8;
+  --acc-line:rgba(10,170,181,.6);--acc-ring:rgba(10,170,181,.18);
+  --acc-wash:rgba(10,170,181,.10);--acc-text:#006671;--acc-text-dark:#70d7e0}
+@media(prefers-color-scheme:dark){:root[data-accent="teal"]:not([data-theme=light]){--acc-wash:rgba(10,170,181,.16);--acc-ring:rgba(10,170,181,.32);--acc-text:#70d7e0}}
+:root[data-theme=dark][data-accent="teal"]{--acc-wash:rgba(10,170,181,.16);--acc-ring:rgba(10,170,181,.32);--acc-text:#70d7e0}
+:root[data-accent="rose"]{--acc:#d27782;--acc-hover:#e68a94;
+  --acc-line:rgba(210,119,130,.6);--acc-ring:rgba(210,119,130,.18);
+  --acc-wash:rgba(210,119,130,.10);--acc-text:#883643;--acc-text-dark:#fcaab2}
+@media(prefers-color-scheme:dark){:root[data-accent="rose"]:not([data-theme=light]){--acc-wash:rgba(210,119,130,.16);--acc-ring:rgba(210,119,130,.32);--acc-text:#fcaab2}}
+:root[data-theme=dark][data-accent="rose"]{--acc-wash:rgba(210,119,130,.16);--acc-ring:rgba(210,119,130,.32);--acc-text:#fcaab2}
+:root[data-accent="moss"]{--acc:#6aa867;--acc-hover:#7dbb79;
+  --acc-line:rgba(106,168,103,.6);--acc-ring:rgba(106,168,103,.18);
+  --acc-wash:rgba(106,168,103,.10);--acc-text:#286426;--acc-text-dark:#9fd59b}
+@media(prefers-color-scheme:dark){:root[data-accent="moss"]:not([data-theme=light]){--acc-wash:rgba(106,168,103,.16);--acc-ring:rgba(106,168,103,.32);--acc-text:#9fd59b}}
+:root[data-theme=dark][data-accent="moss"]{--acc-wash:rgba(106,168,103,.16);--acc-ring:rgba(106,168,103,.32);--acc-text:#9fd59b}
+
 @keyframes sp{to{transform:rotate(360deg)}}
 .skel{background:var(--canvas);border-radius:4px;animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
@@ -1539,9 +2418,20 @@ pre.code{background:var(--bar);border:1px solid var(--rule);border-radius:4px;pa
   .rail-cvs{width:200px}.insp-cvs{width:270px}.insp-jobs{width:250px}
   .themegrid{grid-template-columns:repeat(3,1fr)}
 }
+/* Phones: the two-up tiles and the card's third column both stop making
+   sense well before the app itself does. */
+@media(max-width:680px){
+  .tools{grid-template-columns:1fr}
+  .client{grid-template-columns:34px 1fr}
+  .client .badge{width:34px;height:34px}
+  .client .go{grid-column:1/3;grid-row:3;margin-top:12px}
+  .client .go .obtn{width:100%}
+  .client .path{grid-column:1/3;grid-row:4}
+  .rail-cvs{width:150px}
+}
 @media(max-width:880px){
   .insp{display:none}
-  .thead,.trow{grid-template-columns:2fr 1.4fr 1.2fr .9fr}
+  .thead,.trow{grid-template-columns:minmax(0,2fr) minmax(0,1.4fr) 170px 90px}
   .thead>div:nth-child(n+5),.trow>div:nth-child(n+5){display:none}
   .set-inner{grid-template-columns:1fr;gap:16px}
   .set-rail{flex-direction:row;flex-wrap:wrap;position:static}
@@ -1554,6 +2444,16 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     if(_p.appearance==="dark"||_p.appearance==="light")
       document.documentElement.dataset.theme=_p.appearance}catch(e){}
 </script>
+
+<!-- Marks for the AI clients. The Claude one is as published by Anthropic, and
+     identifies that integration and nothing else: see THIRD-PARTY-NOTICES.md. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="claude-mark" viewBox="0 0 24 24"><path fill="currentColor"
+    fill-rule="nonzero" d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"/></symbol>
+
+  <symbol id="openai-mark" viewBox="0 0 24 24"><path fill="currentColor"
+    fill-rule="evenodd" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"/></symbol>
+</svg>
 
 <header id="chrome" data-tauri-drag-region>
   <div class="lights" id="lights" hidden>
@@ -1568,7 +2468,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   </div>
 
   <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
-  <div class="grow" id="chrome-gap" hidden></div>
+  <div class="grow" id="chrome-gap"></div>
 
   <div class="seg tight" id="range" hidden role="tablist" aria-label="Date range">
     <button role="tab" data-since="" aria-selected="true">All time</button>
@@ -1582,6 +2482,17 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <input id="jobq" type="search" placeholder="Search jobs" aria-label="Search jobs"></label>
 
   <button class="cbtn" id="btn-design" title="Theme, typeface and page size">Design</button>
+  <button class="cbtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
+  <button class="pbtn" id="btn-render">Render</button>
+  <button class="pbtn" id="btn-newjob" hidden>New job&#8230;</button>
+  <button class="cbtn ai" id="btn-ai" title="AI clients" aria-label="AI clients">
+    <span class="aic" data-client="claude" data-state="unknown"><svg width="13"
+      height="13" viewBox="0 0 24 24" aria-hidden="true"
+      ><use href="#claude-mark"/></svg><i class="dot"></i></span>
+    <span class="aic" data-client="openai" data-state="unknown"><svg width="13"
+      height="13" viewBox="0 0 24 24" aria-hidden="true"
+      ><use href="#openai-mark"/></svg><i class="dot"></i></span>
+  </button>
   <button class="cbtn icon" id="btn-settings" title="Settings, setup and help"
     aria-label="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/>
@@ -1593,9 +2504,6 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2
     2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1
     0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-  <button class="cbtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
-  <button class="pbtn" id="btn-render">Render</button>
-  <button class="pbtn" id="btn-newjob" hidden>New job&#8230;</button>
 </header>
 
 <main>
@@ -1615,6 +2523,16 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     </aside>
 
     <div class="centre">
+      <div class="extbar" id="extbar" hidden>
+        <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"
+          ><use href="#claude-mark"/></svg>
+        <span id="extbar-msg"></span>
+        <div class="grow"></div>
+        <button class="obtn" id="ext-theirs"
+          title="Load their version. Your unsaved edits are lost.">Take theirs</button>
+        <button class="obtn primary" id="ext-keep"
+          title="Keep your unsaved edits. Their version stays on disk.">Keep mine</button>
+      </div>
       <div class="subbar">
         <div class="seg light" id="edtabs" role="tablist" aria-label="Preview mode">
           <button role="tab" data-tab="page" aria-selected="true">Page</button>
@@ -1628,7 +2546,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button id="pg-next" title="Next page" aria-label="Next page">&#8250;</button>
           <span>&#183;</span>
           <button id="z-out" title="Zoom out" aria-label="Zoom out">&#8722;</button>
-          <span id="z-lvl">100%</span>
+          <button id="z-lvl" title="Fit the page to the window">100%</button>
           <button id="z-in" title="Zoom in" aria-label="Zoom in">+</button>
         </div>
       </div>
@@ -1671,7 +2589,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   <!-- ------------------------------------------------------------- Funnel -->
   <section class="view" id="v-funnel" hidden>
     <div class="fn-left">
-      <div class="fn-head"><b id="fn-total"></b><span id="fn-sub"></span></div>
+      <div class="fn-bar"><div class="fn-head"><b id="fn-total"></b>
+        <span id="fn-sub"></span></div></div>
       <div id="chart"></div>
     </div>
     <aside class="insp insp-funnel">
@@ -1698,8 +2617,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       <span class="blabel mono">Theme</span>
       <div class="themegrid" id="themegrid"></div>
       <div class="hr"></div>
-      <div class="fg w88" id="dz-basics" style="max-width:520px"></div>
-      <div id="dz-advanced"></div>
+      <div class="fg w88" id="dz-basics" style="max-width:560px"></div>
+      <div id="dz-advanced" style="max-width:560px"></div>
     </div>
     <aside class="insp insp-funnel">
       <div class="insp-head"><b>Effect on this CV</b></div>
@@ -1714,15 +2633,15 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <div class="grow"></div><button class="cbtn" data-close-ovl>Done</button></div>
   <div class="set-wrap"><div class="set-inner">
     <nav class="set-rail" id="set-rail">
-      <button data-s="workspace" aria-selected="true">Workspace</button>
+      <button data-s="ai" aria-selected="true">AI clients</button>
+      <button data-s="workspace" aria-selected="false">Workspace</button>
       <button data-s="editor" aria-selected="false">Editor</button>
-      <button data-s="ai" aria-selected="false">Claude Desktop</button>
       <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
       <button data-s="about" aria-selected="false">About</button>
     </nav>
     <div>
-      <section class="sp" id="sp-workspace">
+      <section class="sp" id="sp-workspace" hidden>
         <h3>Workspace</h3>
         <p class="sp-lede">Everything lives in one folder you own. CVs and letters are
           plain YAML; applications are a single SQLite file. Copy the folder and you
@@ -1748,24 +2667,87 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="srow"><div><b>Theme for new documents</b>
           <span>Applied when you create a CV or a letter.</span></div>
           <select id="s-deftheme"></select></div>
+        <div class="srow"><div><b>Accent</b>
+          <span>The colour the interface marks things with. The rendered CV page is
+            never tinted by it.</span></div>
+          <div class="swatches" id="s-accent"></div></div>
         <div class="srow"><div><b>Appearance</b>
-          <span>Follows your system unless you choose one. The rendered CV page
-            stays white either way &#8212; it is a document, not a surface.</span></div>
+          <span>Follows your system unless you choose one. It changes the surfaces
+            you work <em>on</em> &#8212; the panels, the forms, the tables. The window
+            chrome stays dark and the rendered CV page stays white in both, because
+            one frames the work and the other <em>is</em> the work.</span></div>
           <select id="s-appearance">
             <option value="system">Match system</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option></select></div>
       </section>
 
-      <section class="sp" id="sp-ai" hidden>
-        <h3>Claude Desktop</h3>
-        <p class="sp-lede">CV Studio ships an MCP server, so an AI client can read, edit
-          and render your CVs. <code>render_cv</code> returns the page as an image, so the
-          model can look at the result rather than guess from the source.</p>
-        <ol class="steps"><li>Open Claude Desktop settings, then Developer, then Edit config.</li>
-          <li>Paste this in and restart Claude Desktop.</li></ol>
-        <pre class="code" id="s-mcp"></pre>
-        <button class="obtn" data-copy="s-mcp">Copy</button>
+      <section class="sp" id="sp-ai">
+        <h3>AI clients</h3>
+        <p class="sp-lede">This app is one half of a pair. The model writes and tailors
+          the CVs, through a server that ships inside this app; here you look at the
+          rendered page and fix what it got wrong. Both halves work on the same files in
+          your workspace, so there is nothing to sync and nothing to upload.</p>
+
+        <div class="clients" id="s-ai-clients"></div>
+
+        <p class="sp-sub">What a connected model can do</p>
+        <div class="tools">
+          <div class="tool lead"><span class="n">render_cv</span>
+            <p>Renders the CV <b>and looks at the page</b>. A bullet stranded alone on
+              page two, a heading orphaned at a break, a lopsided last page — none of it
+              is visible in the source, all of it is obvious in the picture. This is the
+              point of the whole thing.</p></div>
+          <div class="tool"><span class="n">edit_cv_fields</span>
+            <p>Changes single fields, and keeps the comments you wrote</p></div>
+          <div class="tool"><span class="n">create_cv</span>
+            <p>A new CV or cover letter, or a copy to tailor for one application</p></div>
+          <div class="tool"><span class="n">read_cv &nbsp;list_cvs</span>
+            <p>Reads the YAML, lists what is in the workspace</p></div>
+          <div class="tool"><span class="n">write_cv</span>
+            <p>Replaces a whole file. Blunt, and it drops comments</p></div>
+          <div class="tool"><span class="n">design_options</span>
+            <p>Themes, typefaces and page sizes it may choose from</p></div>
+          <div class="tool"><span class="n">workspace_info</span>
+            <p>Where the workspace is and what is in it</p></div>
+        </div>
+        <div class="caveat"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" style="flex:none;margin-top:1px"
+          aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/>
+          </svg><div>
+          <p><b>These write to your files the moment they are called</b>, and there is no
+            undo in this app. They are plain YAML, so keeping the workspace in git gives
+            you a real history.</p>
+          <p><b>Your applications are not exposed.</b> The record of what you sent and
+            when is yours; the model's job is the documents.</p></div></div>
+
+        <p class="sp-sub">Recent activity</p>
+        <div id="s-cl-log" class="mcplog"></div>
+
+        <p class="sp-sub">Skills</p>
+        <p class="sp-note" style="margin-top:0">Skills are the judgement around the
+          documents — reading a posting, tailoring from a master profile, letters,
+          interview prep. Claude Code reads them off disk and already has them. The
+          desktop app does not: there they are uploaded to your account, so the most
+          this app can do is hand you archives that are ready to upload.</p>
+        <div class="skills" id="s-skills"></div>
+        <div class="skillcta">
+          <button class="obtn primary" id="s-skill-pack">Package for Claude Desktop</button>
+          <button class="obtn" id="s-skill-show" hidden>Show the folder</button>
+        </div>
+        <ol class="steps" id="s-skill-steps" hidden>
+          <li>Open the Claude Desktop app, then Customize, then Skills.</li>
+          <li>Press <b>+</b> and upload each <code>.zip</code> from that folder.</li>
+        </ol>
+        <p class="sp-sub">On the command line</p>
+        <p class="sp-note">The same server works with Claude Code and the Codex CLI.
+          Beyond the tools above, the skills in <code>~/.claude/skills/</code> cover the
+          judgement around the documents: reading a posting, tailoring from a master
+          profile, letters, tracking applications and interview prep.</p>
+
+        <details class="fold"><summary>Set them up by hand instead</summary>
+          <div id="s-ai-manual"></div>
+        </details>
       </section>
 
       <section class="sp" id="sp-api" hidden>
@@ -1776,7 +2758,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <a class="obtn btnlink" id="s-spec" target="_blank" rel="noreferrer">Open reference</a></div>
         <div class="srow"><div><b>Authentication</b><span id="s-auth"></span></div></div>
         <pre class="code" id="s-curl"></pre>
-        <button class="obtn" data-copy="s-curl">Copy</button>
+        <div class="skillcta"><button class="obtn" data-copy="s-curl">Copy</button>
+        <button class="obtn" id="s-key" hidden>Show the key</button></div>
       </section>
 
       <section class="sp" id="sp-updates" hidden>
@@ -1791,10 +2774,18 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 
       <section class="sp" id="sp-about" hidden>
         <h3>About</h3>
-        <p class="sp-lede">A local CV editor with live PDF preview, built on RenderCV and
-          Typst. Everything runs on your machine: no account, no server, no telemetry.</p>
+        <p class="sp-lede">The eyes of a CV written with Claude. The model reads the
+          posting and writes the YAML; this renders it, shows you the page and the page
+          budget, and lets you fix by hand what is easier pointed at than described.
+          Built on RenderCV and Typst.</p>
+        <p class="sp-lede">Everything runs on your machine. No account, no server, no
+          telemetry — which matters more, not less, once an AI is editing the files:
+          your CVs stay plain YAML in a folder you own, and both halves only ever touch
+          that folder.</p>
         <p class="sp-note">MIT licensed. Bundles RenderCV (MIT), Typst (Apache-2.0), the
-          RenderCV font set and IBM Plex (SIL Open Font License), and d3-sankey (ISC).</p>
+          RenderCV font set and IBM Plex (SIL Open Font License), and d3-sankey (ISC).
+          The Claude mark is a trademark of Anthropic, used here only to identify the
+          Claude Desktop integration.</p>
       </section>
     </div>
   </div></div>
@@ -1817,6 +2808,14 @@ const S={
   pdf:null, render:null, renderMs:null, live:"idle", liveMsg:"",
   page:0, zoom:1, zoomAuto:true, fill:null,
   sel:null, openSection:null,
+  ai:null,                  /* which AI clients are wired up to us */
+  pulse:null,               /* last workspace poll: file stamps and AI activity */
+  skills:null,              /* the cv-studio skills on this machine */
+  keyShown:false,           /* the API key is masked until asked for */
+  docMtime:null,            /* the open file as we last read or wrote it */
+  extMtime:null,            /* a newer version on disk we have not taken */
+  extTheirs:null,           /* their version, so the bar can name the fields */
+  resolved:null,            /* how the last conflict was settled, and when */
   pages:{},                 /* path -> page count, learned as things render */
   themePages:{},            /* theme -> page count for the open document */
   jobs:[], statuses:[], nodes:{}, labels:{}, jready:false,
@@ -1864,10 +2863,29 @@ const prettyStatus=s=>{
   return map[s]||String(s).replace(/_/g," ");
 };
 /* Live means an application can still turn into a job; dead means it cannot. */
-const LIVE_STATUS=new Set(["interviewing","offer","accepted"]);
-const DEAD_STATUS=new Set(["pending","refused","rejected","ghosted",
-  "rejected_interviewing","ghosted_interviewing"]);
-const statusTone=s=>LIVE_STATUS.has(s)?"live":DEAD_STATUS.has(s)?"dead":"";
+/* One status vocabulary, read by the Jobs table and the funnel alike. Two
+   views of the same data disagreeing about what a colour means is worse than
+   having no colour at all: it was telling you an offer you declined and an
+   offer you accepted were the same thing.
+
+   draft   nothing sent yet            grey
+   waiting sent, their move            blue
+   live    a conversation is happening amber
+   won     you got it                  teal
+   closed  you ended it                violet
+   lost    they ended it               red   */
+const STATUS_TONE={
+  pending:"draft", applied:"waiting", interviewing:"live", offer:"offer",
+  accepted:"won", refused:"closed", rejected:"lost", ghosted:"lost",
+  rejected_interviewing:"lost", ghosted_interviewing:"lost",
+};
+const statusTone=st=>STATUS_TONE[st]||"draft";
+/* Which statuses still have somewhere to go -- used for the saved filters. */
+const LIVE_STATUS=new Set(Object.keys(STATUS_TONE).filter(
+  k=>STATUS_TONE[k]==="live"||STATUS_TONE[k]==="waiting"));
+const DEAD_STATUS=new Set(Object.keys(STATUS_TONE).filter(
+  k=>["lost","closed","draft"].includes(STATUS_TONE[k])));
+
 const money=j=>{
   const v=j.salary_offered||j.salary_expected;
   if(!v) return null;
@@ -1887,7 +2905,8 @@ function setView(v){
   $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
   ["cvs","jobs","funnel"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
   $("#doctitle").hidden = v!=="cvs";
-  $("#chrome-gap").hidden = v==="cvs";
+  /* The gap is what pins the action cluster to the right edge, and that has
+     to hold on every tab or the gear moves when you switch. */
   $("#search").hidden = v!=="jobs";
   $("#range").hidden = v!=="funnel";
   $("#btn-design").hidden = v!=="cvs";
@@ -1913,7 +2932,29 @@ function paintStatus(){
     L.className=S.live==="bad"||S.dirty?"warn":"";
     L.textContent=bits.join(" · ")||"ready";
     L.classList.add("mono");
-    R.textContent=(S.state&&S.state.workspace)||"";
+    /* The right of the status bar is where the workspace lives, and what Claude
+       last did in it belongs in the same place -- it is the other thing acting
+       on these files. It gives way to the path once it goes stale. */
+    /* A resolved conflict outranks the raw activity line: after you choose,
+       the footer has to report your decision, not keep reporting their edit. */
+    const done=S.resolved&&(Date.now()-S.resolved.at)<900000?S.resolved:null;
+    if(done){
+      R.classList.add("said");
+      R.textContent=done.kept==="mine"
+        ? "You kept your version over "+done.who+"'s change"
+        : "You took "+done.who+"'s version";
+      R.title="";
+      return;
+    }
+    R.classList.remove("said");
+    R.classList.toggle("blocked",!!(S.pulse&&S.pulse.mcp&&
+      S.pulse.mcp.last&&S.pulse.mcp.last.ok===false));
+    const last=S.pulse&&S.pulse.mcp&&S.pulse.mcp.last;
+    R.textContent=last&&(Date.now()/1000-last.at)<900
+      ? (loneClient()||"AI")+" · "+(last.ok===false?"refused ":"")+last.tool+(last.path?" · "+last.path:"")+
+        " · "+ago(last.at*1000)+" ago"
+      : shortPath((S.state&&S.state.workspace)||"");
+    R.title=(S.state&&S.state.workspace)||"";
   }else if(S.view==="jobs"){
     L.className="mono";
     L.textContent=S.jobs.length+" job"+(S.jobs.length===1?"":"s")+
@@ -1932,6 +2973,286 @@ function ago(t){
   return Math.round(s/3600)+"h";
 }
 setInterval(()=>{ if(S.view==="cvs"&&!S.dirty&&S.savedAt) paintStatus() },10000);
+
+/* ---- Claude -------------------------------------------------------------
+   The MCP server is this same program in another process, started and owned by
+   Claude Desktop, so the app cannot talk to it. What the two halves do share is
+   the workspace folder and Claude's config file, and those answer the only two
+   questions worth asking: is it wired up, and what has it been doing. */
+const AI_STATE={
+  connected:"Connected to this workspace.",
+  absent:"Not set up yet. One click adds it to the config.",
+  elsewhere:"Configured, but pointing at a different copy of CV Studio.",
+  "other-workspace":"Configured, but pointing at a different workspace.",
+  unreadable:"The config file could not be read.",
+  unknown:"Checking…",
+};
+const aiClient=id=>(S.ai||[]).find(c=>c.id===id)||null;
+/* Only worth naming a client when exactly one could have done it. */
+function loneClient(){
+  const on=(S.ai||[]).filter(c=>c.state==="connected");
+  return on.length===1?on[0].label:null;
+}
+
+async function loadAI(){
+  try{ S.ai=(await api("/api/ai")).clients }
+  catch(e){ S.ai=null }
+  paintAI();
+}
+function paintAI(){
+  const bits=[];
+  $$("#btn-ai .aic").forEach(el=>{
+    const c=aiClient(el.dataset.client), st=(c&&c.state)||"unknown";
+    el.dataset.state=st;
+    bits.push((c?c.label:el.dataset.client)+" — "+AI_STATE[st]);
+  });
+  $("#btn-ai").title=bits.join("\n");
+  if(!$("#ovl-settings").hidden) fillAIPanel();
+}
+$("#btn-ai").onclick=()=>{
+  $("#ovl-design").hidden=true; $("#ovl-settings").hidden=false;
+  fillSettings(); showSettingsPane("ai");
+};
+
+/* A short label for the pill, and a single line of plain English under the
+   name. The long version of any of this belongs in the title, not the card. */
+const AI_PILL={
+  connected:"Connected", absent:"Not set up", elsewhere:"Another copy",
+  "other-workspace":"Another workspace", unreadable:"Unreadable",
+  unknown:"Checking",
+};
+function aiSay(c){
+  if(c.state==="connected") return "Reading and writing the CVs in this workspace.";
+  if(c.state==="absent") return "Not connected yet — one click adds it.";
+  if(c.state==="elsewhere") return "Set up, but pointing at another copy of CV Studio.";
+  if(c.state==="other-workspace")
+    return "Set up, but pointing at "+shortPath(c.workspace)+".";
+  if(c.state==="unreadable") return c.error||"Its config file could not be read.";
+  return "Checking…";
+}
+/* Paths here are long enough to swallow the card, and the end is the part that
+   identifies them, so keep the tail and let CSS trim the head. */
+function shortPath(p){
+  const bits=String(p||"").split(/[\\/]/).filter(Boolean);
+  return bits.length<=2?String(p||""):"…/"+bits.slice(-2).join("/");
+}
+
+function fillAIPanel(){
+  const clients=S.ai||[];
+  $("#s-ai-clients").innerHTML=clients.map(c=>{
+    const st=c.state;
+    return '<div class="client" data-client="'+c.id+'">'+
+      '<span class="badge"><svg width="19" height="19" viewBox="0 0 24 24"'+
+        ' aria-hidden="true"><use href="#'+c.id+'-mark"/></svg></span>'+
+      '<div class="who"><b>'+esc(c.label)+'</b>'+
+        '<span class="pill" data-state="'+st+'"><i></i>'+AI_PILL[st]+'</span></div>'+
+      '<div class="say">'+esc(aiSay(c))+'</div>'+
+      '<div class="go"><button class="obtn'+(st==="connected"?"":" primary")+
+        '" data-connect="'+c.id+'">'+
+        (st==="connected"?"Set up again":"Set up")+'</button></div>'+
+      '<div class="path"><span title="'+esc(c.config_path)+'">'+
+        esc(shortPath(c.config_path))+'</span>'+
+        '<button data-copy-path="'+esc(c.config_path)+
+        '" title="Copy the full path">Copy path</button>'+
+      '</div></div>';
+  }).join("")||'<p class="sp-note">Checking…</p>';
+
+  $$("#s-ai-clients [data-connect]").forEach(b=>b.onclick=async()=>{
+    const c=aiClient(b.dataset.connect);
+    b.disabled=true; b.textContent="Setting up…";
+    try{
+      const r=await post("/api/ai/connect",{client:b.dataset.connect});
+      await loadAI();
+      toast(r.action==="unchanged" ? "Already set up."
+        : (c?c.label:"Done")+" is connected. "+(r.restart||""));
+    }catch(e){ toast(e.message,true); await loadAI() }
+  });
+  /* Not a reveal: these files live outside the workspace, and /api/reveal is
+     deliberately confined to it. The path itself is the useful thing. */
+  $$("#s-ai-clients [data-copy-path]").forEach(b=>b.onclick=async()=>{
+    try{ await navigator.clipboard.writeText(b.dataset.copyPath); toast("Copied") }
+    catch(e){ toast("Select the path and copy manually",true) }
+  });
+
+  $("#s-ai-manual").innerHTML=clients.map(c=>
+    '<h4>'+esc(c.label)+'</h4><p class="sp-note" style="margin:0 0 8px">'+
+    esc(c.manual)+' Put this in <code>'+esc(c.config_path)+'</code>, then '+
+    esc(c.restart)+'</p><pre class="code">'+esc(c.snippet)+'</pre>').join("");
+  paintAILog();
+  loadSkills();
+}
+/* Claude Code already reads these off disk; the desktop app cannot, so the
+   button packages them for upload rather than pretending to install them. */
+async function loadSkills(){
+  try{ S.skills=await api("/api/skills") }catch(e){ S.skills=null }
+  paintSkills();
+}
+function paintSkills(){
+  const d=S.skills, list=(d&&d.skills)||[];
+  $("#s-skills").innerHTML=list.length
+    ? list.map(k=>'<div><span class="nm">'+esc(k.name)+'</span>'+
+        '<span class="ds">'+esc(k.description)+'</span>'+
+        '<span class="tag'+(k.needs_mcp?" mcp":"")+'">'+
+        (k.needs_mcp?"needs the tools":"travels as is")+'</span></div>').join("")
+    : '<div><span class="ds">None found'+(d?" in "+esc(d.source):"")+
+      '. They come with the Claude Code setup.</span></div>';
+  const packed=list.some(k=>k.packaged);
+  $("#s-skill-show").hidden=!packed;
+  $("#s-skill-steps").hidden=!packed;
+  const pack=$("#s-skill-pack");
+  pack.disabled=!list.length;
+  pack.textContent=packed?"Package again":"Package for Claude Desktop";
+  pack.onclick=async()=>{
+    pack.disabled=true; pack.textContent="Packaging…";
+    try{
+      const r=await post("/api/skills/package",{});
+      await loadSkills();
+      toast(r.skills.length+" skills ready to upload in "+r.dir);
+    }catch(e){ toast(e.message,true); await loadSkills() }
+  };
+  $("#s-skill-show").onclick=async()=>{
+    try{ await post("/api/reveal",{path:(S.skills&&S.skills.out_dir)||""}) }
+    catch(e){ toast(e.message,true) }
+  };
+}
+/* Kept apart from the rest of the panel so the poll can refresh it without
+   rebuilding the buttons under the cursor. */
+function paintAILog(){
+  const log=(S.pulse&&S.pulse.mcp&&S.pulse.mcp.recent)||[];
+  $("#s-cl-log").innerHTML=log.length
+    ? log.map(r=>'<div'+(r.ok===false?' class="no"':"")+'>'+'<span class="t">'+(r.ok===false?"refused ":"")+esc(r.tool)+'</span>'+
+        '<span class="p">'+esc(r.path||"")+'</span>'+
+        '<span class="w">'+ago(r.at*1000)+' ago</span></div>').join("")
+    : '<div><span class="none">Nothing yet. What a model does in this workspace '+
+      'shows up here.</span></div>';
+}
+
+/* ---- the workspace changing underneath us -------------------------------
+   Claude edits the same files this app has open, so the editor has to assume
+   it is not the only writer. Polling one stat per document is cheap, and it is
+   the difference between picking up the model's work and silently saving over
+   it. */
+let pulseTimer=null;
+async function pulse(){
+  if(document.hidden) return;
+  let p;
+  try{ p=await api("/api/pulse") }catch(e){ return }
+  const before=S.pulse;
+  S.pulse=p;
+  if(S.view==="cvs") paintStatus();
+  if(!$("#ovl-settings").hidden&&!$("#sp-ai").hidden) paintAILog();
+  if(!before) return;
+
+  /* A document appearing or disappearing means Claude created or removed one. */
+  const names=o=>JSON.stringify(Object.keys(o.docs).sort());
+  if(names(before)!==names(p)){
+    try{ renderDocs((await api("/api/state")).documents) }catch(e){}
+  }
+  if(!S.path) return;
+  const now=p.docs[S.path];
+  if(now===undefined||S.docMtime==null||now<=S.docMtime+1e-6) return;
+  if(S.dirty){
+    /* Fetch their version so the bar can say which fields moved rather than
+       just that the file did. Failing that, still warn -- silently losing the
+       user's work would be far worse than a vaguer message. */
+    let theirs=null;
+    try{ theirs=await api("/api/doc?path="+encodeURIComponent(S.path)) }catch(e){}
+    showExternalChange(now,theirs);
+    return;
+  }
+  S.docMtime=now;
+  await reopenInPlace();
+  toast(whoChanged(p)+" updated this file");
+}
+/* The MCP server is launched by whichever client is using it, and it does not
+   report which. Naming one is only honest when only one could have done it. */
+function byAI(p){
+  const last=p&&p.mcp&&p.mcp.last;
+  return !!last&&(Date.now()/1000-last.at)<20;
+}
+function whoChanged(p){
+  if(!byAI(p)) return "Something else";
+  return loneClient()||"An AI client";
+}
+
+/* Reload without losing your place: same selection, same page, same zoom. */
+async function reopenInPlace(){
+  const keep={sel:S.sel, open:S.openSection, page:S.page,
+              zoom:S.zoom, zoomAuto:S.zoomAuto, tab:S.tab};
+  await openDoc(S.path);
+  S.page=keep.page; S.zoom=keep.zoom; S.zoomAuto=keep.zoomAuto;
+  S.openSection=keep.open;
+  if(keep.sel) select(keep.sel);
+  hideExternalChange();
+}
+
+/* What the model actually changed, as field names rather than a file mtime.
+   "Something changed" is not enough to choose between your work and its. */
+function changedFields(mine,theirs){
+  const out=[];
+  const walk=(a,b,path)=>{
+    if(out.length>6) return;
+    const keys=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);
+    for(const k of keys){
+      const av=(a||{})[k], bv=(b||{})[k];
+      const here=path.concat(k);
+      const obj=v=>v&&typeof v==="object";
+      if(obj(av)&&obj(bv)&&!Array.isArray(av)&&!Array.isArray(bv)) walk(av,bv,here);
+      else if(JSON.stringify(av)!==JSON.stringify(bv)) out.push(here);
+    }
+  };
+  walk((mine||{}).cv,(theirs||{}).cv,[]);
+  return out;
+}
+/* "sections.experience.0.company" is precise and unreadable; "Experience —
+   Northwind" is what the user is actually looking at. */
+function fieldLabel(path,data){
+  if(path[0]==="sections"){
+    const [,name,i,key]=path;
+    const it=(((data||{}).cv||{}).sections||{})[name];
+    const entry=it&&it[i];
+    const who=entry!==undefined?entryTitle(entry,+i||0):null;
+    return sectionLabel(name)+(who?" — "+who:"")+(key?" · "+String(key).replace(/_/g," "):"");
+  }
+  return String(path[path.length-1]).replace(/_/g," ");
+}
+function describeChange(mine,theirs){
+  const fields=changedFields(mine,theirs);
+  if(!fields.length) return "";
+  const names=fields.slice(0,2).map(f=>fieldLabel(f,theirs));
+  const rest=fields.length-names.length;
+  return names.join(", ")+(rest>0?" and "+rest+" more":"");
+}
+
+function showExternalChange(mtime,theirs){
+  S.extMtime=mtime;
+  S.extTheirs=theirs||null;
+  const who=whoChanged(S.pulse);
+  const what=theirs?describeChange(S.data,theirs.data):"";
+  $("#extbar-msg").innerHTML=esc(who)+" changed "+
+    (what?"<b>"+esc(what)+"</b>":"this file")+" while you were editing.";
+  $("#extbar").hidden=false;
+}
+function hideExternalChange(){
+  S.extMtime=null; S.extTheirs=null; $("#extbar").hidden=true;
+}
+/* Taking theirs throws away work you have not saved, so it says so and is the
+   quieter of the two. Keeping yours is the one that loses nothing. */
+$("#ext-theirs").onclick=async()=>{
+  S.dirty=false;
+  await reopenInPlace();
+  S.resolved={kept:"theirs", who:whoChanged(S.pulse), at:Date.now()};
+  paintStatus();
+};
+$("#ext-keep").onclick=()=>{
+  S.docMtime=S.extMtime;
+  S.resolved={kept:"mine", who:whoChanged(S.pulse), at:Date.now()};
+  hideExternalChange();
+  paintStatus();
+};
+
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) pulse() });
+window.addEventListener("focus",pulse);
 
 /* ---- window chrome ------------------------------------------------------
    The page is served from the local server, so the Tauri API is only there
@@ -1989,14 +3310,24 @@ async function boot(){
   if(d.documents.length) openDoc(d.documents[0].path);
   else{
     $("#pane-page").innerHTML='<div class="empty"><h3>No CVs yet</h3>'+
-      '<p>Create one to get started. It is saved as a plain YAML file in your '+
-      'workspace, so you always own it. No database, nothing locked in.</p>'+
-      '<div class="cta"><button class="sbtn primary" id="firstcta">Create a CV</button></div></div>';
+      '<p>Ask Claude or ChatGPT to write one, or start from a blank file here. '+
+      'The model does the writing; this is where you see the page and fix what '+
+      'it got wrong.</p>'+
+      '<p>Either way it is a plain YAML file in your workspace, so you always own '+
+      'it. No database, no account, nothing leaves your machine.</p>'+
+      '<div class="cta"><button class="sbtn primary" id="firstcta">Create a CV</button>'+
+      '<button class="sbtn" id="firstai">Connect an AI client</button></div></div>';
     $("#firstcta").onclick=()=>newDocumentSheet();
+    $("#firstai").onclick=()=>$("#btn-ai").click();
     $("#btn-render").disabled=true;
+    buildOutline();   /* nothing is open, so the Outline heading goes too */
   }
+  loadAI();
+  pulse();
+  setInterval(pulse,2500);
   paintStatus();
-  if(d.first_run) toast("Workspace created at "+d.workspace);
+  if(d.first_run) toast("Workspace created at "+d.workspace+
+    " — connect Claude or ChatGPT to it from Settings");
 }
 
 /* =========================================================================
@@ -2037,7 +3368,10 @@ const sectionLabel=n=>String(n).replace(/_/g," ").replace(/^./,c=>c.toUpperCase(
 function entryTitle(it,i){
   if(it===null||typeof it!=="object")
     return String(it||"").split(/\s+/).slice(0,4).join(" ")||("item "+(i+1));
-  return it.company||it.institution||it.name||it.label||it.position||("entry "+(i+1));
+  /* Every RenderCV entry type keeps its headline under a different key, and
+     a publication or a bullet reading "entry 3" in the outline is no use. */
+  return it.company||it.institution||it.name||it.title||it.label||it.position||
+    it.bullet||("entry "+(i+1));
 }
 function wordsIn(v){
   if(v==null) return 0;
@@ -2047,23 +3381,39 @@ function wordsIn(v){
 }
 
 /* ---- documents ---------------------------------------------------------- */
+/* The rail is grouped, because a CV and a cover letter are different kinds of
+   thing and reading them as one list means reading every label to find either.
+   The groups come from the server, which already knows -- the folder a
+   document sits in is what decides it. */
+const DOC_GROUPS=["My CVs","Cover letters","Applications"];
 function renderDocs(docs){
   S.state.documents=docs;
+  const host=$("#doclist");
+  const newRow='<button class="row" id="doc-new"><span class="mark"></span>'+
+    '<span class="lbl" style="color:var(--c200)">+ New document…</span></button>';
   if(!docs.length){
-    $("#doclist").innerHTML='<p style="color:var(--c300);font-size:12.5px;padding:6px 8px">'+
-      'Nothing here yet.</p>';
-    return;
+    host.innerHTML='<p style="color:var(--c300);font-size:12.5px;padding:6px 8px">'+
+      'Nothing here yet.</p>'+newRow;
+  }else{
+    const groups=DOC_GROUPS.filter(g=>docs.some(d=>d.group===g));
+    host.innerHTML=groups.map(g=>{
+      const rows=docs.filter(d=>d.group===g).map(d=>{
+        const pp=S.pages[d.path];
+        const job=S.jobs.find(j=>j.cv_path===d.path||j.letter_path===d.path);
+        return '<button class="row'+(d.path===S.path?" sel":"")+
+          '" data-path="'+esc(d.path)+'" title="'+esc(d.path)+
+          (job?"\n"+esc(job.title+" — "+job.company):"")+'">'+
+          '<span class="mark"></span>'+
+          '<span class="lbl">'+esc(d.label)+'</span>'+
+          (job?'<span class="tie" title="Linked to '+
+            esc(job.title+" — "+job.company)+'"></span>':"")+
+          '<span class="ct mono">'+(pp?pp+"pp":"")+'</span></button>';
+      }).join("");
+      /* Only worth naming the groups once there is more than one of them. */
+      return (groups.length>1
+        ? '<div class="rail-sub">'+esc(g==="My CVs"?"CVs":g)+'</div>' : "")+rows;
+    }).join("")+newRow;
   }
-  $("#doclist").innerHTML=docs.map(d=>{
-    const label=d.group==="Cover letters"?"Letter — "+d.label:d.label;
-    const pp=S.pages[d.path];
-    return '<button class="row'+(d.path===S.path?" sel":"")+'" data-path="'+esc(d.path)+'"'+
-      ' title="'+esc(d.path)+'"><span class="mark"></span>'+
-      '<span class="lbl">'+esc(label)+'</span>'+
-      '<span class="ct mono">'+(pp?pp+"pp":"")+'</span></button>';
-  }).join("")+
-  '<button class="row" id="doc-new"><span class="mark"></span>'+
-  '<span class="lbl" style="color:var(--c200)">+ New document…</span></button>';
   $$("#doclist [data-path]").forEach(b=>b.onclick=()=>{
     if(b.dataset.path===S.path) return;
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
@@ -2077,6 +3427,7 @@ async function openDoc(path){
   setView("cvs");
   S.path=path; S.dirty=false; S.savedAt=null; S.sel=null; S.openSection=null;
   S.render=null; S.renderMs=null; S.fill=null; S.themePages={}; S.zoomAuto=true;
+  hideExternalChange();
   /* The Design panel still holds the last document's controls, and its inputs
      are read straight into the patch list. Empty it until it is rebuilt. */
   $("#dz-basics").innerHTML=""; $("#dz-advanced").innerHTML="";
@@ -2086,6 +3437,7 @@ async function openDoc(path){
   try{
     const doc=await api("/api/doc?path="+encodeURIComponent(path));
     S.doc=doc;
+    S.docMtime=doc.mtime;
     S.data=doc.data?JSON.parse(JSON.stringify(doc.data)):null;
     $("#yaml").value=doc.yaml; paint();
     const dz=(doc.data&&doc.data.design)||{};
@@ -2162,6 +3514,9 @@ function select(sel){
   S.sel=sel;
   buildOutline();
   buildInspector();
+  trackSelectionOnPage();
+  if(S.tab==="form") buildForm();   /* carry the mark into the form */
+  if(S.tab==="yaml") markYamlSelection();
 }
 
 /* ---- shared field markup ------------------------------------------------ */
@@ -2182,7 +3537,10 @@ function fieldRow(label,path,value,opts){
   return '<label title="'+esc(label)+'">'+esc(String(label).replace(/_/g," "))+'</label>'+
     inputFor(path,value,opts);
 }
-const MONO_KEYS=/^(start_date|end_date|date|phone|url|website|doi)$/;
+/* Monospace is for things you read character by character -- a URL or a
+   DOI. A phone number and a date are prose, and setting them in mono next
+   to sans-set siblings looks like a bug rather than a decision. */
+const MONO_KEYS=/^(url|website|doi)$/;
 
 /* One handler for every bound control on the page: write into the working
    copy, mark dirty, and let the debounce decide when to re-render. */
@@ -2302,8 +3660,60 @@ function wireInspector(){
   const show=body.querySelector("[data-show-job]");
   if(show) show.onclick=()=>{ selectJob(show.dataset.showJob); setView("jobs") };
   const link=body.querySelector("[data-link-job]");
-  if(link) link.onclick=()=>newJobSheet({cv_path:S.path});
+  if(link) link.onclick=()=>linkJobSheet();
+  const unlink=body.querySelector("[data-unlink-job]");
+  if(unlink) unlink.onclick=async()=>{
+    const j=linkedJob(); if(!j) return;
+    const key=j.cv_path===S.path?"cv_path":"letter_path";
+    try{
+      await post("/api/jobs/update",{id:j.id,[key]:null});
+      await loadJobs(); buildInspector(); renderDocs(S.state.documents);
+      toast("Unlinked");
+    }catch(e){ toast(e.message,true) }
+  };
 }
+
+/* Attaching a document to an application it was written for, from the document
+   side. The Jobs screen can already pick a document for an application; this is
+   the same join made from the end you are more often standing at. */
+function linkJobSheet(){
+  const isLetter=(S.state.documents||[]).some(
+    d=>d.path===S.path&&d.group==="Cover letters");
+  const key=isLetter?"letter_path":"cv_path";
+  const open=S.jobs.filter(j=>!j[key]);
+  openSheet(
+    '<div><h3>Link to an application</h3><p>'+esc(docLabel(S.path))+
+    ' becomes the '+(isLetter?"cover letter":"CV")+' on the application you '+
+    'pick. A document belongs to one application, and an application takes one '+
+    'of each.</p></div>'+
+    (open.length
+      ? '<div class="fg w88"><label>Application</label><select id="lj-job">'+
+        open.map(j=>'<option value="'+esc(j.id)+'">'+esc(j.title)+' — '+
+          esc(j.company)+'</option>').join("")+'</select></div>'
+      : '<div class="fg w88"><p class="note muted">Every application already has '+
+        'one. Start a new application, or swap the document over from the Jobs '+
+        'screen.</p></div>')+
+    '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
+    '<button class="sbtn" id="lj-new">New application…</button>'+
+    (open.length?'<button class="sbtn primary" id="lj-ok">Link</button>':"")+
+    '</div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#lj-new").onclick=()=>{ closeSheet(); newJobSheet({[key]:S.path}) };
+  const ok=$("#lj-ok");
+  if(ok) ok.onclick=async()=>{
+    ok.disabled=true;
+    try{
+      await post("/api/jobs/update",{id:$("#lj-job").value,[key]:S.path});
+      await loadJobs(); closeSheet(); buildInspector();
+      renderDocs(S.state.documents); paintTitle();
+      toast("Linked");
+    }catch(e){ toast(e.message,true); ok.disabled=false }
+  };
+}
+const docLabel=p=>{
+  const d=(S.state.documents||[]).find(x=>x.path===p);
+  return d?d.label:String(p||"").split("/").pop();
+};
 
 /* The application this document was written for. Knowing it here is what
    makes "Show in Jobs" possible without hunting through the table. */
@@ -2319,17 +3729,33 @@ function linkedBlock(){
       '<span class="dot '+statusTone(j.status)+'"></span>'+
       '<span style="overflow:hidden;text-overflow:ellipsis">'+esc(j.company)+' — '+
       esc(prettyStatus(j.status))+'</span></span>'+
+      '<span style="display:flex;gap:10px;flex:none">'+
       '<button class="alink" data-show-job="'+esc(j.id)+'">Show in Jobs</button>'+
+      '<button class="alink" data-unlink-job>Unlink</button></span>'+
       '</div></div>';
   }else if(S.jready){
     inner='<div class="card"><div class="drow"><span class="muted">Not linked to an '+
-      'application</span><button class="alink" data-link-job>Add one</button></div></div>';
+      'application</span><button class="alink" data-link-job>Link…</button></div></div>';
   }else inner='';
   return inner?'<div class="block ruled"><span class="blabel mono">Linked application</span>'+
     inner+'</div>':'';
 }
 
 /* ---- the Form tab: the same fields, whole document at once ---------------- */
+/* The selection is the thread through all three views. Losing it when you
+   switch tabs turns one cockpit into three unrelated views of a YAML file:
+   you spot something wrong on the page, switch to Form to fix it, and have
+   to find the entry again by eye. */
+const selMark=sel=>sameBlock({k:sel.kind,name:sel.name,i:sel.i},S.sel)?" on":"";
+/* Bring the marked block into view without yanking the pane around when it
+   is already on screen. */
+function revealSelected(root){
+  const el=root.querySelector(".formblock.on");
+  if(!el) return;
+  const box=el.getBoundingClientRect(), pane=root.getBoundingClientRect();
+  if(box.top<pane.top||box.bottom>pane.bottom)
+    el.scrollIntoView({block:"center",behavior:"auto"});
+}
 function buildForm(){
   const cv=S.data&&S.data.cv;
   if(!cv){ $("#pane-form").innerHTML='<div class="empty"><h3>Can\'t show a form</h3>'+
@@ -2349,10 +3775,10 @@ function buildForm(){
       '</span></summary><div class="body">';
     list.forEach((it,i)=>{
       if(it===null||typeof it!=="object"){
-        h+='<div class="fg wide">'+fieldRow("text "+(i+1),["cv","sections",name,i],it,
+        h+='<div class="fg wide formblock'+selMark({kind:"entry",name:name,i:i})+'" data-block="'+esc(name)+'" data-bi="'+i+'">'+fieldRow("text "+(i+1),["cv","sections",name,i],it,
           {multi:true})+'</div>';
       }else{
-        h+='<div class="entry"><div class="entry-hd"><b>'+esc(entryTitle(it,i))+'</b>'+
+        h+='<div class="entry formblock'+selMark({kind:"entry",name:name,i:i})+'" data-block="'+esc(name)+'" data-bi="'+i+'"><div class="entry-hd"><b>'+esc(entryTitle(it,i))+'</b>'+
           '<button data-focus="'+esc(name)+'" data-i="'+i+'">Inspect</button></div>'+
           '<div class="fg wide">'+Object.keys(it).map(k=>
             fieldRow(k,["cv","sections",name,i,k],it[k],{mono:MONO_KEYS.test(k)})).join("")+
@@ -2362,6 +3788,7 @@ function buildForm(){
     h+='</div></details>';
   }
   $("#pane-form").innerHTML=h;
+  revealSelected($("#pane-form"));
   $$("#pane-form [data-focus]").forEach(b=>b.onclick=()=>
     select({kind:"entry",name:b.dataset.focus,i:+b.dataset.i}));
 }
@@ -2377,13 +3804,17 @@ $$("#edtabs button").forEach(b=>b.onclick=()=>{
   $("#pane-yaml").hidden=S.tab!=="yaml";
   $("#pmeta").style.visibility=S.tab==="page"?"":"hidden";
   if(S.tab==="yaml") paint();
+  if(S.tab==="yaml") markYamlSelection();
   if(S.tab==="form") buildForm();   /* re-read the model, in case the inspector moved on */
+  if(S.tab==="page") trackSelectionOnPage();  /* the selection may have moved while away */
 });
-$("#z-in").onclick=()=>setZoom(S.zoom+.12);
-$("#z-out").onclick=()=>setZoom(S.zoom-.12);
+$("#z-in").onclick=()=>setZoom(S.zoom+.1);
+$("#z-out").onclick=()=>setZoom(S.zoom-.1);
+/* The readout is also the way back: once you have zoomed, one click refits. */
+$("#z-lvl").onclick=()=>{ S.zoomAuto=true; paintPage() };
 $("#pg-prev").onclick=()=>setPage(S.page-1);
 $("#pg-next").onclick=()=>setPage(S.page+1);
-function setZoom(z){ S.zoom=Math.min(3,Math.max(.35,z)); S.zoomAuto=false; paintPage() }
+function setZoom(z){ S.zoom=Math.min(3,Math.max(.2,z)); S.zoomAuto=false; paintPage() }
 function setPage(i){
   const n=(S.render&&S.render.pngs.length)||0;
   S.page=Math.min(Math.max(0,i),Math.max(0,n-1)); paintPage();
@@ -2398,6 +3829,9 @@ async function save(){
                               : {path:S.path,patches:collectPatches()};
     const r=await post("/api/save",body);
     S.doc=r; S.data=r.data?JSON.parse(JSON.stringify(r.data)):null;
+    /* Our own write, so take its timestamp: the poll must not read it back as
+       somebody else having changed the file. */
+    S.docMtime=r.mtime; hideExternalChange();
     S.dirty=false; S.savedAt=Date.now();
     $("#yaml").value=r.yaml; paint(); setYamlError(r.parse_error);
     buildOutline(); buildInspector(); if(S.tab==="form") buildForm();
@@ -2451,23 +3885,102 @@ async function adoptRender(r){
   if(!$("#ovl-design").hidden){ paintThemes(); paintEffect() }
 }
 
+/* The page is the thing you came to look at, so it gets the room. "100%" means
+   actual size -- the sheet at 96dpi, the width it would print -- rather than an
+   arbitrary base that made the readout lie by a factor of 1.7. RenderCV renders
+   at 144dpi, so a CSS pixel at 100% is two thirds of an image pixel. */
+const PAGE_GUTTER=52;
+function pageCssWidth(img){ return img.naturalWidth*(2/3) }
+/* Fit to the width, not to the whole sheet. A CV is read top to bottom, and
+   fitting its height into a laptop window puts the body type at about four
+   pixels -- unreadable, on the one screen whose whole job is reading it.
+   Capped at 150%, where the 144dpi render stops having pixels to spare. */
+function fitZoom(host,img){
+  const w=(host.clientWidth-PAGE_GUTTER*2)/pageCssWidth(img);
+  return Math.max(.2,Math.min(1.5,w));
+}
 function paintPage(){
   const host=$("#pane-page"), r=S.render;
   if(!r||!r.pngs.length){ $("#pg-idx").textContent="—"; return }
   const url=r.pngs[S.page]+tok();
-  if(S.zoomAuto){
-    /* Fit the page to the column the first time, which is what "96%" in the
-       design is: a whole page, as large as it goes. */
-    const h=host.clientHeight-44;
-    if(h>120) S.zoom=Math.max(.35,Math.min(2,h/668));
-  }
-  const w=Math.round(472*S.zoom);
-  host.innerHTML='<img class="pg" src="'+url+'" alt="Page '+(S.page+1)+'" style="width:'+
-    w+'px;height:auto">';
+  const draw=img=>{
+    if(S.zoomAuto) S.zoom=fitZoom(host,img);
+    img.style.width=Math.round(pageCssWidth(img)*S.zoom)+"px";
+    $("#z-lvl").textContent=Math.round(S.zoom*100)+"%";
+    $("#z-lvl").classList.toggle("auto",!!S.zoomAuto);
+    paintHits();
+  };
+  host.innerHTML='<div class="pgwrap"><img class="pg" src="'+url+'" alt="Page '+
+    (S.page+1)+'"></div>';
+  const img=host.querySelector(".pg");
+  if(img.complete&&img.naturalHeight) draw(img);
+  else img.onload=()=>{ if(host.querySelector(".pg")===img) draw(img) };
   $("#pg-idx").textContent=(S.page+1)+" / "+r.pngs.length;
-  $("#z-lvl").textContent=Math.round(S.zoom*100)+"%";
   $("#pg-prev").disabled=S.page===0;
   $("#pg-next").disabled=S.page>=r.pngs.length-1;
+}
+/* Re-fit while the window is being resized, but only while nobody has chosen a
+   zoom of their own. */
+addEventListener("resize",()=>{ if(S.zoomAuto&&S.tab==="page") paintPage() });
+
+/* ---- clicking the page --------------------------------------------------
+   Every block of the rendered page is a band, and the bands tile the page, so
+   a click always lands on something rather than between two things. They are
+   the same selection the outline makes: point at a job on the page and the
+   inspector is editing that job. */
+const bandsOn=page=>((S.render&&S.render.map)||[]).filter(b=>b.page===page+1);
+const sameBlock=(b,sel)=>!!sel&&(
+  b.k==="header" ? sel.kind==="header"
+  : b.k==="section" ? sel.kind==="section"&&sel.name===b.name
+  : sel.kind==="entry"&&sel.name===b.name&&sel.i===b.i);
+
+function bandLabel(b){
+  if(b.k==="header") return "Header";
+  const cv=(S.data&&S.data.cv)||{};
+  const label=sectionLabel(b.name);
+  if(b.k==="section") return label;
+  const it=((cv.sections||{})[b.name]||[])[b.i];
+  return label+" — "+(it===undefined?("entry "+(b.i+1)):entryTitle(it,b.i));
+}
+
+function paintHits(){
+  const wrap=$("#pane-page .pgwrap"), img=wrap&&wrap.querySelector(".pg");
+  if(!wrap||!img||!img.naturalHeight) return;
+  wrap.querySelectorAll(".hit").forEach(el=>el.remove());
+  const pageH=img.naturalHeight/2, pageW=img.naturalWidth/2;  /* 144dpi: 2px/pt */
+  const box=(S.render&&S.render.map_box)||null;
+  /* Hug the text column when we know where it is. Spanning the whole sheet
+     reads as a band laid across the paper rather than a mark on the entry. */
+  const pad=6;
+  const left=box?Math.max(0,(box.x0-pad)/pageW*100):0;
+  const right=box?Math.max(0,(pageW-box.x1-pad)/pageW*100):0;
+  const pct=y=>(Math.max(0,Math.min(pageH,y))/pageH)*100;
+  wrap.insertAdjacentHTML("beforeend", bandsOn(S.page).map(b=>{
+    const top=pct(b.y0), bottom=b.y1==null?100:pct(b.y1);
+    if(bottom-top<=0) return "";
+    const name=bandLabel(b);
+    return '<button class="hit'+(sameBlock(b,S.sel)?" sel":"")+'" tabindex="-1"'+
+      ' style="top:'+top.toFixed(3)+'%;height:'+(bottom-top).toFixed(3)+'%;'+
+      'left:'+left.toFixed(3)+'%;right:'+right.toFixed(3)+'%"'+
+      ' data-k="'+b.k+'" data-name="'+esc(b.name==null?"":b.name)+'"'+
+      ' data-i="'+(b.i==null?"":b.i)+'" title="'+esc(name)+'"'+
+      ' aria-label="Edit '+esc(name)+'"></button>';
+  }).join(""));
+  wrap.querySelectorAll(".hit").forEach(el=>el.onclick=()=>{
+    const k=el.dataset.k;
+    if(k==="header") select({kind:"header"});
+    else if(k==="section") select({kind:"section",name:el.dataset.name});
+    else select({kind:"entry",name:el.dataset.name,i:+el.dataset.i});
+  });
+}
+
+/* Keep the page in step with a selection made anywhere else, following it to
+   whichever page it is actually on. */
+function trackSelectionOnPage(){
+  if(S.tab!=="page"||!S.render||!S.render.map) return;
+  const hit=S.render.map.find(b=>sameBlock(b,S.sel));
+  if(hit&&hit.page-1!==S.page){ S.page=hit.page-1; paintPage() }
+  else paintHits();
 }
 
 /* How full the last page is, measured off the rendered image rather than
@@ -2513,7 +4026,9 @@ function paintBudget(){
   b.querySelector(".pp").textContent=r.pages+" page"+(r.pages===1?"":"s");
   b.querySelector(".ww").textContent=(r.ats_words||0)+" words";
   const pct=S.fill==null?null:Math.round(S.fill*100);
-  const on=pct==null?0:Math.round(S.fill*6);
+  /* Any ink on the page should light a segment: rounding 8% to zero made a
+     nearly-empty page and a blank one look the same. */
+  const on=pct==null?0:(S.fill>0?Math.max(1,Math.ceil(S.fill*6)):0);
   [...b.querySelectorAll(".bar i")].forEach((el,i)=>el.classList.toggle("on",i<on));
   b.querySelector(".bar").style.visibility=pct==null?"hidden":"";
   b.querySelector(".cap").textContent=fillCaption(r.pages,pct);
@@ -2646,6 +4161,9 @@ async function loadJobs(quiet){
   }
   if(S.view==="jobs") drawJobs();
   if(S.view==="cvs"&&S.path){ paintTitle(); buildInspector() }
+  /* The rail marks which documents belong to an application, so it has to
+     be redrawn once we know what the applications are. */
+  if(S.state) renderDocs(S.state.documents);
   paintStatus();
 }
 
@@ -2705,7 +4223,7 @@ function drawJobs(){
       (S.jsel===j.id?" sel":"")+'" data-id="'+esc(j.id)+'">'+
       '<span class="role"><b>'+esc(j.title)+'</b><i>'+esc(j.company)+'</i></span>'+
       '<span>'+(docs?'<span class="docs mono" data-open="'+esc(j.cv_path)+'">'+docs+'</span>'
-                    :'<span class="muted" style="font-size:12px">no CV yet</span>')+'</span>'+
+                    :'<span class="docs none">no CV yet</span>')+'</span>'+
       '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
         esc(prettyStatus(j.status))+'</span>'+
       '<span class="money mono'+(sal?"":" none")+'">'+(sal?esc(sal):"—")+'</span>'+
@@ -2767,12 +4285,13 @@ function drawJobInspector(){
 
   const grid=JOB_GRID.map(([k,label,kind])=>{
     let ctl;
-    if(kind==="status") ctl='<select data-j="status">'+S.statuses.map(s=>
+    if(kind==="status") ctl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span><select data-j="status">'+S.statuses.map(s=>
       '<option value="'+s+'"'+(s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+
-      '</option>').join("")+'</select>';
+      '</option>').join("")+'</select></span>';
     else if(kind==="fit") ctl='<div class="fit" role="group" aria-label="Fit">'+
       [1,2,3,4,5].map(n=>'<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+
-      ' title="'+n+' of 5" aria-label="'+n+' of 5"></button>').join("")+'</div>';
+      ' title="'+n+' of 5" aria-label="'+n+' of 5"></button>').join("")+
+      '<span class="fitv">'+(j.score?j.score+" / 5":"not rated")+'</span></div>';
     else ctl='<input data-j="'+k+'"'+(kind==="date"?' type="date"':"")+
       (kind==="number"?' type="number" class="mono"':"")+' value="'+
       esc(j[k]==null?"":j[k])+'">';
@@ -2923,9 +4442,23 @@ function ensureD3(){
 
 /* One ochre path through the chart: the applications that are still worth
    something. Totals are dark; every other outcome is neutral. */
-const FN_POSITIVE=new Set(["interview_s","offer_s","accepted"]);
+/* Five roles, not three. A rejection and a reply-you-are-waiting-on used to be
+   the same grey, which is the one distinction the chart exists to make. The
+   spine and the waiting stages stay recessive so the outcomes carry the colour;
+   every node is labelled, so nothing here is colour alone. */
+/* The funnel nodes mapped onto the same vocabulary the Jobs table uses, so a
+   status cannot mean one thing in the table and another in the chart. The
+   spine and the waiting stages stay recessive; outcomes carry the colour. */
 const FN_TOTAL=new Set(["all","applied_s"]);
-const fnTone=id=>FN_POSITIVE.has(id)?"t-positive":FN_TOTAL.has(id)?"t-total":"t-neutral";
+const FN_TONE={
+  pending:"draft", awaiting:"waiting", still_iv:"live",
+  interview_s:"live", offer_s:"offer", deciding:"offer",
+  accepted:"won", refused:"closed",
+  rejected:"lost", ghosted:"lost", rejected_iv:"lost", ghosted_iv:"lost",
+};
+const fnTone=id=>FN_TOTAL.has(id)?"t-total":"t-"+(FN_TONE[id]||"draft");
+/* A band takes the colour of where it lands: that is the outcome it reports. */
+const fnBand=id=>"b-"+(FN_TONE[id]||"draft");
 
 $$("#range button").forEach(b=>b.onclick=()=>{
   $$("#range button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
@@ -2979,7 +4512,10 @@ function drawFunnel(){
   const W=Math.max(680,host.clientWidth||1000);
   /* Flat and airy like the design rather than a wall of ribbon: the height
      follows the node count, but stops well short of filling the pane. */
-  const H=Math.max(280,Math.min(440,nodes.length*28));
+  /* Fill the pane rather than stopping at an arbitrary cap: the sankey was
+     using little over half the canvas and pooling the rest at the bottom. */
+  const avail=(host.clientHeight||520)-30;
+  const H=Math.max(300,Math.min(avail,nodes.length*46));
   /* The right-hand pad is where the terminal labels live: they sit outside the
      sankey extent, so the layout has to stop short of the edge. */
   const PAD=Math.max(180,Math.min(300,W*0.22));
@@ -2993,7 +4529,7 @@ function drawFunnel(){
   const touches=l=>!S.fnode||l.sid===S.fnode||l.tid===S.fnode;
 
   const bands=graph.links.map(l=>
-    '<path class="sk-link '+(FN_POSITIVE.has(l.tid)?"b-positive":"b-neutral")+
+    '<path class="sk-link '+fnBand(l.tid)+
     (touches(l)?"":" sk-dim")+'" d="'+path(l)+
     '" stroke-width="'+Math.max(1,l.width)+'"><title>'+
     esc(l.source.label)+' → '+esc(l.target.label)+': '+l.value+'</title></path>').join("");
@@ -3183,6 +4719,11 @@ const THUMBS={
   engineeringclassic:{bars:[[5,"60%",1],[3,"100%",0,3],[3,"82%"],[3,"96%"]]},
   engineeringresumes:{bars:[[7,"100%",1],[3,"74%",0,3],[3,"92%"]]},
   moderncv:{split:true},
+  ember:{bars:[[5,"52%",1,0,"#8a4b2a"],[2,"100%",0,2,"#d8c3b0"],[3,"94%"],
+    [3,"80%"]]},
+  harvard:{centre:true,bars:[[5,"64%",1],[2,"84%",0,3],[3,"100%"],[3,"90%"]]},
+  ink:{bars:[[6,"46%",1],[3,"100%",0,4,"#2b2b2b"],[3,"92%"],[3,"76%"]]},
+  opal:{bars:[[5,"58%",1,0,"#2f6f6b"],[3,"88%",0,3],[3,"96%"],[3,"84%"]]},
   _default:{bars:[[5,"60%",1],[3,"100%",0,3],[3,"86%"],[3,"94%"]]},
 };
 function thumbHTML(theme){
@@ -3264,8 +4805,13 @@ function paintBasics(){
   if(DZ.size==null&&sizeF) DZ.size=getAt(cur,sizeF.path)!=null
     ? String(getAt(cur,sizeF.path)) : (sizeF.default!=null?String(sizeF.default):"10pt");
   const pt=PT(DZ.size)||10;
+  /* A document with no font_family renders in whatever the theme picks. Saying
+     so beats letting the browser show the first option and imply the CV uses a
+     typeface it has never heard of. */
   let h='<label for="dz-face">Typeface</label>'+
-    '<select id="dz-face">'+fonts.map(f=>'<option'+(f===DZ.family?" selected":"")+'>'+
+    '<select id="dz-face"><option value=""'+(DZ.family?"":" selected")+
+      '>Theme default</option>'+
+    fonts.map(f=>'<option'+(f===DZ.family?" selected":"")+'>'+
       esc(f)+'</option>').join("")+'</select>';
   if(sizeF) h+='<label for="dz-size">Body size</label>'+
     '<div class="slider"><input type="range" id="dz-size" min="8" max="14" step="0.5" '+
@@ -3278,9 +4824,12 @@ function paintBasics(){
   $("#dz-basics").innerHTML=h;
 
   const face=$("#dz-face");
-  face.style.fontFamily="'"+(DZ.family||"")+"', serif";
-  face.onchange=()=>{ DZ.family=face.value;
-    face.style.fontFamily="'"+face.value+"', serif"; touch() };
+  /* With no family chosen there is nothing to preview, and "'', serif"
+     silently renders the control in a serif the app never uses. */
+  const preview=f=>f?"'"+f+"', serif":"inherit";
+  face.style.fontFamily=preview(DZ.family);
+  face.onchange=()=>{ DZ.family=face.value||null;
+    face.style.fontFamily=preview(DZ.family); touch() };
   const sz=$("#dz-size");
   if(sz){
     const fill=()=>sz.style.setProperty("--fill",
@@ -3451,24 +5000,35 @@ function setPref(k,v){
 /* "system" means take the attribute off and let prefers-color-scheme decide;
    anything else pins it. Everything downstream is a CSS variable, so nothing
    needs redrawing -- including the funnel, which is styled rather than filled. */
+const ACCENTS=[["ochre","Ochre"],["indigo","Indigo"],["teal","Teal"],
+  ["rose","Rose"],["moss","Moss"]];
 function applyAppearance(){
-  const a=prefs().appearance||"system";
+  const p=prefs(), a=p.appearance||"system";
   if(a==="system") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme=a;
+  /* Ochre is what :root already defines, so it is the absence of an override
+     rather than one more rule to keep in step with the others. */
+  const acc=p.accent||"ochre";
+  if(acc==="ochre") delete document.documentElement.dataset.accent;
+  else document.documentElement.dataset.accent=acc;
 }
 applyAppearance();
 
 $("#btn-settings").onclick=()=>{
   if($("#ovl-settings").hidden){
-    $("#ovl-design").hidden=true; $("#ovl-settings").hidden=false; fillSettings();
+    $("#ovl-design").hidden=true; $("#ovl-settings").hidden=false;
+    fillSettings(); loadAI();
   }else closeOverlays();
 };
-$$("#set-rail button").forEach(b=>b.onclick=()=>{
-  $$("#set-rail button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
+function showSettingsPane(which){
+  $$("#set-rail button").forEach(x=>
+    x.setAttribute("aria-selected",String(x.dataset.s===which)));
   ["workspace","editor","ai","api","updates","about"].forEach(k=>
-    $("#sp-"+k).hidden = k!==b.dataset.s);
-  if(b.dataset.s==="updates") checkUpdates(true);
-});
+    $("#sp-"+k).hidden = k!==which);
+  if(which==="updates") checkUpdates(true);
+  if(which==="ai") loadAI();
+}
+$$("#set-rail button").forEach(b=>b.onclick=()=>showSettingsPane(b.dataset.s));
 $$("[data-copy]").forEach(b=>b.onclick=async()=>{
   try{ await navigator.clipboard.writeText($("#"+b.dataset.copy).textContent);
        toast("Copied") }
@@ -3487,6 +5047,11 @@ function fillSettings(){
     try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) }
   };
   $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
+  /* Revealing is deliberate and one click; copying never needs it. */
+  const key=$("#s-key");
+  key.hidden=!(S.state&&S.state.api_token);
+  key.textContent=S.keyShown?"Hide the key":"Show the key";
+  key.onclick=()=>{ S.keyShown=!S.keyShown; fillSettings() };
   $("#s-check").onclick=()=>checkUpdates(true);
 
   const live=$("#s-live");
@@ -3495,6 +5060,19 @@ function fillSettings(){
   const delay=$("#s-delay");
   delay.value=String(pr.delay||700);
   delay.onchange=()=>setPref("delay",Number(delay.value));
+  const acc=prefs().accent||"ochre";
+  $("#s-accent").innerHTML=ACCENTS.map(([id,label])=>
+    '<button data-accent="'+id+'" title="'+label+'" aria-label="'+label+
+    '" aria-pressed="'+String(id===acc)+'"></button>').join("");
+  $$("#s-accent button").forEach(b=>{
+    /* Painted from the theme's own token rather than a colour repeated here,
+       so a swatch can never drift from what it selects. */
+    b.style.background=getComputedStyle(document.documentElement)
+      .getPropertyValue("--sw-"+b.dataset.accent).trim();
+    b.onclick=()=>{ setPref("accent",b.dataset.accent); applyAppearance();
+      $$("#s-accent button").forEach(x=>
+        x.setAttribute("aria-pressed",String(x===b))); };
+  });
   const ap=$("#s-appearance");
   ap.value=pr.appearance||"system";
   ap.onchange=()=>{ setPref("appearance",ap.value); applyAppearance() };
@@ -3506,15 +5084,16 @@ function fillSettings(){
   if(dt){ dt.value=pr.theme||(st.themes||[])[0]||"";
           dt.onchange=()=>setPref("theme",dt.value) }
 
-  /* Claude Desktop needs command and args separately; a single string holding
-     "python script.py" is not runnable. */
-  const L=st.server_launch||{command:"cv-studio-server",args:[]};
-  const args=[...(L.args||[]),"--mcp"];
-  if(st.workspace) args.push("--workspace",st.workspace);
-  $("#s-mcp").textContent=JSON.stringify(
-    {mcpServers:{"cv-studio":{command:L.command,args}}},null,2);
+  /* The hand-setup snippets come from the server: each client has its own
+     config format, and there is no reason for two places to know both. */
+  fillAIPanel();
 
-  const auth=st.api_token?' \\\n  -H "X-API-Key: '+st.api_token+'"':"";
+  /* Masked by default: this pane ends up in screenshots and screen shares,
+     and the key in it is live. Copy still copies the real thing. */
+  const shown=st.api_token&&S.keyShown?st.api_token
+    :st.api_token?"•".repeat(Math.min(24,st.api_token.length)):"";
+  const auth=st.api_token?' \
+  -H "X-API-Key: '+shown+'"':"";
   $("#s-curl").textContent=
     "curl "+base+"/api/state"+auth+"\n\n"+
     "curl -X POST "+base+"/api/render"+auth+" \\\n"+
@@ -3576,6 +5155,45 @@ async function checkUpdates(loud){
   }
 }
 setTimeout(()=>{ if(window.__TAURI__&&window.__TAURI__.updater) checkUpdates(false) },4000);
+
+/* The YAML tab is where the model actually writes, so it is the one view where
+   losing the selection hurts most. The source lines come from ruamel, which
+   knows exactly where it parsed each node -- no guessing, no string search.
+   Drawn as a band behind the text rather than by re-marking the highlighted
+   HTML, so syntax colouring and the invisible textarea both stay untouched. */
+function selectedLines(){
+  const m=(S.doc&&S.doc.lines)||{}, sel=S.sel;
+  if(!sel) return null;
+  if(sel.kind==="header") return m.header||null;
+  if(sel.kind==="entry"){
+    return m[sel.name+"/"+sel.i]||m[sel.name]||null;
+  }
+  return m[sel.name]||null;
+}
+function markYamlSelection(){
+  const wrap=$(".edwrap"), ta=$("#yaml");
+  if(!wrap||!ta) return;
+  let band=wrap.querySelector(".yband");
+  const span=selectedLines();
+  if(!span){ if(band) band.remove(); return }
+  if(!band){
+    band=document.createElement("div");
+    band.className="yband";
+    wrap.insertBefore(band,wrap.firstChild);
+  }
+  /* Line height and padding come from the computed style rather than repeating
+     the numbers here, so the band cannot drift if the type changes. */
+  const cs=getComputedStyle(ta);
+  const lh=parseFloat(cs.lineHeight), top=parseFloat(cs.paddingTop);
+  band.style.top=(top+span[0]*lh)+"px";
+  band.style.height=(Math.max(1,span[1]-span[0])*lh)+"px";
+  band.style.transform="translateY("+(-ta.scrollTop)+"px)";
+}
+/* Keep it pinned while the source scrolls under it. */
+$("#yaml").addEventListener("scroll",()=>{
+  const band=$(".edwrap .yband");
+  if(band) band.style.transform="translateY("+(-$("#yaml").scrollTop)+"px)";
+});
 
 boot();
 </script></body></html>"""

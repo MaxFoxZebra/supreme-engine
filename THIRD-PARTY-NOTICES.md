@@ -39,6 +39,25 @@ The Plex files are the latin and latin-ext WOFF2 subsets published by Google
 Fonts. They are the interface typefaces; the typefaces a CV is *rendered* in
 come from rendercv-fonts above.
 
+## Trademarks
+
+**Claude** and the Claude mark are trademarks of Anthropic. CV Studio uses the
+mark, as published by Anthropic, in one place only: to identify the Claude
+Desktop integration in the interface. It is not the application's own icon, and
+nothing here is built, endorsed or supported by Anthropic.
+
+**OpenAI**, **ChatGPT** and **Codex** are trademarks of OpenAI. CV Studio uses
+the OpenAI mark in one place only: to identify that integration in the
+interface. It is not the application's own icon, and nothing here is built,
+endorsed or supported by OpenAI.
+
+Both marks are inlined as SVG in `server/studio.py`. The Claude one is as
+published by Anthropic in their VS Code extension; the OpenAI one is taken from
+[@lobehub/icons-static-svg](https://github.com/lobehub/lobe-icons) (MIT), which
+redistributes brand marks for exactly this purpose. The MIT licence covers the
+packaging of the artwork, not the trademarks themselves, which remain their
+owners'.
+
 ## Build tooling
 
 [PyInstaller](https://github.com/pyinstaller/pyinstaller) 6.22.2 is licensed

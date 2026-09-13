@@ -23,9 +23,9 @@ python dev.py
 ```
 
 Serves on 127.0.0.1:8722, opens a browser, and restarts whenever you save
-`studio.py`, `cv_render.py`, `jobs.py` or `mcp_server.py`. Edit, save, refresh:
-about two seconds. A syntax error is reported and it waits for the next save
-rather than restart-looping.
+`studio.py`, `cv_render.py`, `cv_map.py`, `jobs.py` or `mcp_server.py`. Edit,
+save, refresh: about two seconds. A syntax error is reported and it waits for
+the next save rather than restart-looping.
 
 Useful flags: `--no-open` to keep it from stealing focus, `--workspace DIR` to
 work against a scratch workspace instead of your real CVs, `--port N`.
@@ -124,6 +124,7 @@ PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
   --collect-all mcp \
   --collect-all pydantic \
   --hidden-import cv_render \
+  --hidden-import cv_map \
   --hidden-import studio \
   --hidden-import mcp_server \
   --paths . \
@@ -196,6 +197,7 @@ installer is `currentUser` mode, so there is no admin prompt.
 │   ├── server_main.py      PyInstaller entry point; --mcp switches to MCP
 │   ├── studio.py           interface and API
 │   ├── cv_render.py        RenderCV wrapper
+│   ├── cv_map.py           where each block landed on the page
 │   ├── jobs.py             applications.db
 │   ├── mcp_server.py       MCP surface (see MCP.md)
 │   ├── dev.py              hot-restarting dev server
