@@ -680,6 +680,11 @@ design:
     left_margin: 1.6cm
     right_margin: 1.6cm
     show_footer: false
+    # RenderCV prints "Last updated in <month> <year>" at the top right of
+    # page one. It dates the document rather than the work, and a CV that
+    # announces it was last touched four months ago is answering a question
+    # nobody asked.
+    show_top_note: false
   colors:
     name: rgb(0, 0, 0)
     section_titles: rgb(0, 0, 0)
@@ -739,6 +744,11 @@ design:
     left_margin: 2cm
     right_margin: 2cm
     show_footer: false
+    # RenderCV prints "Last updated in <month> <year>" at the top right of
+    # page one. It dates the document rather than the work, and a CV that
+    # announces it was last touched four months ago is answering a question
+    # nobody asked.
+    show_top_note: false
   colors:
     name: rgb(0, 0, 0)
     section_titles: rgb(0, 0, 0)
