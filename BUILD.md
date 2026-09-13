@@ -81,8 +81,17 @@ including `latest.json`.
 Existing installs pick it up through the updater, which polls
 `releases/latest/download/latest.json` and installs in `passive` mode.
 
-The workflow also accepts `workflow_dispatch` if you need a build without cutting
-a tag.
+### Releasing without pushing a tag
+
+The workflow also runs from **Actions → Build desktop apps → Run workflow**,
+which takes a **tag** input. Type `v0.5.2` there and CI creates that tag and
+releases under it, no tag push and no local clone needed. Leave the input empty
+and it builds all three platforms and publishes nothing, which is the way to
+test the pipeline.
+
+Only a tag push sets the tag from the ref; a manual run reads the input, because
+`github.ref_name` on a manual run is the branch and would publish a release
+called "main".
 
 ### Signing
 
@@ -126,6 +135,13 @@ To make downloads open with no extra step, set these six repository secrets:
 Present, they switch the identity from ad-hoc to the real one, add a trusted
 timestamp, and turn on notarization. Absent, the build behaves exactly as it
 does today. Nothing else has to change.
+
+Set them as a complete set. The last three are exported to the bundler only when
+all three are non-empty, and only alongside a certificate, because Tauri decides
+to notarize on whether those names exist rather than on what they contain, and
+an unset repository secret reaches a workflow as an empty string rather than as
+nothing at all. Listing them unconditionally is what made v0.5.1 fail with
+"Team ID must be at least 3 characters" after signing perfectly well.
 
 ## Building locally
 

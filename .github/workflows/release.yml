@@ -12,6 +12,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create and publish, e.g. v0.5.1. Leave empty to build without publishing anything."
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -34,6 +39,15 @@ jobs:
             artifact: macos-x64
 
     runs-on: ${{ matrix.os }}
+
+    # A tag push releases under that tag. A manual run releases under the tag
+    # typed into the input, creating it, which is the way to cut a release
+    # without pushing a tag from a machine. Left empty on a manual run this is
+    # empty too, and tauri-action then builds without publishing, which is the
+    # way to test the pipeline. Never github.ref_name on a manual run: that is
+    # the branch, and it would publish a release called "main".
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
 
     # Creating the release and uploading assets needs write access. Without
     # this the whole matrix builds successfully and then fails at the last
@@ -121,6 +135,12 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           CERT_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # Read under other names so they are never defined for the bundler
+          # unless the block below deliberately exports them. See the comment
+          # there for why an empty one is worse than a missing one.
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
 
@@ -152,6 +172,28 @@ jobs:
             # which an array would not do safely under the bash 3.2 that ships
             # with macOS.
             TIMESTAMP="--timestamp"
+
+            # Notarization is Tauri's next step after signing, and it decides
+            # to attempt it on the mere presence of these variables rather than
+            # on whether they contain anything. An unset repository secret
+            # reaches a workflow as the empty string, not as undefined, so
+            # listing them in the bundler's env block made every build try to
+            # notarize with blank credentials and die on "Team ID must be at
+            # least 3 characters". Exporting them here means they exist only
+            # when all three are real, and only alongside a Developer ID, which
+            # is the only thing notarization can act on anyway.
+            if [ -n "${NOTARY_APPLE_ID:-}" ] &&
+               [ -n "${NOTARY_PASSWORD:-}" ] &&
+               [ -n "${NOTARY_TEAM_ID:-}" ]; then
+              {
+                echo "APPLE_ID=$NOTARY_APPLE_ID"
+                echo "APPLE_PASSWORD=$NOTARY_PASSWORD"
+                echo "APPLE_TEAM_ID=$NOTARY_TEAM_ID"
+              } >> "$GITHUB_ENV"
+              echo "notarization credentials complete, the bundle will be notarized"
+            else
+              echo "notarization credentials absent or partial, signing only"
+            fi
           fi
 
           # Hand the identity to the Tauri bundler in the next step so the .app
@@ -219,22 +261,15 @@ jobs:
           # an empty secret value. Setting it here keeps the signer from
           # prompting in CI, and an empty password is not a secret anyway.
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-          # APPLE_SIGNING_IDENTITY comes from the signing step above, which put
-          # it in GITHUB_ENV: "-" normally, the Developer ID when one is
-          # configured. Deliberately not passing APPLE_CERTIFICATE here, because
-          # that step has already imported it and tauri-action would import it a
-          # second time.
-          #
-          # These three are what turns on notarization, which is the only thing
-          # that makes a downloaded copy open without the user intervening.
-          # Unset, the build still succeeds and still ships; it just ships
-          # un-notarized, and the release notes below say so.
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_SIGNING_IDENTITY, and the notarization credentials when there
+          # are any, both come from the signing step above via GITHUB_ENV. The
+          # identity is "-" normally and the Developer ID when one is
+          # configured. Nothing Apple-related is listed here on purpose: an
+          # absent secret would arrive as an empty string and Tauri reads these
+          # by presence, so a name written here is a name Tauri acts on.
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "CV Studio ${{ github.ref_name }}"
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "CV Studio ${{ env.RELEASE_TAG }}"
           releaseBody: |
             Not notarized by Apple or signed by Microsoft, so first launch needs
             one extra step.
