@@ -98,6 +98,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   status           TEXT NOT NULL DEFAULT 'pending',
   notes            TEXT,
   followup_date    TEXT,
+  interview_at     TEXT,
+  contact_email    TEXT,
+  last_contact_at  TEXT,
   salary_expected  INTEGER,
   salary_offered   INTEGER,
   salary_currency  TEXT NOT NULL DEFAULT 'EUR',
@@ -114,9 +117,27 @@ CREATE INDEX IF NOT EXISTS jobs_company ON jobs(company);
 
 FIELDS = [
     "title", "company", "location", "country", "description", "url", "source",
-    "score", "status", "notes", "followup_date", "salary_expected",
+    "score", "status", "notes", "followup_date", "interview_at",
+    "contact_email", "last_contact_at", "salary_expected",
     "salary_offered", "salary_currency", "cv_path", "letter_path", "logo",
 ]
+
+# How the three alert rules are tuned. Here rather than buried in alerts() so
+# that changing "silent" from a fortnight is a one-line edit with the reasoning
+# next to it.
+#
+# INTERVIEW_SOON_DAYS is a week because that is the horizon over which you can
+# still prepare. SILENT_DAYS is a fortnight because most employers that intend
+# to answer have done so by then, and a shorter window would nag about
+# applications that are simply still being read.
+INTERVIEW_SOON_DAYS = 7
+SILENT_DAYS = 14
+
+# Statuses where nothing is expected to happen again, derived rather than
+# hand-written so that adding a status to STATUSES cannot silently create a
+# terminal one the alerts keep nagging about.
+TERMINAL = {"accepted", "refused", "rejected", "ghosted",
+            "rejected_interviewing", "ghosted_interviewing"}
 
 
 
@@ -141,16 +162,22 @@ def db_path(workspace: Path) -> Path:
 
 
 def connect(workspace: Path) -> sqlite3.Connection:
-    con = sqlite3.connect(db_path(workspace))
+    # An AI client writing statuses is a second process on this file, so a
+    # contended write is now routine rather than theoretical. The default
+    # five seconds is generous for the writes here, all of which are a single
+    # small row, but it is left explicit so it reads as a decision.
+    con = sqlite3.connect(db_path(workspace), timeout=15.0)
     con.row_factory = sqlite3.Row
     # WAL keeps reads from blocking on writes, which matters because the UI
     # polls while a status is being written.
     con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=15000")
     con.execute("PRAGMA foreign_keys=ON")
     con.executescript(SCHEMA)
     have = {r["name"] for r in con.execute("PRAGMA table_info(jobs)")}
     for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT"),
-                      ("logo", "TEXT")):
+                      ("logo", "TEXT"), ("interview_at", "TEXT"),
+                      ("contact_email", "TEXT"), ("last_contact_at", "TEXT")):
         if col not in have:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
     con.commit()
@@ -225,16 +252,38 @@ def add_job(workspace: Path, data: dict) -> dict:
 
 
 def update_job(workspace: Path, job_id: str, data: dict) -> dict:
+    """Change fields on one application, appending to its status history.
+
+    `append_note` is not a column: it adds a dated line to `notes` rather than
+    replacing them. That is what the MCP tools use, so a model can record why
+    it changed something without being able to erase what the user typed.
+    """
     con = connect(workspace)
     try:
+        # The history append below is a read-modify-write, and an AI client is
+        # now a second writer on this file. Without an immediate transaction
+        # two concurrent status changes both read the same history and the
+        # second write silently drops the first one's entry.
+        con.execute("BEGIN IMMEDIATE")
         cur = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         if cur is None:
             raise ValueError("No such job.")
         sets, args = [], []
         for f in FIELDS:
-            if f in data:
+            # Only fields that actually differ. A reconcile against a mailbox
+            # re-derives the same interview time from the same event on every
+            # run, and writing it back unchanged would bump updated_at, jump
+            # the row to the top of a table sorted by it, and tell the open app
+            # the jobs changed when nothing did.
+            if f in data and data[f] != cur[f]:
                 sets.append(f"{f}=?")
                 args.append(data[f])
+        note = (data.get("append_note") or "").strip()
+        if note:
+            stamped = f"[{time.strftime('%Y-%m-%d')}] {note}"
+            existing = (cur["notes"] or "").rstrip()
+            sets.append("notes=?")
+            args.append(f"{existing}\n{stamped}" if existing else stamped)
         # A status change appends to the history rather than overwriting it;
         # the history is the whole point of the funnel.
         new_status = data.get("status")
@@ -246,6 +295,7 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
             sets.append("status_history=?")
             args.append(json.dumps(hist))
         if not sets:
+            con.rollback()
             return _row(cur)
         sets.append("updated_at=?")
         args.append(_now())
@@ -298,6 +348,80 @@ def _median(values: list[int]) -> int | None:
     if len(values) % 2:
         return values[mid]
     return round((values[mid - 1] + values[mid]) / 2)
+
+
+def _days_since(stamp: str | None) -> int | None:
+    """Whole days between an ISO stamp and now, or None if it will not parse.
+
+    Tolerant about length so it takes both a date and a full timestamp, since
+    followup_date is a date and interview_at is not.
+    """
+    if not stamp:
+        return None
+    text = str(stamp).strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M",
+                "%Y-%m-%d"):
+        try:
+            when = time.strptime(text[:len(time.strftime(fmt))], fmt)
+        except ValueError:
+            continue
+        return round((time.time() - time.mktime(when)) / 86400)
+    return None
+
+
+def _applied_at(history: list[dict]) -> str | None:
+    for event in history:
+        if event.get("status") == "applied":
+            return event.get("at")
+    return None
+
+
+def alerts(workspace: Path) -> dict:
+    """The three things about an application that are worth interrupting for.
+
+    One function because the same answer is wanted in three places: the panel
+    in the Jobs view, the digest an AI client reads out, and the desktop
+    notification. Three copies of these rules would drift apart within a month.
+
+    Nothing here reaches outside the workspace. The dates come from the mailbox
+    originally, but by the time they are here they are ours.
+    """
+    today = time.strftime("%Y-%m-%d")
+    out: dict[str, list] = {"followup_due": [], "interview_soon": [],
+                            "interview_passed": [], "silent": []}
+
+    for job in list_jobs(workspace):
+        if job["status"] in TERMINAL:
+            continue
+        brief = {k: job[k] for k in ("id", "title", "company", "status")}
+
+        if job.get("followup_date") and job["followup_date"] <= today:
+            out["followup_due"].append(brief | {"followup_date": job["followup_date"]})
+
+        age = _days_since(job.get("interview_at"))
+        if age is not None:
+            entry = brief | {"interview_at": job["interview_at"]}
+            if -INTERVIEW_SOON_DAYS <= age <= 0:
+                out["interview_soon"].append(entry)
+            elif age > 0 and job["status"] == "interviewing":
+                # The interview has been and gone and nothing was recorded.
+                # Either it needs an outcome, or the date is stale because it
+                # moved in a calendar nobody has re-read since.
+                out["interview_passed"].append(entry)
+
+        if job["status"] == "applied":
+            # The later of the two, because an acknowledgement that changed no
+            # status still means they are not silent.
+            last = max(filter(None, [job.get("last_contact_at"),
+                                     _applied_at(job.get("status_history") or [])]),
+                       default=None)
+            quiet = _days_since(last)
+            if quiet is not None and quiet > SILENT_DAYS:
+                out["silent"].append(brief | {"silent_days": quiet})
+
+    out["counts"] = {k: len(v) for k, v in out.items()}
+    out["total"] = sum(out["counts"].values())
+    return out
 
 
 def funnel(workspace: Path, since: str | None = None) -> dict:
