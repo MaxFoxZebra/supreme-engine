@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Window controls for the custom title bar.",
+  "description": "Window controls for the custom title bar, and the notification the Jobs view raises when an application needs attention.",
   "windows": [
     "main"
   ],
@@ -19,6 +19,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-title",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "notification:default"
   ]
 }

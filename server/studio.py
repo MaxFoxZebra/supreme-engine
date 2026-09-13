@@ -825,7 +825,35 @@ def pulse() -> dict:
             stamps[rel(f)] = f.stat().st_mtime
         except OSError:
             pass
-    return {"docs": stamps, "mcp": mcp_activity()}
+    return {"docs": stamps, "mcp": mcp_activity(), "jobs": jobs_stamp()}
+
+
+def jobs_stamp() -> str | None:
+    """A fingerprint of the applications table, for the same reason as `docs`.
+
+    An AI client changing a status is another process writing the workspace,
+    and until this existed the open Jobs table had no way to find out: it
+    reloaded on boot, on a view switch, and after its own edits, so a status
+    moved from a chat sat there stale until the user happened to navigate.
+
+    The newest timestamp and the row count together catch every change that
+    matters, including a delete, which a timestamp alone would miss. Cheap
+    enough to ask for every couple of seconds.
+    """
+    if jobstore is None:
+        return None
+    try:
+        con = jobstore.connect(WORKSPACE)
+        try:
+            row = con.execute(
+                "SELECT COUNT(*) n, MAX(updated_at) m FROM jobs").fetchone()
+            return f"{row['n']}:{row['m'] or ''}"
+        finally:
+            con.close()
+    except Exception:
+        # Never let the poll fail because of the job store: the rest of the
+        # payload is what keeps the open document in step.
+        return None
 
 
 def font_families() -> list[str]:
@@ -1255,6 +1283,10 @@ def openapi_spec() -> dict:
             "/api/funnel": {"get": {"summary":
                 "Application funnel: node counts, flows and conversion rates",
                 "responses": ok}},
+            "/api/alerts": {"get": {"summary":
+                "Applications needing attention: interviews due, follow-ups "
+                "due, interviews with no outcome, and silence since applying",
+                "responses": ok}},
             "/api/jobs/export": {"get": {"summary": "Export every job as JSON or CSV",
                 "parameters": [{"name": "format", "in": "query",
                                 "schema": {"type": "string", "enum": ["json", "csv"]}}],
@@ -1526,6 +1558,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json(jobstore.funnel(
                     WORKSPACE, q.get("since", [None])[0]))
+            if u.path == "/api/alerts":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                return self._json(jobstore.alerts(WORKSPACE))
             if u.path == "/api/jobs/export":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -1876,6 +1912,13 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .row .lbl{font-size:13px;color:var(--c100);flex:1;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
 .row .ct{font-size:10.5px;color:var(--c300);flex:none}
+/* Attention borrows the ochre already used for an overdue follow-up rather
+   than introducing a second warning colour. The section hides itself when
+   every bucket is empty, so its presence is the signal and it does not need
+   to shout. The count carries the colour; the labels stay ordinary text. */
+.rail-label.attn{color:var(--acc-text)}
+#attentionlist .row .ct{color:var(--acc-text);font-variant-numeric:tabular-nums}
+#attentionlist .row.sel .ct{color:var(--acc-text-dark)}
 .row.sel{background:var(--c450)}
 .row.sel .mark{background:var(--acc)}
 .row.sel .lbl{color:var(--cw)}
@@ -2660,6 +2703,10 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   <!-- --------------------------------------------------------------- Jobs -->
   <section class="view" id="v-jobs" hidden>
     <aside class="rail rail-jobs">
+      <div id="attentionwrap" hidden>
+        <div class="rail-label mono attn">Attention</div>
+        <div id="attentionlist"></div>
+      </div>
       <div class="rail-label mono">Status</div>
       <div id="statuslist"></div>
       <div class="rail-label mono">Saved</div>
@@ -2778,8 +2825,11 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <h3>AI clients</h3>
         <p class="sp-lede">This app is one half of a pair. The model writes and tailors
           the CVs, through a server that ships inside this app; here you look at the
-          rendered page and fix what it got wrong. Both halves work on the same files in
-          your workspace, so there is nothing to sync and nothing to upload.</p>
+          rendered page and fix what it got wrong. It can keep your applications up to
+          date too: given a mail or calendar connector of its own, it reads the replies
+          and moves the statuses, and nothing about that passes through this app. Both
+          halves work on the same workspace, so there is nothing to sync and nothing to
+          upload.</p>
 
         <div class="clients" id="s-ai-clients"></div>
 
@@ -2803,6 +2853,25 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <div class="tool"><span class="n">workspace_info</span>
             <p>Where the workspace is and what is in it</p></div>
         </div>
+
+        <p class="sp-sub">And your applications</p>
+        <div class="tools">
+          <div class="tool lead"><span class="n">set_job_status</span>
+            <p>Moves an application along. Paired with a mail or calendar connector
+              on the model's side, this is what keeps the tracker honest without you
+              typing anything: it reads the reply, works out which application it
+              belongs to, and asks you before it moves.</p></div>
+          <div class="tool"><span class="n">update_job_tracking</span>
+            <p>Interview times, follow-up dates, who is writing to you</p></div>
+          <div class="tool"><span class="n">find_job &nbsp;list_jobs &nbsp;read_job</span>
+            <p>Reads applications, and works out which one a message is about</p></div>
+          <div class="tool"><span class="n">job_alerts</span>
+            <p>The same list as Attention in the Jobs view, read out loud</p></div>
+          <div class="tool"><span class="n">add_job</span>
+            <p>Adds one from a posting you paste, and refuses likely duplicates</p></div>
+          <div class="tool"><span class="n">set_company_logo</span>
+            <p>Points every application at one company to the same logo</p></div>
+        </div>
         <div class="caveat"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" style="flex:none;margin-top:1px"
           aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/>
@@ -2810,8 +2879,20 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <p><b>These write to your files the moment they are called</b>, and there is no
             undo in this app. They are plain YAML, so keeping the workspace in git gives
             you a real history.</p>
-          <p><b>Your applications are not exposed.</b> The record of what you sent and
-            when is yours; the model's job is the documents.</p></div></div>
+          <p><b>Your applications are part of this too.</b> A model can read them, move
+            a status, record an interview and add one you never got round to logging.
+            It cannot delete an application, rename the company or the role, or paint
+            over notes you typed: it only ever appends a dated line. Those are not
+            promises, they are missing parameters.</p>
+          <p><b>A status change is permanent.</b> It appends to the history the funnel
+            is drawn from, and there is no undo here either. The model is told to show
+            you every change and wait, but that one is a rule in prose rather than a
+            lock in the code.</p>
+          <p><b>Nothing here reaches your mail or your calendar.</b> This app makes no
+            network calls at all. Those come through your AI client's own connectors,
+            they are only ever read, and nothing is written back to them, which is also
+            why an interview time recorded here is only as fresh as the last time you
+            asked.</p></div></div>
 
         <p class="sp-sub">Recent activity</p>
         <div id="s-cl-log" class="mcplog"></div>
@@ -3027,7 +3108,7 @@ function setView(v){
   $("#btn-pdf").hidden = v!=="cvs";
   $("#btn-render").hidden = v!=="cvs";
   $("#btn-newjob").hidden = v!=="jobs";
-  if(v==="jobs") loadJobs();
+  if(v==="jobs"){ loadJobs(); loadAlerts() }
   if(v==="funnel") loadFunnel();
   paintStatus();
 }
@@ -3257,6 +3338,14 @@ async function pulse(){
   if(!$("#ovl-settings").hidden&&!$("#sp-ai").hidden) paintAILog();
   if(!before) return;
 
+  /* An application changed in another process, which means an AI client moved
+     a status while the table was open. Reload rather than leaving it stale:
+     without this the row still reads "applied" until the user navigates. */
+  if(before.jobs!==p.jobs){
+    loadJobs(true);
+    loadAlerts();
+  }
+
   /* A document appearing or disappearing means Claude created or removed one. */
   const names=o=>JSON.stringify(Object.keys(o.docs).sort());
   if(names(before)!==names(p)){
@@ -3421,6 +3510,7 @@ async function boot(){
   S.state=d;
   renderDocs(d.documents);
   loadJobs(true);
+  loadAlerts();
   if(d.documents.length) openDoc(d.documents[0].path);
   else{
     $("#pane-page").innerHTML='<div class="empty"><h3>No CVs yet</h3>'+
@@ -4288,9 +4378,62 @@ function statusCounts(){
   S.jobs.forEach(j=>{ c[j.status]=(c[j.status]||0)+1 });
   return c;
 }
-const NEEDS_FOLLOWUP=j=>j.followup_date&&j.followup_date<=isoToday()&&!DEAD_STATUS.has(j.status);
 const NO_LETTER=j=>!j.letter_path;
-const SAVED={"Needs follow-up":NEEDS_FOLLOWUP,"No cover letter":NO_LETTER};
+const SAVED={"No cover letter":NO_LETTER};
+
+/* Attention is computed by the server, not here. The same four rules answer
+   the desktop notification and the digest an AI client reads out, and three
+   copies of "what counts as overdue" would have drifted apart within a month.
+   Needs-follow-up used to live in SAVED above and is now one of them. */
+const ATTENTION=[
+  ["interview_soon",   "Interview soon"],
+  ["followup_due",     "Follow-up due"],
+  ["interview_passed", "Interview, no outcome"],
+  ["silent",           "No reply"],
+];
+
+async function loadAlerts(){
+  try{ S.alerts=await api("/api/alerts") }catch(e){ S.alerts=null; return }
+  if(S.view==="jobs") drawRail();
+  notifyAlerts();
+}
+
+/* Nothing outside this app knows when an interview is. No event is written to
+   any calendar, by design, so this notification is the only thing that reaches
+   the user when the window is not in front of them. Hence the one place the
+   app speaks without being spoken to.
+
+   Once a day at most, and only ever one line. A notification per application
+   would be four notifications on a bad Monday, which is how people learn to
+   turn them off. */
+async function notifyAlerts(){
+  const a=S.alerts;
+  if(!a||!a.total) return;
+  const N=window.__TAURI__&&window.__TAURI__.notification;
+  if(!N) return;                       /* a plain browser during development */
+  const key="cvstudio-notified", today=isoToday();
+  let seen=null;
+  try{ seen=localStorage.getItem(key) }catch(e){ return }
+  const stamp=today+":"+ATTENTION.map(([k])=>a.counts[k]).join(",");
+  if(seen===stamp) return;
+
+  try{
+    /* Asked for on the first alert that would actually be shown, not at boot.
+       A permission prompt before the app has anything to say is the kind of
+       thing people refuse on principle. */
+    let granted=await N.isPermissionGranted();
+    if(!granted) granted=(await N.requestPermission())==="granted";
+    if(!granted) return;
+    const parts=ATTENTION.filter(([k])=>a.counts[k])
+      .map(([k,label])=>a.counts[k]+" "+label.toLowerCase());
+    N.sendNotification({
+      title:a.total===1?"One application needs attention"
+                       :a.total+" applications need attention",
+      body:parts.join(", "),
+    });
+    localStorage.setItem(key,stamp);
+  }catch(e){}
+}
 
 function drawRail(){
   const c=statusCounts(), f=S.jfilter;
@@ -4302,9 +4445,18 @@ function drawRail(){
   S.statuses.forEach(s=>{ if(c[s]) h+=row(prettyStatus(s),c[s],"status",s) });
   if(S.fnode&&S.labels[S.fnode]) h+=row(S.labels[S.fnode],null,"node",S.fnode);
   $("#statuslist").innerHTML=h;
+
+  /* Only buckets with something in them. An Attention list showing four zeroes
+     is worse than no list: it trains you to stop looking at it. */
+  const a=S.alerts;
+  const live=a?ATTENTION.filter(([k])=>a.counts[k]>0):[];
+  $("#attentionwrap").hidden=!live.length;
+  $("#attentionlist").innerHTML=live.map(([k,label])=>
+    row(label,a.counts[k],"alert",k)).join("");
+
   $("#savedlist").innerHTML=Object.keys(SAVED).map(k=>
     row(k,S.jobs.filter(SAVED[k]).length,"saved",k)).join("");
-  $$("#statuslist [data-k],#savedlist [data-k]").forEach(b=>b.onclick=()=>{
+  $$("#statuslist [data-k],#attentionlist [data-k],#savedlist [data-k]").forEach(b=>b.onclick=()=>{
     S.jfilter={kind:b.dataset.k,value:b.dataset.v};
     if(b.dataset.k!=="node") S.fnode=null;
     drawJobs();
@@ -4319,6 +4471,12 @@ function visibleJobs(){
     const want=new Set(S.nodes[f.value]||[]);
     rows=rows.filter(j=>want.has(j.status));
   }else if(f.kind==="saved"&&SAVED[f.value]) rows=rows.filter(SAVED[f.value]);
+  else if(f.kind==="alert"){
+    /* Filter against the server's answer rather than re-deriving the rule
+       here, which is the whole point of computing it in one place. */
+    const ids=new Set(((S.alerts&&S.alerts[f.value])||[]).map(x=>x.id));
+    rows=rows.filter(j=>ids.has(j.id));
+  }
   if(q) rows=rows.filter(j=>(j.company+" "+j.title+" "+(j.notes||"")+" "+(j.source||""))
     .toLowerCase().includes(q));
   return rows;

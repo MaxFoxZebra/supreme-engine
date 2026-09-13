@@ -79,10 +79,22 @@ if __name__ == "__main__":
 
     r = c.send("tools/list")
     tools = {t["name"]: t for t in r["result"]["tools"]}
-    expected = {"list_cvs", "read_cv", "write_cv", "edit_cv_fields",
-                "create_cv", "render_cv", "design_options", "workspace_info"}
-    check("all eight tools are advertised", set(tools) == expected,
+    documents = {"list_cvs", "read_cv", "write_cv", "edit_cv_fields",
+                 "create_cv", "render_cv", "design_options", "workspace_info"}
+    applications = {"list_jobs", "read_job", "find_job", "job_alerts",
+                    "set_job_status", "update_job_tracking", "add_job",
+                    "set_company_logo"}
+    check("every tool is advertised", set(tools) == documents | applications,
+          ",".join(sorted(set(tools) ^ (documents | applications))) or "exact match")
+    check("no delete tool reaches the applications",
+          not any("delete" in t or "remove" in t for t in tools),
           ",".join(sorted(tools)))
+    # Structural, not advisory: a model cannot rename a company because no
+    # parameter exists to do it with.
+    writers = ("set_job_status", "update_job_tracking")
+    params = {p for t in writers for p in tools[t]["inputSchema"]["properties"]}
+    check("no write tool can rename or overwrite",
+          not ({"company", "title", "notes"} & params), ",".join(sorted(params)))
     check("tool descriptions survived the decorator",
           all(tools[t].get("description") for t in tools))
     check("render_cv still declares its path argument",
@@ -132,6 +144,90 @@ if __name__ == "__main__":
     check("create_cv makes a document",
           "Created" in r["result"]["content"][0]["text"],
           r["result"]["content"][0]["text"][:50])
+
+    # ---- Applications ------------------------------------------------------
+    # The tracker is reachable here now, so what matters is not only that the
+    # writes land but that the refusals do.
+    def text(r):
+        return r["result"]["content"][0]["text"]
+
+    def errored(r):
+        res = r.get("result", {})
+        return bool(r.get("error")) or res.get("isError") is True \
+            or "Error executing tool" in json.dumps(res)
+
+    # Unique per run so the check can be run twice against one workspace.
+    co = "Probe Industries " + str(int(time.time()))
+    r = call("add_job", {"company": co, "title": "Test Engineer",
+                         "status": "applied", "source": "mcpclient",
+                         "description": "A pasted posting, stored for tailoring."})
+    check("add_job creates an application", f'"company": "{co}"' in text(r),
+          text(r)[:60].replace("\n", " "))
+    job_id = json.loads(text(r))["id"]
+
+    r = call("add_job", {"company": co, "title": "Other Role"})
+    check("add_job refuses a likely duplicate", errored(r),
+          "refused" if errored(r) else text(r)[:70])
+
+    r = call("add_job", {"company": co, "title": "Other Role",
+                         "confirmed_new": True})
+    check("add_job proceeds once confirmed", not errored(r), text(r)[:40])
+
+    r = call("find_job", {"company": co.lower()})
+    found = json.loads(text(r))
+    check("find_job matches case-insensitively and refuses to choose",
+          len(found["candidates"]) == 2 and found["confident"] is False,
+          f"{len(found['candidates'])} candidates, confident={found['confident']}")
+
+    r = call("find_job", {"company": "Nobody Ltd"})
+    check("find_job reports no match rather than guessing",
+          json.loads(text(r))["candidates"] == [])
+
+    r = call("set_job_status", {"job_id": job_id, "status": "interviewing",
+                                "append_note": "Invite arrived."})
+    row = json.loads(text(r))
+    check("set_job_status moves it and appends history",
+          row["status"] == "interviewing"
+          and [e["status"] for e in row["status_history"]] == ["applied", "interviewing"],
+          ",".join(e["status"] for e in row["status_history"]))
+    check("append_note wrote a dated line, keeping nothing else",
+          row["notes"].startswith("[") and row["notes"].endswith("Invite arrived."),
+          row["notes"])
+
+    r = call("set_job_status", {"job_id": job_id, "status": "not_a_status"})
+    check("an invented status is refused", errored(r))
+
+    r = call("update_job_tracking", {"job_id": job_id,
+                                     "interview_at": "2099-01-02T14:00:00",
+                                     "contact_email": "anna@probe.example"})
+    row = json.loads(text(r))
+    check("update_job_tracking records the interview and the contact",
+          row["interview_at"] == "2099-01-02T14:00:00"
+          and row["contact_email"] == "anna@probe.example")
+
+    r = call("update_job_tracking", {"job_id": job_id, "interview_at": ""})
+    row = json.loads(text(r))
+    check("clearing an interview also records that it happened",
+          row["interview_at"] is None and "cleared" in (row["notes"] or "").lower(),
+          (row["notes"] or "").splitlines()[-1] if row["notes"] else "no note")
+
+    # A tool returning a list arrives as one content block per item, with the
+    # whole array under structuredContent. Read the array, the way a client
+    # that wants the collection rather than the prose would.
+    r = call("list_jobs", {"query": co})
+    listed = r["result"]["structuredContent"]["result"]
+    check("list_jobs finds them and trims the payload",
+          len(listed) == 2 and "description" not in listed[0]
+          and "status_history" not in listed[0],
+          ",".join(sorted(listed[0])))
+
+    r = call("read_job", {"job_id": job_id})
+    check("read_job returns the posting text in full",
+          "stored for tailoring" in text(r))
+
+    r = call("job_alerts", {})
+    check("job_alerts answers with a readable summary",
+          "summary" in json.loads(text(r)))
 
     # A refusal reaches the client either as a JSON-RPC error or as a tool
     # result flagged isError -- both mean the traversal was stopped.

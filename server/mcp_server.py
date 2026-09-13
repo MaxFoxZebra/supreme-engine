@@ -37,13 +37,34 @@ mcp = MCPServer(
         "their format.\n\n"
         "After editing, always call render_cv and look at the returned page "
         "image before telling the user it is done. Page-break problems are "
-        "invisible in the source."
+        "invisible in the source.\n\n"
+        "You can also keep the user's job applications up to date. If you have "
+        "access to their mail or calendar, those are read-only sources: read "
+        "them, and write what you learn in here. Never write anything back to "
+        "them, no events, no replies, no labels.\n\n"
+        "Three rules for the tracker:\n"
+        "1. Call find_job before writing anything. The company name is the "
+        "only reliable key and it is often ambiguous. If it returns nothing, "
+        "or more than one candidate, ask rather than guessing.\n"
+        "2. Show the user every change you intend to make and wait for them "
+        "to agree. A status change is appended to a permanent history that "
+        "the funnel is drawn from, and this app has no undo.\n"
+        "3. An automated acknowledgement is not a status change. Record it "
+        "with last_contact_at and leave the status alone. Never set a ghosted "
+        "status from silence: absence of a message is not a message."
     ),
 )
 
 
 def _ws() -> Path:
     return studio.WORKSPACE
+
+
+# What to name in the activity log, in order of preference. A document tool
+# identifies itself by path; an application tool has no path, so it says which
+# company it touched instead. Without this every job tool would log a bare verb
+# and "Recent activity" would stop being worth reading.
+TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 
 
 def tool(fn):
@@ -60,7 +81,8 @@ def tool(fn):
     def wrapper(*args, **kwargs):
         try:
             bound = signature.bind(*args, **kwargs)
-            target = bound.arguments.get("path") or bound.arguments.get("name")
+            target = next((bound.arguments[k] for k in TARGET_KEYS
+                           if bound.arguments.get(k)), None)
         except TypeError:
             target = None
         # Record what happened, not merely that it was attempted: a refused
@@ -203,6 +225,238 @@ def set_company_logo(company: str, image_path: str) -> str:
             f"{n} application{'' if n == 1 else 's'}.")
 
 
+# --- Applications -----------------------------------------------------------
+#
+# The tracker used to be deliberately out of reach here, on the grounds that
+# the documents were the model's job and the record of what was sent was the
+# user's. That changed when the useful thing became keeping the record in step
+# with a mailbox, which is work only something that can read the mail can do.
+#
+# What is still out of reach is structural rather than advisory. There is no
+# delete tool, and no tool takes `company`, `title` or `notes`, so a model
+# cannot destroy a record, rename the row the user finds things by, or paint
+# over notes they typed. Those cannot be got wrong by a model misreading its
+# instructions, because the parameters do not exist. Everything else, above
+# all the status change itself, rests on the rules in the server instructions.
+
+
+def _brief(job: dict) -> dict:
+    """A job as the model needs to see it.
+
+    `description` is the whole posting and `status_history` can be dozens of
+    entries. Both are dead weight in a list of forty applications, so the list
+    tools drop them and `find_job` returns enough to identify a row and no more.
+    """
+    keep = ("id", "title", "company", "status", "location", "url", "source",
+            "followup_date", "interview_at", "contact_email",
+            "last_contact_at", "updated_at")
+    return {k: job.get(k) for k in keep if job.get(k) is not None}
+
+
+@tool
+def list_jobs(status: str | None = None, query: str | None = None) -> list[dict]:
+    """The user's job applications. Read this before changing anything.
+
+    `status` filters exactly. `query` matches the title, company or notes.
+    Returns a trimmed view: call read_job for the full posting text.
+    """
+    return [_brief(j) for j in
+            studio.jobstore.list_jobs(_ws(), status=status, q=query)]
+
+
+@tool
+def read_job(job_id: str) -> dict:
+    """One application in full, including the posting text and its history.
+
+    The posting stored in `description` is what to write against when the user
+    asks you to tailor a CV for this job.
+    """
+    for job in studio.jobstore.list_jobs(_ws()):
+        if job["id"] == job_id:
+            return job
+    raise ValueError("No such job.")
+
+
+def _candidates(company: str, title: str | None = None,
+                sender_email: str | None = None) -> list[dict]:
+    """Applications that might be the one, best guess first.
+
+    A plain function rather than a tool so add_job can reuse it for its
+    duplicate check without logging a second activity entry, and without
+    depending on what the decorator leaves attached to the tool.
+    """
+    needle = (company or "").strip().lower()
+    if not needle:
+        return []
+    hits = []
+    for job in studio.jobstore.list_jobs(_ws()):
+        name = (job.get("company") or "").strip().lower()
+        # Substring both ways: the record says "Acme" and the mail says
+        # "Acme Corporation", or the reverse.
+        if not (name and (needle in name or name in needle)):
+            continue
+        score = 2 if name == needle else 1
+        if title and title.strip().lower() in (job.get("title") or "").lower():
+            score += 2
+        if sender_email and job.get("contact_email"):
+            if sender_email.strip().lower() == job["contact_email"].strip().lower():
+                score += 3
+        hits.append((score, job))
+    hits.sort(key=lambda pair: pair[0], reverse=True)
+    return [job for _, job in hits]
+
+
+@tool
+def find_job(company: str, title: str | None = None,
+             sender_email: str | None = None) -> dict:
+    """Which application does this message or event belong to?
+
+    Call this before every write. Matching is genuinely uncertain: people apply
+    to the same company twice, and mail arrives from an applicant-tracking
+    domain that resembles nothing in the record. So this reports what it found
+    and refuses to choose.
+
+    `confident` is true only for exactly one candidate. Anything else means ask
+    the user which one, or whether to add it.
+    """
+    found = [_brief(j) for j in _candidates(company, title, sender_email)]
+    return {
+        "candidates": found,
+        "confident": len(found) == 1,
+        "note": ("No application matches that company. Ask the user whether to "
+                 "add one rather than assuming." if not found else
+                 "One match." if len(found) == 1 else
+                 "Several matches. Ask the user which one before writing."),
+    }
+
+
+@tool
+def job_alerts() -> dict:
+    """What needs the user's attention, ready to read out.
+
+    Interviews coming up, follow-ups due, interviews that have been and gone
+    with no outcome recorded, and applications that have heard nothing back.
+    The same answer the app shows in its own panel.
+    """
+    data = studio.jobstore.alerts(_ws())
+    counts = data["counts"]
+    parts = []
+    if counts["interview_soon"]:
+        parts.append(f"{counts['interview_soon']} interview(s) coming up")
+    if counts["followup_due"]:
+        parts.append(f"{counts['followup_due']} follow-up(s) due")
+    if counts["interview_passed"]:
+        parts.append(f"{counts['interview_passed']} interview(s) with no outcome recorded")
+    if counts["silent"]:
+        parts.append(f"{counts['silent']} application(s) with no reply")
+    data["summary"] = ", ".join(parts) if parts else "Nothing needs attention."
+    return data
+
+
+@tool
+def set_job_status(job_id: str, status: str, append_note: str | None = None) -> dict:
+    """Move one application to a new status. Confirm with the user first.
+
+    This appends to a permanent history that the funnel is drawn from, and
+    there is no undo, so show the user what you intend to change and wait.
+
+    The vocabulary, and it is closed:
+      pending                 not sent yet
+      applied                 sent, no reply
+      interviewing            at least one interview happening
+      offer                   an offer is on the table
+      accepted / refused      the user's decision on that offer
+      rejected                turned down before any interview
+      rejected_interviewing   turned down after interviewing
+      ghosted                 no reply, before any interview
+      ghosted_interviewing    no reply, after interviewing
+
+    The two rejected and two ghosted values are separate on purpose: a
+    rejection after interviews says something very different about a CV than
+    one before, and the funnel keeps them apart.
+
+    Never infer ghosted from silence. It means the user has given up on a
+    thread, which is their call and not yours.
+
+    `append_note` adds a dated line to the notes. Use it to record where the
+    change came from, such as the subject line and date of the mail.
+    """
+    return studio.jobstore.update_job(
+        _ws(), job_id, {"status": status, "append_note": append_note})
+
+
+@tool
+def update_job_tracking(job_id: str, interview_at: str | None = None,
+                        followup_date: str | None = None,
+                        last_contact_at: str | None = None,
+                        contact_email: str | None = None,
+                        append_note: str | None = None) -> dict:
+    """Record dates and contact details on an application, without moving it.
+
+    Deliberately separate from set_job_status: these are facts about the
+    application, and the status is a judgement about it.
+
+    `interview_at` is "YYYY-MM-DDTHH:MM:SS" in the user's own local time, not
+    UTC, because that is what the rest of the store uses and what the reminder
+    compares against. Convert before writing.
+
+    Nothing outside this app knows about that time. No event is created in any
+    calendar, so this record is the only thing that will remind the user. If an
+    interview moves, update it here; if it is cancelled, pass an empty string
+    to clear it, which also writes a note so the change is not silent.
+
+    `last_contact_at` is when they last got in touch. Set it for an
+    acknowledgement that changes nothing else, so the application stops looking
+    abandoned when it is not.
+    """
+    data: dict = {}
+    for field, value in (("interview_at", interview_at),
+                         ("followup_date", followup_date),
+                         ("last_contact_at", last_contact_at),
+                         ("contact_email", contact_email)):
+        if value is not None:
+            data[field] = value or None
+    if not data and not append_note:
+        raise ValueError("Nothing to change.")
+    if interview_at == "":
+        append_note = (append_note or
+                       "Interview time cleared, no matching calendar event.")
+    data["append_note"] = append_note
+    return studio.jobstore.update_job(_ws(), job_id, data)
+
+
+@tool
+def add_job(company: str, title: str, status: str = "pending",
+            url: str | None = None, location: str | None = None,
+            source: str | None = None, description: str | None = None,
+            contact_email: str | None = None,
+            confirmed_new: bool = False) -> dict:
+    """Add an application. Call find_job first.
+
+    Refuses if anything at that company already exists, and lists what it
+    found. Pass confirmed_new=True only once the user has said it really is a
+    separate application. There is no delete tool, so a duplicate created here
+    is one the user has to clear up by hand.
+
+    Put the full text of the posting in `description`. It costs nothing to
+    store and it is what you will write against when they later ask you to
+    tailor a CV for this job, by which time the page is usually gone.
+    """
+    if not confirmed_new:
+        existing = _candidates(company, title)
+        if existing:
+            listed = "; ".join(f"{j['title']} ({j['status']})" for j in existing)
+            raise ValueError(
+                f"{company} already has: {listed}. If this is genuinely a "
+                f"different application, ask the user, then call again with "
+                f"confirmed_new=True.")
+    return studio.jobstore.add_job(_ws(), {
+        "company": company, "title": title, "status": status, "url": url,
+        "location": location, "source": source, "description": description,
+        "contact_email": contact_email,
+    })
+
+
 @tool
 def design_options() -> dict:
     """The themes, fonts and page sizes available for the design block."""
@@ -224,7 +478,10 @@ def workspace_info() -> dict:
     return {
         "workspace": str(ws),
         "cv_count": len(studio.list_documents()),
-        "storage": "Plain YAML files. No database, so the user owns these files.",
+        "job_count": len(studio.jobstore.list_jobs(ws)) if studio.jobstore else 0,
+        "storage": "CVs are plain YAML files the user owns. Applications are "
+                   "rows in applications.db beside them, which export to JSON "
+                   "and CSV so nothing is locked in.",
     }
 
 

@@ -1,11 +1,12 @@
 # Connecting CV Studio to an AI client
 
 CV Studio ships an MCP server, so Claude Desktop, the ChatGPT app, Codex or any
-other MCP client can read, edit and render the CVs in your workspace. It is the
-same binary the app uses, just started in a different mode, so a CV rendered
-through a model is identical to one rendered by clicking Save.
+other MCP client can read, edit and render the CVs in your workspace, and keep
+your job applications up to date. It is the same binary the app uses, just
+started in a different mode, so a CV rendered through a model is identical to
+one rendered by clicking Save.
 
-## What the AI can do
+## The documents
 
 | Tool | What it does |
 |---|---|
@@ -17,6 +18,19 @@ through a model is identical to one rendered by clicking Save.
 | `render_cv` | Render to PDF and **return the page as an image** |
 | `design_options` | Available themes, fonts and page sizes |
 | `workspace_info` | Where the workspace is and what is in it |
+
+## The applications
+
+| Tool | What it does |
+|---|---|
+| `list_jobs` | Your applications, trimmed to what identifies them |
+| `read_job` | One in full, including the posting text you saved |
+| `find_job` | Which application a message or event belongs to. Reports what it found and refuses to choose |
+| `job_alerts` | The same list the Jobs view shows under Attention |
+| `set_job_status` | Move one along the funnel |
+| `update_job_tracking` | Interview time, follow-up date, who is writing to you |
+| `add_job` | Add one, refusing a likely duplicate unless you confirm |
+| `set_company_logo` | Point every application at one company to the same logo |
 
 `render_cv` returning an image is the point of the whole thing. The model can
 *look* at the rendered page and catch what only shows up visually: a bullet
@@ -32,8 +46,10 @@ document list as a letter. There is nothing to sync.
 process, so the app cannot talk to it directly; what the two share is the
 workspace folder. Every tool call appends to `.cvstudio-mcp.json` there: tool
 name, file, timestamp, last twenty. The app polls the file timestamps it
-has open a few times a minute. So a CV edited here reloads in front of you
-rather than going stale, and if you had unsaved edits of your own it asks
+has open a few times a minute, and asks the server for a fingerprint of the
+applications table on the same poll. So a CV edited here reloads in front of
+you rather than going stale, a status moved from a chat window updates the open
+Jobs table within a couple of seconds, and if you had unsaved edits of your own it asks
 instead of letting your next save quietly overwrite the model's work. That file
 is local bookkeeping between the two halves; delete it whenever you like.
 
@@ -41,8 +57,50 @@ It records the tool and the file, but not which client called: MCP does not
 pass that down to the server here. So the app names a client only when exactly
 one is connected, and otherwise says "an AI client".
 
-The job tracker is deliberately not exposed here. Applications are the user's
-record of what they sent and when; the AI's job is the documents.
+## The application tracker
+
+The tracker used to be out of reach here, on the grounds that the documents were
+the model's job and the record of what you sent was yours. That changed when the
+useful thing turned out to be keeping the record in step with a mailbox, which
+only something that can read the mail can do.
+
+So a connected model can list your applications, work out which one an email or
+a calendar invitation belongs to, move its status, record an interview, and add
+one you never got round to logging.
+
+What it cannot do: delete an application, rename the company or the role, or
+overwrite notes you typed. Notes are append-only from this side, a dated line at
+a time. There is no delete tool at all, deliberately, because a model misreading
+a rejection must not be able to destroy the record. None of those are promises
+about good behaviour; they are parameters that do not exist.
+
+**The Google half is not in here.** This app makes no network calls and has no
+integration with anything. Gmail and Calendar reach the model through its own
+connectors, and everything flows one way: it reads them, and writes what it
+learned in here. Nothing goes back, no events created, no invitations answered,
+no mail sent.
+
+One consequence worth knowing. Because no event is ever written to your
+calendar, the interview time stored here is the only one this app knows, and it
+is a snapshot from the last time you asked. Move an interview in Google and CV
+Studio will not notice until the next sweep. Asking the model to check again is
+what fixes that, and the skill below tells it to re-read every interview it has
+already recorded.
+
+A status change appends to the permanent history the funnel is drawn from, and
+this app has no undo. The model is told to show you every change and wait for
+you. That one is a rule in prose, not a lock in the code.
+
+### The sweep, as a skill
+
+`skills/cv-studio-inbox/SKILL.md` in this repository is the procedure: what to
+read, how to match a message to an application, what each kind of reply means,
+and when to ask rather than write. Copy the folder into `~/.claude/skills/` and
+ask Claude to catch your applications up.
+
+Without it the tools still work and the server's own instructions still carry
+the three rules that matter. The skill is what saves you explaining the workflow
+every time.
 
 ## Setting it up
 
@@ -137,14 +195,18 @@ A healthy server answers with its name and protocol version.
 
 **It edits real files.** `edit_cv_fields` and `write_cv` write to disk
 immediately. There is no undo inside the app, but the files are plain YAML, so
-keeping the workspace in git gives you a real history.
+keeping the workspace in git gives you a real history. Applications are rows in
+`applications.db` rather than files, so git does not cover those; the Jobs view
+exports them to JSON or CSV.
 
 **Comments survive `edit_cv_fields`** because it round-trips through ruamel.
 `write_cv` replaces the file wholesale and will drop anything not in the new
 content, which is why the tool description steers toward the former.
 
-**It is local.** The server talks to your filesystem and nothing else. There are no
-network calls, no telemetry. The AI client sees only what the tools return.
+**It is local.** The server talks to your filesystem and nothing else. There are
+no network calls, no telemetry. That is still true now the tracker is exposed:
+the mail and calendar an AI client reads reach it through *its* connectors, and
+this app never sees them. The AI client sees only what the tools return.
 
 **Only one workspace per configured server.** Add a second entry with a
 different `--workspace` if you keep separate sets of CVs.

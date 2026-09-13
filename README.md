@@ -3,7 +3,9 @@
 The eyes of a CV written by an AI.
 
 Claude or ChatGPT reads the posting and writes the YAML, through an MCP server
-that ships inside this app. CV Studio renders it, shows you the page and what it
+that ships inside this app. Point it at your mail as well and it keeps the
+application tracker in step with your inbox, without this app ever touching a
+Google account. CV Studio renders it, shows you the page and what it
 costs in space, and lets you fix by hand what is quicker pointed at than
 described: click a block on the page and you are editing it. When the model
 changes a file you have open, the app notices and offers you its version.
@@ -14,9 +16,11 @@ preview, built on [RenderCV](https://github.com/rendercv/rendercv) and
 
 Everything runs on your machine, with no account, no server, no telemetry,
 which matters more once a model is editing the files, not less. Your CVs are
-plain YAML in a folder you own. There is no database, so you can read, grep,
-diff, back up and version them without this app, and take them somewhere else
-whenever you like. Both halves only ever touch that folder.
+plain YAML in a folder you own, with no database between you and them, so you
+can read, grep, diff, back up and version them without this app, and take them
+somewhere else whenever you like. Applications are rows in `applications.db`
+beside them, which exports to JSON or CSV for the same reason. Both halves only
+ever touch that folder.
 
 Connecting a client is one button in **Settings → AI clients**: Claude Desktop,
 or OpenAI, where the same config file covers the ChatGPT app, the Codex CLI and
@@ -99,8 +103,15 @@ CV Studio ships an MCP server, so an AI client can read, edit and render your
 CVs. `render_cv` returns the rendered page as an *image*, so the model can
 actually look at the result rather than guessing from the source.
 
-See [MCP.md](MCP.md) for the config. It is the same bundled binary run with
-`--mcp`, so nothing extra to install.
+It can also keep the tracker up to date. Given a mail or calendar connector of
+its own, it reads the replies, works out which application each belongs to, and
+moves the status once you have agreed. CV Studio itself never touches a Google
+account and makes no network calls; everything arrives through the client. It
+cannot delete an application, rename one, or overwrite your notes, because no
+tool takes those arguments.
+
+See [MCP.md](MCP.md) for the config and the full tool list. It is the same
+bundled binary run with `--mcp`, so nothing extra to install.
 
 ## Why it looks the way it does
 
