@@ -109,9 +109,16 @@ def server_launch() -> dict:
 # file. Both are enough: one says whether the connection exists, the other says
 # what the model has been doing in there.
 #
-# Two clients, two config formats. Claude Desktop keeps JSON; OpenAI keeps TOML
-# at ~/.codex/config.toml, which the ChatGPT desktop app, Codex CLI and the IDE
-# extension all read, so configuring it once covers all three.
+# Three clients, three config formats, and TOML twice over is not one format.
+# Claude Desktop keeps JSON. OpenAI keeps TOML at ~/.codex/config.toml, which
+# the ChatGPT desktop app, Codex CLI and the IDE extension all read, so
+# configuring it once covers all three. Mistral Vibe keeps TOML too, at
+# ~/.vibe/config.toml, but as an array of tables with the server's name inside
+# each one rather than in its header, so it needs its own reader and writer.
+#
+# Le Chat is absent on purpose. Its custom connectors take an https URL to a
+# remote MCP server, and this one is local and speaks stdio, so the only way to
+# reach it would be to put the user's CVs on the public internet.
 # --------------------------------------------------------------------------
 
 MCP_KEY = "cv-studio"
@@ -240,6 +247,99 @@ def _toml_write(path: Path, entry: dict) -> None:
     path.write_text(out, encoding="utf-8")
 
 
+# ---- TOML again, the way Mistral Vibe keeps it ---------------------------
+#
+# Same language, different shape. Codex names each server in the table header,
+# `[mcp_servers.cv-studio]`. Vibe keeps an array of tables, `[[mcp_servers]]`,
+# with the name as a field inside, so ours cannot be found by its header: every
+# entry shares one. It is found by reading the name out of each block.
+
+def _vibe_config_path() -> Path:
+    return Path.home() / ".vibe" / "config.toml"
+
+
+def _vibe_read(path: Path) -> dict | None:
+    """Ours, reduced to the shape every other reader returns.
+
+    `name` and `transport` live inside the table here rather than in its
+    header, but they are how the entry is addressed, not part of it. Returning
+    them would mean this never compares equal to what ai_entry() asks for, and
+    the read-back check in ai_connect would reject every write as wrong.
+    """
+    import tomllib
+    servers = tomllib.loads(path.read_text(encoding="utf-8")).get("mcp_servers")
+    if not isinstance(servers, list):
+        return None
+    for entry in servers:
+        if isinstance(entry, dict) and entry.get("name") == MCP_KEY:
+            return {"command": entry.get("command"), "args": entry.get("args")}
+    return None
+
+
+def _vibe_snippet(entry: dict) -> str:
+    args = ", ".join(json.dumps(a) for a in entry["args"])
+    return (f"[[mcp_servers]]\n"
+            f"name = {json.dumps(MCP_KEY)}\n"
+            f'transport = "stdio"\n'
+            f"command = {json.dumps(entry['command'])}\n"
+            f"args = [{args}]\n")
+
+
+def _vibe_span(text: str) -> tuple[int, int] | None:
+    """The line range of the `[[mcp_servers]]` block that is ours."""
+    lines = text.splitlines(keepends=True)
+    start = None
+    for i, line in enumerate(lines + [""]):
+        head = _toml_head(line) if i < len(lines) else ""
+        if head is None:
+            continue
+        if start is not None:
+            body = "".join(lines[start:i])
+            if re.search(r'^\s*name\s*=\s*["\']' + re.escape(MCP_KEY) + r'["\']',
+                         body, re.M):
+                return start, i
+            start = None
+        if head == "mcp_servers":
+            start = i
+    return None
+
+
+def _vibe_write(path: Path, entry: dict) -> None:
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+
+    # A fresh Vibe config ships `mcp_servers = []`. TOML will not accept that
+    # key and `[[mcp_servers]]` tables in the same document, so the empty list
+    # has to go or the file stops parsing.
+    text, dropped = re.subn(
+        r'^[ \t]*mcp_servers[ \t]*=[ \t]*\[[ \t]*\][ \t]*\r?\n?', "",
+        text, flags=re.M)
+
+    # Only ever the empty one. A populated `mcp_servers = [...]` is somebody
+    # keeping their servers as an inline array, which cannot coexist with the
+    # tables written below: deleting it would take their other servers with it,
+    # and leaving it makes the file unparseable. Say so instead of doing either.
+    if not dropped and re.search(r'^[ \t]*mcp_servers[ \t]*=', text, re.M):
+        raise ValueError(
+            "this config keeps its servers as an inline mcp_servers array, "
+            "which cannot be added to without rewriting the rest of it. Add "
+            "the entry by hand, or empty that array first")
+
+    table = _vibe_snippet(entry)
+    span = _vibe_span(text)
+    if span:
+        lines = text.splitlines(keepends=True)
+        lines[span[0]:span[1]] = [table]
+        out = "".join(lines)
+    else:
+        out = text
+        if out and not out.endswith("\n"):
+            out += "\n"
+        if out.strip():
+            out += "\n"
+        out += table
+    path.write_text(out, encoding="utf-8")
+
+
 AI_CLIENTS = {
     "claude": {
         "label": "Claude Desktop",
@@ -256,6 +356,16 @@ AI_CLIENTS = {
         "restart": "Restart the ChatGPT app, or start a new Codex session.",
         "manual": "The ChatGPT app, Codex CLI and the Codex IDE extension "
                   "share this file, so this configures all three.",
+    },
+    "mistral": {
+        "label": "Mistral Vibe",
+        "path": _vibe_config_path,
+        "read": _vibe_read, "write": _vibe_write, "snippet": _vibe_snippet,
+        "restart": "Start a new Vibe session and the tools are there.",
+        "manual": "Vibe keeps an array of tables, so this adds one entry "
+                  "rather than a named table. Le Chat cannot be set up here: "
+                  "its custom connectors take an https URL to a remote server, "
+                  "and this one is local and speaks stdio.",
     },
 }
 
@@ -1297,7 +1407,7 @@ def openapi_spec() -> dict:
             "/api/ai/connect": {"post": {"summary":
                 "Add this workspace to one AI client's MCP config",
                 "requestBody": body({"client": {"type": "string",
-                                                "enum": ["claude", "openai"]}}),
+                                                "enum": ["claude", "openai", "mistral"]}}),
                 "responses": ok}},
             "/api/skills": {"get": {"summary":
                 "The CV Studio skills on this machine, and whether they need the MCP",
@@ -2586,6 +2696,10 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 
   <symbol id="openai-mark" viewBox="0 0 24 24"><path fill="currentColor"
     fill-rule="evenodd" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"/></symbol>
+  <symbol id="mistral-mark" viewBox="0 0 24 24"><g fill="currentColor">
+    <rect x="2.5" y="4" width="19" height="4"/><rect x="2.5" y="4" width="4" height="16"/>
+    <rect x="10" y="9" width="4" height="11"/><rect x="17.5" y="4" width="4" height="16"/>
+    </g></symbol>
 </svg>
 
 <header id="chrome" data-tauri-drag-region>
@@ -2625,6 +2739,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <span class="aic" data-client="openai" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
       ><use href="#openai-mark"/></svg><i class="dot"></i></span>
+    <span class="aic" data-client="mistral" data-state="unknown"><svg width="13"
+      height="13" viewBox="0 0 24 24" aria-hidden="true"
+      ><use href="#mistral-mark"/></svg><i class="dot"></i></span>
   </button>
   <button class="cbtn icon" id="btn-settings" title="Settings, setup and help"
     aria-label="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -3217,7 +3334,7 @@ const AI_PILL={
   unknown:"Checking",
 };
 function aiSay(c){
-  if(c.state==="connected") return "Reading and writing the CVs in this workspace.";
+  if(c.state==="connected") return "Working on the CVs and the applications in this workspace.";
   if(c.state==="absent") return "Not connected yet. One click adds it.";
   if(c.state==="elsewhere") return "Set up, but pointing at another copy of CV Studio.";
   if(c.state==="other-workspace")

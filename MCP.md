@@ -112,7 +112,8 @@ each
 client is pointed at this build and this workspace.
 
 Then restart the client: Claude Desktop shows the tools under the connectors
-icon; for OpenAI, restart the ChatGPT app or start a new Codex session.
+icon; for OpenAI, restart the ChatGPT app or start a new Codex session; for
+Mistral, start a new Vibe session.
 
 The rest of this section is for doing it by hand.
 
@@ -180,6 +181,31 @@ need doubling here too.
 
 `codex mcp add cv-studio -- <command> --mcp` does the same thing from the
 command line, and `codex mcp list` shows what is configured.
+
+### Mistral Vibe
+
+`~/.vibe/config.toml`. TOML again, but a different shape: Vibe keeps an array of
+tables and puts the name inside each one rather than in its header, so this is
+an entry appended to a list rather than a table of its own.
+
+```toml
+[[mcp_servers]]
+name = "cv-studio"
+transport = "stdio"
+command = "/Applications/CV Studio.app/Contents/Resources/server-dist/cv-studio-server"
+args = ["--mcp", "--workspace", "/Users/you/Documents/CV Studio"]
+```
+
+A fresh Vibe config contains the line `mcp_servers = []`. Delete it. TOML will
+not accept that key and `[[mcp_servers]]` tables in the same file, and the error
+you get if you leave it in does not say so. Setting it up from the app removes
+the line for you, and refuses rather than guessing if you keep your servers as a
+populated inline array instead.
+
+**Le Chat is not here, and cannot be.** Its custom connectors take an https URL
+to a remote MCP server. This server is local and speaks stdio over a pipe, so
+the only way to reach it from Le Chat would be to expose your CVs and your job
+applications to the public internet. That is the opposite of the point.
 
 ## Verifying it works
 
