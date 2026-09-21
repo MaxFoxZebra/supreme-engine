@@ -2463,7 +2463,7 @@ button:disabled{opacity:.4;cursor:default}
 
 /* ---------- shell ------------------------------------------------------ */
 main{flex:1;min-height:0;display:flex;background:var(--app)}
-.view{flex:1;display:flex;min-height:0;min-width:0}
+.view{flex:1;display:flex;min-height:0;min-width:0;position:relative}
 .rail{flex:none;background:var(--c650);border-right:1px solid #000;display:flex;
   flex-direction:column;min-height:0;overflow-y:auto}
 .rail-cvs{width:230px} .rail-jobs{width:196px;padding:12px 7px;gap:1px}
@@ -2697,7 +2697,65 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 /* ---------- inspector --------------------------------------------------- */
 .insp{flex:none;background:var(--panel);border-left:1px solid var(--rule-strong);
   display:flex;flex-direction:column;min-height:0}
-.insp-cvs{width:312px} .insp-jobs{width:284px} .insp-funnel{width:296px}
+.insp-cvs{width:312px} .insp-funnel{width:296px}
+
+/* ---------- the application peek ----------------------------------------
+   Sized to the record rather than to a habit: wide enough for two columns of
+   fields, capped so it never swallows the list it belongs to. It is not modal
+   -- the table underneath stays live, and clicking another row moves the peek
+   to it rather than stacking a second one. */
+.peek{position:absolute;top:0;right:0;bottom:0;z-index:40;
+  width:clamp(420px,46vw,860px);display:flex;flex-direction:column;
+  background:var(--panel);border-left:1px solid var(--rule-strong);
+  box-shadow:-18px 0 40px -24px rgba(0,0,0,.55);animation:peekin .12s ease-out}
+@keyframes peekin{from{transform:translateX(10px);opacity:.4}to{transform:none;opacity:1}}
+.peek-head{flex:none;display:flex;align-items:center;gap:14px;padding:0 6px 0 16px;
+  height:40px;background:var(--bar);border-bottom:1px solid var(--rule-strong)}
+.peek-who{flex:1;min-width:0;display:flex;align-items:baseline;gap:9px}
+.peek-who b{font-size:13.5px;font-weight:600;color:var(--t900);flex:none;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
+.peek-who span{font-size:12.5px;color:var(--t600);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.peek-nav{flex:none;display:flex;align-items:center;gap:2px}
+.peek-nav button{width:26px;height:26px;border-radius:5px;color:var(--t500);
+  font-size:13px;line-height:1}
+.peek-nav button:hover:not(:disabled){background:var(--paper-hover);color:var(--t900)}
+.peek-nav #jpk-idx{font-size:11px;color:var(--t500);padding:0 5px;min-width:44px;
+  text-align:center}
+.peek-nav #jpk-close{margin-left:6px}
+.peek-body{flex:1;min-height:0;overflow-y:auto;padding:16px;
+  display:flex;flex-direction:column;gap:16px}
+/* The peek is absolutely positioned, so the table has to be told to stop
+   underneath it. Giving way rather than being covered means the row you are
+   arrowing through stays readable beside the record it opened. */
+.peeking .tablewrap{margin-right:clamp(420px,46vw,860px)}
+@media(max-width:1100px){ .peeking .tablewrap{margin-right:0} }
+
+/* Two columns once there is room for two. Below that it stacks, which is the
+   old behaviour and still correct on a small window. */
+.peek .fg2{display:grid;grid-template-columns:78px minmax(0,1fr);gap:9px 11px;
+  align-items:center}
+.peek-grid{flex:1;min-height:0;display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:1280px){
+  .peek-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px 22px}
+}
+.peek-grid .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+/* Notes gets real room -- it used to be three rows -- but not the whole column:
+   stretched to 700px it reads as a mistake rather than as generosity. */
+.peek-grid textarea.notes{min-height:150px;max-height:280px;resize:vertical}
+/* The posting is the long one, so it takes what is left and scrolls. */
+.peek-grid .block.grow{flex:1;min-height:0}
+.peek .posting{flex:1;min-height:80px;overflow-y:auto;white-space:pre-wrap;
+  font-size:12px;line-height:1.6;color:var(--t600);background:var(--field);
+  border:1px solid var(--bd-field);border-radius:7px;padding:10px 12px;
+  overflow-wrap:anywhere}
+/* Destructive, so it is last and separated -- but not pinned to the bottom of
+   the column, where it floated alone over a half-screen of nothing and drew
+   the eye to the one control that should never attract it. */
+.peek-grid .foot-del{margin-top:4px}
+.peek-grid .foot-del .sbtn{align-self:flex-start}
+/* The posting and the documents read as one list, so they share a card. */
+.peek .tl{max-height:none}
 .insp-head{height:33px;flex:none;display:flex;align-items:center;justify-content:space-between;
   gap:10px;padding:0 13px;background:var(--bar);border-bottom:1px solid var(--rule-strong)}
 .insp-head b{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
@@ -3243,7 +3301,8 @@ textarea{resize:vertical}
 @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
 @media(max-width:1100px){
-  .rail-cvs{width:200px}.insp-cvs{width:270px}.insp-jobs{width:250px}
+  .rail-cvs{width:200px}.insp-cvs{width:270px}
+  .peek{width:auto;left:0}
   .themegrid{grid-template-columns:repeat(3,1fr)}
 }
 /* Phones: the two-up tiles and the card's third column both stop making
@@ -3260,7 +3319,7 @@ textarea{resize:vertical}
 @media(max-width:880px){
   .insp{display:none}
   .thead,.trow{grid-template-columns:minmax(0,2fr) minmax(0,1.4fr) 170px 90px}
-  .thead>div:nth-child(n+5),.trow>div:nth-child(n+5){display:none}
+  .thead>*:nth-child(n+5),.trow>*:nth-child(n+5){display:none}
   .set-inner{grid-template-columns:1fr;gap:16px}
   .set-rail{flex-direction:row;flex-wrap:wrap;position:static}
 }
@@ -3421,9 +3480,25 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <span>Applied</span><span>Follow-up</span></div>
       <div class="tbody" id="jobrows"></div>
     </div>
-    <aside class="insp insp-jobs">
-      <div class="insp-head"><b id="jinsp-title">No application selected</b></div>
-      <div class="insp-body" id="jinsp-body"></div>
+    <!-- A peek rather than a rail. The old 284px column was fixed at every
+         window size, so a thirteen-field record was stacked into a sliver
+         while the table beside it had a thousand pixels it did not need. This
+         opens over the table at a width that fits the record, leaves the rows
+         that identify the application visible to its left, and moves between
+         them with the arrow keys without ever closing. -->
+    <aside class="peek" id="jpeek" hidden aria-label="Application">
+      <div class="peek-head">
+        <div class="peek-who" aria-live="polite"><b id="jinsp-title"></b><span id="jinsp-sub"></span></div>
+        <div class="peek-nav">
+          <button id="jpk-prev" title="Previous application (Up)"
+            aria-label="Previous application">&#8593;</button>
+          <span class="mono" id="jpk-idx"></span>
+          <button id="jpk-next" title="Next application (Down)"
+            aria-label="Next application">&#8595;</button>
+          <button id="jpk-close" title="Close (Esc)" aria-label="Close">&#10005;</button>
+        </div>
+      </div>
+      <div class="peek-body" id="jinsp-body"></div>
     </aside>
   </section>
 
@@ -5513,7 +5588,12 @@ function drawRail(){
     (count==null?"":'<span class="ct mono">'+count+'</span>')+'</button>';
   let h=row("All",S.jobs.length,"all","");
   S.statuses.forEach(s=>{ if(c[s]) h+=row(prettyStatus(s),c[s],"status",s) });
-  if(S.fnode&&S.labels[S.fnode]) h+=row(S.labels[S.fnode],null,"node",S.fnode);
+  /* The funnel hands over a node to filter by, and its label often matches a
+     status already listed above -- "Draft" under "Draft", the second one with
+     no count. Only add it when it is actually saying something new. */
+  const shown=new Set(S.statuses.filter(x=>c[x]).map(prettyStatus));
+  if(S.fnode&&S.labels[S.fnode]&&!shown.has(S.labels[S.fnode]))
+    h+=row(S.labels[S.fnode],null,"node",S.fnode);
   $("#statuslist").innerHTML=h;
 
   /* Only buckets with something in them. An Attention list showing four zeroes
@@ -5609,24 +5689,58 @@ function selectJob(id){
 }
 
 const JOB_GRID=[
-  ["company","Company","text"],["title","Role","text"],["status","Status","status"],
-  ["source","Source","text"],["score","Fit","fit"],
-  ["salary_expected","Salary","number"],["followup_date","Follow-up","date"],
-  ["location","Location","text"],["url","Link","text"],
+  ["status","Status","status"],["followup_date","Follow-up","date"],
+  ["score","Fit","fit"],["source","Source","text"],
 ];
+/* Everything you set once when the application is created and rarely touch
+   again. Company and Role are here rather than at the top because the peek's
+   own header already prints them, and they used to be the first two fields
+   you read -- restating the title one line below itself. */
+const JOB_MORE=[
+  ["company","Company","text"],["title","Role","text"],
+  ["location","Location","text"],["url","Link","text"],
+  ["salary_expected","Salary","number"],["contact_email","Contact","text"],
+];
+/* The rows the arrows walk: what the table is currently showing, in the order
+   it is showing it, so Down always means "the row under this one". */
+const peekRows=()=>visibleJobs();
+function peekStep(delta){
+  const rows=peekRows();
+  const i=rows.findIndex(x=>x.id===S.jsel);
+  if(i<0) return;
+  const next=rows[i+delta];
+  if(!next) return;
+  S.jsel=next.id;
+  drawJobs();
+  drawJobInspector();
+  const row=$('#jobrows [data-id="'+next.id+'"]');
+  if(row) row.scrollIntoView({block:"nearest"});
+}
+function closePeek(){
+  S.jsel=null;
+  $("#jpeek").hidden=true;
+  $("#v-jobs").classList.remove("peeking");
+  drawJobs();
+  paintStatus();
+}
+
 function drawJobInspector(){
   const j=S.jobs.find(x=>x.id===S.jsel);
-  const head=$("#jinsp-title"), body=$("#jinsp-body");
-  if(!j){
-    head.textContent="No application selected";
-    body.innerHTML='<p class="note muted">Pick a row to edit it, or add one with '+
-      '“New job…”.</p>';
-    return;
-  }
-  head.textContent=j.company+" · "+j.title;
-  head.title=j.company+" · "+j.title;
+  const peek=$("#jpeek"), head=$("#jinsp-title"), body=$("#jinsp-body");
+  $("#v-jobs").classList.toggle("peeking",!!j);
+  if(!j){ peek.hidden=true; return }
+  peek.hidden=false;
+  head.textContent=j.company;
+  head.title=j.company;
+  $("#jinsp-sub").textContent=j.title;
+  $("#jinsp-sub").title=j.title;
 
-  const grid=JOB_GRID.map(([k,label,kind])=>{
+  const rows=peekRows(), at=rows.findIndex(x=>x.id===j.id);
+  $("#jpk-idx").textContent=at<0?"":(at+1)+" of "+rows.length;
+  $("#jpk-prev").disabled=at<=0;
+  $("#jpk-next").disabled=at<0||at>=rows.length-1;
+
+  const field=([k,label,kind])=>{
     let ctl;
     if(kind==="status") ctl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span><select data-j="status">'+S.statuses.map(s=>
       '<option value="'+s+'"'+(s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+
@@ -5639,7 +5753,9 @@ function drawJobInspector(){
       (kind==="number"?' type="number" class="mono"':"")+' value="'+
       esc(j[k]==null?"":j[k])+'">';
     return '<label>'+esc(label)+'</label>'+ctl;
-  }).join("");
+  };
+  const grid=JOB_GRID.map(field).join("");
+  const more=JOB_MORE.map(field).join("");
 
   const docRow=(label,key,group)=>{
     const linked=j[key];
@@ -5651,6 +5767,18 @@ function drawJobInspector(){
       (linked?'<button class="alink" data-open-doc="'+esc(linked)+'">Open</button>':"")+
       '</div>';
   };
+  /* The posting itself. The tools have been storing this since the tracker was
+     opened up -- add_job's own description says to paste the whole thing,
+     because it is what a model writes against when you later ask it to tailor
+     a CV for this job, by which time the page is usually gone. Nothing in the
+     app has ever shown it. There is room for it now. */
+  const posting_block=j.description
+    ? '<div class="block grow"><span class="blabel mono">The posting</span>'+
+      '<div class="posting">'+esc(j.description)+'</div></div>'
+    : '<div class="block grow"><span class="blabel mono">The posting</span>'+
+      '<p class="note muted">Not saved. Paste it in when you add an application, '+
+      'or ask a model to -- it is what a tailored CV gets written against once '+
+      'the advert is gone.</p></div>';
   const posting=j.url?'<div class="drow"><span class="muted">'+
     esc(j.url.replace(/^https?:\/\//,"").slice(0,40))+'</span>'+
     '<a class="alink" href="'+esc(j.url)+'" target="_blank" rel="noreferrer">Open</a></div>':"";
@@ -5662,17 +5790,35 @@ function drawJobInspector(){
     '<span class="when mono">'+esc(shortDate(h.at))+'</span></div></div>').join("")+'</div>'
     :'<p class="note muted">No history yet.</p>';
 
+  /* Ordered by how often you touch it, not by the order the columns happen to
+     sit in the table. Status and Follow-up drive the Attention rail, so they
+     lead; Notes is what you write in every time, so it is above the fold
+     rather than under a history block that grows without limit; and the nine
+     fields you set once at creation are folded away. */
+  /* Two columns that both run the full height, so the peek is filled rather
+     than a short stack sitting on top of half a screen of nothing. Notes takes
+     whatever height is left over: it is the one field with no natural size and
+     the one you write the most in. */
   body.innerHTML=
-    '<div class="fg" style="grid-template-columns:64px 1fr">'+grid+'</div>'+
-    '<div class="block"><span class="blabel mono">Documents</span><div class="card">'+
-      docRow("CV","cv_path","My CVs")+docRow("Cover letter","letter_path","Cover letters")+
-      posting+'</div></div>'+
-    '<div class="block"><span class="blabel mono">History</span>'+timeline+'</div>'+
-    '<div class="block"><span class="blabel mono">Notes</span>'+
-      '<textarea data-j="notes" rows="3" style="min-height:54px">'+esc(j.notes||"")+
-      '</textarea></div>'+
-    '<div class="block ruled"><button class="sbtn danger" id="job-del">Delete this '+
-      'application</button></div>';
+    '<div class="peek-grid">'+
+      '<div class="col">'+
+        '<div class="block"><span class="blabel mono">Where it stands</span>'+
+          '<div class="fg2">'+grid+'</div></div>'+
+        '<div class="block"><span class="blabel mono">Documents</span><div class="card">'+
+          docRow("CV","cv_path","My CVs")+docRow("Cover letter","letter_path","Cover letters")+
+          posting+'</div></div>'+
+        '<details class="fold"><summary>Company, role and the rest</summary>'+
+          '<div class="fg2" style="margin-top:11px">'+more+'</div></details>'+
+        '<div class="block ruled foot-del"><button class="sbtn danger" id="job-del">'+
+          'Delete this application</button></div>'+
+      '</div>'+
+      '<div class="col">'+
+        '<div class="block"><span class="blabel mono">Notes</span>'+
+          '<textarea data-j="notes" class="notes">'+esc(j.notes||"")+'</textarea></div>'+
+        '<div class="block"><span class="blabel mono">History</span>'+timeline+'</div>'+
+        posting_block+
+      '</div>'+
+    '</div>';
 
   body.querySelectorAll("[data-j]").forEach(el=>{
     el.onchange=()=>{
@@ -5697,6 +5843,26 @@ function drawJobInspector(){
     }catch(e){ toast(e.message,true) }
   };
 }
+$("#jpk-prev").onclick=()=>peekStep(-1);
+$("#jpk-next").onclick=()=>peekStep(1);
+$("#jpk-close").onclick=closePeek;
+
+/* Arrow keys walk the list with the peek open, which is the whole point of it
+   being a peek rather than a page: you can read every application in the
+   funnel without ever closing anything. They stay out of the way of a field
+   being typed into, and of the select and date inputs, which use the arrows
+   themselves. */
+document.addEventListener("keydown",e=>{
+  if(S.view!=="jobs"||$("#jpeek").hidden) return;
+  if(!$("#sheet").hidden||!$("#ovl-settings").hidden||!$("#ovl-design").hidden) return;
+  if(e.key==="Escape"){ e.preventDefault(); return closePeek() }
+  if(e.key!=="ArrowUp"&&e.key!=="ArrowDown") return;
+  const el=document.activeElement;
+  if(el&&el.closest("#jinsp-body")&&
+     /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+  e.preventDefault();
+  peekStep(e.key==="ArrowDown"?1:-1);
+});
 
 async function saveJob(id,patch){
   try{
