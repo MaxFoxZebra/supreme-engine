@@ -309,8 +309,12 @@ it will install.
 
 Publishing an update:
 
-1. Bump `version` in `src-tauri/tauri.conf.json` **and** `src-tauri/Cargo.toml`.
-   They must agree.
+1. Bump the version in all four places that carry it, which must agree:
+   `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, the `cv-studio`
+   package entry in `src-tauri/Cargo.lock`, and `VERSION` in
+   `server/studio.py`. The shell passes its own version to the server with
+   `--app-version` so the two cannot drift at runtime, but the constant is
+   what a server started by hand reports.
 2. Tag and push: `git tag v0.4.0 && git push origin v0.4.0`.
 3. CI builds Windows, Apple Silicon and Intel, signs them, and attaches
    `latest.json` to the GitHub release. Installed copies pick it up from there.
