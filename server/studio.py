@@ -2307,6 +2307,8 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --acc-line:rgba(192,138,62,.6);
   /* the funnel, which is drawn rather than styled inline so it follows the theme */
   --fn-total:#33312b; --fn-neutral:#7d7767; --fn-positive:#a8761f; --fn-label:#33312b;
+  --co-1:#6f6a60; --co-2:#7d766a; --co-3:#63605c; --co-4:#77706a;
+  --co-5:#6a6660; --co-6:#807a70;
   --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
   --fn-band:.34;
   --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
@@ -2338,6 +2340,8 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --acc-text:#e8bc7c;
   --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
   --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
+  --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
+  --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
   --fn-band:.42;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
@@ -2357,6 +2361,8 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
     --acc-text:#e8bc7c;
     --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
     --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
+  --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
+  --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
     --fn-band:.42;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
@@ -2382,6 +2388,13 @@ body{
 button,select,input,textarea{font:inherit;color:inherit}
 button{cursor:pointer;background:none;border:0;color:inherit;padding:0}
 button:disabled{opacity:.4;cursor:default}
+/* A filled accent button at 40% fades its label and its fill together and
+   lands around 1.7:1 -- unreadable, while still shaped like the app's primary
+   action, so it reads as broken rather than as unavailable. Disabled means
+   "not now", so it drops to a plain outline instead. */
+.obtn.primary:disabled,.sbtn.primary:disabled,.pbtn:disabled{opacity:1;
+  background:var(--field);border:1px solid var(--bd-field);color:var(--t500);
+  font-weight:400}
 :focus{outline:none}
 :focus-visible{outline:2px solid var(--acc);outline-offset:1px;border-radius:3px}
 .grow{flex:1}
@@ -2545,10 +2558,19 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .pmark[data-by=mistral]{color:#FA520F}
 .pmark[data-by=ai]{color:var(--t600)}
 .pmark[data-by=you]{display:none}       /* your own edits are the default */
+/* Stands for something underneath rather than for the line it sits on. */
+.pmark.rolled{opacity:.45}
 /* The vs-base mark is deliberately not a logo: it is a property of the line,
-   not an author, and giving it a face would say somebody did it. */
-.fromb{flex:none;width:2px;height:12px;border-radius:1px;background:var(--acc);
-  opacity:.55;vertical-align:-2px}
+   not an author, and giving it a face would say somebody did it.
+
+   It is also deliberately NOT ochre. A short rounded ochre bar is already this
+   app's selection idiom -- the doc rail's .mark, the page band's inset rule,
+   the form's selected card -- so drawing divergence the same way put two
+   unrelated meanings on one glyph, in one viewport, 200px apart. That does not
+   produce confusion, it produces a confident wrong reading. A dashed neutral
+   rule shares the position but not the shape or the colour. */
+.fromb{flex:none;width:2px;height:11px;border-radius:0;background:var(--t500);
+  opacity:.75;vertical-align:-2px}
 .fg>label .pmark,.fg>label .fromb{margin-left:5px}
 .blabel .pmark,.blabel .fromb{margin-left:5px}
 .crow .pmark{margin-left:3px}
@@ -2579,15 +2601,24 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .provlist{display:flex;flex-direction:column;max-height:46vh;overflow:auto;
   border:1px solid var(--bd-field);border-radius:8px;font-size:12px}
 .provlist .r{display:flex;align-items:flex-start;gap:9px;padding:8px 11px;
-  background:var(--field);width:100%;text-align:left;cursor:pointer}
+  background:var(--field);width:100%;text-align:left;cursor:pointer;
+  border:0;border-radius:0;font:inherit;color:inherit}
 .provlist .r:hover{background:var(--row-hover)}
+.provlist .r:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.provlist .go{flex:none;color:var(--t500);font-size:15px;line-height:1.1}
+.provlist .r:hover .go{color:var(--t900)}
+.provlist .w .mine{color:var(--t500)}
 .provlist .r+.r{border-top:1px solid var(--rule)}
 .provlist .w{flex:none;display:flex;align-items:center;gap:5px;min-width:112px;
   color:var(--t600);font-size:11px}
 .provlist .f{flex:1;min-width:0}
 .provlist .f b{display:block;font-weight:500;color:var(--t900);margin-bottom:2px}
-.provlist .f s{color:var(--t500);text-decoration:line-through;
+/* What it says now, then what it used to say. The order is the answer to the
+   question the sheet is titled after. */
+.provlist .f em{display:block;font-style:normal;color:var(--t900);
   overflow-wrap:anywhere}
+.provlist .f s{display:block;color:var(--t500);text-decoration:line-through;
+  overflow-wrap:anywhere;margin-top:2px}
 .provlist .none{padding:10px 12px;color:var(--t500);background:var(--field)}
 
 /* Shown only when the file changed underneath you and you have edits that
@@ -2682,7 +2713,9 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .card{border:1px solid var(--bd-field);border-radius:4px;background:var(--field);overflow:hidden}
 .card>*+*{border-top:1px solid var(--bd-inner)}
 .crow{display:flex;gap:9px;padding:8px 10px;align-items:flex-start}
-.crow .cidx{font-size:10.5px;color:var(--t400);padding-top:2px;flex:none;width:11px}
+.crow .cidx{font-size:10.5px;color:var(--t400);padding-top:2px;flex:none;
+  display:flex;align-items:center;gap:3px;white-space:nowrap}
+.crow .cidx>span:first-child{min-width:11px}
 .crow.on{background:var(--acc-wash)}
 .crow.on .cidx{color:var(--acc-text)}
 .crow textarea{flex:1;border:0;background:none;resize:none;overflow:hidden;padding:0;
@@ -2707,10 +2740,19 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .fit{display:flex;gap:3px;align-items:center}
 .statusctl{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 .statusctl select{flex:1;min-width:0}
-.fit button{width:16px;height:6px;background:var(--c400);border-radius:2px;padding:0}
-.fit button:hover{background:var(--t500)}
+/* An unrated bar is an empty track, not a filled one. It used to be painted
+   --c400 -- a token off the dark-chrome ramp -- so five near-black filled bars
+   sat next to the words "not rated" and read as five out of five. The only
+   difference between "best possible fit" and "no opinion recorded" was hue.
+   The hit area is padded out to something a finger or a hurried cursor can
+   land on; the bar itself stays 6px. */
+.fit button{width:16px;height:20px;background:none;border-radius:0;padding:7px 0;
+  background-clip:content-box;box-shadow:inset 0 0 0 1px var(--bd-inner);
+  -webkit-background-clip:content-box}
+.fit button:hover{background:var(--t500);background-clip:content-box}
 .fitv{margin-left:8px;font-size:11.5px;color:var(--t500);white-space:nowrap}
-.fit button.on{background:var(--acc)}
+.fit button.on{background:var(--acc);background-clip:content-box;
+  box-shadow:inset 0 0 0 1px transparent}
 .dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--dot-idle)}
 .dot.live{background:var(--acc)}
 .dot.won{background:var(--fn-won)} .dot.lost{background:var(--fn-lost)}
@@ -2984,7 +3026,22 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
 .client .say{grid-column:2;grid-row:2;font-size:12.5px;color:var(--t600);
   line-height:1.5;margin-top:3px}
 .client .go{grid-column:3;grid-row:1/3;align-self:center}
-.client .path{grid-column:2/4;grid-row:3;margin-top:11px;padding-top:10px;
+/* The steps sit under the card's own sentence, before the button is pressed
+   rather than after, because step 2 is the one that does the connecting and
+   the user needs to know it is coming. */
+.aisteps{grid-column:2/4;grid-row:3;list-style:none;margin:11px 0 0;padding:0;
+  display:flex;flex-direction:column;gap:6px}
+.aisteps li{display:flex;align-items:flex-start;gap:8px;font-size:12px;
+  color:var(--t600);line-height:1.45}
+.aisteps li i{flex:none;width:16px;height:16px;border-radius:50%;
+  display:grid;place-items:center;font-style:normal;font-size:10px;
+  font-weight:600;background:var(--bar);color:var(--t500);margin-top:1px}
+.aisteps li.done{color:var(--t900)}
+.aisteps li.done i{background:color-mix(in srgb,var(--fn-won) 18%,transparent);
+  color:var(--fn-won)}
+.aisteps li.wait i{background:var(--acc-wash);color:var(--acc-text)}
+.aisteps li.wait span{color:var(--acc-text)}
+.client .path{grid-column:2/4;grid-row:4;margin-top:11px;padding-top:10px;
   border-top:1px solid var(--rule);display:flex;align-items:center;gap:10px}
 .client .path span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;color:var(--t500);
@@ -3004,7 +3061,13 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
   color:var(--t900)}
 .pill[data-state=connected] i{background:var(--fn-won)}
 .pill[data-state=elsewhere],.pill[data-state=other-workspace],
-.pill[data-state=unreadable]{background:var(--bad-bg);color:var(--t900)}
+.pill[data-state=unreadable]{background:var(--bad-bg);color:var(--bad)}
+/* A client pointed at the wrong workspace is silently editing CVs the user is
+   not looking at, which is the worst state in this pane and used to be the
+   quietest: its pill sat at the same lightness as "Not set up", so the card
+   that needed attention looked like the two that did not. */
+.client.wrong{border-color:var(--bad-line)}
+.client.wrong .badge{background:var(--bad-bg)}
 .pill[data-state=elsewhere] i,.pill[data-state=other-workspace] i,
 .pill[data-state=unreadable] i{background:var(--bad)}
 
@@ -3054,6 +3117,8 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
    to reach outside the workspace is worth seeing -- but it must not
    read like something the model actually did. */
 .mcplog div.no{background:var(--bad-bg)}
+/* A read leaves the author column empty rather than borrowing the mark. */
+.mcplog .roi{flex:none;width:13px;height:13px}
 .mcplog div.no .t{color:var(--bad)}
 
 .fold{margin-top:26px;border-top:1px solid var(--rule);padding-top:14px}
@@ -3701,8 +3766,18 @@ const DEAD_STATUS=new Set(Object.keys(STATUS_TONE).filter(
 /* A company's mark: its logo if one has been stored, otherwise its initials.
    Most companies will never have a logo, so the fallback is the common case and
    has to look chosen rather than missing. The tint is derived from the name, so
-   a company keeps the same colour everywhere without anyone assigning one. */
-const CO_TINTS=["#3a6ea5","#a8761f","#7a5cb8","#007a5e","#a83519","#5b6f8a"];
+   a company keeps the same colour everywhere without anyone assigning one.
+
+   These used to be the funnel's own hues -- #3a6ea5 was --fn-wait, #007a5e was
+   --fn-won, #a83519 was --fn-lost -- so a 20x20 saturated square carrying a
+   hash of the company name sat in the same row as a 6px dot carrying the
+   status, in the same colours, meaning nothing. Contoso wore the Rejected red
+   while its dot said Awaiting reply. The status palette is signal and a hash is
+   not, so the marks are neutral now: they separate one row from the next
+   without competing for the colour that means something. They were also
+   hardcoded hexes, which left them running light-mode values in dark. */
+const CO_TINTS=["var(--co-1)","var(--co-2)","var(--co-3)",
+                "var(--co-4)","var(--co-5)","var(--co-6)"];
 function companyTint(name){
   let h=0;
   for(const ch of String(name||"")) h=(h*31+ch.charCodeAt(0))>>>0;
@@ -3883,13 +3958,41 @@ function aiSay(c){
     return "Set up, but it has not called in yet. Restart it: "+
       c.restart.replace(/^Restart /,"restart ").replace(/^Start /,"start ");
   }
-  if(c.state==="absent") return "Not connected yet. One click adds it.";
-  if(c.state==="elsewhere") return "Set up, but pointing at another copy of CV Studio.";
+  /* Never "one click". The click writes a config file; the client only picks
+     it up when it is restarted, and until then nothing is connected. Promising
+     one click and then putting the step that completes it in a toast -- the
+     most disposable container in the app -- is most of why this felt clunky. */
+  if(c.state==="absent") return "Not set up. Two steps, below.";
+  if(c.state==="elsewhere") return "Pointing at another copy of CV Studio, so "+
+    "it is editing CVs you are not looking at.";
   if(c.state==="other-workspace")
-    return "Set up, but pointing at "+shortPath(c.workspace)+".";
+    return "Pointing at "+shortPath(c.workspace)+", so it is editing CVs you "+
+      "are not looking at.";
   if(c.state==="unreadable") return c.error||"Its config file could not be read.";
   return "Checking…";
 }
+/* The two steps, on the card, before the first click rather than after it.
+   Step 2 is the one that actually connects anything, and it used to exist only
+   in a toast that fired once and vanished. */
+function aiSteps(c){
+  if(c.state==="unreadable") return "";
+  const wrote=c.state==="connected";
+  const live=wrote&&c.last_seen;
+  const step=(n,done,text)=>'<li'+(done?' class="done"':"")+'><i>'+
+    (done?"&#10003;":n)+'</i><span>'+text+'</span></li>';
+  return '<ol class="aisteps">'+
+    step(1,wrote,wrote?"Added to its config":"Add this workspace to its config")+
+    step(2,live,esc(c.restart))+
+    /* Only a client that has been configured is actually waiting on anything.
+       One that was never set up is not pending, it is untouched. */
+    '<li'+(live?' class="done"':wrote?' class="wait"':"")+'><i>'+(live?"&#10003;":"3")+
+      '</i><span>'+(live
+        ? "Heard from it "+ago(c.last_seen*1000)+" ago"
+        : wrote ? "Waiting for its first call\u2026"
+                : "It calls in, and this turns green")+'</span></li>'+
+    '</ol>';
+}
+
 /* Paths here are long enough to swallow the card, and the end is the part that
    identifies them, so keep the tail and let CSS trim the head. */
 function shortPath(p){
@@ -3901,16 +4004,21 @@ function fillAIPanel(){
   const clients=S.ai||[];
   $("#s-ai-clients").innerHTML=clients.map(c=>{
     const st=c.state;
-    return '<div class="client" data-client="'+c.id+'">'+
+    const wrong=st==="elsewhere"||st==="other-workspace"||st==="unreadable";
+    return '<div class="client'+(wrong?" wrong":"")+'" data-client="'+c.id+'">'+
       '<span class="badge"><svg width="19" height="19" viewBox="0 0 24 24"'+
         ' aria-hidden="true"><use href="#'+c.id+'-mark"/></svg></span>'+
       '<div class="who"><b>'+esc(c.label)+'</b>'+
         '<span class="pill" data-state="'+(st==="connected"&&!c.last_seen?"unknown":st)+
           '"><i></i>'+aiPill(c)+'</span></div>'+
       '<div class="say">'+esc(aiSay(c))+'</div>'+
-      '<div class="go"><button class="obtn'+(st==="connected"?"":" primary")+
+      '<div class="go"><button class="obtn'+
+        (st==="connected"&&c.last_seen?"":" primary")+
         '" data-connect="'+c.id+'">'+
-        (st==="connected"?"Set up again":"Set up")+'</button></div>'+
+        (st==="connected"?"Set up again"
+          :st==="absent"?"Add to its config":"Point it at this workspace")+
+        '</button></div>'+
+      aiSteps(c)+
       '<div class="path"><span title="'+esc(c.config_path)+'">'+
         esc(shortPath(c.config_path))+'</span>'+
         '<button data-copy-path="'+esc(c.config_path)+
@@ -3976,17 +4084,30 @@ function paintSkills(){
     catch(e){ toast(e.message,true) }
   };
 }
+/* Which tool calls changed something. The prose above this log warns that
+   these write immediately and there is no undo, so the log has to tell the two
+   kinds apart rather than styling a read like a write. */
+const WRITE_TOOLS=/^(write_cv|edit_cv_fields|create_cv|set_company_logo|set_job_status|update_job_tracking|add_job)$/;
+
 /* Kept apart from the rest of the panel so the poll can refresh it without
    rebuilding the buttons under the cursor. */
 function paintAILog(){
   const log=(S.pulse&&S.pulse.mcp&&S.pulse.mcp.recent)||[];
   $("#s-cl-log").innerHTML=log.length
-    ? log.map(r=>'<div'+(r.ok===false?' class="no"':"")+'>'+
-        markHTML({by:r.by||"ai",at:r.at,agent:r.agent},null)+
+    /* Only the calls that wrote something carry the mark. Putting it on
+       read_cv and list_cvs made the glyph mean "a client called a tool", which
+       is not what it means anywhere else in the app, and with one client
+       connected the column was constant anyway. */
+    ? log.map(r=>{
+        const wrote=WRITE_TOOLS.test(r.tool);
+        return '<div'+(r.ok===false?' class="no"':"")+'>'+
+        (wrote ? markHTML({by:r.by||"ai",at:r.at,agent:r.agent},null)
+               : '<i class="roi" aria-hidden="true"></i>')+
         '<span class="t">'+(r.ok===false?"refused ":"")+esc(r.tool)+'</span>'+
         '<span class="p">'+esc(r.path||"")+'</span>'+
         '<span class="w" title="'+esc(clientName(r))+'">'+
-        ago(r.at*1000)+' ago</span></div>').join("")
+        ago(r.at*1000)+' ago</span></div>';
+      }).join("")
     : '<div><span class="none">Nothing yet. What a model does in this workspace '+
       'shows up here.</span></div>';
 }
@@ -4045,20 +4166,40 @@ function whoLabel(p){
 }
 /* The mark itself. Your own edits draw nothing: the whole point is to pick out
    what you did not write, and marking everything marks nothing. */
-function markHTML(p,path){
+/* `rolled` means this mark stands for something underneath rather than for the
+   field it sits on: a section is marked because one of its bullets was. The
+   distinction matters because the two are not the same claim -- a rolled-up
+   block usually also contains your own writing -- and drawing them identically
+   made the feature true at the leaf and wrong at every level above it. So a
+   rolled mark is hollow and quieter, and says "contains" rather than "changed
+   this". */
+function markHTML(p,path,rolled){
   let out="";
   if(p&&p.by&&p.by!=="you"){
-    const was=p.from==null?"":"\nwas: "+String(p.from);
-    out+='<span class="pmark" data-by="'+esc(p.by)+'" title="'+
-      esc(whoLabel(p)+" changed this "+ago(p.at*1000)+" ago"+was)+
+    const who=whoLabel(p);
+    const said=rolled
+      ? who+" wrote something in here, "+ago(p.at*1000)+" ago"
+      : who+" changed this "+ago(p.at*1000)+" ago"+
+        (p.from==null?"":"\nwas: "+String(p.from));
+    out+='<span class="pmark'+(rolled?" rolled":"")+'" data-by="'+esc(p.by)+
+      '" role="img" aria-label="'+esc(said)+'" title="'+esc(said)+
       '">'+(p.by==="ai"?"&#9679;":
         '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#'+
         esc(p.by)+'-mark"/></svg>')+'</span>';
   }
   if(path&&fromBase(path))
-    out+='<i class="fromb" title="Different from '+
-      esc(baseName())+'"></i>';
+    out+=basebar();
   return out;
+}
+/* Announced, not just hovered: the rule is the only carrier of its meaning, so
+   leaving it as an empty <i> told a screen reader nothing at all. */
+const basebar=()=>'<i class="fromb" role="img" aria-label="Differs from '+
+  esc(baseName())+'" title="Differs from '+esc(baseName())+'"></i>';
+function valueText(v){
+  if(v==null) return "(empty)";
+  if(Array.isArray(v)) return v.join(" · ");
+  if(typeof v==="object") return JSON.stringify(v);
+  return String(v);
 }
 const baseName=()=>{
   const b=S.prov&&S.prov.base;
@@ -4079,10 +4220,15 @@ function paintProv(){
   if(pv.base)
     bits.push('<span>from <b>'+esc(baseName())+'</b></span>',
       '<span class="dot"></span>',
-      '<span><b>'+pv.from_base.length+'</b> changed</span>');
+      /* The logo teaches itself by sitting next to the word "Claude". The
+         divergence rule had no such anchor anywhere in the product, so it gets
+         one here: this is the only place both marks appear beside the words
+         that define them. */
+      '<span><i class="fromb"></i> <b>'+pv.from_base.length+
+        '</b> differ from base</span>');
   if(pv.last_ai){
     if(bits.length) bits.push('<span class="dot"></span>');
-    bits.push(markHTML(pv.last_ai,null)+'<span>'+esc(whoLabel(pv.last_ai))+', '+
+    bits.push(markHTML(pv.last_ai,null,true)+'<span>'+esc(whoLabel(pv.last_ai))+', '+
       ago(pv.last_ai.at*1000)+' ago</span>');
   }
   chip.innerHTML=bits.join("");
@@ -4108,13 +4254,28 @@ function provSheet(){
   Object.keys(pv.fields||{}).forEach(k=>{ if(pv.fields[k].by!=="you") add(k) });
   rows.sort((a,b)=>((b.p&&b.p.at)||0)-((a.p&&a.p.at)||0));
 
-  const body=rows.length?rows.map(r=>
-    '<div class="r" data-sel="'+esc(JSON.stringify(r.path))+'">'+
-      '<span class="w">'+(r.p?markHTML(r.p,null)+esc(whoLabel(r.p))+", "+
-        ago(r.p.at*1000)+" ago":'<i class="fromb"></i>from base')+'</span>'+
+  /* A row carries both facts, because they are independent: a field can be
+     Claude's and match the base, or yours and differ from it. Showing only
+     whichever one happened to be true first hid the divergence rule from the
+     one screen whose job is to explain it. */
+  const body=rows.length?rows.map(r=>{
+    const now=getAt(S.data,r.path);
+    const was=r.p&&r.p.from!=null?String(r.p.from):null;
+    const who=r.p?markHTML(r.p,null)+esc(whoLabel(r.p))+", "+ago(r.p.at*1000)+" ago"
+                 :'<span class="mine">your own edit</span>';
+    return '<button class="r" type="button" data-sel="'+
+        esc(JSON.stringify(r.path))+'">'+
+      '<span class="w">'+who+
+        (pv.baseSet&&pv.baseSet.has(r.key)?basebar()+'<span>differs</span>':"")+
+      '</span>'+
       '<span class="f"><b>'+esc(fieldLabel(r.path.slice(1),S.data))+'</b>'+
-      (r.p&&r.p.from!=null&&String(r.p.from)!==""
-        ?'<s>'+esc(String(r.p.from))+'</s>':"")+'</span></div>').join("")
+      /* The new value first and in full weight. Showing only the struck-out
+         old one answered "what did it used to say", which is not the question
+         the list is titled after. */
+      '<em>'+esc(valueText(now))+'</em>'+
+      (was!==null&&was!==""&&was!==valueText(now)?'<s>'+esc(was)+'</s>':"")+
+      '</span><span class="go" aria-hidden="true">&#8250;</span></button>';
+  }).join("")
     :'<div class="none">Nothing but your own typing.</div>';
 
   openSheet('<div><h3 id="sheet-title">What is not your own typing</h3><p>'+
@@ -4131,7 +4292,9 @@ function provSheet(){
     if(path[1]==="sections"&&path.length>3)
       select({kind:"entry",name:path[2],i:+path[3]});
     else select({kind:"header"});
-    closeSheet();
+    /* The sheet stays open. Closing it after every row made the list a
+       one-shot: you could go to one change, and then you were back where you
+       started with nothing to compare against. */
   });
 }
 
@@ -4233,11 +4396,16 @@ function changedFields(mine,theirs){
    Northwind" is what the user is actually looking at. */
 function fieldLabel(path,data){
   if(path[0]==="sections"){
-    const [,name,i,key]=path;
+    const [,name,i,key,at]=path;
     const it=(((data||{}).cv||{}).sections||{})[name];
     const entry=it&&it[i];
     const who=entry!==undefined?entryTitle(entry,+i||0):null;
-    return sectionLabel(name)+(who?" · "+who:"")+(key?" · "+String(key).replace(/_/g," "):"");
+    /* The position inside the list, when there is one. Without it two bullets
+       of the same entry produce the same label, and a list of changes shows
+       what looks like a duplicated row. */
+    const nth=at==null?"":" "+(+at+1);
+    return sectionLabel(name)+(who?" · "+who:"")+
+      (key?" · "+String(key).replace(/_/g," ")+nth:"");
   }
   return String(path[path.length-1]).replace(/_/g," ");
 }
@@ -4434,7 +4602,7 @@ function renderDocs(docs){
           (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
           '<span class="mark"></span>'+
           '<span class="lbl">'+esc(d.label)+'</span>'+
-          markHTML(d.ai,null)+
+          markHTML(d.ai,null,true)+
           (job?'<span class="tie" title="Linked to '+
             esc(job.title+" · "+job.company)+'"></span>':"")+
           '<span class="ct mono">'+(pp?pp+"pp":"")+'</span></button>';
@@ -4506,7 +4674,7 @@ function buildOutline(){
   const sections=cv.sections||{};
   let h='<button class="orow'+(S.sel&&S.sel.kind==="header"?" sel":"")+
         '" data-o="header"><span>Header</span>'+
-        markHTML(provHeader(),null)+(baseHeader()?'<i class="fromb"></i>':"")+
+        markHTML(provHeader(),null,true)+(baseHeader()?basebar():"")+
         '</button>';
   for(const name of Object.keys(sections)){
     const list=sections[name]||[];
@@ -4514,15 +4682,15 @@ function buildOutline(){
     const spath=["cv","sections",name];
     h+='<button class="orow'+(on?" sel":"")+'" data-o="section" data-name="'+esc(name)+'">'+
        '<span>'+esc(sectionLabel(name))+'</span>'+
-       markHTML(provUnder(spath),null)+(baseUnder(spath)?'<i class="fromb"></i>':"")+
+       markHTML(provUnder(spath),null,true)+(baseUnder(spath)?basebar():"")+
        '<span class="ct mono">'+list.length+'</span></button>';
     if(on&&list.length){
       h+='<div class="okids">'+list.map((it,i)=>{
         const epath=["cv","sections",name,i];
         return '<button class="okid'+(S.sel&&S.sel.kind==="entry"&&S.sel.name===name&&S.sel.i===i
           ?" sel":"")+'" data-o="entry" data-name="'+esc(name)+'" data-i="'+i+'">'+
-        esc(entryTitle(it,i))+markHTML(provUnder(epath),null)+
-        (baseUnder(epath)?'<i class="fromb"></i>':"")+'</button>';
+        esc(entryTitle(it,i))+markHTML(provUnder(epath),null,true)+
+        (baseUnder(epath)?basebar():"")+'</button>';
       }).join("")+'</div>';
     }
   }
@@ -4580,8 +4748,8 @@ function fieldRow(label,path,value,opts){
      everything it contains -- otherwise a rewritten bullet shows no mark in
      the Form tab, where the whole list is a single textarea. */
   const arr=Array.isArray(value);
-  const mark=arr?markHTML(provUnder(path),null)+
-                 (baseUnder(path)?'<i class="fromb"></i>':"")
+  const mark=arr?markHTML(provUnder(path),null,true)+
+                 (baseUnder(path)?basebar():"")
                 :markHTML(provOf(path),path);
   return '<label title="'+esc(label)+'">'+esc(String(label).replace(/_/g," "))+
     mark+'</label>'+inputFor(path,value,opts);
@@ -4669,11 +4837,11 @@ function buildInspector(){
 function arrayBlock(label,path,list){
   const p=esc(JSON.stringify(path));
   return '<div class="block"><span class="blabel mono">'+esc(label.replace(/_/g," "))+
-    markHTML(provUnder(path),null)+(baseUnder(path)?'<i class="fromb"></i>':"")+'</span>'+
+    markHTML(provUnder(path),null,true)+(baseUnder(path)?basebar():"")+'</span>'+
     '<div class="card" data-arr='+"'"+p+"'"+'>'+
     (list.length?list.map((x,i)=>
-      '<div class="crow" data-i="'+i+'"><span class="cidx mono">'+(i+1)+
-      markHTML(provOf(path.concat(i)),path.concat(i))+'</span>'+
+      '<div class="crow" data-i="'+i+'"><span class="cidx mono"><span>'+(i+1)+
+      '</span>'+markHTML(provOf(path.concat(i)),path.concat(i))+'</span>'+
       '<textarea rows="1">'+esc(x==null?"":x)+'</textarea></div>').join("")
       :'<div class="crow"><span class="cidx mono">1</span><textarea rows="1"></textarea></div>')+
     '</div><div style="display:flex;gap:6px">'+
@@ -5066,7 +5234,8 @@ function paintPageMarks(wrap,img,leftPct){
        down to sit beside the text it marks. */
     const top=(Math.max(14,Math.min(pageH,b.y0))/pageH)*100;
     return '<span class="pgmark" data-by="'+esc(p.by)+'" title="'+
-      esc(whoLabel(p)+" changed "+bandLabel(b)+", "+ago(p.at*1000)+" ago")+
+      esc(whoLabel(p)+" wrote something in "+bandLabel(b)+", "+
+          ago(p.at*1000)+" ago")+
       '" style="top:'+top.toFixed(3)+'%;left:'+leftPct.toFixed(3)+'%">'+
       (p.by==="ai"?"&#9679;":'<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#'+
         esc(p.by)+'-mark"/></svg>')+'</span>';
@@ -5333,9 +5502,14 @@ async function notifyAlerts(){
 
 function drawRail(){
   const c=statusCounts(), f=S.jfilter;
+  /* The .mark span is what .row.sel paints ochre. Without it this rail marked
+     its selection with a background lift alone, at 1.28:1 -- the documents rail
+     next door emits the span and gets the bar, so the two rails disagreed about
+     what "selected" looks like. */
   const row=(label,count,kind,value)=>
     '<button class="row'+(f.kind===kind&&f.value===value?" sel":"")+'" data-k="'+kind+
-    '" data-v="'+esc(value)+'"><span class="lbl">'+esc(label)+'</span>'+
+    '" data-v="'+esc(value)+'"><span class="mark"></span>'+
+    '<span class="lbl">'+esc(label)+'</span>'+
     (count==null?"":'<span class="ct mono">'+count+'</span>')+'</button>';
   let h=row("All",S.jobs.length,"all","");
   S.statuses.forEach(s=>{ if(c[s]) h+=row(prettyStatus(s),c[s],"status",s) });
