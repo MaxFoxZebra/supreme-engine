@@ -2307,10 +2307,11 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --acc-line:rgba(192,138,62,.6);
   /* the funnel, which is drawn rather than styled inline so it follows the theme */
   --fn-total:#33312b; --fn-neutral:#7d7767; --fn-positive:#a8761f; --fn-label:#33312b;
+  --fn-offer:#3f8f76; --fn-lost-late:#7d2f3f;
   --co-1:#6f6a60; --co-2:#7d766a; --co-3:#63605c; --co-4:#77706a;
   --co-5:#6a6660; --co-6:#807a70;
   --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
-  --fn-band:.34;
+  --fn-band:.34; --fn-flow:.26;
   --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
   --row-hover:#f1eee6; --spine:#c8c2b3; --bad-line:#e6cfc5;
   /* YAML syntax: the same muted ramp, retuned for a warm ground. Deliberately
@@ -2340,10 +2341,11 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --acc-text:#e8bc7c;
   --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
   --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
+  --fn-offer:#4fae90; --fn-lost-late:#a8415a;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-  --fn-band:.42;
+  --fn-band:.42; --fn-flow:.18;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
   --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
   --bad:#f0a189; --bad-bg:#2e1c15;
@@ -2361,10 +2363,11 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
     --acc-text:#e8bc7c;
     --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
     --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
+  --fn-offer:#4fae90; --fn-lost-late:#a8415a;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-    --fn-band:.42;
+    --fn-band:.42; --fn-flow:.18;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
     --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
     --bad:#f0a189; --bad-bg:#2e1c15;
@@ -2929,15 +2932,36 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
 .fn-head span{font-size:12px;color:var(--t600)}
 #chart svg{width:100%;height:auto;display:block}
 .sk-link{transition:opacity .15s;fill:none;stroke-opacity:var(--fn-band)}
+/* The moving highlight. It is the band's own colour at a little more strength
+   rather than a white sheen, so a ribbon looks like more of itself passing
+   through rather than like something shining on top of it. */
+.sk-flow{fill:none;pointer-events:none;stroke-opacity:var(--fn-flow);
+  stroke-linecap:butt;animation:sk-flow linear infinite;
+  /* Softened, or the striations read as a barcode laid over the ribbon rather
+     than as something moving through it. The blur is what turns an edge into
+     a swell. */
+  filter:blur(2.5px)}
+@keyframes sk-flow{to{stroke-dashoffset:calc(var(--len) * -1)}}
+@media(prefers-reduced-motion:reduce){ .sk-flow{display:none} }
 .sk-hit{cursor:pointer}
 .sk-hit:hover .sk-node{opacity:.8}
-.sk-dim{opacity:.25}
+/* Dimming is meant to keep the rest of the chart as context. At .25 it took
+   the labels with it -- a dimmed node's name measured 1.6:1 -- so selecting
+   anything made every other stage unreadable, which is the opposite of
+   context. Bands recede; text stays legible. */
+.sk-dim{opacity:.4}
+.sk-label.sk-dim{opacity:.72}
 .sk-label{font:12px 'IBM Plex Sans',sans-serif;fill:var(--fn-label)}
+/* Says how thin the number underneath a rate is, rather than printing a
+   percentage off three applications at the same weight as one off fifty. */
+.kv.thin{margin-top:-6px}
+.kv.thin .v{font-size:10.5px;color:var(--t500)}
 .t-total{fill:var(--fn-total)} .t-neutral{fill:var(--fn-neutral)}
 .t-positive{fill:var(--fn-positive)}
 .t-won{fill:var(--fn-won)} .t-lost{fill:var(--fn-lost)}
 .t-live{fill:var(--fn-positive)} .t-draft{fill:var(--fn-neutral)}
-.t-offer{fill:var(--fn-positive)} .b-offer{stroke:var(--fn-positive)}
+.t-offer{fill:var(--fn-offer)} .b-offer{stroke:var(--fn-offer)}
+.t-lost-late{fill:var(--fn-lost-late)} .b-lost-late{stroke:var(--fn-lost-late)}
 .t-waiting{fill:var(--fn-wait)} .t-closed{fill:var(--fn-closed)}
 .b-neutral{stroke:var(--fn-neutral)} .b-positive{stroke:var(--fn-positive)}
 .b-won{stroke:var(--fn-won)} .b-lost{stroke:var(--fn-lost)}
@@ -3550,15 +3574,15 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <div class="grow"></div><button class="cbtn" data-close-ovl>Done</button></div>
   <div class="set-wrap"><div class="set-inner">
     <nav class="set-rail" id="set-rail">
-      <button data-s="ai" aria-selected="true">AI clients</button>
-      <button data-s="workspace" aria-selected="false">Workspace</button>
+      <button data-s="workspace" aria-selected="true">Workspace</button>
       <button data-s="editor" aria-selected="false">Editor</button>
+      <button data-s="ai" aria-selected="false">AI clients</button>
       <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
       <button data-s="about" aria-selected="false">About</button>
     </nav>
     <div>
-      <section class="sp" id="sp-workspace" hidden>
+      <section class="sp" id="sp-workspace">
         <h3>Workspace</h3>
         <p class="sp-lede">Everything lives in one folder you own. CVs and letters are
           plain YAML; applications are a single SQLite file. Copy the folder and you
@@ -3599,7 +3623,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
             <option value="dark">Dark</option></select></div>
       </section>
 
-      <section class="sp" id="sp-ai">
+      <section class="sp" id="sp-ai" hidden>
         <h3>AI clients</h3>
         <p class="sp-lede">This app is one half of a pair. The model writes and tailors
           the CVs, through a server that ships inside this app; here you look at the
@@ -4007,10 +4031,9 @@ function paintAI(){
   $("#btn-ai").title=bits.join("\n");
   if(!$("#ovl-settings").hidden) fillAIPanel();
 }
-$("#btn-ai").onclick=()=>{
-  $("#ovl-design").hidden=true; $("#ovl-settings").hidden=false;
-  fillSettings(); showSettingsPane("ai");
-};
+/* The marks in the title bar are the AI surface's own entry point, so they go
+   straight to it rather than opening Settings and then navigating. */
+$("#btn-ai").onclick=()=>openSettings("ai");
 
 /* A short label for the pill, and a single line of plain English under the
    name. The long version of any of this belongs in the title, not the card. */
@@ -5959,11 +5982,18 @@ function ensureD3(){
    status cannot mean one thing in the table and another in the chart. The
    spine and the waiting stages stay recessive; outcomes carry the colour. */
 const FN_TOTAL=new Set(["all","applied_s"]);
+/* An outcome's colour. Two splits matter here and both used to be painted
+   over: an offer is not the same state as "still interviewing" (they shared
+   --fn-positive, so "I have an offer" and "nothing decided yet" were the same
+   colour), and a rejection after three rounds is not a rejection after nobody
+   read past page one -- the README says those say very different things, and
+   all four dead ends were one tone. */
 const FN_TONE={
   pending:"draft", awaiting:"waiting", still_iv:"live",
   interview_s:"live", offer_s:"offer", deciding:"offer",
   accepted:"won", refused:"closed",
-  rejected:"lost", ghosted:"lost", rejected_iv:"lost", ghosted_iv:"lost",
+  rejected:"lost", ghosted:"lost",
+  rejected_iv:"lost-late", ghosted_iv:"lost-late",
 };
 const fnTone=id=>FN_TOTAL.has(id)?"t-total":"t-"+(FN_TONE[id]||"draft");
 /* A band takes the colour of where it lands: that is the outcome it reports. */
@@ -6038,11 +6068,33 @@ function drawFunnel(){
   const path=d3.sankeyLinkHorizontal();
   const touches=l=>!S.fnode||l.sid===S.fnode||l.tid===S.fnode;
 
-  const bands=graph.links.map(l=>
+  /* Each ribbon is drawn twice: the band itself, and a dashed copy of the
+     same geometry that travels along it. Sankey paths already run source to
+     target, so animating the dash offset negative moves the highlight the way
+     the applications move -- left to right, down the funnel.
+
+     The dash pattern is scaled to the band's own width so a thick ribbon gets
+     long slow swells and a thin one gets short ones, which is what stops the
+     whole chart pulsing in lockstep. A per-link delay staggers them further.
+     Anyone who has asked their system not to animate gets none of it. */
+  /* Ripples, not blobs. Scaling the dash to the band's width turned a thick
+     ribbon into a row of lozenges the size of the ribbon itself; a current
+     looks the same whatever the river is carrying, so the pattern is fixed
+     and only the phase varies. Narrow marks across the full width of the
+     band read as striations moving down it. */
+  const DASH=7, GAP=46, LEN=DASH+GAP;
+  const flow=(l,i)=>
+    '<path class="sk-flow '+fnBand(l.tid)+(touches(l)?"":" sk-dim")+
+      '" d="'+path(l)+'" stroke-width="'+Math.max(1,l.width)+
+      '" stroke-dasharray="'+DASH+' '+GAP+'" style="--len:'+LEN+
+      'px;animation-duration:'+(2.4+(i%4)*0.4).toFixed(2)+
+      's;animation-delay:-'+(i*0.53).toFixed(2)+'s"/>';
+  const bands=graph.links.map((l,i)=>
     '<path class="sk-link '+fnBand(l.tid)+
     (touches(l)?"":" sk-dim")+'" d="'+path(l)+
     '" stroke-width="'+Math.max(1,l.width)+'"><title>'+
-    esc(l.source.label)+' → '+esc(l.target.label)+': '+l.value+'</title></path>').join("");
+    esc(l.source.label)+' → '+esc(l.target.label)+': '+l.value+
+    '</title></path>'+flow(l,i)).join("");
 
   /* The bar alone is a 9px target, so each node gets a hit area over its label
      too -- clicking a band is how you get to the jobs behind it. */
@@ -6060,12 +6112,13 @@ function drawFunnel(){
     const dim=S.fnode&&S.fnode!==n.id?"sk-dim":"";
     const text=esc(n.label)+" · "+n.count;
     /* The first column has no room to its right, so its label sits above. */
-    return n.x0<8
-      ? '<text class="sk-label '+dim+'" x="'+n.x0+'" y="'+(n.y0-8)+'">'+text+'</text>'
-      /* Near the top of a tall node rather than its middle, so a label never
-         sits marooned in the centre of a thick band. */
-      : '<text class="sk-label '+dim+'" x="'+(n.x1+9)+'" y="'+
-        Math.min((n.y0+n.y1)/2,n.y0+11)+'" dominant-baseline="middle">'+text+'</text>';
+    /* Above the node's top edge, never beside it. Placing a label at the
+       node's own vertical middle put it on top of that node's *first outgoing
+       band* -- so "Applied · 54" sat on a ribbon worth 8, and "Offer · 5" on
+       one worth 2. Every label was printed over a number that contradicted
+       it. The first column already did the right thing. */
+    return '<text class="sk-label '+dim+'" x="'+(n.x0<8?n.x0:n.x1+9)+'" y="'+
+      (n.y0-7)+'">'+text+'</text>';
   }).join("");
 
   host.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" '+
@@ -6083,8 +6136,12 @@ function drawFunnel(){
    the shape stays on screen while you read what is behind the part you touched. */
 function fnPick(id){
   S.fnode=S.fnode===id?null:id;   /* clicking the same band again clears it */
-  drawFunnel();
+  /* The list first, then the chart. The other way round sized the svg against
+     the full-height pane and then opened a list under it that took 42% of
+     that height -- the chart never re-laid out, the pane just scrolled, and
+     the node you had clicked was the one that fell off the bottom. */
   paintFunnelJobs();
+  drawFunnel();
 }
 function paintFunnelJobs(){
   const host=$("#fn-jobs");
@@ -6128,10 +6185,25 @@ function drawRates(){
     value+'</span></div>';
   const reply=t.median_reply_days==null?"–"
     :t.median_reply_days+" day"+(t.median_reply_days===1?"":"s");
+  /* A rate with nothing underneath it is not zero, it is unknown. Printing a
+     confident "Offer → accepted 0%" at a range where no offer exists tells
+     somebody they are fumbling a stage they have never reached. */
+  const pct=(value,denom)=>denom?value+"%":"–";
+  const thin=denom=>denom>0&&denom<10;   /* too few to read as a rate */
+  /* The accent marks the stage that is actually leaking, not a fixed row.
+     It used to sit on "Interview → offer" whenever a single offer existed,
+     so its whole message was "you have had an offer" -- which the header
+     already says. */
+  const stages=[["Applied → interview",t.interview_rate,t.applied],
+                ["Interview → offer",t.offer_rate,t.interviewed],
+                ["Offer → accepted",t.accept_rate,t.offers]];
+  const worst=stages.filter(([,,d])=>d>=10)
+    .sort((a,b)=>a[1]-b[1])[0];
   $("#fn-rates").innerHTML=
-    rate("Applied → interview",t.interview_rate+"%")+
-    rate("Interview → offer",t.offer_rate+"%",t.offers>0)+
-    rate("Offer → accepted",t.accept_rate+"%")+
+    stages.map(([label,value,denom])=>
+      rate(label,pct(value,denom),worst&&worst[0]===label)+
+      (thin(denom)?'<div class="kv thin"><span></span><span class="v">of '+
+        denom+' so far</span></div>':"")).join("")+
     rate("Median reply time",reply)+
     '<div class="hr"></div>'+
     readings(t,c).map(p=>'<div class="note">'+esc(p)+'</div>').join("")+
@@ -6560,12 +6632,23 @@ function applyAppearance(){
 }
 applyAppearance();
 
+function openSettings(pane){
+  $("#ovl-design").hidden=true;
+  $("#ovl-settings").hidden=false;
+  fillSettings();
+  showSettingsPane(pane||"workspace");
+}
 $("#btn-settings").onclick=()=>{
-  if($("#ovl-settings").hidden){
-    $("#ovl-design").hidden=true; $("#ovl-settings").hidden=false;
-    fillSettings(); loadAI();
-  }else closeOverlays();
+  if($("#ovl-settings").hidden) openSettings("workspace");
+  else closeOverlays();
 };
+/* The one shortcut every desktop user tries. */
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key===","){
+    e.preventDefault();
+    if($("#ovl-settings").hidden) openSettings("workspace"); else closeOverlays();
+  }
+});
 function showSettingsPane(which){
   $$("#set-rail button").forEach(x=>
     x.setAttribute("aria-selected",String(x.dataset.s===which)));
