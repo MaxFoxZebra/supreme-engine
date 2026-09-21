@@ -1609,15 +1609,30 @@ def block_map(result: dict, source: Path) -> dict | None:
     costs the click targets and nothing else. The render itself has already
     succeeded by the time this runs.
     """
-    if cv_map is None or not result.get("typ"):
-        return None
+    if cv_map is None:
+        return None, "Typst mapping is unavailable in this build"
+    if not result.get("typ"):
+        return None, "the render produced no Typst source to read"
+    reasons: list = []
     try:
-        outline = outline_of(load_doc(source).get("data"))
+        # Parsed here rather than through load_doc: this wants the section
+        # names and nothing else, and load_doc also computes provenance and a
+        # line map, which is work nobody asked for on every render -- and one
+        # more thing that can throw where the only consequence is the click
+        # targets silently vanishing.
+        outline = outline_of(to_plain(yaml_rt.load(
+            source.read_text(encoding="utf-8"))))
         if not outline:
-            return None
-        return cv_map.build_map(Path(result["typ"]), outline, source.parent)
-    except Exception:
-        return None
+            return None, "the document has no sections to map"
+        built = cv_map.build_map(Path(result["typ"]), outline, source.parent,
+                                 reasons)
+        if built:
+            return built, None
+        return None, reasons[0] if reasons else "the render could not be mapped"
+    except Exception as exc:
+        # Still best effort -- this costs the click targets and nothing else --
+        # but it says so now rather than leaving a dead page and no trace.
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def _shape(result: dict, source: Path) -> dict:
@@ -1633,7 +1648,11 @@ def _shape(result: dict, source: Path) -> dict:
         "pngs": [f"/api/asset?path={rel(Path(p))}&v={stamp}"
                  for p in result.get("png_pages", [])],
     }
-    blocks = block_map(result, source)
+    blocks, why = block_map(result, source)
+    if why:
+        # The page is still shown, it just cannot be clicked. Saying so beats
+        # a preview that quietly stops responding.
+        shaped["map_why"] = why
     if blocks and blocks.get("bands"):
         shaped["map"] = blocks["bands"]
         # The column the text sits in, so a click target can hug the writing
@@ -2595,6 +2614,15 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .pgmark[data-by=ai]{color:#8a877f;font-size:9px}
 .pgmark[data-by=you]{display:none}
 
+/* Clicking the page is a headline feature, and when the map cannot be built
+   it simply is not there -- no error, no cursor change, a page that ignores
+   you. This is the difference between a missing feature and a broken one. */
+.nomap{display:inline-flex;align-items:center;gap:6px;height:21px;padding:0 9px;
+  border:1px solid var(--rule-strong);border-radius:11px;background:var(--field);
+  font-size:11.5px;color:var(--t500);cursor:help}
+.nomap::before{content:"";width:5px;height:5px;border-radius:50%;
+  background:var(--t500);flex:none}
+
 .prov{display:inline-flex;align-items:center;gap:7px;height:21px;padding:0 9px;
   border:1px solid var(--rule-strong);border-radius:11px;background:var(--field);
   font-size:11.5px;color:var(--t600);cursor:pointer}
@@ -2670,7 +2698,13 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .entry{border-left:1px solid var(--rule);padding:2px 0 2px 14px;
   margin:12px 0 12px -14px}
 /* the same mark the page and the outline use, in the form */
-.formblock{border-radius:4px;transition:background .12s,box-shadow .12s}
+/* The padding is on the block at rest, not only when selected: the inset bar
+   that marks a selection is drawn *over* the first three pixels of content,
+   so without a gutter it sliced the leading character off the first label
+   ("text 1" arriving as "ext 1"), and adding the room only on select would
+   shift every field sideways as you moved through the form. */
+.formblock{border-radius:4px;padding-left:9px;margin-left:-9px;
+  transition:background .12s,box-shadow .12s}
 .formblock.on{background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc)}
 .entry.formblock.on{border-left-color:transparent}
 .entry-hd{font-size:12.5px;font-weight:600;margin-bottom:8px;display:flex;gap:8px;
@@ -3458,6 +3492,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button role="tab" data-tab="yaml" aria-selected="false">YAML</button>
         </div>
         <button class="prov" id="provchip" hidden></button>
+        <span class="nomap" id="nomap" hidden></span>
         <div class="grow"></div>
         <div class="meta mono" id="pmeta">
           <button id="pg-prev" title="Previous page" aria-label="Previous page">&#8249;</button>
@@ -4871,6 +4906,9 @@ function bindFields(root){
         if(typeof was==="number"&&v.trim()!==""&&!isNaN(v)) v=Number(v);
       }
       setAt(S.data,path,v);
+      /* Keep growing as you type, or it clips again the moment the text runs
+         past the bottom of the box. */
+      if(el.tagName==="TEXTAREA") autoGrow(el);
       touch();
     }else if(el.closest("[data-arr]")){
       const card=el.closest("[data-arr]");
@@ -5105,6 +5143,11 @@ function buildForm(){
     h+='</div></details>';
   }
   $("#pane-form").innerHTML=h;
+  /* The form's multiline fields ship at rows="3" and never grew, so a summary
+     of four lines showed three and a half and the last one was cut through
+     the middle of the letters. The inspector has always grown its bullets;
+     the form simply never asked. */
+  $$("#pane-form textarea").forEach(autoGrow);
   revealSelected($("#pane-form"));
   $$("#pane-form [data-focus]").forEach(b=>b.onclick=()=>
     select({kind:"entry",name:b.dataset.focus,i:+b.dataset.i}));
@@ -5233,6 +5276,15 @@ function paintPage(){
   const img=host.querySelector(".pg");
   if(img.complete&&img.naturalHeight) draw(img);
   else img.onload=()=>{ if(host.querySelector(".pg")===img) draw(img) };
+  const nomap=$("#nomap");
+  if(r.map&&r.map.length){ nomap.hidden=true }
+  else{
+    nomap.hidden=false;
+    nomap.textContent="page not clickable";
+    nomap.title=(r.map_why||"The render could not be mapped back to the "+
+      "document.")+"\n\nEverything else works: the page is real, and the "+
+      "outline and the form still select.";
+  }
   $("#pg-idx").textContent=(S.page+1)+" / "+r.pngs.length;
   $("#pg-prev").disabled=S.page===0;
   $("#pg-next").disabled=S.page>=r.pngs.length-1;

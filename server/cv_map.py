@@ -204,7 +204,8 @@ def _bands(marks: list[dict]) -> list[dict]:
 
 
 def build_map(typ_path: Path, outline: list[tuple[str, int]],
-              font_dir: Path | None = None) -> dict | None:
+              font_dir: Path | None = None,
+              reasons: list | None = None) -> dict | None:
     """Where every section and entry of `typ_path` landed on the page.
 
     `outline` is the document's sections as [(yaml key, entry count), ...] in
@@ -212,15 +213,27 @@ def build_map(typ_path: Path, outline: list[tuple[str, int]],
     {k, name, i, page, y0, y1} with y in points, and box being the column the
     text occupies -- or None if the source could not be matched to the outline
     confidently enough to be worth clicking.
+
+    `reasons` collects a line saying why, when it returns None. Without it the
+    preview silently stops being clickable and there is nothing anywhere to
+    say so -- the feature is simply absent and looks like a bug in the click.
     """
+    def give_up(why: str) -> None:
+        if reasons is not None:
+            reasons.append(why)
     typ_path = Path(typ_path)
     source = typ_path.read_text(encoding="utf-8")
     probed, probes = _inject(source)
     if not probes:
+        give_up("nothing in the Typst source looked like a block")
         return None
 
     found = sum(1 for p in probes if p["kind"] == "section")
     if found != len(outline):
+        give_up(f"the render has {found} section heading(s) but the YAML has "
+                f"{len(outline)} ({', '.join(k for k, _ in outline)}). A theme "
+                f"that adds or merges a heading breaks the match, and mapping a "
+                f"click to the wrong entry is worse than not mapping it.")
         return None
 
     # Keep entry probes only where the count agrees with the YAML. A section
@@ -245,6 +258,7 @@ def build_map(typ_path: Path, outline: list[tuple[str, int]],
         marks.append(mark)
 
     if not marks:
+        give_up("Typst reported no positions for the probes")
         return None
     return {"bands": _bands(marks), "box": _text_box(source, marks)}
 
