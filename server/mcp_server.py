@@ -20,7 +20,7 @@ import functools
 import inspect
 from pathlib import Path
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ImageContent
 
 import studio
@@ -60,6 +60,46 @@ def _ws() -> Path:
     return studio.WORKSPACE
 
 
+# How a client names itself at initialize, mapped onto the ids the app already
+# uses for the three it can configure. The app normally passes --client, since
+# it wrote the config and therefore knows; this is the fallback for a config
+# somebody wrote by hand, where the handshake is the only thing that knows.
+CLIENT_NAMES = {
+    "claude-ai": "claude", "claude-desktop": "claude", "claude-code": "claude",
+    "claudecode": "claude", "claude": "claude",
+    "codex": "openai", "codex-cli": "openai", "chatgpt": "openai",
+    "openai": "openai", "openai-codex": "openai",
+    "vibe": "mistral", "mistral": "mistral", "mistral-vibe": "mistral",
+}
+
+
+def _identify(ctx: Context) -> None:
+    """Learn who we are serving, once, from the initialize handshake.
+
+    --client already answers this when the app wrote the config, so this only
+    fills the gap. The name is matched loosely because clients spell
+    themselves differently across versions, and an unrecognised one still gets
+    its full title recorded even though no mark is drawn for it.
+    """
+    if studio.CLIENT_ID and studio.CLIENT_AGENT:
+        return
+    try:
+        info = ctx.session.client_params.client_info
+    except (AttributeError, ValueError):
+        return
+    if info is None:
+        return
+    name = (getattr(info, "name", "") or "").strip()
+    if not studio.CLIENT_AGENT:
+        version = (getattr(info, "version", "") or "").strip()
+        title = (getattr(info, "title", "") or "").strip()
+        studio.CLIENT_AGENT = " ".join(x for x in (title or name, version) if x)
+    if not studio.CLIENT_ID:
+        key = name.lower().replace("_", "-").replace(" ", "-")
+        studio.CLIENT_ID = CLIENT_NAMES.get(key) or next(
+            (v for k, v in CLIENT_NAMES.items() if k in key), None)
+
+
 # What to name in the activity log, in order of preference. A document tool
 # identifies itself by path; an application tool has no path, so it says which
 # company it touched instead. Without this every job tool would log a bare verb
@@ -74,11 +114,19 @@ def tool(fn):
     that cannot see this one. The note is how it finds out, so it can offer to
     reload rather than quietly save over what the model just wrote. Read-only
     tools are recorded too: "Claude is looking at this" is worth showing.
+
+    The wrapper takes a Context purely to learn which client it is serving.
+    MCPServer detects that by annotation and strips it from the published
+    schema, so it costs the model nothing -- but it detects it on the function
+    it is handed, which is this wrapper, so the signature has to advertise it
+    rather than inherit the wrapped function's through functools.wraps.
     """
     signature = inspect.signature(fn)
 
     @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, cvs_ctx: Context = None, **kwargs):
+        if cvs_ctx is not None:
+            _identify(cvs_ctx)
         try:
             bound = signature.bind(*args, **kwargs)
             target = next((bound.arguments[k] for k in TARGET_KEYS
@@ -99,6 +147,13 @@ def tool(fn):
                                  str(target) if target else None)
         return result
 
+    wrapper.__signature__ = signature.replace(parameters=[
+        *signature.parameters.values(),
+        inspect.Parameter("cvs_ctx", inspect.Parameter.KEYWORD_ONLY,
+                          annotation=Context, default=None),
+    ])
+    wrapper.__annotations__ = {**getattr(fn, "__annotations__", {}),
+                               "cvs_ctx": Context}
     return mcp.tool()(wrapper)
 
 
@@ -122,8 +177,9 @@ def write_cv(path: str, content: str) -> str:
     will drop any comments the user wrote that are not in `content`.
     """
     p = studio.safe_path(path)
-    p.write_text(content, encoding="utf-8")
-    return f"Wrote {len(content)} characters to {path}"
+    changed = studio.write_doc(p, content, "write_cv")["changed"]
+    return (f"Wrote {len(content)} characters to {path}. "
+            f"{len(changed)} field(s) changed.")
 
 
 @tool
@@ -134,8 +190,16 @@ def edit_cv_fields(path: str, edits: list[dict]) -> str:
     List positions are integers: ["cv","sections","experience",0,"company"].
     """
     p = studio.safe_path(path)
-    studio.apply_patches(p, edits)
-    return f"Applied {len(edits)} edit(s) to {path}"
+    result = studio.apply_patches(p, edits, "edit_cv_fields")
+    lines = [f"{len(result['applied'])} of {len(edits)} edit(s) applied to {path}."]
+    # A patch whose path does not exist is skipped. Reporting that as a success
+    # is how a mis-indexed entry gets believed, so it is named here instead.
+    for miss in result["missed"]:
+        lines.append(f"  NOT APPLIED: {'.'.join(map(str, miss['path']))} "
+                     f"-- {miss['why']}")
+    if result["missed"]:
+        lines.append("Read the file before retrying: those paths do not exist.")
+    return "\n".join(lines)
 
 
 @tool
@@ -164,6 +228,12 @@ def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
         else (studio.STARTER_LETTER if kind == "letter" else studio.STARTER_CV),
         encoding="utf-8",
     )
+    # Remember what this was copied from. It is what makes "how does this
+    # differ from the base CV" answerable later, for the app and for you.
+    if copy_from:
+        studio.note_lineage(dest, studio.rel(studio.safe_path(copy_from)))
+        return (f"Created {folder}/{safe}.yaml, tailored from {copy_from}. "
+                f"The app will mark every field that differs from it.")
     return f"Created {folder}/{safe}.yaml"
 
 
@@ -485,8 +555,14 @@ def workspace_info() -> dict:
     }
 
 
-def main(workspace: str | None = None) -> int:
+def main(workspace: str | None = None, client: str | None = None) -> int:
     studio.WORKSPACE = Path(workspace).resolve() if workspace else studio.DEFAULT_WORKSPACE
+    studio.IS_MCP = True
+    # The app writes the client into the config it installs, so this is known
+    # before any handshake. _identify() fills it from clientInfo otherwise.
+    if client:
+        studio.CLIENT_ID = client
+        studio.CLIENT_AGENT = studio.AI_CLIENTS.get(client, {}).get("label")
     studio.bootstrap(studio.WORKSPACE)
     mcp.run(transport="stdio")
     return 0

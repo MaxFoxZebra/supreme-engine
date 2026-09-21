@@ -11,11 +11,15 @@ if __name__ == "__main__":
     multiprocessing.freeze_support()   # a frozen app will fork-bomb itself without this
     if "--mcp" in sys.argv:
         argv = [a for a in sys.argv[1:] if a != "--mcp"]
-        workspace = None
+        workspace = client = None
         for i, a in enumerate(argv):
             if a in ("--workspace", "--career-dir") and i + 1 < len(argv):
                 workspace = argv[i + 1]
+            # Which client is about to drive us. The app knows, because it
+            # wrote the config; this is how it says so.
+            elif a == "--client" and i + 1 < len(argv):
+                client = argv[i + 1]
         import mcp_server
-        sys.exit(mcp_server.main(workspace))
+        sys.exit(mcp_server.main(workspace, client))
     from studio import main
     sys.exit(main())

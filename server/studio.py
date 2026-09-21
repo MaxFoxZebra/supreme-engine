@@ -21,6 +21,7 @@ Design notes:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.server
 import json
 import mimetypes
@@ -82,6 +83,18 @@ FIRST_RUN = False
 API_TOKEN: str | None = None
 VERSION = "0.6.1"
 
+# Which AI client this process is serving, when it is serving one. The app
+# writes the client configs itself, so it can name the client in the args it
+# installs and the server knows who it is before any handshake. Set from
+# --client; the MCP handshake is the fallback for a config written by hand.
+CLIENT_ID: str | None = None
+CLIENT_AGENT: str | None = None
+# Whether this process is the MCP server rather than the app's own. It decides
+# what an edit is attributed to when the client is one we have no mark for: an
+# unrecognised client is still not the user, and saying it was would be the one
+# mistake these marks must never make.
+IS_MCP = False
+
 
 def server_launch() -> dict:
     """How to launch this server, for the Claude Desktop config snippet.
@@ -125,6 +138,16 @@ MCP_KEY = "cv-studio"
 ACTIVITY_FILE = ".cvstudio-mcp.json"
 ACTIVITY_KEEP = 20
 
+# Where a document came from, and who last wrote each of its fields. Local
+# bookkeeping between the two halves, exactly like ACTIVITY_FILE: delete it and
+# the app loses its marks, not your CV. Deliberately *not* in the YAML --
+# comments there would fight edit_cv_fields' ruamel round-trip, pollute files
+# the user owns, and put provenance one theme away from printing.
+EDITS_FILE = ".cvstudio-edits.json"
+EDITS_KEEP = 200            # per document
+EDITS_MAX_AGE = 60 * 60 * 24 * 30
+EDITS_VALUE_CHARS = 300     # how much of a before/after value is worth keeping
+
 
 def _claude_config_path() -> Path:
     if sys.platform == "win32":
@@ -140,16 +163,25 @@ def _openai_config_path() -> Path:
     return Path.home() / ".codex" / "config.toml"
 
 
-def ai_entry() -> dict:
+def ai_entry(client: str | None = None) -> dict:
     """The MCP server entry to install, in the shape both formats share.
 
     A client needs the executable and its arguments separately, which is also
     why the workspace is passed as an argument rather than assumed: one
     configured server serves exactly one workspace.
+
+    `--client` is how the app tells the server which client it is about to be
+    launched by. MCP does pass `clientInfo` down at initialize, and the server
+    falls back to it, but this is the only answer available before the first
+    handshake and the only one that survives a client reporting a name nobody
+    here recognises. It is written because *this app* wrote the config, so it
+    is knowledge rather than a guess.
     """
     launch = server_launch()
-    return {"command": launch["command"],
-            "args": [*launch["args"], "--mcp", "--workspace", str(WORKSPACE)]}
+    args = [*launch["args"], "--mcp", "--workspace", str(WORKSPACE)]
+    if client:
+        args += ["--client", client]
+    return {"command": launch["command"], "args": args}
 
 
 # ---- JSON, the way Claude Desktop keeps it -------------------------------
@@ -389,7 +421,7 @@ def ai_config_path(client: str) -> Path:
     return Path(override) if override else AI_CLIENTS[client]["path"]()
 
 
-def ai_status(client: str) -> dict:
+def ai_status(client: str, seen: dict | None = None) -> dict:
     """Whether a client is pointed at this build and this workspace.
 
     An entry that exists but names a different copy of CV Studio, or a
@@ -398,10 +430,14 @@ def ai_status(client: str) -> dict:
     """
     spec = AI_CLIENTS[client]
     path = ai_config_path(client)
-    want = ai_entry()
+    want = ai_entry(client)
+    if seen is None:
+        seen = mcp_activity().get("seen") or {}
+    heard = seen.get(client) or {}
     out = {"id": client, "label": spec["label"], "config_path": str(path),
            "config_exists": path.is_file(), "state": "absent",
            "workspace": None, "command": None, "error": None,
+           "last_seen": heard.get("at"), "agent": heard.get("agent"),
            "restart": spec["restart"], "manual": spec["manual"],
            "snippet": spec["snippet"](want)}
     if not out["config_exists"]:
@@ -430,7 +466,8 @@ def ai_status(client: str) -> dict:
 
 
 def ai_clients() -> list[dict]:
-    return [ai_status(client) for client in AI_CLIENTS]
+    seen = mcp_activity().get("seen") or {}
+    return [ai_status(client, seen) for client in AI_CLIENTS]
 
 
 def ai_connect(client: str) -> dict:
@@ -447,7 +484,7 @@ def ai_connect(client: str) -> dict:
         raise ValueError(f"unknown client: {client}")
     spec = AI_CLIENTS[client]
     path = ai_config_path(client)
-    want = ai_entry()
+    want = ai_entry(client)
 
     before, backup = None, None
     if path.is_file():
@@ -602,6 +639,10 @@ def note_mcp_activity(tool: str, path: str | None = None, ok: bool = True,
 
     Called from the MCP process, read by the app's. Bookkeeping must never be
     the thing that breaks a tool call, so every failure here is swallowed.
+
+    `by` and `agent` are what let the app name the client rather than saying
+    "an AI client". Until they existed the app could only name one when exactly
+    one was configured, which stopped being true the moment anybody set up two.
     """
     try:
         f = WORKSPACE / ACTIVITY_FILE
@@ -612,6 +653,9 @@ def note_mcp_activity(tool: str, path: str | None = None, ok: bool = True,
         if not isinstance(log, list):
             log = []
         entry = {"tool": tool, "path": path, "at": time.time()}
+        entry["by"] = CLIENT_ID or "ai"
+        if CLIENT_AGENT:
+            entry["agent"] = CLIENT_AGENT
         if not ok:
             entry["ok"] = False
             entry["error"] = error
@@ -622,13 +666,292 @@ def note_mcp_activity(tool: str, path: str | None = None, ok: bool = True,
 
 
 def mcp_activity() -> dict:
+    """The recent tool calls, plus when each client was last heard from.
+
+    `seen` is the only honest evidence that a client is actually wired up:
+    ai_status() reads a config file, which says a client has been *told* where
+    the server is, not that it ever started it. A tool call is the handshake
+    having happened.
+    """
     try:
         log = json.loads((WORKSPACE / ACTIVITY_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         log = []
     if not isinstance(log, list) or not log:
-        return {"last": None, "recent": []}
-    return {"last": log[-1], "recent": log[-8:][::-1]}
+        return {"last": None, "recent": [], "seen": {}}
+    seen: dict[str, dict] = {}
+    for entry in log:
+        who = entry.get("by")
+        if who:
+            seen[who] = {"at": entry.get("at"), "agent": entry.get("agent"),
+                         "tool": entry.get("tool")}
+    return {"last": log[-1], "recent": log[-8:][::-1], "seen": seen}
+
+
+
+# --------------------------------------------------------------------------
+# Provenance
+#
+# Two different questions, which look the same on screen and are not:
+#
+#   "is this line different from the base CV?"  -- computed live from the two
+#       documents, correct no matter who changed it or when, and needs nothing
+#       stored but a pointer to the base.
+#   "who last wrote this line?"                 -- history, and nothing but a
+#       record of the writes can answer it.
+#
+# The second is the one that needs care. A field address like
+# ["cv","sections","experience",2,"highlights",0] is positional, so it is wrong
+# the moment an entry is inserted above it. Every edit therefore also stores an
+# anchor (section, entry title, key) and a hash of the value it wrote. On the
+# way back out, an edit is kept only if it can be re-found *and* the value is
+# still the one it wrote. Anything else is dropped, because a mark on the wrong
+# line is worse than no mark at all.
+# --------------------------------------------------------------------------
+
+
+def _edits_read() -> dict:
+    try:
+        data = json.loads((WORKSPACE / EDITS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"version": 1, "docs": {}}
+    if not isinstance(data, dict) or not isinstance(data.get("docs"), dict):
+        return {"version": 1, "docs": {}}
+    return data
+
+
+def _edits_write(data: dict) -> None:
+    """Bookkeeping must never be what breaks a save, so failures are swallowed."""
+    try:
+        (WORKSPACE / EDITS_FILE).write_text(
+            json.dumps(data, separators=(",", ":")), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _clip(value) -> object:
+    """A value small enough to keep a few hundred of without thinking about it."""
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        text = value if isinstance(value, str) else json.dumps(value)
+    else:
+        text = json.dumps(value, separators=(",", ":"), default=str)
+    return text if len(text) <= EDITS_VALUE_CHARS else text[:EDITS_VALUE_CHARS] + "\u2026"
+
+
+def _hash(value) -> str:
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def field_key(path: list) -> str:
+    return ".".join(str(k) for k in path)
+
+
+def get_at(data, path: list):
+    node = data
+    for k in path:
+        try:
+            node = node[int(k)] if isinstance(node, list) else node[k]
+        except (KeyError, IndexError, ValueError, TypeError):
+            return None
+    return node
+
+
+def entry_title(entry, i: int) -> str:
+    """What the outline calls an entry. Kept in step with entryTitle() in the UI.
+
+    Every RenderCV entry type keeps its headline under a different key, so this
+    is a preference order rather than one lookup.
+    """
+    if not isinstance(entry, dict):
+        return " ".join(str(entry or "").split()[:4]) or f"entry {i + 1}"
+    for k in ("company", "institution", "name", "title", "label", "position",
+              "bullet"):
+        if entry.get(k):
+            return str(entry[k])
+    return f"entry {i + 1}"
+
+
+def _anchor(path: list, data: dict) -> dict | None:
+    """Enough to re-find a field after the entries around it have moved."""
+    if len(path) < 4 or path[0] != "cv" or path[1] != "sections":
+        return None
+    name = path[2]
+    try:
+        i = int(path[3])
+    except (TypeError, ValueError):
+        return None
+    entry = get_at(data, ["cv", "sections", name, i])
+    out = {"section": name, "entry": entry_title(entry, i), "i": i}
+    if len(path) > 4:
+        out["key"] = path[4]
+        if len(path) > 5:
+            out["at"] = path[5]
+    return out
+
+
+def _refind(edit: dict, data: dict) -> list | None:
+    """Where this edit's field lives now, or None if it cannot be trusted.
+
+    The recorded path first, since nothing has usually moved. Failing that the
+    anchor, which survives a reorder. Either way the value has to still hash to
+    what was written, otherwise somebody has edited it since and the edit is
+    no longer the last word on that field.
+    """
+    want = edit.get("to_hash")
+    path = edit.get("field") or []
+    if want and _hash(get_at(data, path)) == want:
+        return path
+    anchor = edit.get("anchor")
+    if not anchor or not want:
+        return None
+    section = get_at(data, ["cv", "sections", anchor.get("section")])
+    if not isinstance(section, list):
+        return None
+    for i, entry in enumerate(section):
+        if entry_title(entry, i) != anchor.get("entry"):
+            continue
+        found = ["cv", "sections", anchor["section"], i]
+        if anchor.get("key") is not None:
+            found.append(anchor["key"])
+        if anchor.get("at") is not None:
+            found.append(anchor["at"])
+        if _hash(get_at(data, found)) == want:
+            return found
+    return None
+
+
+def changed_fields(before, after, prefix: list | None = None) -> list[list]:
+    """The leaf paths at which two parsed documents differ.
+
+    A list is compared whole rather than walked: a bullet list that gained an
+    item has shifted every index after it, and reporting that as five changed
+    bullets would be true and useless.
+    """
+    out: list[list] = []
+    prefix = prefix or []
+    keys = list(dict.fromkeys(list((before or {}).keys()) + list((after or {}).keys())))
+    for k in keys:
+        a = (before or {}).get(k)
+        b = (after or {}).get(k)
+        here = prefix + [k]
+        if isinstance(a, dict) and isinstance(b, dict):
+            out += changed_fields(a, b, here)
+        elif isinstance(a, list) and isinstance(b, list):
+            for i in range(max(len(a), len(b))):
+                av = a[i] if i < len(a) else None
+                bv = b[i] if i < len(b) else None
+                if isinstance(av, dict) and isinstance(bv, dict):
+                    out += changed_fields(av, bv, here + [i])
+                elif av != bv:
+                    out.append(here + [i])
+        elif a != b:
+            out.append(here)
+    return out
+
+
+def record_edits(path: Path, before: dict | None, after: dict | None,
+                 tool: str, by: str | None = None,
+                 agent: str | None = None) -> list[list]:
+    """Note who changed which fields. Returns the paths, for the caller to report.
+
+    `by` defaults to whoever this process is: an AI client when the MCP server
+    is running, and the user otherwise. That is the whole distinction the marks
+    are drawing.
+    """
+    fields = changed_fields((before or {}).get("cv"), (after or {}).get("cv"),
+                            ["cv"])
+    if not fields:
+        return []
+    who = by or CLIENT_ID or ("ai" if IS_MCP else "you")
+    now = time.time()
+    data = _edits_read()
+    doc = data["docs"].setdefault(rel(path), {})
+    log = doc.get("edits")
+    if not isinstance(log, list):
+        log = []
+    for field in fields:
+        value = get_at(after, field)
+        log.append({
+            "at": now, "by": who, "tool": tool,
+            **({"agent": agent or CLIENT_AGENT} if (agent or CLIENT_AGENT) else {}),
+            "field": field,
+            **({"anchor": _anchor(field, after)} if _anchor(field, after) else {}),
+            "from": _clip(get_at(before, field)),
+            "to": _clip(value),
+            "to_hash": _hash(value),
+        })
+    cutoff = now - EDITS_MAX_AGE
+    doc["edits"] = [e for e in log if (e.get("at") or 0) >= cutoff][-EDITS_KEEP:]
+    _edits_write(data)
+    return fields
+
+
+def note_lineage(path: Path, base: str | None) -> None:
+    """Remember which document this one was copied from.
+
+    Duplicating is how a CV gets tailored, and until this was stored the copy
+    had no idea what it was a copy *of* -- so "what did this change from the
+    base" was unanswerable for both halves of the app.
+    """
+    if not base:
+        return
+    data = _edits_read()
+    doc = data["docs"].setdefault(rel(path), {})
+    doc["base"] = {"path": base, "at": time.time()}
+    _edits_write(data)
+
+
+def provenance(path: Path, data: dict | None) -> dict:
+    """Who last wrote each field of this document, and how it differs from its base.
+
+    `fields` is keyed by a dotted path so the UI can look one up without
+    walking. Only the newest surviving edit per field is returned: the rest are
+    history nobody is asking to see.
+    """
+    out = {"fields": {}, "base": None, "from_base": [], "last": None}
+    if not data:
+        return out
+    doc = (_edits_read()["docs"].get(rel(path)) or {})
+
+    for edit in reversed(doc.get("edits") or []):
+        found = _refind(edit, data)
+        if found is None:
+            continue
+        key = field_key(found)
+        if key in out["fields"]:
+            continue
+        out["fields"][key] = {"by": edit.get("by"), "at": edit.get("at"),
+                              "agent": edit.get("agent"), "tool": edit.get("tool"),
+                              "from": edit.get("from")}
+        last = out["last"]
+        if not last or (edit.get("at") or 0) > (last.get("at") or 0):
+            out["last"] = {"by": edit.get("by"), "at": edit.get("at"),
+                           "agent": edit.get("agent")}
+
+    base = doc.get("base") or {}
+    base_path = base.get("path")
+    if base_path:
+        out["base"] = {"path": base_path, "at": base.get("at"), "missing": True}
+        try:
+            other = yaml_rt.load(safe_path(base_path).read_text(encoding="utf-8"))
+            out["base"]["missing"] = False
+            out["from_base"] = [field_key(f) for f in changed_fields(
+                to_plain(other).get("cv"), data.get("cv"), ["cv"])]
+        except Exception:
+            # A base that has been renamed or deleted is a missing comparison,
+            # not a broken document. Say so and show the rest.
+            pass
+    return out
+
+
+def edits_stamp() -> float | None:
+    """When the provenance file last changed, so the poll can spot a new mark."""
+    try:
+        return (WORKSPACE / EDITS_FILE).stat().st_mtime
+    except OSError:
+        return None
+
 
 STARTER_CV = """# Your CV. Every field here is editable in the Form tab.
 # One YAML rule worth knowing: if a line of text contains a colon followed by a
@@ -945,7 +1268,8 @@ def pulse() -> dict:
             stamps[rel(f)] = f.stat().st_mtime
         except OSError:
             pass
-    return {"docs": stamps, "mcp": mcp_activity(), "jobs": jobs_stamp()}
+    return {"docs": stamps, "mcp": mcp_activity(), "jobs": jobs_stamp(),
+            "edits": edits_stamp()}
 
 
 def jobs_stamp() -> str | None:
@@ -1008,6 +1332,27 @@ def to_plain(obj):
     return str(obj)
 
 
+def write_doc(path: Path, text: str, tool: str = "write") -> dict:
+    """Replace a whole document, recording which fields that turned out to move.
+
+    A whole-file write says nothing about what changed, so the difference has
+    to be measured: parse what is there, write, parse what is now there. That
+    keeps the marks the same whether a field was set through a patch or a file
+    was replaced wholesale.
+    """
+    before = None
+    try:
+        before = to_plain(yaml_rt.load(path.read_text(encoding="utf-8")))
+    except Exception:
+        pass
+    path.write_text(text, encoding="utf-8")
+    try:
+        after = to_plain(yaml_rt.load(text))
+    except Exception:
+        return {"changed": []}
+    return {"changed": record_edits(path, before, after, tool)}
+
+
 def load_doc(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
     try:
@@ -1016,11 +1361,15 @@ def load_doc(path: Path) -> dict:
         data, err = None, str(exc)
     # The mtime is what lets the editor tell its own writes apart from someone
     # else's -- Claude's, usually -- and reload rather than overwrite.
-    return {"yaml": text, "data": to_plain(data) if data else None,
+    plain = to_plain(data) if data else None
+    return {"yaml": text, "data": plain,
             "parse_error": err, "mtime": path.stat().st_mtime,
             # Where each block lives in the source, so the YAML tab can show
             # the same selection the page and the form do.
-            "lines": line_map(data, text) if data else {}}
+            "lines": line_map(data, text) if data else {},
+            # Who last wrote each field, and how it differs from the CV it was
+            # tailored from. Never written back into the file.
+            "prov": provenance(path, plain)}
 
 
 def line_map(doc, text: str) -> dict:
@@ -1082,11 +1431,23 @@ def line_map(doc, text: str) -> dict:
     return out
 
 
-def apply_patches(path: Path, patches: list[dict]) -> None:
+def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
+    """Set individual fields, keeping the rest of the file and its comments.
+
+    Returns {"applied": [...], "missed": [...], "changed": [...]}. `missed`
+    matters: a patch whose path does not exist in the document is skipped, and
+    reporting that as a success is how a model mis-indexes an entry, is told it
+    worked, and moves on. The paths that actually changed value are recorded as
+    provenance on the way past.
+    """
     data = yaml_rt.load(path.read_text(encoding="utf-8"))
+    before = to_plain(data)
+    applied: list[list] = []
+    missed: list[dict] = []
     for patch in patches:
         keys, value = patch.get("path") or [], patch.get("value")
         if not keys:
+            missed.append({"path": keys, "why": "no path given"})
             continue
         node, ok = data, True
         for k in keys[:-1]:
@@ -1096,6 +1457,7 @@ def apply_patches(path: Path, patches: list[dict]) -> None:
                 ok = False
                 break
         if not ok or node is None:
+            missed.append({"path": keys, "why": "no such field"})
             continue
         last = keys[-1]
         try:
@@ -1104,11 +1466,16 @@ def apply_patches(path: Path, patches: list[dict]) -> None:
             else:
                 node[last] = value
         except (KeyError, IndexError, ValueError, TypeError):
+            missed.append({"path": keys, "why": "no such field"})
             continue
+        applied.append(keys)
     import io
     buf = io.StringIO()
     yaml_rt.dump(data, buf)
     path.write_text(buf.getvalue(), encoding="utf-8")
+    after = to_plain(data)
+    return {"applied": applied, "missed": missed,
+            "changed": record_edits(path, before, after, tool)}
 
 
 # Error text from RenderCV is precise but not friendly. These are the failures
@@ -1727,11 +2094,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             if u.path == "/api/save":
                 p = safe_path(payload["path"])
+                wrote = {}
                 if "yaml" in payload:
-                    p.write_text(payload["yaml"], encoding="utf-8")
+                    wrote = write_doc(p, payload["yaml"], "save")
                 elif "patches" in payload:
-                    apply_patches(p, payload["patches"])
-                return self._json({"ok": True, **load_doc(p)})
+                    wrote = apply_patches(p, payload["patches"], "save")
+                return self._json({"ok": True, **wrote, **load_doc(p)})
             if u.path == "/api/skills/package":
                 try:
                     return self._json(package_skills())
@@ -1793,6 +2161,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 else:
                     body = STARTER_LETTER if kind == "letter" else STARTER_CV
                 dest.write_text(body, encoding="utf-8")
+                # Which CV this was tailored from is the whole basis of "what
+                # did this change from the base", and the Base on picker knew
+                # it all along -- it was simply thrown away on write.
+                note_lineage(dest, rel(safe_path(src)) if src else None)
                 return self._json({"ok": True, "path": rel(dest)})
             return self._json({"error": "not found"}, 404)
         except PermissionError as exc:
