@@ -909,7 +909,12 @@ def provenance(path: Path, data: dict | None) -> dict:
     walking. Only the newest surviving edit per field is returned: the rest are
     history nobody is asking to see.
     """
-    out = {"fields": {}, "base": None, "from_base": [], "last": None}
+    # `last` is the newest edit by anyone; `last_ai` the newest by anyone who
+    # is not the user. They differ the moment you touch a document a model
+    # worked on, and it is the second that the summary wants: "Claude, an hour
+    # ago" stays true and stays interesting after you have typed since.
+    out = {"fields": {}, "base": None, "from_base": [],
+           "last": None, "last_ai": None}
     if not data:
         return out
     doc = (_edits_read()["docs"].get(rel(path)) or {})
@@ -924,10 +929,14 @@ def provenance(path: Path, data: dict | None) -> dict:
         out["fields"][key] = {"by": edit.get("by"), "at": edit.get("at"),
                               "agent": edit.get("agent"), "tool": edit.get("tool"),
                               "from": edit.get("from")}
-        last = out["last"]
-        if not last or (edit.get("at") or 0) > (last.get("at") or 0):
-            out["last"] = {"by": edit.get("by"), "at": edit.get("at"),
-                           "agent": edit.get("agent")}
+        who = {"by": edit.get("by"), "at": edit.get("at"),
+               "agent": edit.get("agent")}
+        for slot in ("last", "last_ai"):
+            if slot == "last_ai" and edit.get("by") == "you":
+                continue
+            held = out[slot]
+            if not held or (edit.get("at") or 0) > (held.get("at") or 0):
+                out[slot] = who
 
     base = doc.get("base") or {}
     base_path = base.get("path")
@@ -1252,9 +1261,35 @@ def document_files() -> list[tuple[Path, str, str]]:
 
 
 def list_documents() -> list[dict]:
-    return [{"path": rel(f), "label": label, "group": group,
-             "mtime": f.stat().st_mtime}
-            for f, label, group in document_files() if is_cv_yaml(f)]
+    """Every CV in the workspace, with who last worked on it.
+
+    `by` is read off the sidecar rather than by parsing each document, because
+    the rail wants a mark on a dozen files and none of them is open. It is the
+    recorded author of the newest edit, which is one lookup; whether that edit
+    still stands is a question only the open document can answer, and the marks
+    inside it do.
+    """
+    docs = _edits_read()["docs"]
+
+    def last_ai(path: str) -> dict | None:
+        best = None
+        for edit in (docs.get(path, {}).get("edits") or []):
+            if edit.get("by") in (None, "you"):
+                continue
+            if not best or (edit.get("at") or 0) > (best.get("at") or 0):
+                best = edit
+        return ({"by": best["by"], "at": best.get("at"),
+                 "agent": best.get("agent")} if best else None)
+
+    out = []
+    for f, label, group in document_files():
+        if not is_cv_yaml(f):
+            continue
+        path = rel(f)
+        out.append({"path": path, "label": label, "group": group,
+                    "mtime": f.stat().st_mtime, "ai": last_ai(path),
+                    "base": (docs.get(path, {}).get("base") or {}).get("path")})
+    return out
 
 
 def pulse() -> dict:
@@ -2453,6 +2488,70 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .meta button{font-size:12px;color:var(--t500);padding:0 3px;line-height:1}
 .meta button:hover:not(:disabled){color:var(--t900)}
 
+/* ---------- provenance ---------------------------------------------------
+   Two questions, two marks, because they are not the same thing and reading
+   them as one is how you end up trusting the wrong line:
+
+     a client's own mark   -- who last wrote this field
+     a plain ochre rule    -- this field no longer says what the base CV says
+
+   None of this exists in the YAML. It is drawn from a sidecar into the app's
+   own DOM, so there is no path by which a mark could reach RenderCV, Typst or
+   the PDF. The page you export is the page you would have exported without it.
+*/
+.pmark{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:13px;height:13px;vertical-align:-2px;opacity:.92}
+.pmark svg{width:11px;height:11px;display:block}
+.pmark[data-by=claude]{color:#D97757}
+.pmark[data-by=openai]{color:var(--t700)}
+.pmark[data-by=mistral]{color:#FA520F}
+.pmark[data-by=ai]{color:var(--t600)}
+.pmark[data-by=you]{display:none}       /* your own edits are the default */
+/* The vs-base mark is deliberately not a logo: it is a property of the line,
+   not an author, and giving it a face would say somebody did it. */
+.fromb{flex:none;width:2px;height:12px;border-radius:1px;background:var(--acc);
+  opacity:.55;vertical-align:-2px}
+.fg>label .pmark,.fg>label .fromb{margin-left:5px}
+.blabel .pmark,.blabel .fromb{margin-left:5px}
+.crow .pmark{margin-left:3px}
+.orow .pmark,.okid .pmark{margin-left:auto;margin-right:2px}
+
+/* The chip in the subbar: the one place the whole document's provenance is
+   summarised, on every tab, because it is a fact about the file rather than
+   about the view you happen to be in. */
+/* Sits in the page's left margin, pulled out of the text column rather than
+   laid over it. Pointer-events off: the band underneath is the click target,
+   and a mark that swallowed the click would break editing from the page. */
+.pgmark{position:absolute;transform:translate(-136%,-2px);pointer-events:none;
+  width:12px;height:12px;display:flex;align-items:center;justify-content:center;
+  opacity:.85}
+.pgmark svg{width:11px;height:11px;display:block}
+.pgmark[data-by=claude]{color:#D97757}
+.pgmark[data-by=openai]{color:#5b5750}
+.pgmark[data-by=mistral]{color:#FA520F}
+.pgmark[data-by=ai]{color:#8a877f;font-size:9px}
+.pgmark[data-by=you]{display:none}
+
+.prov{display:inline-flex;align-items:center;gap:7px;height:21px;padding:0 9px;
+  border:1px solid var(--rule-strong);border-radius:11px;background:var(--field);
+  font-size:11.5px;color:var(--t600);cursor:pointer}
+.prov:hover{color:var(--t900);border-color:var(--bd-field)}
+.prov b{font-weight:500;color:var(--t900)}
+.prov .dot{width:4px;height:4px;border-radius:50%;background:var(--t500);flex:none}
+.provlist{display:flex;flex-direction:column;max-height:46vh;overflow:auto;
+  border:1px solid var(--bd-field);border-radius:8px;font-size:12px}
+.provlist .r{display:flex;align-items:flex-start;gap:9px;padding:8px 11px;
+  background:var(--field);width:100%;text-align:left;cursor:pointer}
+.provlist .r:hover{background:var(--row-hover)}
+.provlist .r+.r{border-top:1px solid var(--rule)}
+.provlist .w{flex:none;display:flex;align-items:center;gap:5px;min-width:112px;
+  color:var(--t600);font-size:11px}
+.provlist .f{flex:1;min-width:0}
+.provlist .f b{display:block;font-weight:500;color:var(--t900);margin-bottom:2px}
+.provlist .f s{color:var(--t500);text-decoration:line-through;
+  overflow-wrap:anywhere}
+.provlist .none{padding:10px 12px;color:var(--t500);background:var(--field)}
+
 /* Shown only when the file changed underneath you and you have edits that
    would overwrite it. Above the tabs, because it is about the document rather
    than about whichever view of it you happen to be in. */
@@ -3172,6 +3271,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button role="tab" data-tab="form" aria-selected="false">Form</button>
           <button role="tab" data-tab="yaml" aria-selected="false">YAML</button>
         </div>
+        <button class="prov" id="provchip" hidden></button>
         <div class="grow"></div>
         <div class="meta mono" id="pmeta">
           <button id="pg-prev" title="Previous page" aria-label="Previous page">&#8249;</button>
@@ -3482,6 +3582,7 @@ const S={
   page:0, zoom:1, zoomAuto:true, fill:null,
   sel:null, openSection:null,
   ai:null,                  /* which AI clients are wired up to us */
+  prov:null,                /* who wrote each field, and what differs from the base */
   pulse:null,               /* last workspace poll: file stamps and AI activity */
   skills:null,              /* the cv-studio skills on this machine */
   keyShown:false,           /* the API key is masked until asked for */
@@ -3646,7 +3747,7 @@ function paintStatus(){
       S.pulse.mcp.last&&S.pulse.mcp.last.ok===false));
     const last=S.pulse&&S.pulse.mcp&&S.pulse.mcp.last;
     R.textContent=last&&(Date.now()/1000-last.at)<900
-      ? (loneClient()||"AI")+" · "+(last.ok===false?"refused ":"")+last.tool+(last.path?" · "+last.path:"")+
+      ? clientName(last)+" · "+(last.ok===false?"refused ":"")+last.tool+(last.path?" · "+last.path:"")+
         " · "+ago(last.at*1000)+" ago"
       : shortPath((S.state&&S.state.workspace)||"");
     R.title=(S.state&&S.state.workspace)||"";
@@ -3683,10 +3784,20 @@ const AI_STATE={
   unknown:"Checking…",
 };
 const aiClient=id=>(S.ai||[]).find(c=>c.id===id)||null;
-/* Only worth naming a client when exactly one could have done it. */
+/* Every tool call now says which client made it, so naming one is a lookup
+   rather than a deduction. loneClient stays as the answer for a call recorded
+   before any of this existed, and for a client that names itself something
+   nobody here recognises. */
 function loneClient(){
   const on=(S.ai||[]).filter(c=>c.state==="connected");
   return on.length===1?on[0].label:null;
+}
+function clientName(entry){
+  if(entry&&entry.by&&entry.by!=="ai"){
+    const c=aiClient(entry.by);
+    if(c) return c.label;
+  }
+  return (entry&&entry.agent)||loneClient()||"An AI client";
 }
 
 async function loadAI(){
@@ -3699,7 +3810,11 @@ function paintAI(){
   $$("#btn-ai .aic").forEach(el=>{
     const c=aiClient(el.dataset.client), st=(c&&c.state)||"unknown";
     el.dataset.state=st;
-    bits.push((c?c.label:el.dataset.client)+": "+AI_STATE[st]);
+    bits.push((c?c.label:el.dataset.client)+": "+
+      (c&&st==="connected"&&c.last_seen
+        ? "Connected. Last heard from "+ago(c.last_seen*1000)+" ago."
+        : c&&st==="connected" ? "Set up, but it has not called in yet."
+        : AI_STATE[st]));
   });
   $("#btn-ai").title=bits.join("\n");
   if(!$("#ovl-settings").hidden) fillAIPanel();
@@ -3716,8 +3831,20 @@ const AI_PILL={
   "other-workspace":"Another workspace", unreadable:"Unreadable",
   unknown:"Checking",
 };
+/* "Configured" and "Connected" are different claims and the card should not
+   make the second on the strength of the first. */
+const aiPill=c=>c.state==="connected"&&!c.last_seen?"Configured":AI_PILL[c.state];
 function aiSay(c){
-  if(c.state==="connected") return "Working on the CVs and the applications in this workspace.";
+  if(c.state==="connected"){
+    /* A config file says a client has been *told* where the server is, not
+       that it ever started it. A tool call is the only evidence the handshake
+       actually happened, so the card reports that instead of implying it. */
+    if(c.last_seen)
+      return "Last heard from "+ago(c.last_seen*1000)+" ago"+
+        (c.agent&&c.agent!==c.label?" ("+c.agent+")":"")+".";
+    return "Set up, but it has not called in yet. Restart it: "+
+      c.restart.replace(/^Restart /,"restart ").replace(/^Start /,"start ");
+  }
   if(c.state==="absent") return "Not connected yet. One click adds it.";
   if(c.state==="elsewhere") return "Set up, but pointing at another copy of CV Studio.";
   if(c.state==="other-workspace")
@@ -3740,7 +3867,8 @@ function fillAIPanel(){
       '<span class="badge"><svg width="19" height="19" viewBox="0 0 24 24"'+
         ' aria-hidden="true"><use href="#'+c.id+'-mark"/></svg></span>'+
       '<div class="who"><b>'+esc(c.label)+'</b>'+
-        '<span class="pill" data-state="'+st+'"><i></i>'+AI_PILL[st]+'</span></div>'+
+        '<span class="pill" data-state="'+(st==="connected"&&!c.last_seen?"unknown":st)+
+          '"><i></i>'+aiPill(c)+'</span></div>'+
       '<div class="say">'+esc(aiSay(c))+'</div>'+
       '<div class="go"><button class="obtn'+(st==="connected"?"":" primary")+
         '" data-connect="'+c.id+'">'+
@@ -3815,11 +3943,158 @@ function paintSkills(){
 function paintAILog(){
   const log=(S.pulse&&S.pulse.mcp&&S.pulse.mcp.recent)||[];
   $("#s-cl-log").innerHTML=log.length
-    ? log.map(r=>'<div'+(r.ok===false?' class="no"':"")+'>'+'<span class="t">'+(r.ok===false?"refused ":"")+esc(r.tool)+'</span>'+
+    ? log.map(r=>'<div'+(r.ok===false?' class="no"':"")+'>'+
+        markHTML({by:r.by||"ai",at:r.at,agent:r.agent},null)+
+        '<span class="t">'+(r.ok===false?"refused ":"")+esc(r.tool)+'</span>'+
         '<span class="p">'+esc(r.path||"")+'</span>'+
-        '<span class="w">'+ago(r.at*1000)+' ago</span></div>').join("")
+        '<span class="w" title="'+esc(clientName(r))+'">'+
+        ago(r.at*1000)+' ago</span></div>').join("")
     : '<div><span class="none">Nothing yet. What a model does in this workspace '+
       'shows up here.</span></div>';
+}
+
+/* ---- provenance ---------------------------------------------------------
+   Who last wrote each field, and which fields no longer say what the base CV
+   says. Both arrive on the document itself, from a sidecar the server keeps;
+   neither is in the YAML, so neither can reach the rendered page.
+
+   Field addresses are the dotted form of the same path the inspector already
+   binds its inputs to, so a mark is a lookup rather than a search. */
+const PROV_LABEL={claude:"Claude",openai:"OpenAI",mistral:"Mistral",
+  ai:"An AI client",you:"You"};
+const provKey=path=>path.join(".");
+function provOf(path){
+  const f=S.prov&&S.prov.fields;
+  return (f&&f[provKey(path)])||null;
+}
+function fromBase(path){
+  return !!(S.prov&&S.prov.baseSet&&S.prov.baseSet.has(provKey(path)));
+}
+/* True when anything *under* this path has been touched, which is what an
+   outline row needs: a section is marked because one of its bullets was. */
+function provUnder(prefix){
+  const f=S.prov&&S.prov.fields;
+  if(!f) return null;
+  const head=provKey(prefix)+".";
+  let best=null;
+  for(const k in f){
+    if(k!==provKey(prefix)&&k.indexOf(head)!==0) continue;
+    if(f[k].by==="you") continue;
+    if(!best||(f[k].at||0)>(best.at||0)) best=f[k];
+  }
+  return best;
+}
+function provHeader(){
+  let best=null;
+  for(const k of HEADER_KEYS){
+    const p=provOf(["cv",k]);
+    if(p&&p.by!=="you"&&(!best||(p.at||0)>(best.at||0))) best=p;
+  }
+  return best;
+}
+function baseHeader(){
+  return HEADER_KEYS.some(k=>fromBase(["cv",k]));
+}
+function baseUnder(prefix){
+  const set=S.prov&&S.prov.baseSet;
+  if(!set) return false;
+  const head=provKey(prefix)+".";
+  for(const k of set) if(k===provKey(prefix)||k.indexOf(head)===0) return true;
+  return false;
+}
+function whoLabel(p){
+  return (p&&(PROV_LABEL[p.by]||p.agent||"An AI client"))||"";
+}
+/* The mark itself. Your own edits draw nothing: the whole point is to pick out
+   what you did not write, and marking everything marks nothing. */
+function markHTML(p,path){
+  let out="";
+  if(p&&p.by&&p.by!=="you"){
+    const was=p.from==null?"":"\nwas: "+String(p.from);
+    out+='<span class="pmark" data-by="'+esc(p.by)+'" title="'+
+      esc(whoLabel(p)+" changed this "+ago(p.at*1000)+" ago"+was)+
+      '">'+(p.by==="ai"?"&#9679;":
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#'+
+        esc(p.by)+'-mark"/></svg>')+'</span>';
+  }
+  if(path&&fromBase(path))
+    out+='<i class="fromb" title="Different from '+
+      esc(baseName())+'"></i>';
+  return out;
+}
+const baseName=()=>{
+  const b=S.prov&&S.prov.base;
+  return b?b.path.split("/").pop():"the base CV";
+};
+
+function setProv(prov){
+  S.prov=prov||null;
+  if(S.prov) S.prov.baseSet=new Set(S.prov.from_base||[]);
+  paintProv();
+}
+
+/* The chip: the whole document's answer, on every tab. */
+function paintProv(){
+  const chip=$("#provchip"), pv=S.prov;
+  if(!pv||(!pv.base&&!pv.last_ai)){ chip.hidden=true; return }
+  const bits=[];
+  if(pv.base)
+    bits.push('<span>from <b>'+esc(baseName())+'</b></span>',
+      '<span class="dot"></span>',
+      '<span><b>'+pv.from_base.length+'</b> changed</span>');
+  if(pv.last_ai){
+    if(bits.length) bits.push('<span class="dot"></span>');
+    bits.push(markHTML(pv.last_ai,null)+'<span>'+esc(whoLabel(pv.last_ai))+', '+
+      ago(pv.last_ai.at*1000)+' ago</span>');
+  }
+  chip.innerHTML=bits.join("");
+  chip.title="What this document owes to something other than your own typing";
+  chip.hidden=false;
+}
+$("#provchip").onclick=()=>provSheet();
+
+/* The long answer. Every field that differs from the base, and every field an
+   AI client wrote, as the names you are actually looking at rather than as
+   paths. Clicking one selects it, which is the point of listing them. */
+function provSheet(){
+  const pv=S.prov||{};
+  const seen=new Set(), rows=[];
+  const add=key=>{
+    if(seen.has(key)) return;
+    seen.add(key);
+    const path=key.split(".").map(k=>/^\d+$/.test(k)?+k:k);
+    const p=(pv.fields||{})[key];
+    rows.push({key,path,p});
+  };
+  (pv.from_base||[]).forEach(add);
+  Object.keys(pv.fields||{}).forEach(k=>{ if(pv.fields[k].by!=="you") add(k) });
+  rows.sort((a,b)=>((b.p&&b.p.at)||0)-((a.p&&a.p.at)||0));
+
+  const body=rows.length?rows.map(r=>
+    '<div class="r" data-sel="'+esc(JSON.stringify(r.path))+'">'+
+      '<span class="w">'+(r.p?markHTML(r.p,null)+esc(whoLabel(r.p))+", "+
+        ago(r.p.at*1000)+" ago":'<i class="fromb"></i>from base')+'</span>'+
+      '<span class="f"><b>'+esc(fieldLabel(r.path.slice(1),S.data))+'</b>'+
+      (r.p&&r.p.from!=null&&String(r.p.from)!==""
+        ?'<s>'+esc(String(r.p.from))+'</s>':"")+'</span></div>').join("")
+    :'<div class="none">Nothing but your own typing.</div>';
+
+  openSheet('<div><h3 id="sheet-title">What is not your own typing</h3><p>'+
+    (pv.base?'Tailored from <b>'+esc(baseName())+'</b>'+
+      (pv.base.missing?', which is no longer there, so the comparison is '+
+        'missing and only the edits below are shown.':'. ')
+      :'')+
+    'None of this is written into the YAML, so none of it prints.</p></div>'+
+    '<div class="provlist">'+body+'</div>'+
+    '<div class="foot"><button class="sbtn primary" data-cancel>Close</button></div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $$("#sheet [data-sel]").forEach(el=>el.onclick=()=>{
+    const path=JSON.parse(el.dataset.sel);
+    if(path[1]==="sections"&&path.length>3)
+      select({kind:"entry",name:path[2],i:+path[3]});
+    else select({kind:"header"});
+    closeSheet();
+  });
 }
 
 /* ---- the workspace changing underneath us -------------------------------
@@ -3846,6 +4121,14 @@ async function pulse(){
     loadAlerts();
   }
 
+  /* A new mark without a new file: an AI client can change the base CV this
+     one is compared against, which moves what "differs from the base" means
+     here without touching this file at all. */
+  if(before.edits!==p.edits&&S.path&&!S.dirty){
+    try{ setProv((await api("/api/doc?path="+encodeURIComponent(S.path))).prov);
+         buildOutline(); buildInspector(); }catch(e){}
+  }
+
   /* A document appearing or disappearing means Claude created or removed one. */
   const names=o=>JSON.stringify(Object.keys(o.docs).sort());
   if(names(before)!==names(p)){
@@ -3867,15 +4150,16 @@ async function pulse(){
   await reopenInPlace();
   toast(whoChanged(p)+" updated this file");
 }
-/* The MCP server is launched by whichever client is using it, and it does not
-   report which. Naming one is only honest when only one could have done it. */
+/* Which client wrote the file that just moved underneath us. The tool call
+   that did it carries its own name now, so this is no longer a guess hedged
+   behind "an AI client" the moment two were configured. */
 function byAI(p){
   const last=p&&p.mcp&&p.mcp.last;
   return !!last&&(Date.now()/1000-last.at)<20;
 }
 function whoChanged(p){
   if(!byAI(p)) return "Something else";
-  return loneClient()||"An AI client";
+  return clientName(p.mcp.last);
 }
 
 /* Reload without losing your place: same selection, same page, same zoom. */
@@ -4106,9 +4390,13 @@ function renderDocs(docs){
         const job=S.jobs.find(j=>j.cv_path===d.path||j.letter_path===d.path);
         return '<button class="row'+(d.path===S.path?" sel":"")+
           '" data-path="'+esc(d.path)+'" title="'+esc(d.path)+
+          (d.base?"\ntailored from "+esc(d.base):"")+
+          (d.ai?"\n"+esc(whoLabel(d.ai))+" worked on this "+
+            ago(d.ai.at*1000)+" ago":"")+
           (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
           '<span class="mark"></span>'+
           '<span class="lbl">'+esc(d.label)+'</span>'+
+          markHTML(d.ai,null)+
           (job?'<span class="tie" title="Linked to '+
             esc(job.title+" · "+job.company)+'"></span>':"")+
           '<span class="ct mono">'+(pp?pp+"pp":"")+'</span></button>';
@@ -4130,6 +4418,7 @@ async function openDoc(path){
   closeOverlays();
   setView("cvs");
   S.path=path; S.dirty=false; S.savedAt=null; S.sel=null; S.openSection=null;
+  S.prov=null; $("#provchip").hidden=true;
   S.render=null; S.renderMs=null; S.fill=null; S.themePages={}; S.zoomAuto=true;
   hideExternalChange();
   /* The Design panel still holds the last document's controls, and its inputs
@@ -4143,6 +4432,7 @@ async function openDoc(path){
     S.doc=doc;
     S.docMtime=doc.mtime;
     S.data=doc.data?JSON.parse(JSON.stringify(doc.data)):null;
+    setProv(doc.prov);
     $("#yaml").value=doc.yaml; paint();
     const dz=(doc.data&&doc.data.design)||{};
     DZ.theme=dz.theme||null;
@@ -4177,18 +4467,25 @@ function buildOutline(){
   $("#outline-label").hidden=false;
   const sections=cv.sections||{};
   let h='<button class="orow'+(S.sel&&S.sel.kind==="header"?" sel":"")+
-        '" data-o="header"><span>Header</span></button>';
+        '" data-o="header"><span>Header</span>'+
+        markHTML(provHeader(),null)+(baseHeader()?'<i class="fromb"></i>':"")+
+        '</button>';
   for(const name of Object.keys(sections)){
     const list=sections[name]||[];
     const on=S.openSection===name;
+    const spath=["cv","sections",name];
     h+='<button class="orow'+(on?" sel":"")+'" data-o="section" data-name="'+esc(name)+'">'+
        '<span>'+esc(sectionLabel(name))+'</span>'+
+       markHTML(provUnder(spath),null)+(baseUnder(spath)?'<i class="fromb"></i>':"")+
        '<span class="ct mono">'+list.length+'</span></button>';
     if(on&&list.length){
-      h+='<div class="okids">'+list.map((it,i)=>
-        '<button class="okid'+(S.sel&&S.sel.kind==="entry"&&S.sel.name===name&&S.sel.i===i
+      h+='<div class="okids">'+list.map((it,i)=>{
+        const epath=["cv","sections",name,i];
+        return '<button class="okid'+(S.sel&&S.sel.kind==="entry"&&S.sel.name===name&&S.sel.i===i
           ?" sel":"")+'" data-o="entry" data-name="'+esc(name)+'" data-i="'+i+'">'+
-        esc(entryTitle(it,i))+'</button>').join("")+'</div>';
+        esc(entryTitle(it,i))+markHTML(provUnder(epath),null)+
+        (baseUnder(epath)?'<i class="fromb"></i>':"")+'</button>';
+      }).join("")+'</div>';
     }
   }
   host.innerHTML=h;
@@ -4238,8 +4535,18 @@ function inputFor(path,value,opts){
     esc(value==null?"":value)+'">';
 }
 function fieldRow(label,path,value,opts){
-  return '<label title="'+esc(label)+'">'+esc(String(label).replace(/_/g," "))+'</label>'+
-    inputFor(path,value,opts);
+  /* The mark sits in the label rather than beside the input: the input is
+     where you type, and anything parked in it reads as part of the value.
+
+     A list is one control here but many fields underneath, so it answers for
+     everything it contains -- otherwise a rewritten bullet shows no mark in
+     the Form tab, where the whole list is a single textarea. */
+  const arr=Array.isArray(value);
+  const mark=arr?markHTML(provUnder(path),null)+
+                 (baseUnder(path)?'<i class="fromb"></i>':"")
+                :markHTML(provOf(path),path);
+  return '<label title="'+esc(label)+'">'+esc(String(label).replace(/_/g," "))+
+    mark+'</label>'+inputFor(path,value,opts);
 }
 /* Monospace is for things you read character by character -- a URL or a
    DOI. A phone number and a date are prose, and setting them in mono next
@@ -4323,10 +4630,12 @@ function buildInspector(){
    editing is the one highlighted, and it can be added to or taken away. */
 function arrayBlock(label,path,list){
   const p=esc(JSON.stringify(path));
-  return '<div class="block"><span class="blabel mono">'+esc(label.replace(/_/g," "))+'</span>'+
+  return '<div class="block"><span class="blabel mono">'+esc(label.replace(/_/g," "))+
+    markHTML(provUnder(path),null)+(baseUnder(path)?'<i class="fromb"></i>':"")+'</span>'+
     '<div class="card" data-arr='+"'"+p+"'"+'>'+
     (list.length?list.map((x,i)=>
-      '<div class="crow" data-i="'+i+'"><span class="cidx mono">'+(i+1)+'</span>'+
+      '<div class="crow" data-i="'+i+'"><span class="cidx mono">'+(i+1)+
+      markHTML(provOf(path.concat(i)),path.concat(i))+'</span>'+
       '<textarea rows="1">'+esc(x==null?"":x)+'</textarea></div>').join("")
       :'<div class="crow"><span class="cidx mono">1</span><textarea rows="1"></textarea></div>')+
     '</div><div style="display:flex;gap:6px">'+
@@ -4537,6 +4846,7 @@ async function save(){
        somebody else having changed the file. */
     S.docMtime=r.mtime; hideExternalChange();
     S.dirty=false; S.savedAt=Date.now();
+    setProv(r.prov);
     $("#yaml").value=r.yaml; paint(); setYamlError(r.parse_error);
     buildOutline(); buildInspector(); if(S.tab==="form") buildForm();
     await doRender();
@@ -4676,6 +4986,54 @@ function paintHits(){
     else if(k==="section") select({kind:"section",name:el.dataset.name});
     else select({kind:"entry",name:el.dataset.name,i:+el.dataset.i});
   });
+  paintPageMarks(wrap,img,left);
+}
+
+/* The mark in the margin, beside the block it belongs to.
+
+   It goes to the left of the text column, which the band map already measures
+   as box.x0 -- that strip is blank on every theme, so the mark reads as an
+   annotation on the page rather than something printed on it. Which it is: the
+   page underneath is the PNG RenderCV produced, and this is a div on top. What
+   you export has never been near it.
+
+   Entry granularity, because that is the granularity of the bands: the probes
+   in cv_map sit at column 0 and a theme nests its bullets inside the entry
+   call, so there is nothing to hang a per-bullet mark on yet. A mark against
+   the job you rewrote is the useful half of that anyway. */
+/* Entries and the header only. A section heading is not a thing anybody edits
+   -- its mark would come from its entries, and it sits directly above the
+   first of them, so marking both puts two marks a few millimetres apart
+   saying the same thing. The outline is where a section answers for itself. */
+function bandProv(b){
+  if(b.k==="header") return provHeader();
+  if(b.k==="section") return null;
+  return provUnder(["cv","sections",b.name,b.i]);
+}
+function paintPageMarks(wrap,img,leftPct){
+  wrap.querySelectorAll(".pgmark").forEach(el=>el.remove());
+  if(!S.prov) return;
+  const pageH=img.naturalHeight/2;
+  const seen=new Set();
+  const html=bandsOn(S.page).map(b=>{
+    const p=bandProv(b);
+    if(!p) return "";
+    /* A block pushed over a page break owns a band on each page it touches;
+       one mark per block per page is the honest count. */
+    const id=b.k+"/"+b.name+"/"+b.i;
+    if(seen.has(id)) return "";
+    seen.add(id);
+    /* The first block of the page reaches up into the top margin, so its y0
+       is zero and a mark placed there hangs off the sheet. Hold it far enough
+       down to sit beside the text it marks. */
+    const top=(Math.max(14,Math.min(pageH,b.y0))/pageH)*100;
+    return '<span class="pgmark" data-by="'+esc(p.by)+'" title="'+
+      esc(whoLabel(p)+" changed "+bandLabel(b)+", "+ago(p.at*1000)+" ago")+
+      '" style="top:'+top.toFixed(3)+'%;left:'+leftPct.toFixed(3)+'%">'+
+      (p.by==="ai"?"&#9679;":'<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#'+
+        esc(p.by)+'-mark"/></svg>')+'</span>';
+  }).join("");
+  wrap.insertAdjacentHTML("beforeend",html);
 }
 
 /* Keep the page in step with a selection made anywhere else, following it to

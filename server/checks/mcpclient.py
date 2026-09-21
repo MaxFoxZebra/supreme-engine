@@ -1,6 +1,6 @@
 """Speak MCP over stdio exactly as Claude Desktop does: spawn the configured
 command, handshake, list the tools, call them, and check what comes back."""
-import json, subprocess, sys, threading, queue, base64, time
+import json, subprocess, sys, threading, queue, base64, time, pathlib
 
 
 class Client:
@@ -111,18 +111,33 @@ if __name__ == "__main__":
     r = call("workspace_info", {})
     check("workspace_info answers", "workspace" in r["result"]["content"][0]["text"])
 
-    r = call("edit_cv_fields", {"path": "profile/hard.yaml",
+    # The document to edit has to be made first: this used to point at a
+    # profile/hard.yaml that nothing ever creates, so every check below it
+    # failed against a file that was not there.
+    doc = "profile/mcp-probe-edit.yaml"
+    call("create_cv", {"name": "mcp-probe-edit", "copy_from": "profile/my-cv.yaml"})
+
+    r = call("edit_cv_fields", {"path": doc,
              "edits": [{"path": ["cv", "headline"], "value": "Edited Over MCP"}]})
     check("edit_cv_fields applies an edit",
-          "Applied 1" in r["result"]["content"][0]["text"],
+          "1 of 1 edit(s) applied" in r["result"]["content"][0]["text"],
           r["result"]["content"][0]["text"][:60])
 
-    r = call("read_cv", {"path": "profile/hard.yaml"})
-    text = r["result"]["content"][0]["text"]
-    check("read_cv shows the edit", "Edited Over MCP" in text)
-    check("comments in the file survived the edit", "#" in text or True)
+    # A patch whose path does not exist used to be skipped and reported as a
+    # success, so a mis-indexed entry was believed by whoever called it.
+    r = call("edit_cv_fields", {"path": doc, "edits": [
+        {"path": ["cv", "headline"], "value": "Second Pass"},
+        {"path": ["cv", "sections", "experience", 44, "company"], "value": "nope"}]})
+    body = r["result"]["content"][0]["text"]
+    check("a patch that lands nowhere is reported, not swallowed",
+          "1 of 2" in body and "NOT APPLIED" in body, body.split("\n")[0])
 
-    r = call("render_cv", {"path": "profile/hard.yaml"})
+    r = call("read_cv", {"path": doc})
+    text = r["result"]["content"][0]["text"]
+    check("read_cv shows the edit", "Second Pass" in text)
+    check("comments in the file survived the edit", "#" in text)
+
+    r = call("render_cv", {"path": doc})
     content = r["result"]["content"]
     kinds = [b.get("type") for b in content]
     check("render_cv returns text and an image", "image" in kinds, ",".join(kinds))
@@ -135,6 +150,27 @@ if __name__ == "__main__":
     check("render_cv reports pages and word count",
           "Pages:" in summary and "Words" in summary,
           summary.split("\n")[1] if "\n" in summary else summary[:40])
+
+    # Who did it, and what it changed. The app draws its marks off both, and
+    # neither is in the YAML, so neither can reach the rendered page.
+    ws = pathlib.Path(args[args.index("--workspace") + 1])
+    log = json.loads((ws / ".cvstudio-mcp.json").read_text())
+    check("the activity log names the client that called",
+          all(e.get("by") for e in log) and log[-1]["by"] == "claude",
+          f"by={log[-1].get('by')} agent={log[-1].get('agent')}")
+
+    edits = json.loads((ws / ".cvstudio-edits.json").read_text())["docs"].get(doc, {})
+    check("the copy remembers what it was tailored from",
+          (edits.get("base") or {}).get("path") == "profile/my-cv.yaml",
+          str((edits.get("base") or {}).get("path")))
+    marked = [e for e in edits.get("edits", []) if e["field"] == ["cv", "headline"]]
+    check("an edited field records its author and what it replaced",
+          bool(marked) and marked[0]["by"] == "claude"
+          and marked[0]["from"] == "Your Role",
+          f"{marked[0]['by']}: {marked[0]['from']!r} -> {marked[0]['to']!r}"
+          if marked else "no record")
+    check("nothing about any of it reached the YAML",
+          "claude" not in text.lower() and "cvstudio" not in text.lower())
 
     r = call("design_options", {})
     check("design_options lists themes",
