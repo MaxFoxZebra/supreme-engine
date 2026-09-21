@@ -78,6 +78,7 @@ itself, where clicking a block edits it and the current selection is outlined.
 | **AI clients** | Whether Claude, OpenAI and Mistral Vibe are wired up to this workspace, in the title bar, one mark and one dot each. Clicking sets them up, and shows what the model has been doing in here |
 | **Skills** | The job-search skills, packaged as uploads for the Claude Desktop app. Claude Code reads them off disk already |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
+| **What the model changed** | A mark beside every field it wrote, in the outline, the inspector, the bullet and the page margin, with what the line said before. A second mark for every field that no longer matches the CV this one was tailored from. Neither is in the YAML, so neither prints |
 
 **Jobs** is `applications.db`: filter by status down the left, six columns of
 what matters across the middle, and one application's details on the right:

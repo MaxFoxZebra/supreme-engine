@@ -144,7 +144,7 @@ ACTIVITY_KEEP = 20
 # comments there would fight edit_cv_fields' ruamel round-trip, pollute files
 # the user owns, and put provenance one theme away from printing.
 EDITS_FILE = ".cvstudio-edits.json"
-EDITS_KEEP = 200            # per document
+EDITS_KEEP = 200            # per document, a backstop under the per-field rule
 EDITS_MAX_AGE = 60 * 60 * 24 * 30
 EDITS_VALUE_CHARS = 300     # how much of a before/after value is worth keeping
 
@@ -721,7 +721,13 @@ def _edits_read() -> dict:
 
 
 def _edits_write(data: dict) -> None:
-    """Bookkeeping must never be what breaks a save, so failures are swallowed."""
+    """Bookkeeping must never be what breaks a save, so failures are swallowed.
+
+    Both halves write this file, so two saves landing together can lose one
+    side's entry to the read-modify-write. The cost of that is a missing mark,
+    not missing work, which is why it is not worth a lock file: the documents
+    themselves are the record, and this only annotates them.
+    """
     try:
         (WORKSPACE / EDITS_FILE).write_text(
             json.dumps(data, separators=(",", ":")), encoding="utf-8")
@@ -881,10 +887,41 @@ def record_edits(path: Path, before: dict | None, after: dict | None,
             "to": _clip(value),
             "to_hash": _hash(value),
         })
+    # Only the newest edit per field is ever shown, so only the newest is kept.
+    # Without this a file saved fifty times carries fifty records of the same
+    # headline, and the sidecar grows with how often you work rather than with
+    # how much there is to say. What it costs is the value a field held two
+    # edits ago, which nothing asks for.
     cutoff = now - EDITS_MAX_AGE
-    doc["edits"] = [e for e in log if (e.get("at") or 0) >= cutoff][-EDITS_KEEP:]
+    newest: dict[str, dict] = {}
+    for edit in log:
+        if (edit.get("at") or 0) < cutoff:
+            continue
+        key = field_key(edit.get("field") or [])
+        held = newest.get(key)
+        if not held or (edit.get("at") or 0) >= (held.get("at") or 0):
+            # Keep the value this field held before anyone started editing it,
+            # rather than before the most recent keystroke: "was: Your Role" is
+            # the useful answer, "was: Solutions Enginee" is not.
+            if held:
+                edit = {**edit, "from": held.get("from")}
+            newest[key] = edit
+    doc["edits"] = sorted(newest.values(),
+                          key=lambda e: e.get("at") or 0)[-EDITS_KEEP:]
     _edits_write(data)
     return fields
+
+
+def _forget_deleted(data: dict) -> bool:
+    """Drop documents that are no longer in the workspace. Returns True if any went.
+
+    Otherwise a workspace churned through fifty tailored copies keeps the marks
+    for all fifty, and the file grows with everything you have ever deleted.
+    """
+    gone = [p for p in data["docs"] if not (WORKSPACE / p).is_file()]
+    for p in gone:
+        del data["docs"][p]
+    return bool(gone)
 
 
 def note_lineage(path: Path, base: str | None) -> None:
@@ -897,6 +934,7 @@ def note_lineage(path: Path, base: str | None) -> None:
     if not base:
         return
     data = _edits_read()
+    _forget_deleted(data)
     doc = data["docs"].setdefault(rel(path), {})
     doc["base"] = {"path": base, "at": time.time()}
     _edits_write(data)

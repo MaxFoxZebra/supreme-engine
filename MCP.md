@@ -53,9 +53,18 @@ Jobs table within a couple of seconds, and if you had unsaved edits of your own 
 instead of letting your next save quietly overwrite the model's work. That file
 is local bookkeeping between the two halves; delete it whenever you like.
 
-It records the tool and the file, but not which client called: MCP does not
-pass that down to the server here. So the app names a client only when exactly
-one is connected, and otherwise says "an AI client".
+It records the tool, the file and **which client called**, so the app names
+the client rather than saying "an AI client". Two answers, because each covers
+what the other cannot: the app writes `--client` into the config it installs,
+since it wrote the config and therefore knows; and the server reads `clientInfo`
+off the MCP handshake for a config written by hand. A client that names itself
+something unrecognised still gets its own title recorded, and is never
+attributed to you.
+
+That is also what the card in **Settings → AI clients** reports. "Configured"
+means a config file points at this build; "Connected, last heard from 4 minutes
+ago" means the client actually started the server and called something. Only
+the second is evidence.
 
 ## The application tracker
 
@@ -221,7 +230,22 @@ A healthy server answers with its name and protocol version.
 
 **It edits real files.** `edit_cv_fields` and `write_cv` write to disk
 immediately. There is no undo inside the app, but the files are plain YAML, so
-keeping the workspace in git gives you a real history. Applications are rows in
+keeping the workspace in git gives you a real history.
+
+**Every edit is marked in the app.** Which fields a model changed, what they
+said before, and which of them no longer match the CV this one was copied from,
+are recorded in `.cvstudio-edits.json` beside the activity log, and drawn in the
+app next to the lines themselves. `create_cv(copy_from=...)` is what records the
+lineage, so duplicating rather than writing a new file from scratch is what
+makes "how does this differ from the base" answerable afterwards.
+
+None of it is written into the YAML, so **none of it prints**: the sidecar is
+local bookkeeping, the marks are drawn in the app, and the PDF comes from
+RenderCV out of the YAML alone.
+
+**A patch that lands nowhere is reported.** `edit_cv_fields` answers with how
+many of the edits it applied and names each one it could not, rather than
+counting a mis-indexed entry as a success. Applications are rows in
 `applications.db` rather than files, so git does not cover those; the Jobs view
 exports them to JSON or CSV.
 

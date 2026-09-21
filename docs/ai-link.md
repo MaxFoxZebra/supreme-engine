@@ -1,7 +1,10 @@
 # The link between the AI clients and the app
 
 An investigation into what is still clunky about the two halves of CV Studio,
-and what to do about it. Nothing here is built yet.
+and what to do about it.
+
+**Phases 0 and 1 are built.** Sections 2 to 5 describe what shipped; sections 6
+to 8 are still a plan. What each phase covers, and what is left, is in section 8.
 
 The app and the MCP server share a workspace folder and nothing else. That
 split is right and should stay. What is missing is not a channel between them;
@@ -352,14 +355,36 @@ resource rather than spending a tool round-trip on it.
 
 ## 8. What to build, in what order
 
-**Phase 0 -- know who.** `--client` in the written config, `clientInfo` as
-fallback, recorded in the activity log. Small, and everything visual depends on
-it. Ships two immediate wins on its own: real client names everywhere, and a
-client card that can prove the connection rather than infer it.
+**Phase 0 -- know who. Built.** `--client` in the written config, `clientInfo`
+off the handshake as the fallback, both recorded in the activity log. Every
+"an AI client" is a name now: the status bar, the reload toast, the conflict
+bar, the activity log. The client card reports "last heard from 4 minutes ago"
+rather than claiming a connection on the strength of having read a config file.
 
-**Phase 1 -- provenance and lineage.** The sidecar, the base pointer, the
-Python `changedFields`, and marks in the inspector, the outline and under the
-document title. Self-contained, and it is what was actually asked for.
+One wrinkle worth remembering: `find_context_parameter` inspects the function
+MCPServer is handed, which is the decorator's wrapper, and `functools.wraps`
+copies the wrapped signature over it. The wrapper has to set `__signature__`
+and `__annotations__` itself. The parameter also cannot start with an
+underscore -- `func_metadata` rejects that outright.
+
+**Phase 1 -- provenance and lineage. Built.** `.cvstudio-edits.json` beside the
+activity log, the base pointer recorded by `create_cv(copy_from=)` and
+`/api/new`, `changed_fields` in Python so both halves measure a change the same
+way, and marks on six surfaces: the document rail, the outline, the inspector's
+field labels, its individual bullets, a chip in the subbar, and the page margin.
+
+Two things came out differently from the plan. Marks needed a third state:
+`last` (newest edit by anyone) and `last_ai` (newest by anyone who is not you)
+diverge the moment you type in a document a model worked on, and the summary
+wants the second -- "Claude, an hour ago" stays true and stays interesting
+after you have edited since. And the page draws marks for entries and the
+header only, not sections: a section's mark comes from its entries and sits
+directly above the first of them, so marking both put two marks a few
+millimetres apart saying the same thing.
+
+Still open from this phase: **per-bullet marks on the rendered page**, which
+need probes inside the entry call in `cv_map._inject` (section 5). The
+inspector has them per bullet already.
 
 **Phase 2 -- tokens.** `cv_outline`, the diff-returning edit, render modes, the
 job-tool limits, `readOnlyHint`, schema trim. Independent of Phase 1 and could
@@ -381,12 +406,19 @@ fallback to the prose rule.
 
 ## 9. Found on the way
 
-- **`apply_patches` swallows failed patches.** A mis-indexed edit is a silent
-  no-op reported as a success, to the model and to the user. See item 2 above.
-- **`MCP.md` is stale on `clientInfo`.** It states the protocol does not pass
-  the client down. Under the pinned `mcp==2.2.0` it does.
+- **`apply_patches` swallowed failed patches.** A mis-indexed edit was a silent
+  no-op reported as a success, to the model and to the user. *Fixed:* it now
+  returns what it applied and what it missed, and `edit_cv_fields` names each
+  path it could not write.
+- **`MCP.md` was stale on `clientInfo`.** It stated the protocol does not pass
+  the client down. Under the pinned `mcp==2.2.0` it does. *Fixed.*
+- **`checks/mcpclient.py` pointed at a `profile/hard.yaml` that nothing
+  creates**, so every assertion below it failed against a missing file.
+  *Fixed:* the check now creates the document it edits.
 - **`_brief()` hides `cv_path` / `letter_path`** from every job tool, so the
   model cannot answer "which CV did I send to Acme?" without a second call.
+  Still open, and wanted by the provenance work: it is the join between a
+  tailored CV and the application it was tailored for.
 - **`render_cv`'s failure string** builds `('Likely cause: ' + hint) if hint
   else ''` inside an f-string, leaving a stray blank line when there is no
   hint. Cosmetic.
