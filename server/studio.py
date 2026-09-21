@@ -2311,7 +2311,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --co-1:#6f6a60; --co-2:#7d766a; --co-3:#63605c; --co-4:#77706a;
   --co-5:#6a6660; --co-6:#807a70;
   --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
-  --fn-band:.34; --fn-flow:.26;
+  --fn-band:.34; --fn-flow:.45;
   --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
   --row-hover:#f1eee6; --spine:#c8c2b3; --bad-line:#e6cfc5;
   /* YAML syntax: the same muted ramp, retuned for a warm ground. Deliberately
@@ -2345,7 +2345,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-  --fn-band:.42; --fn-flow:.18;
+  --fn-band:.42; --fn-flow:.34;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
   --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
   --bad:#f0a189; --bad-bg:#2e1c15;
@@ -2367,7 +2367,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-    --fn-band:.42; --fn-flow:.18;
+    --fn-band:.42; --fn-flow:.34;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
     --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
     --bad:#f0a189; --bad-bg:#2e1c15;
@@ -2935,12 +2935,12 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
 /* The moving highlight. It is the band's own colour at a little more strength
    rather than a white sheen, so a ribbon looks like more of itself passing
    through rather than like something shining on top of it. */
-.sk-flow{fill:none;pointer-events:none;stroke-opacity:var(--fn-flow);
-  stroke-linecap:butt;animation:sk-flow linear infinite;
-  /* Softened, or the striations read as a barcode laid over the ribbon rather
-     than as something moving through it. The blur is what turns an edge into
-     a swell. */
-  filter:blur(2.5px)}
+.sk-flow{fill:none;pointer-events:none;stroke-width:1.7;
+  stroke-opacity:var(--fn-flow);stroke-linecap:round;
+  animation:sk-flow linear infinite}
+/* One filter on the group rather than one per streamline: there are up to
+   eight per band and a filter each would be paid for on every frame. */
+.sk-flows{filter:blur(1.6px)}
 @keyframes sk-flow{to{stroke-dashoffset:calc(var(--len) * -1)}}
 @media(prefers-reduced-motion:reduce){ .sk-flow{display:none} }
 .sk-hit{cursor:pointer}
@@ -6077,24 +6077,48 @@ function drawFunnel(){
      long slow swells and a thin one gets short ones, which is what stops the
      whole chart pulsing in lockstep. A per-link delay staggers them further.
      Anyone who has asked their system not to animate gets none of it. */
-  /* Ripples, not blobs. Scaling the dash to the band's width turned a thick
-     ribbon into a row of lozenges the size of the ribbon itself; a current
-     looks the same whatever the river is carrying, so the pattern is fixed
-     and only the phase varies. Narrow marks across the full width of the
-     band read as striations moving down it. */
-  const DASH=7, GAP=46, LEN=DASH+GAP;
-  const flow=(l,i)=>
-    '<path class="sk-flow '+fnBand(l.tid)+(touches(l)?"":" sk-dim")+
-      '" d="'+path(l)+'" stroke-width="'+Math.max(1,l.width)+
-      '" stroke-dasharray="'+DASH+' '+GAP+'" style="--len:'+LEN+
-      'px;animation-duration:'+(2.4+(i%4)*0.4).toFixed(2)+
-      's;animation-delay:-'+(i*0.53).toFixed(2)+'s"/>';
-  const bands=graph.links.map((l,i)=>
+  /* Streamlines, drawn along the flow rather than across it.
+  
+     A dashed stroke lays its dashes out along the path, but each one is drawn
+     at the full stroke width -- so a short dash on a wide ribbon comes out as
+     a bar standing across the current, and a row of them reads as rungs on a
+     ladder, which is the opposite of moving water. The first version of this
+     made exactly that mistake.
+  
+     Water wants marks elongated in the direction of travel. So each band gets
+     a handful of thin streamlines instead: copies of the same path shifted
+     vertically to sit inside the ribbon, stroked narrow, with dashes long
+     enough to read as streaks. The flow is horizontal, so a vertical shift of
+     the centreline is a parallel line within the band. */
+  const DASH=150, GAP=175, LEN=DASH+GAP;
+  const flow=(l,i)=>{
+    const w=Math.max(1,l.width), d=path(l);
+    /* Enough to read as a surface rather than as scratches on one. Capped at
+       eight the wide bands came out with fifty pixels between streamlines,
+       which is not a current, it is a scuff. */
+    const n=Math.max(1,Math.min(14,Math.round(w/13)));
+    let out="";
+    for(let k=0;k<n;k++){
+      const at=n===1?0:(k/(n-1))-0.5;          /* -0.5 .. 0.5 across the band */
+      const dy=(at*(w-2.5)).toFixed(2);
+      /* Each streamline drifts at its own rate, which is what keeps the band
+         from sliding as one rigid sheet. */
+      const dur=(3.4+((i*3+k)%6)*0.5).toFixed(2);
+      const lag=(((i*7+k*5)%13)*0.42).toFixed(2);
+      out+='<path class="sk-flow '+fnBand(l.tid)+(touches(l)?"":" sk-dim")+
+        '" transform="translate(0,'+dy+')" d="'+d+
+        '" stroke-dasharray="'+DASH+' '+GAP+'" style="--len:'+LEN+
+        'px;animation-duration:'+dur+'s;animation-delay:-'+lag+'s"/>';
+    }
+    return out;
+  };
+  const bands=graph.links.map(l=>
     '<path class="sk-link '+fnBand(l.tid)+
     (touches(l)?"":" sk-dim")+'" d="'+path(l)+
     '" stroke-width="'+Math.max(1,l.width)+'"><title>'+
     esc(l.source.label)+' → '+esc(l.target.label)+': '+l.value+
-    '</title></path>'+flow(l,i)).join("");
+    '</title></path>').join("")+
+    '<g class="sk-flows">'+graph.links.map(flow).join("")+'</g>';
 
   /* The bar alone is a 9px target, so each node gets a hit area over its label
      too -- clicking a band is how you get to the jobs behind it. */
