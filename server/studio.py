@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -2661,9 +2661,23 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .extbar svg{flex:none;color:var(--acc)}
 .extbar .obtn{padding:3px 10px;font-size:12px}
 
-.pane{flex:1;min-height:0;overflow:auto}
-.pane-page{display:grid;justify-items:center;align-content:start;padding:26px;
-  --ed-room:406px}
+/* Source beside the page, with a divider you can drag. The page takes what is
+   left rather than a share of its own: it is the thing being made, and the
+   form only needs to be wide enough to type in. */
+.panes{flex:1;min-width:0;min-height:0;display:flex;--split:46%}
+.pane{min-height:0;overflow:auto}
+.pane-page{flex:1;min-width:0;display:grid;justify-items:center;align-content:start;
+  padding:26px;--ed-room:406px}
+.pane-form,.pane-yaml{flex:none;width:var(--split);min-width:260px}
+/* A hairline you can actually hit: 1px of rule inside 7px of grab area, which
+   is the difference between a divider that drags and one you chase. */
+.split{flex:none;width:7px;cursor:col-resize;touch-action:none;
+  border-left:3px solid transparent;border-right:3px solid transparent;
+  background:var(--rule-strong);background-clip:content-box;
+  transition:background-color .12s}
+.split:hover,.split.on{background-color:var(--acc)}
+.split:focus-visible{outline:2px solid var(--acc);outline-offset:-1px}
+body.dragging{cursor:col-resize;user-select:none}
 /* Room for the editor, made the way a word processor makes room for its
    comment rail: the sheet shifts left and the card sits clear of it, rather
    than landing on top of the paragraph you opened it to read. Padding rather
@@ -2720,8 +2734,11 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .entry.formblock.on{border-left-color:transparent}
 .entry-hd{font-size:12.5px;font-weight:600;margin-bottom:8px;display:flex;gap:8px;
   align-items:baseline}
-.entry-hd button{font-size:12px;color:var(--acc-text);margin-left:auto}
-.entry-hd button:hover{text-decoration:underline}
+/* The same second line the block editor carries, for the same reason: two
+   jobs at one employer are two identical headings without it. */
+.entry-hd .sub{font-weight:400;font-size:11px;color:var(--t500);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.entry-hd .sub:empty{display:none}
 
 .fg{display:grid;grid-template-columns:70px 1fr;gap:8px 10px;align-items:center}
 .fg.wide{grid-template-columns:120px 1fr;align-items:start}
@@ -3543,10 +3560,13 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           title="Keep your unsaved edits. Their version stays on disk.">Keep mine</button>
       </div>
       <div class="subbar">
-        <div class="seg light" id="edtabs" role="tablist" aria-label="Preview mode">
-          <button role="tab" data-tab="page" aria-selected="true">Page</button>
-          <button role="tab" data-tab="form" aria-selected="false">Form</button>
-          <button role="tab" data-tab="yaml" aria-selected="false">YAML</button>
+        <div class="seg light" id="edtabs" role="tablist" aria-label="What edits the page">
+          <button role="tab" data-tab="page" aria-selected="true"
+            title="The page on its own. Click a block to edit it there">Page</button>
+          <button role="tab" data-tab="form" aria-selected="false"
+            title="Fields on the left, the page on the right">Form</button>
+          <button role="tab" data-tab="yaml" aria-selected="false"
+            title="The source on the left, the page on the right">YAML</button>
         </div>
         <button class="prov" id="provchip" hidden></button>
         <button class="prov linkchip" id="linkchip" hidden></button>
@@ -3562,13 +3582,23 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button id="z-in" title="Zoom in" aria-label="Zoom in">+</button>
         </div>
       </div>
-      <div class="pane pane-page" id="pane-page"></div>
-      <div class="pane pane-form" id="pane-form" hidden></div>
-      <div class="pane pane-yaml" id="pane-yaml" hidden>
-        <div class="yamlerr" id="yamlerr" hidden><span></span>
-          <button type="button">Go to line</button></div>
-        <div class="edwrap"><pre id="hl" aria-hidden="true"></pre>
-          <textarea id="yaml" spellcheck="false" aria-label="CV source"></textarea></div>
+      <!-- Source on the left, the page on the right. Form and YAML used to
+           replace the page rather than stand beside it, so the one moment you
+           most want to see the render -- while you are changing the words --
+           was the one moment it was not on screen. The page pane is never
+           hidden now; the tabs decide what stands beside it. -->
+      <div class="panes" id="panes">
+        <div class="pane pane-form" id="pane-form" hidden></div>
+        <div class="pane pane-yaml" id="pane-yaml" hidden>
+          <div class="yamlerr" id="yamlerr" hidden><span></span>
+            <button type="button">Go to line</button></div>
+          <div class="edwrap"><pre id="hl" aria-hidden="true"></pre>
+            <textarea id="yaml" spellcheck="false" aria-label="CV source"></textarea></div>
+        </div>
+        <div class="split" id="split" role="separator" aria-orientation="vertical"
+          aria-label="Resize the editor" aria-valuemin="26" aria-valuemax="68"
+          tabindex="0" hidden></div>
+        <div class="pane pane-page" id="pane-page"></div>
       </div>
     </div>
   </section>
@@ -4558,7 +4588,7 @@ document.addEventListener("pointerdown",e=>{
   if(e.target.closest("#ed,.hit,#outline,#doclist,#edtabs")) return;
   closeEditor();
 });
-addEventListener("resize",()=>{ if(!$("#ed").hidden) placeEditor() });
+
 $("#pane-page").addEventListener("scroll",()=>{
   /* Fixed to the window, so scrolling the sheet moves the block out from under
      it; this walks the card back alongside. */
@@ -4776,6 +4806,11 @@ async function boot(){
   let d;
   try{ d=await api("/api/state") }catch(e){ return window.studioError(e.message) }
   S.state=d;
+  /* Back where you left off. Which half of the split you work in is a habit,
+     not a per-document setting, so it is remembered with the other
+     per-machine conveniences. */
+  const was=prefs().tab;
+  if(was==="form"||was==="yaml") showTab(was);
   renderDocs(d.documents);
   loadJobs(true);
   loadAlerts();
@@ -5006,7 +5041,9 @@ function selectDefault(){
 
 /* Selecting anywhere -- outline, inspector, or the Form tab -- moves the same
    selection, so the three surfaces always agree on what is being edited. */
-function select(sel){
+/* `from` says which pane the selection came from, so that pane is not rebuilt
+   under the hands of whoever is using it. Everything else is the same work. */
+function select(sel,from){
   if(sel&&sel.kind==="section"){
     const list=((S.data.cv.sections||{})[sel.name])||[];
     S.openSection=sel.name;
@@ -5019,13 +5056,22 @@ function select(sel){
      pointing at whatever was selected a moment ago, which showed up as an
      editor that stayed put while the arrows walked the document. */
   trackSelectionOnPage();
+  revealSelectedOnPage();
   /* Only refresh the editor if it is already open. Selecting from the outline
      is navigation -- it moves the highlight on the page and scrolls to it --
      and having that throw a form open over the page every time would put back
      the panel this replaced. */
   if(!$("#ed").hidden) openEditor();
-  if(S.tab==="form") buildForm();   /* carry the mark into the form */
+  /* Rebuilding the form is how the mark gets into it, but not when the form
+     is where the selection came from: that would tear out the field being
+     typed in, taking the caret with it. Move the mark instead. */
+  if(S.tab==="form") from==="form"?markFormBlock():buildForm();
   if(S.tab==="yaml") markYamlSelection();
+}
+function markFormBlock(){
+  const sel=S.sel;
+  $$("#pane-form .formblock").forEach(el=>el.classList.toggle("on",
+    !!sel&&sel.kind==="entry"&&el.dataset.block===sel.name&&+el.dataset.bi===sel.i));
 }
 
 /* ---- the block editor ---------------------------------------------------
@@ -5040,6 +5086,9 @@ function openEditor(){
   const all=blockOrder(), at=all.findIndex(x=>sameSel(x,S.sel));
   $("#ed-prev").disabled=at<=0;
   $("#ed-next").disabled=at<0||at>=all.length-1;
+  /* The sheet changes size here, so it happens before anything is measured:
+     a block measured first is measured where it used to be. */
+  makeRoom(true); refit();
   revealSelectedOnPage();
   placeEditor();
 }
@@ -5049,7 +5098,7 @@ function openEditor(){
    scrolling under the click would be the app moving on its own. */
 function revealSelectedOnPage(){
   const pane=$("#pane-page");
-  const hit=S.tab==="page"&&pane&&pane.querySelector(".pgwrap .hit.sel");
+  const hit=pane&&pane.querySelector(".pgwrap .hit.sel");
   if(!hit) return;
   const p=pane.getBoundingClientRect(), b=hit.getBoundingClientRect();
   const pad=24;
@@ -5063,7 +5112,7 @@ function closeEditor(){
   if(ed.hidden) return;
   ed.hidden=true;
   ed.removeAttribute("style");
-  makeRoom(false);
+  makeRoom(false); refit();
 }
 /* Beside the block, never on top of it: you have to be able to read what you
    are editing.
@@ -5082,15 +5131,18 @@ function closeEditor(){
 function makeRoom(on){
   const pane=$("#pane-page"), img=pane.querySelector(".pg");
   const room=($("#ed").offsetWidth||380)+26;
-  const fits=!!img&&pane.clientWidth-52-room>=img.offsetWidth;
   pane.style.setProperty("--ed-room",room+"px");
+  /* Auto-fit resizes the sheet into whatever is left, so there is always room
+     for the card. A zoom you chose is a fixed size, and the card only stands
+     beside it when it genuinely fits: shrinking your page to make space for a
+     panel would be the app overruling a choice you made. */
+  const fits=S.zoomAuto||(!!img&&pane.clientWidth-52-room>=img.offsetWidth);
   pane.classList.toggle("ed-open",!!on&&fits);
 }
 function placeEditor(){
   const ed=$("#ed");
   const pane=$("#pane-"+S.tab);
   if(!pane) return;
-  if(S.tab==="page") makeRoom(true);
   const paneBox=pane.getBoundingClientRect();
   const hit=S.tab==="page"&&$("#pane-page .pgwrap .hit.sel");
   ed.style.position="fixed";
@@ -5395,7 +5447,7 @@ function buildForm(){
           {multi:true})+'</div>';
       }else{
         h+='<div class="entry formblock'+selMark({kind:"entry",name:name,i:i})+'" data-block="'+esc(name)+'" data-bi="'+i+'"><div class="entry-hd"><b>'+esc(entryTitle(it,i))+'</b>'+
-          '<button data-focus="'+esc(name)+'" data-i="'+i+'">Show on page</button></div>'+
+          '<span class="sub">'+esc(entrySub(it))+'</span></div>'+
           '<div class="fg wide">'+Object.keys(it).map(k=>
             fieldRow(k,["cv","sections",name,i,k],it[k],{mono:MONO_KEYS.test(k)})).join("")+
           '</div></div>';
@@ -5410,50 +5462,107 @@ function buildForm(){
      the form simply never asked. */
   $$("#pane-form textarea").forEach(autoGrow);
   revealSelected($("#pane-form"));
-  /* It used to mean "show this in the panel on the right", which with the
-     panel gone pointed the form at itself. The other half of the document is
-     the page now, so that is where it goes -- and the two views stay one
-     cockpit rather than two ways of opening the same file. */
-  const mapped=!!(S.render&&S.render.map&&S.render.map.length);
-  $$("#pane-form [data-focus]").forEach(b=>{
-    if(!mapped){ b.hidden=true; return }
-    b.onclick=()=>{
-      select({kind:"entry",name:b.dataset.focus,i:+b.dataset.i});
-      showTab("page");
-      openEditor();
-    };
-  });
 }
+/* Put the caret in a field and the page goes to that entry: highlights it, and
+   scrolls to it if it had drifted off. This is what the split is for -- the
+   two halves are one document, not a form and a picture of a form. It replaced
+   a "Show on page" button, which made sense when the page was a tab away and
+   read as furniture once it was sitting right there.
+
+   focusin rather than click: the caret arrives by Tab as often as by mouse. */
+$("#pane-form").addEventListener("focusin",e=>{
+  const block=e.target.closest(".formblock");
+  if(!block||!block.dataset.block) return;
+  const at={kind:"entry",name:block.dataset.block,i:+block.dataset.bi};
+  if(sameSel(at,S.sel)) return;
+  select(at,"form");
+});
 bindFields($("#pane-form"));
 bindFields($("#insp-body"));
 
 /* ---- tabs, zoom and paging ------------------------------------------------ */
 function showTab(tab){
-  /* The card belongs to the page: it is opened by a block and points at one.
-     Form is its own way of editing the same document, and YAML is the text --
-     neither has anything for it to point at, so it goes away rather than
-     floating in a corner with no anchor. */
+  /* The card belongs to the page on its own: it is opened by a block and
+     points at one. Beside a form or the source there is a better place for
+     those fields already -- the pane on the left, which follows the
+     selection -- so the card goes away rather than stacking a third copy of
+     the same entry on top of the second. */
   if(tab!=="page") closeEditor();
   S.tab=tab;
   $$("#edtabs button").forEach(x=>
     x.setAttribute("aria-selected",String(x.dataset.tab===tab)));
-  $("#pane-page").hidden=S.tab!=="page";
-  $("#pane-form").hidden=S.tab!=="form";
-  $("#pane-yaml").hidden=S.tab!=="yaml";
-  $("#pmeta").style.visibility=S.tab==="page"?"":"hidden";
-  if(S.tab==="yaml") paint();
-  if(S.tab==="yaml") markYamlSelection();
-  if(S.tab==="form") buildForm();   /* re-read the model, in case the inspector moved on */
-  if(S.tab==="page") trackSelectionOnPage();  /* the selection may have moved while away */
+  $("#pane-form").hidden=tab!=="form";
+  $("#pane-yaml").hidden=tab!=="yaml";
+  $("#split").hidden=tab==="page";
+  if(tab==="yaml"){ paint(); markYamlSelection() }
+  if(tab==="form") buildForm();   /* re-read the model, in case the page moved on */
+  trackSelectionOnPage();         /* the selection may have moved while away */
+  refit();                        /* the page just got a different amount of room */
+  setPref("tab",tab);
 }
 $$("#edtabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+/* ---- the divider ---------------------------------------------------------
+   Where it sits is the one layout choice in the app, so it is remembered: a
+   form you have to widen again every time you open it is a form you stop
+   using. A share rather than a width, so it survives the window changing
+   size. The stops keep both halves usable -- a 90% form with a sliver of page
+   beside it is not a split view, it is the old tab with a decoration. */
+function setSplit(pct){
+  const v=Math.min(68,Math.max(26,pct));
+  $("#panes").style.setProperty("--split",v.toFixed(2)+"%");
+  $("#split").setAttribute("aria-valuenow",Math.round(v));
+  return v;
+}
+function splitAt(clientX){
+  const b=$("#panes").getBoundingClientRect();
+  return setSplit((clientX-b.left)/b.width*100);
+}
+(()=>{
+  const bar=$("#split");
+  let on=false, frame=0;
+  bar.addEventListener("pointerdown",e=>{
+    on=true; bar.classList.add("on"); bar.setPointerCapture(e.pointerId);
+    document.body.classList.add("dragging");
+    e.preventDefault();
+  });
+  bar.addEventListener("pointermove",e=>{
+    if(!on) return;
+    /* One layout per frame. Dragging fires faster than the page can be
+       re-fitted, and doing the work every event makes the drag feel heavier
+       than the thing it is moving. */
+    if(frame) return;
+    frame=requestAnimationFrame(()=>{ frame=0; splitAt(e.clientX); refit() });
+  });
+  const drop=e=>{
+    if(!on) return;
+    on=false; bar.classList.remove("on");
+    document.body.classList.remove("dragging");
+    if(frame){ cancelAnimationFrame(frame); frame=0 }
+    setPref("split",splitAt(e.clientX));
+    refit();
+  };
+  bar.addEventListener("pointerup",drop);
+  bar.addEventListener("pointercancel",drop);
+  /* Reachable without a mouse, in the steps someone dragging would land on. */
+  bar.addEventListener("keydown",e=>{
+    const step=e.key==="ArrowLeft"?-2:e.key==="ArrowRight"?2:0;
+    if(!step) return;
+    e.preventDefault();
+    const b=$("#panes").getBoundingClientRect();
+    const now=$("#pane-form").hidden?$("#pane-yaml"):$("#pane-form");
+    setPref("split",setSplit((now.offsetWidth/b.width*100)+step));
+    refit();
+  });
+})();
+setSplit(+prefs().split||46);
 $("#z-in").onclick=()=>setZoom(S.zoom+.1);
 $("#z-out").onclick=()=>setZoom(S.zoom-.1);
 /* The readout is also the way back: once you have zoomed, one click refits. */
-$("#z-lvl").onclick=()=>{ S.zoomAuto=true; paintPage() };
+$("#z-lvl").onclick=()=>{ S.zoomAuto=true; refit() };
 $("#pg-prev").onclick=()=>setPage(S.page-1);
 $("#pg-next").onclick=()=>setPage(S.page+1);
-function setZoom(z){ S.zoom=Math.min(3,Math.max(.2,z)); S.zoomAuto=false; paintPage() }
+function setZoom(z){ S.zoom=Math.min(3,Math.max(.2,z)); S.zoomAuto=false; refit() }
 function setPage(i){
   const n=(S.render&&S.render.pngs.length)||0;
   S.page=Math.min(Math.max(0,i),Math.max(0,n-1)); paintPage();
@@ -5535,26 +5644,40 @@ function pageCssWidth(img){ return img.naturalWidth*(2/3) }
    fitting its height into a laptop window puts the body type at about four
    pixels -- unreadable, on the one screen whose whole job is reading it.
    Capped at 150%, where the 144dpi render stops having pixels to spare. */
+/* The width the card is holding, when it is out. Auto-fit has to subtract it:
+   fitting the sheet to the whole pane produces a sheet exactly as wide as the
+   pane, which leaves nothing to shift it into, so the page never made room and
+   the card always ended up over the text. The page fits beside the card. */
+function edRoom(host){
+  return host.classList.contains("ed-open")
+    ? parseFloat(getComputedStyle(host).getPropertyValue("--ed-room"))||0 : 0;
+}
 function fitZoom(host,img){
-  const w=(host.clientWidth-PAGE_GUTTER*2)/pageCssWidth(img);
+  const w=(host.clientWidth-PAGE_GUTTER*2-edRoom(host))/pageCssWidth(img);
   return Math.max(.2,Math.min(1.5,w));
+}
+/* Resizing the sheet is not a new render, and rebuilding the pane for it made
+   the page blink every time you dragged the divider or touched the zoom. The
+   hits and the margin marks are placed in percentages of the wrapper, so they
+   follow the image on their own and only a new render has to redraw them. */
+function refit(){
+  const host=$("#pane-page"), img=host.querySelector(".pg");
+  if(!img||!img.naturalHeight) return;
+  if(S.zoomAuto) S.zoom=fitZoom(host,img);
+  img.style.width=Math.round(pageCssWidth(img)*S.zoom)+"px";
+  $("#z-lvl").textContent=Math.round(S.zoom*100)+"%";
+  $("#z-lvl").classList.toggle("auto",!!S.zoomAuto);
 }
 function paintPage(){
   const host=$("#pane-page"), r=S.render;
   if(!r||!r.pngs.length){ $("#pg-idx").textContent="–"; return }
   const url=r.pngs[S.page]+tok();
-  const draw=img=>{
-    if(S.zoomAuto) S.zoom=fitZoom(host,img);
-    img.style.width=Math.round(pageCssWidth(img)*S.zoom)+"px";
-    $("#z-lvl").textContent=Math.round(S.zoom*100)+"%";
-    $("#z-lvl").classList.toggle("auto",!!S.zoomAuto);
-    paintHits();
-  };
+  const draw=()=>{ refit(); paintHits() };
   host.innerHTML='<div class="pgwrap"><img class="pg" src="'+url+'" alt="Page '+
     (S.page+1)+'"></div>';
   const img=host.querySelector(".pg");
-  if(img.complete&&img.naturalHeight) draw(img);
-  else img.onload=()=>{ if(host.querySelector(".pg")===img) draw(img) };
+  if(img.complete&&img.naturalHeight) draw();
+  else img.onload=()=>{ if(host.querySelector(".pg")===img) draw() };
   const nomap=$("#nomap");
   if(r.map&&r.map.length){ nomap.hidden=true }
   else{
@@ -5570,7 +5693,14 @@ function paintPage(){
 }
 /* Re-fit while the window is being resized, but only while nobody has chosen a
    zoom of their own. */
-addEventListener("resize",()=>{ if(S.zoomAuto&&S.tab==="page") paintPage() });
+/* The page is on screen in every tab now, so it refits in every tab. */
+addEventListener("resize",()=>{
+  /* In this order: the room the card holds decides the fit, the fit decides
+     where the block is, and the block decides where the card goes. */
+  if(!$("#ed").hidden) makeRoom(true);
+  refit();
+  if(!$("#ed").hidden) placeEditor();
+});
 
 /* ---- clicking the page --------------------------------------------------
    Every block of the rendered page is a band, and the bands tile the page, so
@@ -5620,7 +5750,9 @@ function paintHits(){
     if(k==="header") select({kind:"header"});
     else if(k==="section") select({kind:"section",name:el.dataset.name});
     else select({kind:"entry",name:el.dataset.name,i:+el.dataset.i});
-    openEditor();
+    /* Beside a form or the source, clicking a block is navigation: select()
+       has already scrolled the left pane to it and marked it. */
+    if(S.tab==="page") openEditor();
   });
   paintPageMarks(wrap,img,left);
 }
@@ -5676,7 +5808,7 @@ function paintPageMarks(wrap,img,leftPct){
 /* Keep the page in step with a selection made anywhere else, following it to
    whichever page it is actually on. */
 function trackSelectionOnPage(){
-  if(S.tab!=="page"||!S.render||!S.render.map) return;
+  if(!S.render||!S.render.map) return;
   const hit=S.render.map.find(b=>sameBlock(b,S.sel));
   if(hit&&hit.page-1!==S.page){ S.page=hit.page-1; paintPage() }
   else paintHits();
@@ -6601,7 +6733,8 @@ window.addEventListener("resize",()=>{
   if(S.view==="funnel"&&S.funnel){
     clearTimeout(sizeTimer); sizeTimer=setTimeout(drawFunnel,140);
   }
-  if(S.view==="cvs"&&S.zoomAuto) paintPage();
+  /* The page refits in its own resize handler, beside the card that shares the
+     pane with it. Rebuilding it a second time from here only made it blink. */
 });
 
 /* =========================================================================
@@ -7158,6 +7291,40 @@ function selectedLines(){
   }
   return m[sel.name]||null;
 }
+/* The other direction of the same thread. S.doc.lines maps every block to the
+   span of source that holds it; this reads it backwards, so the line the caret
+   is on says which entry you are in and the page can follow the source the way
+   it follows the form. Narrowest span wins, or an entry would always lose to
+   the section around it. */
+function blockAtLine(line){
+  const m=(S.doc&&S.doc.lines)||{};
+  let best=null, width=Infinity;
+  for(const key of Object.keys(m)){
+    const span=m[key];
+    if(!span) continue;
+    const end=Math.max(span[0]+1,span[1]);
+    if(line<span[0]||line>=end) continue;
+    const w=end-span[0];
+    if(w>=width) continue;
+    width=w;
+    const cut=key.lastIndexOf("/");
+    best=key==="header" ? {kind:"header"}
+       : cut<0 ? {kind:"section",name:key}
+       : {kind:"entry",name:key.slice(0,cut),i:+key.slice(cut+1)};
+  }
+  return best;
+}
+/* selectionchange rather than click: the caret arrives by arrow key and by
+   typing at least as often as by mouse. Nothing happens unless it has crossed
+   into a different block, so walking within one entry costs nothing. */
+document.addEventListener("selectionchange",()=>{
+  if(S.view!=="cvs"||S.tab!=="yaml") return;
+  const ta=$("#yaml");
+  if(document.activeElement!==ta) return;
+  const line=ta.value.slice(0,ta.selectionStart).split("\n").length-1;
+  const at=blockAtLine(line);
+  if(at&&!sameSel(at,S.sel)) select(at,"yaml");
+});
 function markYamlSelection(){
   const wrap=$(".edwrap"), ta=$("#yaml");
   if(!wrap||!ta) return;

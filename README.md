@@ -60,17 +60,25 @@ CV, and opens it.
 There are three screens, switched from the control at the top left.
 
 **CVs** is the editor. The left rail lists your documents and, under them, an
-outline of the open one. Beside it is the rendered page, the whole form, or the
-raw YAML. On the page, you edit the document on the document: click any block
-and a card opens beside it with that entry's fields, the page stepping aside to
-make room the way a word processor makes room for a comment. Arrow keys walk
-the card from block to block. The Form tab is the same fields for the whole
-document at once, for when you want to see everything rather than one thing.
-Selecting a section or an entry in one view moves the selection in all of them.
+outline of the open one. The rendered page is always on screen; the tabs choose
+what stands beside it.
+
+**Page** gives it the whole pane and you edit the document on the document:
+click any block and a card opens beside it with that entry's fields, the page
+stepping aside to make room the way a word processor makes room for a comment.
+Arrow keys walk the card from block to block.
+
+**Form** and **YAML** put the fields, or the source, on the left with the page
+on the right, and the page re-renders as you type. Put the caret in a field or
+on a line and the page highlights that entry and scrolls to it; click a block
+on the page and the left pane goes to it. Drag the divider to change the share,
+and it stays where you put it. Selecting an entry in one view selects it in all
+of them.
 
 | | |
 |---|---|
-| **Page / Form / YAML** | The rendered page, every field at once, or the raw file with syntax highlighting |
+| **Page / Form / YAML** | The page on its own, or the page beside every field at once, or beside the raw file with syntax highlighting |
+| **Live** | Edits re-render behind you, so the page beside the form is the page you are making, not the one you started with |
 | **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet. `↑` `↓` walk to the next block, `Esc` closes |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |

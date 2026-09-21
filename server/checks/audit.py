@@ -28,7 +28,10 @@ cls_css = set(re.findall(r"\.([a-zA-Z][\w-]*)", css))
 cls_used = set()
 for attr in re.findall(r'class="([^"{}+]*)"', markup):
     cls_used |= set(attr.split())
-for attr in re.findall(r'class=\?["\']([a-zA-Z][\w \-]*)', js):
+# The markup inside the script is written in JS string literals, so the quote
+# may or may not be backslash-escaped. \? here was a literal question mark, so
+# this matched nothing at all and the whole scan was dead.
+for attr in re.findall(r'class=\\?["\']([a-zA-Z][\w \-]*)', js):
     cls_used |= set(attr.split())
 for m in re.findall(r'classList\.(?:add|remove|toggle)\("([\w-]+)"', js):
     cls_used.add(m)
