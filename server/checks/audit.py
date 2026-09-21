@@ -65,6 +65,13 @@ for name in sorted(set(re.findall(r"function ([a-zA-Z_]\w*)\s*\(", js))):
     if len(re.findall(r"\b" + re.escape(name) + r"\b", js)) < 2:
         P["function defined but never called"].append(name)
 
+# The whole app is one script in one scope, so a second `function foo` does not
+# shadow the first -- it replaces it, everywhere, silently. Every earlier caller
+# then passes the wrong arguments to a function it has never heard of.
+top_level = re.findall(r"^(?:function|const|let) ([a-zA-Z_]\w*)\s*[=(]", js, re.M)
+P["declared twice at the top level"] += sorted(
+    n for n, count in collections.Counter(top_level).items() if count > 1)
+
 # S.<prop> read somewhere but never written anywhere (typo detector)
 state_block = re.search(r"const S=\{(.*?)\n\};", js, re.S)
 declared = set(re.findall(r"^\s{2}(\w+)\s*:", state_block.group(1), re.M)) if state_block else set()

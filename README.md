@@ -60,17 +60,18 @@ CV, and opens it.
 There are three screens, switched from the control at the top left.
 
 **CVs** is the editor. The left rail lists your documents and, under them, an
-outline of the open one. The middle column shows the rendered page, the whole
-form, or the raw YAML. The right panel edits whatever you have selected in the
-outline: its fields, and its bullets one row at a time. Selecting a section or
-an entry anywhere moves the selection everywhere, including on the page
-itself, where clicking a block edits it and the current selection is outlined.
+outline of the open one. Beside it is the rendered page, the whole form, or the
+raw YAML. On the page, you edit the document on the document: click any block
+and a card opens beside it with that entry's fields, the page stepping aside to
+make room the way a word processor makes room for a comment. Arrow keys walk
+the card from block to block. The Form tab is the same fields for the whole
+document at once, for when you want to see everything rather than one thing.
+Selecting a section or an entry in one view moves the selection in all of them.
 
 | | |
 |---|---|
 | **Page / Form / YAML** | The rendered page, every field at once, or the raw file with syntax highlighting |
-| **Click the page** | Every block on the rendered page is a target: click the job you are reading and the inspector is editing it |
-| **Inspector** | The selected entry's fields and bullets, with `+` and `−` to add or drop one |
+| **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet. `↑` `↓` walk to the next block, `Esc` closes |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
@@ -78,7 +79,7 @@ itself, where clicking a block edits it and the current selection is outlined.
 | **AI clients** | Whether Claude, OpenAI and Mistral Vibe are wired up to this workspace, in the title bar, one mark and one dot each. Clicking sets them up, and shows what the model has been doing in here |
 | **Skills** | The job-search skills, packaged as uploads for the Claude Desktop app. Claude Code reads them off disk already |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
-| **What the model changed** | A mark beside every field it wrote, in the outline, the inspector, the bullet and the page margin, with what the line said before. A second mark for every field that no longer matches the CV this one was tailored from. Neither is in the YAML, so neither prints |
+| **What the model changed** | A mark beside every field it wrote, in the outline, the block editor, the bullet and the page margin, with what the line said before. A second mark for every field that no longer matches the CV this one was tailored from. Neither is in the YAML, so neither prints |
 
 **Jobs** is `applications.db`: filter by status down the left, six columns of
 what matters across the middle, and one application's details on the right:

@@ -2662,7 +2662,14 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .extbar .obtn{padding:3px 10px;font-size:12px}
 
 .pane{flex:1;min-height:0;overflow:auto}
-.pane-page{display:grid;justify-items:center;align-content:start;padding:26px}
+.pane-page{display:grid;justify-items:center;align-content:start;padding:26px;
+  --ed-room:406px}
+/* Room for the editor, made the way a word processor makes room for its
+   comment rail: the sheet shifts left and the card sits clear of it, rather
+   than landing on top of the paragraph you opened it to read. Padding rather
+   than a margin, so the pane still scrolls over the whole sheet. Set from
+   script, and only when the sheet can spare the width. */
+.pane-page.ed-open{padding-right:var(--ed-room)}
 #z-lvl{min-width:42px}
 #z-lvl.auto{color:var(--t900)}
 .pgwrap{position:relative;display:block;line-height:0}
@@ -2682,6 +2689,10 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .hit.sel:hover{background:rgba(192,138,62,.21)}
 .hit:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .pane-form{background:var(--app);padding:16px 20px 40px}
+/* The pane is the whole width of the app now that the panel beside it is gone,
+   and a start date stretched across a thousand pixels reads as a bug. Hold the
+   form to a measure you can scan, the way the page tab holds a sheet. */
+#pane-form>*{max-width:880px;margin-inline:auto}
 .pane-yaml{background:var(--app);padding:0;overflow:hidden;display:flex;flex-direction:column}
 
 /* ---------- form -------------------------------------------------------- */
@@ -2734,7 +2745,53 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 /* ---------- inspector --------------------------------------------------- */
 .insp{flex:none;background:var(--panel);border-left:1px solid var(--rule-strong);
   display:flex;flex-direction:column;min-height:0}
-.insp-cvs{width:312px} .insp-funnel{width:296px}
+.insp-funnel{width:296px}
+
+/* ---------- the block editor -------------------------------------------
+   Anchored beside the block it edits rather than parked in a column, so the
+   page gets the whole pane and you edit at the thing you are looking at.
+
+   Fixed to the window, placed from script. Living inside .pgwrap would have
+   made it travel with the sheet for free, but the pane scrolls and clips, and
+   a block near the left edge produced a negative offset that cut the label
+   column off against the rail. The scroll handler walks it instead. */
+.ed{position:fixed;z-index:30;width:380px;max-width:calc(100vw - 48px);
+  display:flex;flex-direction:column;max-height:min(560px,calc(100vh - 140px));
+  background:var(--panel);border:1px solid var(--bd-field);border-radius:10px;
+  box-shadow:0 18px 44px -16px rgba(20,17,10,.42),0 2px 8px -3px rgba(20,17,10,.3);
+  animation:edin .1s ease-out}
+@keyframes edin{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.ed-head{flex:none;display:flex;align-items:flex-start;gap:8px;padding:7px 6px 8px 13px;
+  background:var(--bar);border-bottom:1px solid var(--rule);
+  border-radius:9px 9px 0 0}
+/* Two lines: what the entry is called, and what tells it apart from the one
+   above it. Two jobs at the same employer share a title, so the role and the
+   years carry the difference. */
+.ed-who{min-width:0;display:flex;flex-direction:column;gap:1px;padding-top:2px}
+.ed-who b{font-size:12.5px;font-weight:600;color:var(--t900);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed-who span{font-size:10.5px;color:var(--t500);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed-who span:empty{display:none}
+.ed-head button{width:24px;height:24px;border-radius:5px;color:var(--t500);
+  font-size:12px;line-height:1;flex:none}
+.ed-head button:hover:not(:disabled){background:var(--paper-hover);color:var(--t900)}
+.ed-head button:disabled{opacity:.3}
+.ed-head #ed-close{margin-left:4px}
+.ed-body{flex:1;min-height:0;overflow-y:auto;padding:13px;
+  display:flex;flex-direction:column;gap:13px}
+
+/* Points at the block. Without it the card reads as floating over the page
+   rather than as belonging to the paragraph beside it. */
+.ed::before{content:"";position:absolute;top:var(--ptr,13px);width:8px;height:8px;
+  background:var(--bar);border-left:1px solid var(--bd-field);
+  border-bottom:1px solid var(--bd-field);transform:rotate(45deg)}
+.ed[data-side=right]::before{left:-5px}
+.ed[data-side=left]::before{right:-5px;transform:rotate(225deg)}
+
+/* A document-level fact, so it sits with the other one rather than being
+   redrawn inside every block's editor. */
+.linkchip .dot{width:6px;height:6px}
 
 /* ---------- the application peek ----------------------------------------
    Sized to the record rather than to a habit: wide enough for two columns of
@@ -3359,7 +3416,7 @@ textarea{resize:vertical}
 @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
 @media(max-width:1100px){
-  .rail-cvs{width:200px}.insp-cvs{width:270px}
+  .rail-cvs{width:200px}
   .peek{width:auto;left:0}
   .themegrid{grid-template-columns:repeat(3,1fr)}
 }
@@ -3492,6 +3549,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button role="tab" data-tab="yaml" aria-selected="false">YAML</button>
         </div>
         <button class="prov" id="provchip" hidden></button>
+        <button class="prov linkchip" id="linkchip" hidden></button>
         <span class="nomap" id="nomap" hidden></span>
         <div class="grow"></div>
         <div class="meta mono" id="pmeta">
@@ -3513,13 +3571,29 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <textarea id="yaml" spellcheck="false" aria-label="CV source"></textarea></div>
       </div>
     </div>
-
-    <aside class="insp insp-cvs">
-      <div class="insp-head"><b id="insp-title">Nothing selected</b>
-        <span class="mono" id="insp-meta"></span></div>
-      <div class="insp-body" id="insp-body"></div>
-    </aside>
   </section>
+
+  <!-- The editor for whatever is selected. It used to be a 312px column
+       standing beside the page at all times, holding a form for one entry
+       whether or not you wanted one -- and in the Form tab, holding the same
+       fields the form beside it was already showing. It is a popover now,
+       opened by the block you clicked and anchored beside it, so the page
+       gets the whole pane and you edit at the thing you are looking at. -->
+  <div class="ed" id="ed" hidden role="dialog" aria-label="Edit block">
+    <div class="ed-head">
+      <div class="ed-who">
+        <b id="insp-title"></b>
+        <span id="insp-meta"></span>
+      </div>
+      <div class="grow"></div>
+      <button id="ed-prev" title="Previous block (Up)" aria-label="Previous block"
+        >&#8593;</button>
+      <button id="ed-next" title="Next block (Down)" aria-label="Next block"
+        >&#8595;</button>
+      <button id="ed-close" title="Close (Esc)" aria-label="Close">&#10005;</button>
+    </div>
+    <div class="ed-body" id="insp-body"></div>
+  </div>
 
   <!-- --------------------------------------------------------------- Jobs -->
   <section class="view" id="v-jobs" hidden>
@@ -4346,6 +4420,26 @@ function setProv(prov){
 }
 
 /* The chip: the whole document's answer, on every tab. */
+/* One chip for the whole document, beside the provenance one, rather than a
+   card repeated inside every block's editor. */
+function paintLink(){
+  const chip=$("#linkchip"), j=linkedJob();
+  if(!S.path||!S.jready){ chip.hidden=true; return }
+  if(!j){
+    chip.innerHTML='<span>Link to an application</span>';
+    chip.title="Attach this document to the application it was written for.";
+    chip.hidden=false;
+    chip.onclick=()=>linkJobSheet();
+    return;
+  }
+  chip.innerHTML='<span class="dot '+statusTone(j.status)+'"></span>'+
+    '<span>for <b>'+esc(j.company)+'</b></span>'+
+    '<span class="dot"></span><span>'+esc(prettyStatus(j.status))+'</span>';
+  chip.title="Linked to an application. Click to open it, move it or unlink.";
+  chip.hidden=false;
+  chip.onclick=()=>linkJobSheet();
+}
+
 function paintProv(){
   const chip=$("#provchip"), pv=S.prov;
   if(!pv||(!pv.base&&!pv.last_ai)){ chip.hidden=true; return }
@@ -4430,6 +4524,46 @@ function provSheet(){
        started with nothing to compare against. */
   });
 }
+
+/* Every block of the document, in the order it renders, so the arrows mean
+   "the one after this" rather than "the next thing in some map". */
+function blockOrder(){
+  const cv=S.data&&S.data.cv;
+  if(!cv) return [];
+  const out=[{kind:"header"}];
+  for(const name of Object.keys(cv.sections||{})){
+    const list=cv.sections[name]||[];
+    if(!list.length) out.push({kind:"section",name:name});
+    else list.forEach((_,i)=>out.push({kind:"entry",name:name,i:i}));
+  }
+  return out;
+}
+const sameSel=(a,b)=>!!a&&!!b&&a.kind===b.kind&&a.name===b.name&&a.i===b.i;
+function editorStep(delta){
+  const all=blockOrder();
+  const at=all.findIndex(x=>sameSel(x,S.sel));
+  const next=all[at+delta];
+  if(at<0||!next) return;
+  select(next);
+  if($("#ed").hidden) openEditor();
+}
+$("#ed-prev").onclick=()=>editorStep(-1);
+$("#ed-next").onclick=()=>editorStep(1);
+$("#ed-close").onclick=closeEditor;
+
+/* Dismissal. A click inside the editor, on a block, or on the outline is not
+   a dismissal -- those are all ways of carrying on editing. */
+document.addEventListener("pointerdown",e=>{
+  if($("#ed").hidden||S.view!=="cvs") return;
+  if(e.target.closest("#ed,.hit,#outline,#doclist,#edtabs")) return;
+  closeEditor();
+});
+addEventListener("resize",()=>{ if(!$("#ed").hidden) placeEditor() });
+$("#pane-page").addEventListener("scroll",()=>{
+  /* Fixed to the window, so scrolling the sheet moves the block out from under
+     it; this walks the card back alongside. */
+  if(!$("#ed").hidden) placeEditor();
+});
 
 /* ---- the workspace changing underneath us -------------------------------
    Claude edits the same files this app has open, so the editor has to assume
@@ -4621,6 +4755,17 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){
     if(!$("#sheet").hidden) return closeSheet();
     if(!$("#ovl-design").hidden||!$("#ovl-settings").hidden) return closeOverlays();
+    if(S.view==="cvs"&&!$("#ed").hidden){ e.preventDefault(); return closeEditor() }
+  }
+  /* Arrows walk the document while the editor is open, so you can read a CV
+     block by block without reaching for the outline. Out of the way of a
+     field being typed in. */
+  if(S.view==="cvs"&&!$("#ed").hidden&&
+     (e.key==="ArrowUp"||e.key==="ArrowDown")){
+    const el=document.activeElement;
+    if(el&&el.closest("#ed")&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    e.preventDefault();
+    return editorStep(e.key==="ArrowDown"?1:-1);
   }
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){ e.preventDefault(); save() }
 });
@@ -4699,6 +4844,22 @@ function entryTitle(it,i){
      a publication or a bullet reading "entry 3" in the outline is no use. */
   return it.company||it.institution||it.name||it.title||it.label||it.position||
     it.bullet||("entry "+(i+1));
+}
+/* The line under the title. entryTitle answers "what is this", usually with an
+   employer or a school -- and two jobs at the same company then read
+   identically in the editor and the outline alike. This answers "which one",
+   with the role and the years that actually separate them. */
+const SUB_KEYS=["position","degree","area","title","label","authors"];
+function entrySub(it){
+  if(!it||typeof it!=="object") return "";
+  const top=entryTitle(it,0), out=[];
+  for(const k of SUB_KEYS){
+    const v=it[k];
+    if(typeof v==="string"&&v.trim()&&v.trim()!==top){ out.push(v.trim()); break }
+  }
+  const span=it.date||[it.start_date,it.end_date].filter(Boolean).join(" – ");
+  if(span) out.push(String(span));
+  return out.join(" · ");
 }
 function wordsIn(v){
   if(v==null) return 0;
@@ -4780,7 +4941,7 @@ async function openDoc(path){
               dz.font_family||(dz.text&&dz.text.font_family)||null;
     DZ.size=null;
     setYamlError(doc.parse_error);
-    paintTitle();
+    paintTitle(); paintLink();
     buildOutline();
     selectDefault();
     buildForm();
@@ -4853,10 +5014,123 @@ function select(sel){
   }else if(sel&&sel.kind==="entry"){ S.openSection=sel.name }
   S.sel=sel;
   buildOutline();
-  buildInspector();
+  /* The page first: the editor anchors itself to the highlighted block, and
+     paintHits is what draws it. Placing the card before that happened left it
+     pointing at whatever was selected a moment ago, which showed up as an
+     editor that stayed put while the arrows walked the document. */
   trackSelectionOnPage();
+  /* Only refresh the editor if it is already open. Selecting from the outline
+     is navigation -- it moves the highlight on the page and scrolls to it --
+     and having that throw a form open over the page every time would put back
+     the panel this replaced. */
+  if(!$("#ed").hidden) openEditor();
   if(S.tab==="form") buildForm();   /* carry the mark into the form */
   if(S.tab==="yaml") markYamlSelection();
+}
+
+/* ---- the block editor ---------------------------------------------------
+   Opened by clicking a block on the page, anchored beside it. */
+function openEditor(){
+  const ed=$("#ed");
+  if(!S.sel||!(S.data&&S.data.cv)){ closeEditor(); return }
+  ed.hidden=false;
+  buildInspector();
+  /* Nothing above the first block and nothing below the last, so say so rather
+     than leaving two buttons that silently do nothing at the ends. */
+  const all=blockOrder(), at=all.findIndex(x=>sameSel(x,S.sel));
+  $("#ed-prev").disabled=at<=0;
+  $("#ed-next").disabled=at<0||at>=all.length-1;
+  revealSelectedOnPage();
+  placeEditor();
+}
+/* Walking the document with the arrows has to bring the page along, or the
+   editor fills with an entry you cannot see. Only when the block is actually
+   out of the pane: if you clicked it, it is already in front of you, and
+   scrolling under the click would be the app moving on its own. */
+function revealSelectedOnPage(){
+  const pane=$("#pane-page");
+  const hit=S.tab==="page"&&pane&&pane.querySelector(".pgwrap .hit.sel");
+  if(!hit) return;
+  const p=pane.getBoundingClientRect(), b=hit.getBoundingClientRect();
+  const pad=24;
+  if(b.top>=p.top+pad&&b.bottom<=p.bottom-pad) return;
+  /* Instant, because placeEditor measures the block straight after this and a
+     smooth scroll would hand it a rectangle still in motion. */
+  pane.scrollTop+=b.top-p.top-pad;
+}
+function closeEditor(){
+  const ed=$("#ed");
+  if(ed.hidden) return;
+  ed.hidden=true;
+  ed.removeAttribute("style");
+  makeRoom(false);
+}
+/* Beside the block, never on top of it: you have to be able to read what you
+   are editing.
+
+   Fixed to the viewport rather than absolute inside .pgwrap. Anchoring it to
+   the page sounded right -- it would travel with the sheet for free -- but the
+   pane scrolls and clips, so a block near the left edge produced a negative
+   offset and the whole label column was cut off against the rail. Positioned
+   against the window instead, it cannot be clipped, and the scroll handler
+   re-places it. */
+/* Whether the sheet can spare the width. It depends on the sheet and the pane,
+   not on which block is selected, so it does not flip while the arrows walk
+   the document -- the page shifts once when the card comes out and holds
+   still. On a window too narrow for both, the card overlaps instead: a page
+   pushed half out of its own pane would be worse. */
+function makeRoom(on){
+  const pane=$("#pane-page"), img=pane.querySelector(".pg");
+  const room=($("#ed").offsetWidth||380)+26;
+  const fits=!!img&&pane.clientWidth-52-room>=img.offsetWidth;
+  pane.style.setProperty("--ed-room",room+"px");
+  pane.classList.toggle("ed-open",!!on&&fits);
+}
+function placeEditor(){
+  const ed=$("#ed");
+  const pane=$("#pane-"+S.tab);
+  if(!pane) return;
+  if(S.tab==="page") makeRoom(true);
+  const paneBox=pane.getBoundingClientRect();
+  const hit=S.tab==="page"&&$("#pane-page .pgwrap .hit.sel");
+  ed.style.position="fixed";
+  const w=ed.offsetWidth||380, h=ed.offsetHeight||320, gap=14, edge=12;
+
+  if(!hit){
+    /* Off the page tab, or before a render, there is no block to point at, so
+       it sits in the corner of the pane rather than at nothing. */
+    ed.dataset.side="none";
+    ed.style.left=Math.round(paneBox.right-w-edge)+"px";
+    ed.style.top=Math.round(paneBox.top+edge)+"px";
+    return;
+  }
+  const b=hit.getBoundingClientRect();
+  /* Whichever side has room, preferring the right; never over the rail. */
+  const fitsRight=b.right+gap+w<=paneBox.right+ (innerWidth-paneBox.right) - edge;
+  const fitsLeft=b.left-gap-w>=paneBox.left+edge;
+  let x, side;
+  if(fitsRight){ x=b.right+gap; side="right" }
+  else if(fitsLeft){ x=b.left-gap-w; side="left" }
+  else{
+    /* Neither margin is wide enough, so it overlaps the sheet on the side
+       with the most room rather than being pushed off the pane. */
+    const roomRight=innerWidth-b.right, roomLeft=b.left-paneBox.left;
+    side=roomRight>=roomLeft?"right":"left";
+    x=side==="right"?innerWidth-w-edge:paneBox.left+edge;
+  }
+  ed.dataset.side=side;
+  ed.style.left=Math.round(Math.min(Math.max(x,paneBox.left+edge),
+                                    innerWidth-w-edge))+"px";
+  /* Level with the top of the block, held inside the pane so a block low on
+     the sheet does not open an editor over the status bar. */
+  const top=Math.min(Math.max(b.top,paneBox.top+edge),
+                     Math.max(paneBox.top+edge,paneBox.bottom-h-edge));
+  ed.style.top=Math.round(top)+"px";
+  /* When it had to be held back like that, the card is no longer level with
+     the block, so the pointer slides down the edge to keep aiming at it --
+     otherwise it points confidently at the wrong paragraph. */
+  ed.style.setProperty("--ptr",
+    Math.round(Math.min(Math.max(b.top-top+6,10),Math.max(10,h-20)))+"px");
 }
 
 /* ---- shared field markup ------------------------------------------------ */
@@ -4935,10 +5209,11 @@ function buildInspector(){
   if(!sel){ head.textContent="Nothing selected"; meta.textContent=""; body.innerHTML=""; return }
 
   if(sel.kind==="header"){
-    head.textContent="Header"; meta.textContent=wordsIn(
-      Object.fromEntries(HEADER_KEYS.map(k=>[k,cv[k]])))+" words";
+    head.textContent="Header";
+    meta.textContent=[cv.name,wordsIn(Object.fromEntries(
+      HEADER_KEYS.map(k=>[k,cv[k]])))+" words"].filter(Boolean).join(" · ");
     body.innerHTML='<div class="fg">'+HEADER_KEYS.map(k=>
-      fieldRow(k,["cv",k],cv[k],{mono:MONO_KEYS.test(k)})).join("")+'</div>'+linkedBlock();
+      fieldRow(k,["cv",k],cv[k],{mono:MONO_KEYS.test(k)})).join("")+'</div>';
     wireInspector(); return;
   }
   const list=(cv.sections||{})[sel.name]||[];
@@ -4946,16 +5221,16 @@ function buildInspector(){
     head.textContent=sectionLabel(sel.name);
     meta.textContent=list.length+" item"+(list.length===1?"":"s");
     body.innerHTML='<p class="note muted">This section is empty. Add entries in the '+
-      'YAML tab.</p>'+linkedBlock();
+      'YAML tab.</p>';
     wireInspector(); return;
   }
   const it=list[sel.i];
   head.textContent=sectionLabel(sel.name)+" · "+entryTitle(it,sel.i);
-  meta.textContent=wordsIn(it)+" words";
+  meta.textContent=[entrySub(it),wordsIn(it)+" words"].filter(Boolean).join(" · ");
 
   if(it===null||typeof it!=="object"){
     body.innerHTML='<div class="block"><span class="blabel mono">Text</span>'+
-      inputFor(["cv","sections",sel.name,sel.i],it,{multi:true})+'</div>'+linkedBlock();
+      inputFor(["cv","sections",sel.name,sel.i],it,{multi:true})+'</div>';
     wireInspector(); return;
   }
   const scalars=Object.keys(it).filter(k=>!Array.isArray(it[k]));
@@ -4964,7 +5239,7 @@ function buildInspector(){
   if(scalars.length) h+='<div class="fg">'+scalars.map(k=>
     fieldRow(k,["cv","sections",sel.name,sel.i,k],it[k],{mono:MONO_KEYS.test(k)})).join("")+'</div>';
   arrays.forEach(k=>{ h+=arrayBlock(k,["cv","sections",sel.name,sel.i,k],it[k]) });
-  body.innerHTML=h+linkedBlock();
+  body.innerHTML=h;
   wireInspector();
 }
 
@@ -5012,20 +5287,6 @@ function wireInspector(){
       setAt(S.data,path,arr); touch(); buildInspector();
     };
   });
-  const show=body.querySelector("[data-show-job]");
-  if(show) show.onclick=()=>{ selectJob(show.dataset.showJob); setView("jobs") };
-  const link=body.querySelector("[data-link-job]");
-  if(link) link.onclick=()=>linkJobSheet();
-  const unlink=body.querySelector("[data-unlink-job]");
-  if(unlink) unlink.onclick=async()=>{
-    const j=linkedJob(); if(!j) return;
-    const key=j.cv_path===S.path?"cv_path":"letter_path";
-    try{
-      await post("/api/jobs/update",{id:j.id,[key]:null});
-      await loadJobs(); buildInspector(); renderDocs(S.state.documents);
-      toast("Unlinked");
-    }catch(e){ toast(e.message,true) }
-  };
 }
 
 /* Attaching a document to an application it was written for, from the document
@@ -5036,11 +5297,16 @@ function linkJobSheet(){
     d=>d.path===S.path&&d.group==="Cover letters");
   const key=isLetter?"letter_path":"cv_path";
   const open=S.jobs.filter(j=>!j[key]);
+  const now=linkedJob();
   openSheet(
-    '<div><h3>Link to an application</h3><p>'+esc(docLabel(S.path))+
-    ' becomes the '+(isLetter?"cover letter":"CV")+' on the application you '+
-    'pick. A document belongs to one application, and an application takes one '+
-    'of each.</p></div>'+
+    '<div><h3>'+(now?"Linked application":"Link to an application")+'</h3><p>'+
+    (now
+      ? esc(docLabel(S.path))+' is the '+(isLetter?"cover letter":"CV")+
+        ' on <b>'+esc(now.title)+' · '+esc(now.company)+'</b>. Pick another to '+
+        'move it, or unlink it below.'
+      : esc(docLabel(S.path))+' becomes the '+(isLetter?"cover letter":"CV")+
+        ' on the application you pick. A document belongs to one application, '+
+        'and an application takes one of each.')+'</p></div>'+
     (open.length
       ? '<div class="fg w88"><label>Application</label><select id="lj-job">'+
         open.map(j=>'<option value="'+esc(j.id)+'">'+esc(j.title)+' · '+
@@ -5048,11 +5314,27 @@ function linkJobSheet(){
       : '<div class="fg w88"><p class="note muted">Every application already has '+
         'one. Start a new application, or swap the document over from the Jobs '+
         'screen.</p></div>')+
-    '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
+    '<div class="foot">'+
+    (now?'<button class="sbtn" id="lj-show">Show in Jobs</button>'+
+         '<button class="sbtn danger" id="lj-unlink">Unlink</button>':"")+
+    '<div class="grow"></div>'+
+    '<button class="sbtn" data-cancel>Cancel</button>'+
     '<button class="sbtn" id="lj-new">New application…</button>'+
-    (open.length?'<button class="sbtn primary" id="lj-ok">Link</button>':"")+
+    (open.length?'<button class="sbtn primary" id="lj-ok">'+
+      (now?"Move it":"Link")+'</button>':"")+
     '</div>');
   $("#sheet [data-cancel]").onclick=closeSheet;
+  if(now){
+    $("#lj-show").onclick=()=>{ closeSheet(); setView("jobs"); selectJob(now.id) };
+    $("#lj-unlink").onclick=async()=>{
+      const k=now.cv_path===S.path?"cv_path":"letter_path";
+      try{
+        await post("/api/jobs/update",{id:now.id,[k]:null});
+        await loadJobs(); closeSheet(); renderDocs(S.state.documents);
+        paintTitle(); paintLink(); toast("Unlinked");
+      }catch(e){ toast(e.message,true) }
+    };
+  }
   $("#lj-new").onclick=()=>{ closeSheet(); newJobSheet({[key]:S.path}) };
   const ok=$("#lj-ok");
   if(ok) ok.onclick=async()=>{
@@ -5060,7 +5342,7 @@ function linkJobSheet(){
     try{
       await post("/api/jobs/update",{id:$("#lj-job").value,[key]:S.path});
       await loadJobs(); closeSheet(); buildInspector();
-      renderDocs(S.state.documents); paintTitle();
+      renderDocs(S.state.documents); paintTitle(); paintLink();
       toast("Linked");
     }catch(e){ toast(e.message,true); ok.disabled=false }
   };
@@ -5075,27 +5357,6 @@ const docLabel=p=>{
 function linkedJob(){
   return S.jobs.find(j=>j.cv_path===S.path||j.letter_path===S.path)||null;
 }
-function linkedBlock(){
-  const j=linkedJob();
-  let inner;
-  if(j){
-    inner='<div class="card"><div class="drow">'+
-      '<span style="display:flex;align-items:center;gap:8px;min-width:0">'+
-      '<span class="dot '+statusTone(j.status)+'"></span>'+
-      '<span style="overflow:hidden;text-overflow:ellipsis">'+esc(j.company)+' · '+
-      esc(prettyStatus(j.status))+'</span></span>'+
-      '<span style="display:flex;gap:10px;flex:none">'+
-      '<button class="alink" data-show-job="'+esc(j.id)+'">Show in Jobs</button>'+
-      '<button class="alink" data-unlink-job>Unlink</button></span>'+
-      '</div></div>';
-  }else if(S.jready){
-    inner='<div class="card"><div class="drow"><span class="muted">Not linked to an '+
-      'application</span><button class="alink" data-link-job>Link…</button></div></div>';
-  }else inner='';
-  return inner?'<div class="block ruled"><span class="blabel mono">Linked application</span>'+
-    inner+'</div>':'';
-}
-
 /* ---- the Form tab: the same fields, whole document at once ---------------- */
 /* The selection is the thread through all three views. Losing it when you
    switch tabs turns one cockpit into three unrelated views of a YAML file:
@@ -5134,7 +5395,7 @@ function buildForm(){
           {multi:true})+'</div>';
       }else{
         h+='<div class="entry formblock'+selMark({kind:"entry",name:name,i:i})+'" data-block="'+esc(name)+'" data-bi="'+i+'"><div class="entry-hd"><b>'+esc(entryTitle(it,i))+'</b>'+
-          '<button data-focus="'+esc(name)+'" data-i="'+i+'">Inspect</button></div>'+
+          '<button data-focus="'+esc(name)+'" data-i="'+i+'">Show on page</button></div>'+
           '<div class="fg wide">'+Object.keys(it).map(k=>
             fieldRow(k,["cv","sections",name,i,k],it[k],{mono:MONO_KEYS.test(k)})).join("")+
           '</div></div>';
@@ -5149,16 +5410,33 @@ function buildForm(){
      the form simply never asked. */
   $$("#pane-form textarea").forEach(autoGrow);
   revealSelected($("#pane-form"));
-  $$("#pane-form [data-focus]").forEach(b=>b.onclick=()=>
-    select({kind:"entry",name:b.dataset.focus,i:+b.dataset.i}));
+  /* It used to mean "show this in the panel on the right", which with the
+     panel gone pointed the form at itself. The other half of the document is
+     the page now, so that is where it goes -- and the two views stay one
+     cockpit rather than two ways of opening the same file. */
+  const mapped=!!(S.render&&S.render.map&&S.render.map.length);
+  $$("#pane-form [data-focus]").forEach(b=>{
+    if(!mapped){ b.hidden=true; return }
+    b.onclick=()=>{
+      select({kind:"entry",name:b.dataset.focus,i:+b.dataset.i});
+      showTab("page");
+      openEditor();
+    };
+  });
 }
 bindFields($("#pane-form"));
 bindFields($("#insp-body"));
 
 /* ---- tabs, zoom and paging ------------------------------------------------ */
-$$("#edtabs button").forEach(b=>b.onclick=()=>{
-  S.tab=b.dataset.tab;
-  $$("#edtabs button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
+function showTab(tab){
+  /* The card belongs to the page: it is opened by a block and points at one.
+     Form is its own way of editing the same document, and YAML is the text --
+     neither has anything for it to point at, so it goes away rather than
+     floating in a corner with no anchor. */
+  if(tab!=="page") closeEditor();
+  S.tab=tab;
+  $$("#edtabs button").forEach(x=>
+    x.setAttribute("aria-selected",String(x.dataset.tab===tab)));
   $("#pane-page").hidden=S.tab!=="page";
   $("#pane-form").hidden=S.tab!=="form";
   $("#pane-yaml").hidden=S.tab!=="yaml";
@@ -5167,7 +5445,8 @@ $$("#edtabs button").forEach(b=>b.onclick=()=>{
   if(S.tab==="yaml") markYamlSelection();
   if(S.tab==="form") buildForm();   /* re-read the model, in case the inspector moved on */
   if(S.tab==="page") trackSelectionOnPage();  /* the selection may have moved while away */
-});
+}
+$$("#edtabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 $("#z-in").onclick=()=>setZoom(S.zoom+.1);
 $("#z-out").onclick=()=>setZoom(S.zoom-.1);
 /* The readout is also the way back: once you have zoomed, one click refits. */
@@ -5341,6 +5620,7 @@ function paintHits(){
     if(k==="header") select({kind:"header"});
     else if(k==="section") select({kind:"section",name:el.dataset.name});
     else select({kind:"entry",name:el.dataset.name,i:+el.dataset.i});
+    openEditor();
   });
   paintPageMarks(wrap,img,left);
 }
@@ -5579,7 +5859,10 @@ async function loadJobs(quiet){
     return;
   }
   if(S.view==="jobs") drawJobs();
-  if(S.view==="cvs"&&S.path){ paintTitle(); buildInspector() }
+  if(S.view==="cvs"&&S.path){
+    paintTitle(); paintLink();
+    if(!$("#ed").hidden) buildInspector();
+  }
   /* The rail marks which documents belong to an application, so it has to
      be redrawn once we know what the applications are. */
   if(S.state) renderDocs(S.state.documents);
