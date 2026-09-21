@@ -58,6 +58,30 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The tag names the release; tauri.conf.json names the binaries, and the
+      # updater compares the latter. Tag v0.8.0 over a tree that still says
+      # 0.7.0 and the build succeeds, the release publishes, every asset is
+      # called 0.7.0, and latest.json offers 0.7.0 to a machine already
+      # running it -- so nothing is ever offered and nothing looks wrong.
+      # Fail here instead, before twenty minutes of building three platforms.
+      - name: The tag and the app version must agree
+        if: env.RELEASE_TAG != ''
+        shell: bash
+        run: |
+          want="${RELEASE_TAG#v}"
+          # No python here on purpose: this step runs before setup-python, and
+          # it is the one step that must not fail for a reason of its own.
+          have=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                 src-tauri/tauri.conf.json | head -1)
+          if [ "$want" != "$have" ]; then
+            echo "::error::Tag $RELEASE_TAG wants version $want, but"\
+                 "src-tauri/tauri.conf.json says $have. Bump the version in"\
+                 "tauri.conf.json, Cargo.toml, the cv-studio entry in"\
+                 "Cargo.lock and VERSION in server/studio.py, then tag again."
+            exit 1
+          fi
+          echo "Tag $RELEASE_TAG matches app version $have."
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
