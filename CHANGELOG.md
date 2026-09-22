@@ -8,6 +8,32 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **One workbench instead of two.** Only the title bar is dark now. The
+  sidebars and the footer sit on the same paper as the work, so the window no
+  longer reads as a dark frame bolted around a light page.
+- **The title bar stays the same shape on every screen.** It carries the new
+  mark, the three tabs and the AI clients, and nothing else. Search and New
+  application live in the Applications header, the date range lives on the
+  Funnel, and the editor keeps the tabs, with a crumb back to the list you
+  came from.
+- **The AI clients show their logos.** Connected ones carry a green dot on
+  the corner; ones you have not set up are faded.
+- **Ochre means one thing at a time.** It marks the primary button, the
+  selected row and a follow-up that is due. An application with no CV says
+  "Not tailored" quietly and offers **Tailor a CV** when you are on the row,
+  rather than every row shouting it in orange.
+- **An open application gets the room.** The table narrows to a list of
+  companies and roles on the left, and the record takes the rest of the
+  window, instead of the other way round.
+- **The base CV is a card at the foot of the filters**, not a band across
+  the top of the list.
+- **The Funnel reads at a glance.** The rates are four tiles across the top,
+  the bands are flat colour, and clicking a stage lists its applications
+  beside the chart instead of underneath it.
+- **Settings opens over the app** rather than replacing it.
+
 ## 0.13.0
 
 - **Your documents have a screen.** Until now the only list of them lived

@@ -2366,6 +2366,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "not found"}, 404)
                 if f.suffix == ".woff2":
                     return self._send(200, f.read_bytes(), "font/woff2")
+                if f.suffix == ".png":
+                    return self._send(200, f.read_bytes(), "image/png")
                 ctype = "application/javascript" if f.suffix == ".js" else "text/plain"
                 return self._send(200, f.read_bytes(), ctype + "; charset=utf-8")
             if u.path == "/api/jobs":
@@ -2595,7 +2597,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --co-1:#6f6a60; --co-2:#7d766a; --co-3:#63605c; --co-4:#77706a;
   --co-5:#6a6660; --co-6:#807a70;
   --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
-  --fn-band:.34; --fn-flow:.45;
+  --fn-band:.34;
   --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
   --row-hover:#f1eee6; --spine:#c8c2b3; --bad-line:#e6cfc5;
   /* YAML syntax: the same muted ramp, retuned for a warm ground. Deliberately
@@ -2629,7 +2631,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-  --fn-band:.42; --fn-flow:.34;
+  --fn-band:.42;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
   --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
   --bad:#f0a189; --bad-bg:#2e1c15;
@@ -2651,7 +2653,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-    --fn-band:.42; --fn-flow:.34;
+    --fn-band:.42;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
     --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
     --bad:#f0a189; --bad-bg:#2e1c15;
@@ -2687,19 +2689,33 @@ button:disabled{opacity:.4;cursor:default}
 .grow{flex:1}
 [hidden]{display:none!important}
 
-/* ---------- title bar (46px) ------------------------------------------- */
+/* ---------- title bar (52px) -------------------------------------------
+   The one dark surface left. It frames the window; everything under it is
+   paper. It holds only what is true on every screen -- the mark, the three
+   tabs, the AI clients and the gear -- so its shape never changes. */
 #chrome{
   position:relative;
-  height:46px; flex:none; display:flex; align-items:center; gap:12px; padding:0 13px;
-  background:var(--c700); border-bottom:1px solid #000;
+  height:52px; flex:none; display:flex; align-items:center; gap:24px; padding:0 16px;
+  background:var(--c800); border-bottom:1px solid #000;
   -webkit-app-region:drag; user-select:none;
 }
-#chrome button,#chrome input,#chrome .seg{-webkit-app-region:no-drag}
+#chrome button,#chrome input,#chrome .tabs{-webkit-app-region:no-drag}
 .lights{display:flex;gap:7px;padding-right:5px}
 .lights button{width:11px;height:11px;border-radius:50%;background:var(--c400);
   transition:background .12s}
 .lights button:hover{background:#6c6960}
 .lights #w-close:hover{background:#c0392b}
+.brand{display:flex;align-items:center;gap:9px;flex:none;font-size:14px;
+  font-weight:600;color:var(--cw)}
+.brand img{display:block}
+/* Tabs, underlined. A pill track here read as one more control among the
+   buttons; an underline reads as where you are. */
+.tabs{display:flex;align-self:stretch;gap:2px}
+.tabs button{padding:0 12px;font-size:13.5px;color:var(--c200);
+  box-shadow:inset 0 -2px 0 transparent}
+.tabs button:hover{color:var(--c050)}
+.tabs button[aria-selected=true]{color:var(--cw);font-weight:500;
+  box-shadow:inset 0 -2px 0 var(--acc)}
 
 /* segmented control, dark */
 .seg{display:flex;gap:1px;background:var(--c900);border-radius:5px;padding:2px}
@@ -2707,121 +2723,128 @@ button:disabled{opacity:.4;cursor:default}
   white-space:nowrap}
 .seg button:hover{color:var(--c050)}
 .seg button[aria-selected=true]{background:var(--c500);color:var(--c050);font-weight:500}
-.seg.tight button{padding:4px 12px;font-size:12px}
 
-/* Centred on the window, not on whatever space the buttons left over --
-   otherwise it drifts as the per-view actions change width. */
-.doctitle{position:absolute;left:50%;transform:translateX(-50%);
-  display:flex;align-items:baseline;gap:9px;max-width:38%;min-width:0;
-  overflow:hidden;pointer-events:none}
-.doctitle .t{font-size:13px;font-weight:500;color:var(--c050);white-space:nowrap;
+/* A screen's own header: what it is, how many, and what you can do there. */
+.phead{flex:none;display:flex;align-items:center;gap:12px;padding:20px 24px 14px}
+.phead h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em;
+  color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcount{font-size:14px;color:var(--t500);font-variant-numeric:tabular-nums}
+
+/* The editor's header: the crumb back to the list, the document, its actions. */
+.docbar{height:52px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
+  background:var(--app);border-bottom:1px solid var(--rule)}
+.crumb{font-size:14px;color:var(--t600);flex:none}
+.crumb:hover{color:var(--t900);text-decoration:underline}
+.crumb-sep{color:var(--t400);font-size:14px}
+.doctitle{display:flex;align-items:baseline;gap:9px;min-width:0;overflow:hidden}
+.doctitle .t{font-size:14px;font-weight:600;color:var(--t900);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
-.doctitle .f{font-size:11px;color:var(--c300);white-space:nowrap;flex:none}
-/* The way out of the editor, in the slot the view switcher uses on the screens
-   that have one. Its label is fixed rather than naming the application: the
-   title beside it already does that, and a width that changes per document
-   would move the whole bar every time you opened one. */
-.back{flex:none}
-/* The action cluster, as two halves that swap whole. */
+.doctitle .f{font-size:11.5px;color:var(--t500);white-space:nowrap;flex:none}
 .acts{display:flex;align-items:center;gap:8px}
+.docbar .obtn{height:34px;padding:0 13px;font-size:13px;font-weight:500;color:var(--t900)}
 
-.search{display:flex;align-items:center;gap:8px;width:220px;border:1px solid var(--c500);
-  border-radius:5px;background:var(--c900);padding:4px 10px}
-.search input{border:0;background:none;font-size:12.5px;color:var(--c050);width:100%;padding:0}
-.search input::placeholder{color:var(--c300)}
-.search:focus-within{border-color:var(--acc)}
+.search{display:flex;align-items:center;gap:8px;width:240px;height:34px;padding:0 11px;
+  border:1px solid var(--bd-field);border-radius:8px;background:var(--field);color:var(--t500)}
+.search input{border:0;background:none;font-size:13px;color:var(--t900);width:100%;padding:0}
+.search input::placeholder{color:var(--t500)}
+.search:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
 
 .cbtn{font-size:12px;color:var(--c100);padding:4px 11px;border:1px solid var(--c500);
   border-radius:5px;white-space:nowrap}
 .cbtn:hover:not(:disabled){border-color:var(--c-hover);color:#fff}
-.cbtn.icon{padding:4px 8px;display:grid;place-items:center}
+.cbtn.icon{width:32px;height:32px;padding:0;border:0;border-radius:8px;
+  display:grid;place-items:center}
+.cbtn.icon:hover:not(:disabled){background:var(--c600)}
 
 /* The AI clients sit in the chrome because whether they are connected is a
-   running state of the app, not a setting you visit once. One mark each, each
-   with its own dot. Claude's mark keeps its own colour so it reads as Claude's
-   rather than ours; the placeholder ring takes the chrome's. */
-.cbtn.ai{display:flex;align-items:center;gap:10px;padding:4px 9px}
-.aic{display:flex;align-items:center;gap:4px}
-.aic svg{flex:none}
+   running state of the app, not a setting you visit once. One mark each, and
+   the state rides on the mark: a green dot on its corner when connected, a
+   red one when something is wrong, and a faded mark with no dot when it is
+   not set up. Claude's mark keeps its own colour so it reads as Claude's. */
+.cbtn.ai{display:flex;align-items:center;gap:13px;height:32px;padding:0 13px;
+  border-radius:16px}
+.aic{position:relative;display:flex}
+.aic svg{flex:none;width:16px;height:16px}
 .aic[data-client=claude] svg{color:#D97757}
 /* The same tile as in the settings badge, at dot size. See the note there. */
-.aic[data-client=hermes] svg{width:15px;height:15px;padding:2px;
-  box-sizing:border-box;background:#fff;color:#000;border-radius:3px}
-.aic .dot{width:6px;height:6px;border-radius:50%;background:var(--dot-idle);
-  flex:none;transition:background .15s}
+.aic[data-client=hermes] svg{padding:2px;box-sizing:border-box;background:#fff;
+  color:#000;border-radius:3px}
+.aic .dot{position:absolute;right:-3px;bottom:-3px;width:7px;height:7px;
+  border-radius:50%;background:var(--dot-idle);box-shadow:0 0 0 2px var(--c800);
+  transition:background .15s}
 .aic[data-state=connected] .dot{background:var(--fn-won)}
 .aic[data-state=elsewhere] .dot,
 .aic[data-state=other-workspace] .dot,
 .aic[data-state=unreadable] .dot{background:var(--bad)}
 .aic[data-state=absent] svg,.aic[data-state=unknown] svg{opacity:.45}
-.pbtn{font-size:12px;color:var(--c800);padding:5px 13px;border-radius:5px;background:var(--acc);
-  font-weight:500;white-space:nowrap}
+.aic[data-state=absent] .dot,.aic[data-state=unknown] .dot{display:none}
+.pbtn{display:inline-flex;align-items:center;height:34px;padding:0 15px;border-radius:8px;
+  font-size:13px;font-weight:600;color:var(--c800);background:var(--acc);white-space:nowrap}
 .pbtn:hover:not(:disabled){background:var(--acc-hover)}
 
 /* ---------- shell ------------------------------------------------------ */
 main{flex:1;min-height:0;display:flex;background:var(--app)}
 .view{flex:1;display:flex;min-height:0;min-width:0;position:relative}
-.rail{flex:none;background:var(--c650);border-right:1px solid #000;display:flex;
+.rail{flex:none;background:var(--panel);border-right:1px solid var(--rule);display:flex;
   flex-direction:column;min-height:0;overflow-y:auto}
-.rail-cvs{width:230px} .rail-jobs{width:196px;padding:12px 7px;gap:1px}
-.rail-label{padding:14px 13px 7px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--c300)}
-.rail-jobs .rail-label{padding:5px 9px 7px}
-.rail-jobs .rail-label+.rail-label,.rail-jobs .rail-label:not(:first-child){padding-top:16px}
+.rail-cvs{width:232px;padding-bottom:10px} .rail-jobs{width:220px;padding:14px 10px 12px;gap:1px}
+.rail-label{padding:16px 17px 6px;font-size:12px;font-weight:600;color:var(--t500)}
+.rail-jobs .rail-label{padding:4px 10px 6px}
+.rail-jobs .rail-label+.rail-label,.rail-jobs .rail-label:not(:first-child){padding-top:20px}
 .rail-list{display:flex;flex-direction:column;padding:0 7px}
 /* group headings inside a rail list: quieter than the rail's own label, so
    the documents stay the thing you read and the kinds just separate them */
-.rail-sub{padding:12px 10px 4px;font-size:10px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--c300)}
+.rail-sub{padding:12px 10px 4px;font-size:11.5px;color:var(--t500)}
 .rail-list>.rail-sub:first-child{padding-top:2px}
 /* a document that belongs to an application wears a small ochre tie */
 .row .tie{width:5px;height:5px;border-radius:50%;background:var(--acc);
   flex:none;opacity:.75}
 
 
-/* a sidebar row: 3px marker, label, mono count */
-.row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:5px;
+/* A sidebar row. Selected lifts onto the field colour, the way a chosen card
+   sits on a desk, in both rails alike. */
+.row{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;
   text-align:left;width:100%}
-.row:hover{background:var(--c550)}
-.row .mark{width:3px;height:15px;border-radius:2px;background:transparent;flex:none}
-.row .lbl{font-size:13px;color:var(--c100);flex:1;overflow:hidden;text-overflow:ellipsis;
+.row:hover{background:var(--paper-hover)}
+.row .mark{display:none}
+.row .lbl{font-size:13.5px;color:var(--t700);flex:1;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
-.row .ct{font-size:10.5px;color:var(--c300);flex:none}
+.row .ct{font-size:12px;color:var(--t500);flex:none;font-variant-numeric:tabular-nums}
 /* Attention borrows the ochre already used for an overdue follow-up rather
    than introducing a second warning colour. The section hides itself when
    every bucket is empty, so its presence is the signal and it does not need
    to shout. The count carries the colour; the labels stay ordinary text. */
 .rail-label.attn{color:var(--acc-text)}
 #attentionlist .row .ct{color:var(--acc-text);font-variant-numeric:tabular-nums}
-#attentionlist .row.sel .ct{color:var(--acc-text-dark)}
-.row.sel{background:var(--c450)}
-.row.sel .mark{background:var(--acc)}
-.row.sel .lbl{color:var(--cw)}
-.row.sel .ct{color:var(--c200)}
+.row.sel,.row.sel:hover{background:var(--field);
+  box-shadow:0 1px 2px rgba(27,26,23,.08),0 0 0 1px var(--bd-inner)}
+.row.sel .lbl{color:var(--t900);font-weight:600}
+.row.sel .ct{color:var(--t600)}
 
 /* outline rows sit one level in; the active section shows its entries */
-.orow{display:flex;justify-content:space-between;gap:8px;padding:5px 8px 5px 20px;
-  border-radius:5px;font-size:12.5px;color:var(--c100);text-align:left;width:100%}
-.orow:hover{background:var(--c550)}
-.orow.sel{background:var(--c550);color:var(--cw)}
-.orow .ct{font-size:10.5px;color:var(--c300);flex:none}
-.orow.sel .ct{color:var(--c200)}
+.orow{display:flex;justify-content:space-between;gap:8px;padding:6px 10px 6px 20px;
+  border-radius:7px;font-size:13px;color:var(--t700);text-align:left;width:100%}
+.orow:hover{background:var(--paper-hover)}
+.orow.sel{background:var(--field);color:var(--t900);font-weight:600;
+  box-shadow:0 1px 2px rgba(27,26,23,.08),0 0 0 1px var(--bd-inner)}
+.orow .ct{font-size:11.5px;color:var(--t500);flex:none;font-weight:400}
+.orow.sel .ct{color:var(--t600)}
 .okids{display:flex;flex-direction:column;padding:2px 0}
-.okid{padding:4px 8px 4px 32px;font-size:12px;color:var(--c200);text-align:left;width:100%;
-  border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.okid:hover{background:var(--c550)}
-.okid.sel{color:var(--acc)}
+.okid{padding:5px 8px 5px 32px;font-size:12.5px;color:var(--t600);text-align:left;width:100%;
+  border-radius:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.okid:hover{background:var(--paper-hover)}
+.okid.sel{color:var(--acc-text);font-weight:500}
 
 /* page budget */
-.budget{padding:13px;border-top:1px solid var(--c800);display:flex;flex-direction:column;
+.budget{padding:13px 17px;border-top:1px solid var(--rule);display:flex;flex-direction:column;
   gap:7px;flex:none}
 .budget .brow{display:flex;justify-content:space-between;align-items:baseline}
-.budget .pp{font-size:12.5px;color:var(--cw)}
-.budget .ww{font-size:11px;color:var(--c300)}
+.budget .pp{font-size:13px;font-weight:500;color:var(--t900)}
+.budget .ww{font-size:11px;color:var(--t500)}
 .budget .bar{display:flex;gap:2px}
-.budget .bar i{height:5px;flex:1;background:var(--c300);border-radius:1px}
+.budget .bar i{height:5px;flex:1;background:var(--bd-field);border-radius:1px}
 .budget .bar i.on{background:var(--acc)}
-.budget .cap{font-size:11.5px;color:var(--c200);line-height:1.4}
+.budget .cap{font-size:12px;color:var(--t600);line-height:1.4}
 
 /* ---------- centre column ---------------------------------------------- */
 .centre{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;
@@ -3101,37 +3124,55 @@ body.dragging{cursor:col-resize;user-select:none}
    fields, capped so it never swallows the list it belongs to. It is not modal
    -- the table underneath stays live, and clicking another row moves the peek
    to it rather than stacking a second one. */
+/* Open, the record gets the room: the table narrows to a list of who and
+   where, just wide enough to arrow through, and the record takes the rest. It
+   used to be the other way round -- the record at 46% and the table squeezed
+   beside it into "M.", "D.", "No C...". */
+#v-jobs{--peek-w:max(460px,calc(100% - 600px))}
 .peek{position:absolute;top:0;right:0;bottom:0;z-index:40;
-  width:clamp(420px,46vw,860px);display:flex;flex-direction:column;
-  background:var(--panel);border-left:1px solid var(--rule-strong);
-  box-shadow:-18px 0 40px -24px rgba(0,0,0,.55);animation:peekin .12s ease-out}
+  width:var(--peek-w);display:flex;flex-direction:column;
+  background:var(--app);border-left:1px solid var(--rule);
+  animation:peekin .12s ease-out}
 @keyframes peekin{from{transform:translateX(10px);opacity:.4}to{transform:none;opacity:1}}
-.peek-head{flex:none;display:flex;align-items:center;gap:14px;padding:0 6px 0 16px;
-  height:40px;background:var(--bar);border-bottom:1px solid var(--rule-strong)}
-.peek-who{flex:1;min-width:0;display:flex;align-items:baseline;gap:9px}
-.peek-who b{font-size:13.5px;font-weight:600;color:var(--t900);flex:none;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
-.peek-who span{font-size:12.5px;color:var(--t600);overflow:hidden;
+.peek-head{flex:none;display:flex;align-items:center;gap:14px;padding:0 12px 0 24px;
+  height:64px;border-bottom:1px solid var(--rule)}
+.peek-who{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.peek-who b{font-size:18px;font-weight:600;letter-spacing:-.01em;color:var(--t900);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.peek-who span{font-size:13px;color:var(--t600);overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-.peek-nav{flex:none;display:flex;align-items:center;gap:2px}
-.peek-nav button{width:26px;height:26px;border-radius:5px;color:var(--t500);
-  font-size:13px;line-height:1}
+.peek-nav{flex:none;display:flex;align-items:center;gap:4px}
+.peek-nav button{width:34px;height:34px;border-radius:8px;color:var(--t600);
+  font-size:14px;line-height:1;border:1px solid var(--bd-field);background:var(--field)}
 .peek-nav button:hover:not(:disabled){background:var(--paper-hover);color:var(--t900)}
 .peek-nav #jpk-idx{font-size:11px;color:var(--t500);padding:0 5px;min-width:44px;
   text-align:center}
 .peek-nav #jpk-close{margin-left:6px}
-.peek-body{flex:1;min-height:0;overflow-y:auto;padding:16px;
-  display:flex;flex-direction:column;gap:16px}
+.peek-body{flex:1;min-height:0;overflow-y:auto;padding:22px 24px;
+  display:flex;flex-direction:column;gap:20px}
 /* The peek is absolutely positioned, so the table has to be told to stop
    underneath it. Giving way rather than being covered means the row you are
    arrowing through stays readable beside the record it opened. */
-.peeking .tablewrap{margin-right:clamp(420px,46vw,860px)}
+.peeking .tablewrap{margin-right:var(--peek-w)}
 @media(max-width:1100px){ .peeking .tablewrap{margin-right:0} }
+/* The compact list: company over role, and the status as its dot alone. */
+.peeking .phead .search,.peeking #btn-newjob,.peeking .thead{display:none}
+.peeking .trow{grid-template-columns:minmax(0,1fr) 28px;grid-template-rows:auto auto;
+  height:auto;padding:9px 0;row-gap:1px}
+.peeking .trow>:nth-child(1){grid-column:1;grid-row:1}
+.peeking .trow>:nth-child(2){grid-column:1;grid-row:2;padding-left:49px;
+  font-size:12px;color:var(--t500)}
+.peeking .trow>:nth-child(2) b{font-weight:400}
+.peeking .trow>:nth-child(3),.peeking .trow>:nth-child(5),
+.peeking .trow>:nth-child(6){display:none}
+.peeking .trow>:nth-child(4){grid-column:2;grid-row:1/span 2;font-size:0;padding:0}
 
 /* Two columns once there is room for two. Below that it stacks, which is the
    old behaviour and still correct on a small window. */
-.peek .fg2{display:grid;grid-template-columns:78px minmax(0,1fr);gap:9px 11px;
+.peek .fg2{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px 12px;
   align-items:center}
+.peek .fg2 input,.peek .fg2 select,.peek .statusctl select{min-height:36px;
+  border-radius:8px;font-size:13px}
 .peek-grid{flex:1;min-height:0;display:grid;grid-template-columns:1fr;gap:16px}
 @media(min-width:1280px){
   .peek-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px 22px}
@@ -3162,10 +3203,11 @@ body.dragging{cursor:col-resize;user-select:none}
   flex-direction:column;gap:14px}
 .block{display:flex;flex-direction:column;gap:7px}
 .block.ruled{padding-top:12px;border-top:1px solid var(--rule)}
-.blabel{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--t500);font-weight:500}
+/* Section labels read as headings, in the interface face, rather than as
+   spaced-out capitals in the code face. */
+.blabel{font-size:13px;color:var(--t900);font-weight:600}
 
-.card{border:1px solid var(--bd-field);border-radius:4px;background:var(--field);overflow:hidden}
+.card{border:1px solid var(--bd-field);border-radius:10px;background:var(--field);overflow:hidden}
 .card>*+*{border-top:1px solid var(--bd-inner)}
 .crow{display:flex;gap:9px;padding:8px 10px;align-items:flex-start}
 .crow .cidx{font-size:10.5px;color:var(--t400);padding-top:2px;flex:none;
@@ -3187,7 +3229,7 @@ body.dragging{cursor:col-resize;user-select:none}
 .mini{width:24px;height:21px;display:grid;place-items:center;border:1px solid var(--bd-field);
   border-radius:4px;background:var(--field);font-size:13px;color:var(--t700);flex:none}
 .mini:hover:not(:disabled){background:var(--paper-hover)}
-.obtn{font-size:12px;padding:5px 11px;border:1px solid var(--bd-field);border-radius:4px;
+.obtn{font-size:12px;padding:5px 11px;border:1px solid var(--bd-field);border-radius:6px;
   background:var(--field);color:var(--t700)}
 .obtn:hover:not(:disabled){background:var(--paper-hover)}
 
@@ -3244,62 +3286,58 @@ body.dragging{cursor:col-resize;user-select:none}
 .kv .v.acc{color:var(--acc-text)}
 
 /* ---------- status bar (23px) ------------------------------------------- */
-#status{height:23px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
-  background:var(--c700);font-size:10.5px;color:var(--c300);user-select:none}
+/* On paper, under a hairline: it reports on the work, so it sits with it
+   rather than closing a dark frame around it. */
+#status{height:24px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
+  background:var(--panel);border-top:1px solid var(--rule);font-size:11px;
+  color:var(--t500);user-select:none}
 #status .sep::before{content:"\00b7"}
 /* a decision you just took about someone else's edit, not routine chatter */
 #st-right.said{color:var(--acc-text);font-weight:500}
 /* the MCP boundary having just stopped something */
 #st-right.blocked{color:var(--bad);font-weight:500}
-#status .warn{color:var(--acc-text-dark)}
+#status .warn{color:var(--acc-text)}
 
 /* ---------- jobs table --------------------------------------------------- */
 .tablewrap{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;
   background:var(--app)}
-/* The base CV, pinned above the applications it feeds. It is not a row of the
-   table -- it is the thing the table's rows are copies of -- so it reads as a
-   header band rather than a first entry, and it stays put while they scroll. */
-/* It used to be a 38px band three shades from the table header, with the
-   document's name set *smaller* than the company names it is the parent of,
-   and its buttons pinned a thousand pixels away at the other edge. It was
-   there and nobody could see it. Now it is its own surface, the name outranks
-   the rows beneath it, and the actions sit beside the name where the eye
-   already is. */
-.baserow{flex:none;display:flex;align-items:center;gap:10px;min-height:46px;
-  padding:0 14px;background:var(--bar);
-  border-bottom:1px solid var(--rule-strong);box-shadow:inset 3px 0 0 var(--acc)}
-.baserow .bl{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--t500);flex:none}
-.baserow .bn{font-size:14.5px;font-weight:600;color:var(--t900);min-width:0;
+/* The table is a card on the paper, so the rows read as one object with an
+   edge rather than as lines running off both sides of the window. */
+.tcard{flex:1;min-height:0;display:flex;flex-direction:column;margin:0 24px 20px;
+  background:var(--field);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+/* The base CV, as a card at the foot of the filters. It is not a row of the
+   table -- it is the thing the table's rows are copies of -- and as a band
+   across the top of the list it pushed every application down a row. */
+.baserow{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;
+  margin:14px 0 0;padding:12px 13px;background:var(--field);
+  border:1px solid var(--rule);border-radius:10px}
+.baserow .bl{flex-basis:100%;font-size:12px;font-weight:600;color:var(--t500)}
+.baserow .bn{flex-basis:100%;font-size:14px;font-weight:600;color:var(--t900);min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.baserow .bsub{font-size:11.5px;color:var(--t500);min-width:0;flex:none;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.baserow .bsub{flex-basis:100%;font-size:12px;color:var(--t500);margin-bottom:6px}
+.baserow .bsub:empty{display:none}
 .baserow.gone .bn{text-decoration:line-through;color:var(--t500)}
 .baserow .obtn{flex:none}
-/* Nothing is pinned to the right edge any more, so the trailing grow only has
-   to soak up what is left after the buttons. */
-.baserow .grow{flex:1;min-width:0}
+.baserow .grow{display:none}
 
 /* ------------------------------------------------------------- Documents -- */
 .docpane{flex:1;min-width:0;min-height:0;overflow-y:auto;background:var(--app)}
-.docwrap{max-width:900px;margin:0 auto;padding:22px 24px 64px}
+.docwrap{max-width:1000px;margin:0 auto;padding:12px 24px 64px}
+.docwrap>.phead{padding:10px 0 18px}
 /* The base is not an item in the list. It is the one the list is copied from,
    so it is a card above the lanes rather than a first row inside them. */
-.bcard{display:flex;align-items:center;gap:13px;padding:15px 17px;
-  background:var(--field);border:1px solid var(--bd-field);border-radius:10px;
-  box-shadow:inset 3px 0 0 var(--acc)}
-.bcard .bl{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
-  color:var(--t500);flex:none}
+.bcard{display:flex;align-items:center;gap:13px;padding:16px 18px;
+  background:var(--field);border:1px solid var(--rule);border-radius:12px}
+.bcard .bl{font-size:12px;font-weight:600;color:var(--t500);flex:none}
 .bcard .bn{font-size:16px;font-weight:600;color:var(--t900);min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bcard .bsub{font-size:11.5px;color:var(--t500);flex:none}
+.bcard .bsub{font-size:12px;color:var(--t500);flex:none}
 .bcard.gone .bn{text-decoration:line-through;color:var(--t500)}
-.dlane{margin-top:26px}
-.dlane h4{margin:0 0 2px;padding:0 12px;font-size:9.5px;font-weight:600;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--t500);
-  display:flex;align-items:baseline;gap:8px}
-.dlane h4 .n{color:var(--t400);letter-spacing:0;font-weight:500}
-.dlane .why{padding:3px 12px 7px;font-size:11.5px;color:var(--t500);max-width:66ch}
+.dlane{margin-top:30px}
+.dlane h4{margin:0 0 2px;padding:0 12px;font-size:14px;font-weight:600;
+  color:var(--t900);display:flex;align-items:baseline;gap:8px}
+.dlane h4 .n{color:var(--t500);font-weight:400;font-size:13px}
+.dlane .why{padding:3px 12px 9px;font-size:13px;color:var(--t600);max-width:66ch}
 .drow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 84px;
   align-items:center;gap:10px;width:100%;height:36px;padding:0 12px;
   text-align:left;border:0;border-bottom:1px solid var(--bd-inner);
@@ -3311,104 +3349,117 @@ body.dragging{cursor:col-resize;user-select:none}
 .drow .dfor{color:var(--t600);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;display:flex;align-items:center;gap:7px}
 .drow .dwhen{color:var(--t500);font-size:11.5px;text-align:right}
-.drow .dkind{flex:none;font-size:9px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--t500);border:1px solid var(--bd-field);border-radius:3px;
-  padding:1px 4px;line-height:1.5}
-.dempty{padding:10px 12px;font-size:12px;color:var(--t500)}
+.drow .dkind{flex:none;font-size:10.5px;color:var(--t600);background:var(--bar);
+  border-radius:9px;padding:1px 7px;line-height:1.5}
+.dempty{padding:10px 12px;font-size:13px;color:var(--t500)}
 .thead,.trow{display:grid;
   grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,1.15fr) 186px 86px 96px;
   align-items:center}
-.thead{height:26px;flex:none;background:var(--bar);border-bottom:1px solid var(--rule-strong);
-  font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--t500)}
-.thead>*,.trow>*{padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thead{height:38px;flex:none;background:var(--row-alt);border-bottom:1px solid var(--rule);
+  font-size:12px;font-weight:600;color:var(--t500)}
+.thead>*,.trow>*{padding:0 14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* the company mark, and the column it leads */
 .co{display:flex;align-items:center;gap:9px;min-width:0}
 .con{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-.colog{width:20px;height:20px;border-radius:4px;flex:none;object-fit:contain;
+.colog{width:28px;height:28px;border-radius:7px;flex:none;object-fit:contain;
   background:var(--bar)}
-span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
+span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   color:#fff;letter-spacing:.02em}
 .trow .role b{font-weight:400}
 
 .tbody{flex:1;min-height:0;overflow-y:auto}
-.trow{height:32px;font-size:12.5px;border-bottom:1px solid var(--bd-inner);width:100%;
+.trow{height:50px;font-size:13.5px;border-bottom:1px solid var(--bd-inner);width:100%;
   text-align:left;color:var(--t900)}
-.trow:nth-child(even){background:var(--row-alt)}
 .trow:hover{background:var(--row-hover)}
 .trow .role{display:flex;gap:8px;align-items:baseline;min-width:0}
 .trow .role b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trow .role i{font-style:normal;font-size:11.5px;color:var(--t500);flex:none}
-.trow .docs{font-size:11px;color:var(--acc-text)}
+.trow .role i{font-style:normal;font-size:12px;color:var(--t500);flex:none}
+.trow .docs{font-size:12px;color:var(--t700)}
 /* the most repeated string in the table, so it has to clear AA */
-.trow .docs.none{color:var(--t500);font-size:12px}
-.trow.sel .docs.none{color:#cdc6b5}
+.trow .docs.none{color:var(--t500);font-size:12.5px}
 /* An application with no CV is the one row that wants something doing, so it
-   offers rather than just reporting. Not a <button>: .trow is itself a button
-   and nesting one is invalid, which is why data-open is a span too. */
-.trow .docs.make{color:var(--acc-text);font-size:12px;cursor:pointer}
-.trow .docs.busy{color:var(--t500);font-size:12px;cursor:default}
-.trow .docs.busy:hover{text-decoration:none}
+   offers -- but only once you are on the row. Not a <button>: .trow is itself
+   a button and nesting one is invalid, which is why data-open is a span too. */
+.trow .docs.make{color:var(--t500);font-size:12.5px;cursor:pointer}
+.trow .docs.make .nt{font-style:normal}
+.trow .docs.make .tl{display:none;text-decoration:none;font-size:12px;font-weight:500;
+  color:var(--t900);background:var(--field);border:1px solid var(--bd-field);
+  border-radius:6px;padding:3px 9px}
+.trow:hover .docs.make .nt,.trow.sel .docs.make .nt{display:none}
+.trow:hover .docs.make .tl,.trow.sel .docs.make .tl{display:inline-block}
+.trow .docs.make .tl:hover{border-color:var(--t400)}
+.trow .docs.busy{color:var(--t500);font-size:12.5px;cursor:default}
+.trow .docs.busy:hover,.trow .docs.make:hover{text-decoration:none}
 .trow .docs:hover{text-decoration:underline}
-.trow .st{display:flex;align-items:center;gap:7px}
-.trow .money{font-size:11.5px}
-.trow .when{font-size:12px;color:var(--t600)}
+.trow .st{display:flex;align-items:center;gap:8px;font-size:13px}
+.trow .money{font-size:12px}
+.trow .when{font-size:13px;color:var(--t600);font-variant-numeric:tabular-nums}
 .trow.dead{color:var(--t600)}
 .trow.dead .money,.trow.dead .when{color:var(--t600)}
 .trow .when.none,.trow .money.none{color:var(--t400)}
-.trow .when.due{color:var(--acc-text)}
-.trow.sel,.trow.sel:hover,.trow.sel:nth-child(even){background:var(--c450);color:var(--cw)}
-.trow.sel .role i{color:#b3ae9f}
-.trow.sel .docs{color:#e0d9c7}
-.trow.sel .when,.trow.sel .money{color:var(--cw)}
-.trow.sel .when.due{color:var(--acc-text-dark)}
-.trow.sel .when.none,.trow.sel .money.none{color:#928d80}
+.trow .when.due{color:var(--acc-text);font-weight:600}
+/* Selected is the accent's one job in the table: a wash and an edge, with
+   the text left as it was so nothing has to be re-read in a new colour. */
+.trow.sel,.trow.sel:hover{background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc)}
 
 /* ---------- funnel ------------------------------------------------------- */
-.fn-left{flex:1;min-width:0;display:flex;flex-direction:column;
-  background:var(--app);min-height:0}
-/* Matches the inspector's header exactly, so the rule beneath the two of
-   them is one line across the window rather than two that disagree. */
-.fn-bar{height:33px;flex:none;display:flex;align-items:center;padding:0 24px;
-  background:var(--bar);border-bottom:1px solid var(--rule-strong)}
-#chart{flex:1;min-height:0;padding:18px 24px 22px;overflow:auto}
-#fn-jobs{flex:none;max-height:42%;overflow-y:auto;border-top:1px solid var(--rule);
-  padding:12px 24px 18px}
-.fn-hint{margin:0;font-size:12px;color:var(--t500)}
-.fn-jhead{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
-.fn-jhead b{font-size:12.5px}
-.fn-jhead span{font-size:11.5px;color:var(--t500)}
-.fn-jlist{display:flex;flex-direction:column;border:1px solid var(--bd-field);
-  border-radius:8px;overflow:hidden}
-.fn-jrow{display:grid;grid-template-columns:20px minmax(0,1fr) minmax(0,1.4fr) 180px;
-  align-items:center;gap:9px;padding:8px 12px;background:var(--field);
+.fn-page{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;
+  background:var(--app)}
+.fn-bar .obtn{height:34px;padding:0 13px;font-size:13px}
+.fn-tiles{flex:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;
+  padding:0 24px 18px}
+.fn-tile{display:flex;flex-direction:column;gap:3px;padding:14px 16px;background:var(--field);
+  border:1px solid var(--rule);border-radius:10px;min-width:0}
+.fn-tile span{font-size:12.5px;font-weight:500;color:var(--t600)}
+.fn-tile b{font-size:26px;font-weight:600;letter-spacing:-.02em;color:var(--t900);
+  font-variant-numeric:tabular-nums}
+.fn-tile b.acc{color:var(--acc-text)}
+.fn-tile small{font-size:12px;color:var(--t500)}
+.fn-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px;
+  gap:18px;padding:0 24px 20px}
+.fn-card{background:var(--field);border:1px solid var(--rule);border-radius:10px;
+  padding:16px 20px;min-width:0}
+.fn-card h2{margin:0 0 10px;font-size:14px;font-weight:600;color:var(--t900)}
+.fn-chartcard{display:flex;flex-direction:column;min-height:0;padding-bottom:10px}
+.fn-chead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.fn-chead h2{margin:0}
+#fn-hint{font-size:13px;color:var(--t500)}
+#fn-hint b{color:var(--t900);font-weight:600}
+#chart{flex:1;min-height:0;padding:14px 0 0;overflow:auto}
+.fn-side{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto}
+#fn-rates{display:flex;flex-direction:column;gap:10px}
+.fn-jhead{display:flex;align-items:center;gap:9px;margin:-4px -8px 8px 0}
+.fn-jhead .sw{width:10px;height:10px;border-radius:3px;flex:none}
+.fn-jhead b{font-size:14px}
+.fn-jhead span{font-size:13px;color:var(--t500)}
+.fn-jhead .x{width:30px;height:30px;border-radius:7px;color:var(--t600);font-size:13px}
+.fn-jhead .x:hover{background:var(--paper-hover);color:var(--t900)}
+.fn-jlist{display:flex;flex-direction:column;margin:0 -10px}
+.fn-jrow{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;
   text-align:left;width:100%}
-.fn-jrow+.fn-jrow{border-top:1px solid var(--rule)}
 .fn-jrow:hover{background:var(--row-hover)}
-.fj-role{font-size:12.5px;color:var(--t600);overflow:hidden;
+.fj-who{flex:1;min-width:0;display:flex;flex-direction:column}
+.fj-role{font-size:12px;color:var(--t500);overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-.fn-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-.fn-head b{font-size:12.5px;font-weight:600}
-.fn-head span{font-size:12px;color:var(--t600)}
+.fn-jrow .st{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t700);
+  white-space:nowrap;flex:none}
+.fn-jfoot{display:flex;justify-content:flex-end;margin-top:12px;padding-top:12px;
+  border-top:1px solid var(--bd-inner)}
+.fn-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;min-width:0}
+.fn-head b{font-size:14px;font-weight:400;color:var(--t500)}
+.fn-head span{font-size:13px;color:var(--t500)}
 #chart svg{width:100%;height:auto;display:block}
+/* Flat bands. They used to carry animated streamlines, which read as noise
+   laid over the numbers rather than as the numbers moving. */
 .sk-link{transition:opacity .15s;fill:none;stroke-opacity:var(--fn-band)}
-/* The moving highlight. It is the band's own colour at a little more strength
-   rather than a white sheen, so a ribbon looks like more of itself passing
-   through rather than like something shining on top of it. */
-.sk-flow{fill:none;pointer-events:none;stroke-width:1.7;
-  stroke-opacity:var(--fn-flow);stroke-linecap:round;
-  animation:sk-flow linear infinite}
-/* One filter on the group rather than one per streamline: there are up to
-   eight per band and a filter each would be paid for on every frame. */
-.sk-flows{filter:blur(1.6px)}
-@keyframes sk-flow{to{stroke-dashoffset:calc(var(--len) * -1)}}
-@media(prefers-reduced-motion:reduce){ .sk-flow{display:none} }
 .sk-hit{cursor:pointer}
 .sk-hit:hover .sk-node{opacity:.8}
 /* Dimming is meant to keep the rest of the chart as context. At .25 it took
    the labels with it -- a dimmed node's name measured 1.6:1 -- so selecting
    anything made every other stage unreadable, which is the opposite of
    context. Bands recede; text stays legible. */
-.sk-dim{opacity:.4}
+.sk-dim{opacity:.3}
+.sk-node.sk-on{stroke:var(--t900);stroke-width:2;paint-order:stroke}
 .sk-label.sk-dim{opacity:.72}
 .sk-label{font:12px 'IBM Plex Sans',sans-serif;fill:var(--fn-label)}
 /* Says how thin the number underneath a rate is, rather than printing a
@@ -3531,15 +3582,29 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
 .dctl .hex{font-size:11px;color:var(--t500);flex:none}
 
 /* ---------- settings ----------------------------------------------------- */
-.set-wrap{flex:1;min-height:0;overflow-y:auto;padding:30px 34px 72px}
-.set-inner{display:grid;grid-template-columns:160px minmax(0,1fr);gap:40px;
-  max-width:980px;margin:0 auto}
-.set-rail{display:flex;flex-direction:column;gap:1px;position:sticky;top:0;align-self:start}
-.set-rail button{text-align:left;padding:6px 10px;font-size:13px;color:var(--t600);
-  border-radius:5px}
-.set-rail button:hover{background:var(--bar);color:var(--t900)}
-.set-rail button[aria-selected=true]{color:var(--t900);font-weight:500;background:var(--bar)}
-.sp h3{font-size:15px;font-weight:600;margin:0 0 4px}
+/* Settings opens over the app rather than replacing it: you are changing how
+   the thing behind it works, so the thing stays in view. The wide shadow is
+   the backdrop, which keeps it one element with nothing else to show or hide. */
+#ovl-settings{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(940px,calc(100% - 48px));height:min(680px,calc(100% - 96px));
+  border-radius:14px;overflow:hidden;
+  box-shadow:0 0 0 100vmax rgba(22,21,19,.45),0 24px 60px rgba(0,0,0,.35)}
+#ovl-settings .ovl-bar{height:56px;padding:0 12px 0 24px;background:var(--app);
+  border-bottom:1px solid var(--rule);-webkit-app-region:no-drag}
+#ovl-settings .ovl-bar .ttl{font-size:16px;font-weight:600;color:var(--t900)}
+#ovl-settings .ovl-bar .cbtn{height:34px;padding:0 14px;border-radius:8px;font-size:13px;
+  font-weight:500;color:var(--t900);background:var(--field);border-color:var(--bd-field)}
+.set-wrap{flex:1;min-height:0;overflow-y:auto}
+.set-inner{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:100%}
+.set-inner>div:last-child{padding:24px 32px 48px;min-width:0}
+.set-rail{display:flex;flex-direction:column;gap:2px;padding:16px 12px;
+  background:var(--panel);border-right:1px solid var(--rule)}
+.set-rail button{text-align:left;padding:7px 10px;font-size:13.5px;color:var(--t700);
+  border-radius:7px}
+.set-rail button:hover{background:var(--paper-hover);color:var(--t900)}
+.set-rail button[aria-selected=true]{color:var(--t900);font-weight:600;background:var(--field);
+  box-shadow:0 1px 2px rgba(27,26,23,.08),0 0 0 1px var(--bd-inner)}
+.sp h3{font-size:18px;font-weight:600;margin:0 0 6px}
 .sp-lede{color:var(--t600);font-size:12.5px;line-height:1.6;margin:0 0 16px;max-width:62ch}
 .sp-note{color:var(--t600);font-size:12px;line-height:1.6;margin:14px 0 0;max-width:62ch}
 .srow{display:flex;align-items:center;gap:28px;padding:14px 0;border-top:1px solid var(--rule)}
@@ -3558,8 +3623,8 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
 .srow select{min-width:184px}
 .srow input{min-width:184px}
 .btnlink{text-decoration:none;color:var(--t700)}
-.sp-sub{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:600;
-  color:var(--t500);margin:30px 0 12px;text-transform:uppercase;letter-spacing:.08em}
+.sp-sub{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;
+  color:var(--t900);margin:30px 0 12px}
 .sp-sub::after{content:"";flex:1;height:1px;background:var(--rule)}
 
 /* ---------- AI clients ---------------------------------------------------
@@ -3868,43 +3933,21 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <button id="w-min" title="Minimise" aria-label="Minimise"></button>
     <button id="w-max" title="Maximise" aria-label="Maximise"></button>
   </div>
-  <!-- Two screens, not three. The editor is not a peer of these: it is where
-       opening a document takes you, and #back is the way out of it. A tab for
-       it would be a tab that is empty until you have been somewhere else
-       first. -->
-  <div class="seg" id="nav" role="tablist" aria-label="View">
+  <div class="brand"><img src="/static/brand-mark.png" width="24" height="24"
+    alt=""><span>CV Studio</span></div>
+  <!-- Three screens, and the tabs stay put on all of them, the editor
+       included. The editor is where opening a document takes you rather than
+       a peer of these, so it has no tab of its own: the tab it came from stays
+       lit, and the crumb in the editor's own bar is the way back. -->
+  <div class="tabs" id="nav" role="tablist" aria-label="View">
     <button role="tab" data-view="jobs" aria-selected="true">Applications</button>
     <button role="tab" data-view="docs" aria-selected="false">Documents</button>
     <button role="tab" data-view="funnel" aria-selected="false">Funnel</button>
   </div>
-  <button class="cbtn back" id="back" hidden>&#8592; Applications</button>
-
-  <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
-  <div class="grow" id="chrome-gap"></div>
-
-  <!-- The bar has two shapes, one per kind of screen, rather than six things
-       hidden independently. Anything that stays put on both -- the AI dots and
-       the gear -- sits outside these so the right edge never moves. -->
-  <span class="acts" id="act-home">
-  <div class="seg tight" id="range" hidden role="tablist" aria-label="Date range">
-    <button role="tab" data-since="" aria-selected="true">All time</button>
-    <button role="tab" data-since="6m" aria-selected="false">6 months</button>
-    <button role="tab" data-since="30d" aria-selected="false">30 days</button>
-  </div>
-  <label class="search" id="search" hidden><svg width="12" height="12" viewBox="0 0 24 24"
-      fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"
-      style="flex:none;color:var(--c300)"><circle cx="11" cy="11" r="7"/>
-      <path d="M20 20l-4-4"/></svg>
-    <input id="jobq" type="search" placeholder="Search applications" aria-label="Search applications"></label>
-  <button class="pbtn" id="btn-newjob">New application&#8230;</button>
-  <button class="pbtn" id="btn-newdoc" hidden>New document&#8230;</button>
-  </span>
-
-  <span class="acts" id="act-doc" hidden>
-  <button class="cbtn" id="btn-design" title="Theme, typeface and page size">Design</button>
-  <button class="cbtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
-  <button class="pbtn" id="btn-render">Render</button>
-  </span>
+  <div class="grow"></div>
+  <!-- Only what is true on every screen lives up here -- the AI clients and
+       the gear -- so the bar never changes shape. What belongs to a screen
+       sits in that screen's own header. -->
   <button class="cbtn ai" id="btn-ai" title="AI clients" aria-label="AI clients">
     <span class="aic" data-client="claude" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
@@ -3936,9 +3979,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   <!-- ---------------------------------------------------------------- CVs -->
   <section class="view" id="v-cvs" hidden>
     <aside class="rail rail-cvs">
-      <div class="rail-label mono">Documents</div>
+      <div class="rail-label">Documents</div>
       <div class="rail-list" id="doclist"></div>
-      <div class="rail-label mono" id="outline-label">Outline</div>
+      <div class="rail-label" id="outline-label">Outline</div>
       <div class="rail-list" id="outline"></div>
       <div class="grow"></div>
       <div class="budget" id="budget" hidden>
@@ -3949,6 +3992,19 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     </aside>
 
     <div class="centre">
+      <!-- Where you are and what you can do with it. The crumb names the list
+           you came from and takes you back to it; the title is the document. -->
+      <div class="docbar">
+        <button class="crumb" id="back">Applications</button>
+        <span class="crumb-sep" aria-hidden="true">/</span>
+        <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
+        <div class="grow"></div>
+        <span class="acts" id="act-doc">
+          <button class="obtn" id="btn-design" title="Theme, typeface and page size">Design</button>
+          <button class="obtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
+          <button class="pbtn" id="btn-render">Render</button>
+        </span>
+      </div>
       <div class="extbar" id="extbar" hidden>
         <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"
           ><use href="#claude-mark"/></svg>
@@ -4031,22 +4087,37 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   <section class="view" id="v-jobs">
     <aside class="rail rail-jobs">
       <div id="attentionwrap" hidden>
-        <div class="rail-label mono attn">Attention</div>
+        <div class="rail-label attn">Attention</div>
         <div id="attentionlist"></div>
       </div>
-      <div class="rail-label mono">Status</div>
+      <div class="rail-label">Status</div>
       <div id="statuslist"></div>
-      <div class="rail-label mono">Saved</div>
+      <div class="rail-label">Saved views</div>
       <div id="savedlist"></div>
+      <div class="grow"></div>
+      <!-- The one document every tailored CV is copied from. It sits with the
+           filters rather than above the table: it is not a row of the list,
+           and as a band across the top it pushed every application down. -->
+      <div class="baserow" id="baserow"></div>
     </aside>
     <div class="tablewrap">
-      <!-- The one document every tailored CV is copied from, above the list of
-           the copies it feeds. -->
-      <div class="baserow" id="baserow"></div>
-      <div class="thead"><span>Company</span><span>Role</span>
-        <span>Documents</span><span>Status</span>
-        <span>Applied</span><span>Follow-up</span></div>
-      <div class="tbody" id="jobrows"></div>
+      <div class="phead">
+        <h1 id="jtitle">All applications</h1><span class="pcount" id="jcount"></span>
+        <div class="grow"></div>
+        <label class="search" id="search"><svg width="13" height="13" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"
+            style="flex:none"><circle cx="11" cy="11" r="7"/>
+            <path d="M20 20l-4-4"/></svg>
+          <input id="jobq" type="search" placeholder="Search applications"
+            aria-label="Search applications"></label>
+        <button class="pbtn" id="btn-newjob">New application&#8230;</button>
+      </div>
+      <div class="tcard">
+        <div class="thead"><span>Company</span><span>Role</span>
+          <span>Documents</span><span>Status</span>
+          <span>Applied</span><span>Follow-up</span></div>
+        <div class="tbody" id="jobrows"></div>
+      </div>
     </div>
     <!-- A peek rather than a rail. The old 284px column was fixed at every
          window size, so a thirteen-field record was stacked into a sliver
@@ -4079,6 +4150,11 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   <section class="view" id="v-docs" hidden>
     <div class="docpane">
       <div class="docwrap">
+        <div class="phead">
+          <h1>Documents</h1><span class="pcount" id="dcount"></span>
+          <div class="grow"></div>
+          <button class="pbtn" id="btn-newdoc">New document&#8230;</button>
+        </div>
         <div id="docbase"></div>
         <div id="doclanes"></div>
       </div>
@@ -4087,16 +4163,33 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 
   <!-- ------------------------------------------------------------- Funnel -->
   <section class="view" id="v-funnel" hidden>
-    <div class="fn-left">
-      <div class="fn-bar"><div class="fn-head"><b id="fn-total"></b>
-        <span id="fn-sub"></span></div></div>
-      <div id="chart"></div>
-      <div id="fn-jobs"></div>
+    <div class="fn-page">
+      <div class="phead fn-bar"><div class="fn-head"><h1>Funnel</h1><b id="fn-total"></b>
+        <span id="fn-sub"></span></div>
+        <div class="grow"></div>
+        <div class="seg light" id="range" role="tablist" aria-label="Date range">
+          <button role="tab" data-since="" aria-selected="true">All time</button>
+          <button role="tab" data-since="6m" aria-selected="false">6 months</button>
+          <button role="tab" data-since="30d" aria-selected="false">30 days</button>
+        </div>
+        <button class="obtn" id="ex-csv">Export CSV</button>
+        <button class="obtn" id="ex-json">JSON</button></div>
+      <div class="fn-tiles" id="fn-tiles"></div>
+      <div class="fn-main">
+        <section class="fn-card fn-chartcard">
+          <div class="fn-chead"><h2>Where your applications went</h2>
+            <span id="fn-hint"></span></div>
+          <div id="chart"></div>
+        </section>
+        <!-- What is behind the stage you clicked goes beside the chart, not
+             under it, so the chart never shrinks or scrolls away to make room
+             for the answer to the question it raised. -->
+        <aside class="fn-side">
+          <section class="fn-card" id="fn-jobs" hidden></section>
+          <section class="fn-card"><h2>What it says</h2><div id="fn-rates"></div></section>
+        </aside>
+      </div>
     </div>
-    <aside class="insp insp-funnel">
-      <div class="insp-head"><b>Rates</b></div>
-      <div class="insp-body" id="fn-rates"></div>
-    </aside>
   </section>
 </main>
 
@@ -4114,7 +4207,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <div class="grow"></div><button class="cbtn" data-close-ovl>Done</button></div>
   <div class="ovl-body">
     <div class="dz-left">
-      <span class="blabel mono">Theme</span>
+      <span class="blabel">Theme</span>
       <div class="themegrid" id="themegrid"></div>
       <div class="hr"></div>
       <div class="fg w88" id="dz-basics" style="max-width:560px"></div>
@@ -4478,19 +4571,9 @@ const isoToday=()=>new Date().toISOString().slice(0,10);
 function setView(v){
   S.view=v;
   const doc=v==="cvs";
-  $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
   ["cvs","jobs","docs","funnel"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
-  $("#nav").hidden=doc;
-  $("#back").hidden=!doc;
   if(doc) paintBackLabel();
-  $("#doctitle").hidden=!doc;
-  $("#act-home").hidden=doc;
-  $("#act-doc").hidden=!doc;
-  /* Within the list half, which one it is still decides these two. */
-  $("#search").hidden = v!=="jobs";
-  $("#range").hidden = v!=="funnel";
-  $("#btn-newjob").hidden = v!=="jobs";
-  $("#btn-newdoc").hidden = v!=="docs";
+  else $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
   if(v==="jobs"){ loadJobs(); loadAlerts() }
   /* Which application a document was written for is a fact about the jobs, so
      this screen needs them too -- and you can land on it without ever having
@@ -4509,11 +4592,12 @@ function goBack(){
   if(j){ setView("jobs"); selectJob(j.id); return }
   setView(S.fromList==="docs"?"docs":"jobs");
 }
-/* The button says where it goes, which is not always the applications. */
+/* The crumb says where it goes, which is not always the applications, and
+   the tab for that list stays lit while you are in the editor. */
 function paintBackLabel(){
-  const j=linkedJob();
-  $("#back").textContent =
-    (!j&&S.fromList==="docs") ? "← Documents" : "← Applications";
+  const to=(!linkedJob()&&S.fromList==="docs")?"docs":"jobs";
+  $("#back").textContent = to==="docs" ? "Documents" : "Applications";
+  $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===to)));
 }
 $("#back").onclick=goBack;
 $$("#nav button").forEach(b=>b.onclick=()=>setView(b.dataset.view));
@@ -4567,9 +4651,11 @@ function paintStatus(){
     L.textContent=n+" document"+(n===1?"":"s");
     R.textContent=(S.state&&S.state.workspace)||"";
   }else{
+    /* The chart says how to use it, in its own header; the footer only says
+       which applications it is drawn from. */
     L.className="mono";
-    L.textContent="click a band to filter the applications";
-    R.textContent="";
+    L.textContent=S.funnel?S.funnel.totals.total+" applications":"";
+    R.textContent="applications.db";
   }
 }
 function ago(t){
@@ -5805,7 +5891,7 @@ function buildInspector(){
   meta.textContent=[entrySub(it),wordsIn(it)+" words"].filter(Boolean).join(" · ");
 
   if(it===null||typeof it!=="object"){
-    body.innerHTML='<div class="block"><span class="blabel mono">Text</span>'+
+    body.innerHTML='<div class="block"><span class="blabel">Text</span>'+
       inputFor(["cv","sections",sel.name,sel.i],it,{multi:true})+'</div>';
     wireInspector(); return;
   }
@@ -5823,7 +5909,7 @@ function buildInspector(){
    editing is the one highlighted, and it can be added to or taken away. */
 function arrayBlock(label,path,list){
   const p=esc(JSON.stringify(path));
-  return '<div class="block"><span class="blabel mono">'+esc(label.replace(/_/g," "))+
+  return '<div class="block"><span class="blabel">'+esc(label.replace(/_/g," "))+
     markHTML(provUnder(path),null,true)+(baseUnder(path)?basebar():"")+'</span>'+
     '<div class="card" data-arr='+"'"+p+"'"+'>'+
     (list.length?list.map((x,i)=>
@@ -6836,6 +6922,7 @@ function mtimeLabel(t){
 function drawDocuments(){
   mountBase($("#docbase"),"bcard");
   const docs=(S.state&&S.state.documents)||[];
+  $("#dcount").textContent=String(docs.length);
   const basePath=(S.state&&S.state.base&&S.state.base.path)||null;
   const owner={};
   for(const j of (S.jobs||[])){
@@ -6961,9 +7048,23 @@ async function tailorFor(id){
   }
 }
 
+/* What the list is showing, in words, for the header above it. */
+function filterTitle(){
+  const f=S.jfilter;
+  if(f.kind==="status") return prettyStatus(f.value);
+  if(f.kind==="node") return (S.labels&&S.labels[f.value])||"Applications";
+  if(f.kind==="saved") return f.value;
+  if(f.kind==="alert"){
+    const a=ATTENTION.find(([k])=>k===f.value);
+    return a?a[1]:"Applications";
+  }
+  return "All applications";
+}
 function drawJobs(){
   drawRail();
   const rows=visibleJobs();
+  $("#jtitle").textContent=filterTitle();
+  $("#jcount").textContent=S.jready?String(rows.length):"";
   const docName=p=>p?p.split("/").pop():null;
   $("#jobrows").innerHTML=rows.length?rows.map(j=>{
     const cv=docName(j.cv_path), letter=docName(j.letter_path);
@@ -6985,9 +7086,12 @@ function drawJobs(){
                  /* The busy label is rendered from state rather than written
                     onto the node, because the workspace poll can redraw this
                     whole table underneath a copy that is still running. */
+                 /* Quiet until you are on the row. Six ochre offers down one
+                    column was the loudest thing on the screen, and the least
+                    urgent. */
                  :'<span class="docs make" data-tailor="'+esc(j.id)+'" title="'+
                   'Copy the base CV, name it after this application, and open it'+
-                  '">No CV yet \u2014 tailor one</span>')+'</span>'+
+                  '"><i class="nt">Not tailored</i><u class="tl">Tailor a CV</u></span>')+'</span>'+
       '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
         esc(prettyStatus(j.status))+'</span>'+
       '<span class="when'+(ap?"":" none")+'">'+(ap?esc(shortDate(ap)):"–")+'</span>'+
@@ -7129,9 +7233,9 @@ function drawJobInspector(){
      a CV for this job, by which time the page is usually gone. Nothing in the
      app has ever shown it. There is room for it now. */
   const posting_block=j.description
-    ? '<div class="block grow"><span class="blabel mono">The posting</span>'+
+    ? '<div class="block grow"><span class="blabel">The posting</span>'+
       '<div class="posting">'+esc(j.description)+'</div></div>'
-    : '<div class="block grow"><span class="blabel mono">The posting</span>'+
+    : '<div class="block grow"><span class="blabel">The posting</span>'+
       '<p class="note muted">Not saved. Paste it in when you add an application, '+
       'or ask a model to -- it is what a tailored CV gets written against once '+
       'the advert is gone.</p></div>';
@@ -7158,9 +7262,9 @@ function drawJobInspector(){
   body.innerHTML=
     '<div class="peek-grid">'+
       '<div class="col">'+
-        '<div class="block"><span class="blabel mono">Where it stands</span>'+
+        '<div class="block"><span class="blabel">Where it stands</span>'+
           '<div class="fg2">'+grid+'</div></div>'+
-        '<div class="block"><span class="blabel mono">Documents</span><div class="card">'+
+        '<div class="block"><span class="blabel">Documents</span><div class="card">'+
           docRow("CV","cv_path","My CVs")+docRow("Cover letter","letter_path","Cover letters")+
           posting+'</div></div>'+
         '<details class="fold"><summary>Company, role and the rest</summary>'+
@@ -7169,9 +7273,9 @@ function drawJobInspector(){
           'Delete this application</button></div>'+
       '</div>'+
       '<div class="col">'+
-        '<div class="block"><span class="blabel mono">Notes</span>'+
+        '<div class="block"><span class="blabel">Notes</span>'+
           '<textarea data-j="notes" class="notes">'+esc(j.notes||"")+'</textarea></div>'+
-        '<div class="block"><span class="blabel mono">History</span>'+timeline+'</div>'+
+        '<div class="block"><span class="blabel">History</span>'+timeline+'</div>'+
         posting_block+
       '</div>'+
     '</div>';
@@ -7402,57 +7506,12 @@ function drawFunnel(){
   const path=d3.sankeyLinkHorizontal();
   const touches=l=>!S.fnode||l.sid===S.fnode||l.tid===S.fnode;
 
-  /* Each ribbon is drawn twice: the band itself, and a dashed copy of the
-     same geometry that travels along it. Sankey paths already run source to
-     target, so animating the dash offset negative moves the highlight the way
-     the applications move -- left to right, down the funnel.
-
-     The dash pattern is scaled to the band's own width so a thick ribbon gets
-     long slow swells and a thin one gets short ones, which is what stops the
-     whole chart pulsing in lockstep. A per-link delay staggers them further.
-     Anyone who has asked their system not to animate gets none of it. */
-  /* Streamlines, drawn along the flow rather than across it.
-  
-     A dashed stroke lays its dashes out along the path, but each one is drawn
-     at the full stroke width -- so a short dash on a wide ribbon comes out as
-     a bar standing across the current, and a row of them reads as rungs on a
-     ladder, which is the opposite of moving water. The first version of this
-     made exactly that mistake.
-  
-     Water wants marks elongated in the direction of travel. So each band gets
-     a handful of thin streamlines instead: copies of the same path shifted
-     vertically to sit inside the ribbon, stroked narrow, with dashes long
-     enough to read as streaks. The flow is horizontal, so a vertical shift of
-     the centreline is a parallel line within the band. */
-  const DASH=150, GAP=175, LEN=DASH+GAP;
-  const flow=(l,i)=>{
-    const w=Math.max(1,l.width), d=path(l);
-    /* Enough to read as a surface rather than as scratches on one. Capped at
-       eight the wide bands came out with fifty pixels between streamlines,
-       which is not a current, it is a scuff. */
-    const n=Math.max(1,Math.min(14,Math.round(w/13)));
-    let out="";
-    for(let k=0;k<n;k++){
-      const at=n===1?0:(k/(n-1))-0.5;          /* -0.5 .. 0.5 across the band */
-      const dy=(at*(w-2.5)).toFixed(2);
-      /* Each streamline drifts at its own rate, which is what keeps the band
-         from sliding as one rigid sheet. */
-      const dur=(3.4+((i*3+k)%6)*0.5).toFixed(2);
-      const lag=(((i*7+k*5)%13)*0.42).toFixed(2);
-      out+='<path class="sk-flow '+fnBand(l.tid)+(touches(l)?"":" sk-dim")+
-        '" transform="translate(0,'+dy+')" d="'+d+
-        '" stroke-dasharray="'+DASH+' '+GAP+'" style="--len:'+LEN+
-        'px;animation-duration:'+dur+'s;animation-delay:-'+lag+'s"/>';
-    }
-    return out;
-  };
   const bands=graph.links.map(l=>
     '<path class="sk-link '+fnBand(l.tid)+
     (touches(l)?"":" sk-dim")+'" d="'+path(l)+
     '" stroke-width="'+Math.max(1,l.width)+'"><title>'+
     esc(l.source.label)+' → '+esc(l.target.label)+': '+l.value+
-    '</title></path>').join("")+
-    '<g class="sk-flows">'+graph.links.map(flow).join("")+'</g>';
+    '</title></path>').join("");
 
   /* The bar alone is a 9px target, so each node gets a hit area over its label
      too -- clicking a band is how you get to the jobs behind it. */
@@ -7462,7 +7521,8 @@ function drawFunnel(){
       '<title>'+esc(n.label)+': '+n.count+'. Click to list them</title>'+
       '<rect x="'+(n.x0-6)+'" y="'+(n.y0-8)+'" width="'+((n.x1-n.x0)+PAD)+'" height="'+
       (h+16)+'" fill="transparent"/>'+
-      '<rect class="sk-node '+fnTone(n.id)+'" x="'+n.x0+'" y="'+n.y0+'" width="'+
+      '<rect class="sk-node '+fnTone(n.id)+(S.fnode===n.id?" sk-on":"")+
+      '" x="'+n.x0+'" y="'+n.y0+'" width="'+
       (n.x1-n.x0)+'" height="'+h+'"/></g>';
   }).join("");
 
@@ -7490,41 +7550,44 @@ function drawFunnel(){
 }
 
 /* Clicking a band used to throw you onto the Jobs screen, which answered the
-   question and lost the chart that raised it. The answer belongs underneath it:
+   question and lost the chart that raised it. The answer belongs beside it:
    the shape stays on screen while you read what is behind the part you touched. */
 function fnPick(id){
   S.fnode=S.fnode===id?null:id;   /* clicking the same band again clears it */
-  /* The list first, then the chart. The other way round sized the svg against
-     the full-height pane and then opened a list under it that took 42% of
-     that height -- the chart never re-laid out, the pane just scrolled, and
-     the node you had clicked was the one that fell off the bottom. */
+  /* The list first, then the chart, so the chart is laid out against the
+     space it actually has once the list is showing. */
   paintFunnelJobs();
   drawFunnel();
 }
 function paintFunnelJobs(){
-  const host=$("#fn-jobs");
+  const host=$("#fn-jobs"), hint=$("#fn-hint");
   if(!host) return;
+  host.hidden=!S.fnode;
   if(!S.fnode){
-    host.innerHTML='<p class="fn-hint">Click a band to see the applications behind it.</p>';
+    host.innerHTML="";
+    hint.textContent="Click a stage to list the applications in it";
     return;
   }
   const want=new Set((S.nodes&&S.nodes[S.fnode])||[]);
   const rows=S.jobs.filter(j=>want.has(j.status));
   const label=(S.labels&&S.labels[S.fnode])||S.fnode;
-  host.innerHTML='<div class="fn-jhead"><b>'+esc(label)+'</b>'+
+  hint.innerHTML="Showing <b>"+esc(label)+"</b>. Click it again to clear.";
+  host.innerHTML='<div class="fn-jhead"><svg class="sw" viewBox="0 0 10 10" aria-hidden="true">'+
+    '<rect class="'+fnTone(S.fnode)+'" width="10" height="10" rx="3"/></svg>'+
+    '<b>'+esc(label)+'</b>'+
     '<span>'+rows.length+" application"+(rows.length===1?"":"s")+'</span>'+
     '<div class="grow"></div>'+
-    '<button class="alink" id="fn-clear">Clear</button>'+
-    '<button class="alink" id="fn-open">Open in Jobs</button></div>'+
+    '<button class="x" id="fn-clear" title="Clear" aria-label="Clear">&#10005;</button></div>'+
     (rows.length
       ? '<div class="fn-jlist">'+rows.map(j=>
           '<button class="fn-jrow" data-id="'+esc(j.id)+'">'+
-          companyMark(j)+'<span class="con">'+esc(j.company)+'</span>'+
-          '<span class="fj-role">'+esc(j.title)+'</span>'+
+          companyMark(j)+'<span class="fj-who"><span class="con">'+esc(j.company)+'</span>'+
+          '<span class="fj-role">'+esc(j.title)+'</span></span>'+
           '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
           esc(prettyStatus(j.status))+'</span></button>').join("")+'</div>'
-      : '<p class="fn-hint">Nothing sits at this stage yet.</p>');
-  $("#fn-clear").onclick=()=>{ S.fnode=null; drawFunnel(); paintFunnelJobs() };
+      : '<p class="note">Nothing sits at this stage yet.</p>')+
+    '<div class="fn-jfoot"><button class="obtn" id="fn-open">Show in Applications</button></div>';
+  $("#fn-clear").onclick=()=>{ S.fnode=null; paintFunnelJobs(); drawFunnel() };
   $("#fn-open").onclick=()=>{
     S.jfilter={kind:"node",value:S.fnode}; S.jsel=null;
     $("#jobq").value=""; setView("jobs");
@@ -7538,39 +7601,32 @@ function paintFunnelJobs(){
 
 function drawRates(){
   const t=S.funnel.totals, c=S.funnel.by_status||{};
-  const rate=(label,value,accent)=>
-    '<div class="kv"><span>'+label+'</span><span class="v mono'+(accent?" acc":"")+'">'+
-    value+'</span></div>';
   const reply=t.median_reply_days==null?"–"
     :t.median_reply_days+" day"+(t.median_reply_days===1?"":"s");
   /* A rate with nothing underneath it is not zero, it is unknown. Printing a
      confident "Offer → accepted 0%" at a range where no offer exists tells
      somebody they are fumbling a stage they have never reached. */
   const pct=(value,denom)=>denom?value+"%":"–";
-  const thin=denom=>denom>0&&denom<10;   /* too few to read as a rate */
-  /* The accent marks the stage that is actually leaking, not a fixed row.
-     It used to sit on "Interview → offer" whenever a single offer existed,
-     so its whole message was "you have had an offer" -- which the header
-     already says. */
-  const stages=[["Applied → interview",t.interview_rate,t.applied],
-                ["Interview → offer",t.offer_rate,t.interviewed],
-                ["Offer → accepted",t.accept_rate,t.offers]];
+  /* The accent marks the stage that is actually leaking, not a fixed tile.
+     Only once there are enough applications under it to call it a rate. */
+  const stages=[["Applied → interview",t.interview_rate,t.applied,t.interviewed],
+                ["Interview → offer",t.offer_rate,t.interviewed,t.offers],
+                ["Offer → accepted",t.accept_rate,t.offers,c.accepted||0]];
   const worst=stages.filter(([,,d])=>d>=10)
     .sort((a,b)=>a[1]-b[1])[0];
+  const tile=(label,value,sub,acc)=>'<div class="fn-tile"><span>'+label+'</span>'+
+    '<b'+(acc?' class="acc"':"")+'>'+value+'</b><small>'+sub+'</small></div>';
+  $("#fn-tiles").innerHTML=
+    stages.map(([label,value,denom,num])=>tile(label,pct(value,denom),
+      denom?num+" of "+denom+" so far":"Nothing at this stage yet",
+      worst&&worst[0]===label)).join("")+
+    tile("Median reply time",reply,
+      t.median_reply_days==null?"Not enough replies yet":"From applying to a first answer");
   $("#fn-rates").innerHTML=
-    stages.map(([label,value,denom])=>
-      rate(label,pct(value,denom),worst&&worst[0]===label)+
-      (thin(denom)?'<div class="kv thin"><span></span><span class="v">of '+
-        denom+' so far</span></div>':"")).join("")+
-    rate("Median reply time",reply)+
-    '<div class="hr"></div>'+
-    readings(t,c).map(p=>'<div class="note">'+esc(p)+'</div>').join("")+
-    '<div class="hr"></div>'+
-    '<div style="display:flex;gap:7px"><button class="obtn" id="ex-csv">Export CSV</button>'+
-    '<button class="obtn" id="ex-json">JSON</button></div>';
-  $("#ex-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
-  $("#ex-json").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
+    readings(t,c).map(p=>'<div class="note">'+esc(p)+'</div>').join("");
 }
+$("#ex-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
+$("#ex-json").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
 
 /* Two short readings of the numbers. Each one is only shown when the data
    actually supports it, so the panel says less on a thin week rather than

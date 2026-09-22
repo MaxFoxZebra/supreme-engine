@@ -294,7 +294,7 @@ installer is `currentUser` mode, so there is no admin prompt.
 │   ├── jobs.py             applications.db
 │   ├── mcp_server.py       MCP surface (see MCP.md)
 │   ├── dev.py              hot-restarting dev server
-│   └── static/             vendored d3 and the interface fonts
+│   └── static/             vendored d3, the interface fonts and the app mark
 └── src-tauri/
     ├── Cargo.toml          release profile tuned for size (opt-level z, LTO, strip)
     ├── tauri.conf.json     bundle config, updater endpoint and public key
