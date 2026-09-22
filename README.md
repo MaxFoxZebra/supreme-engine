@@ -57,13 +57,19 @@ Nothing else is required. Python, RenderCV, Typst and the fonts are all bundled.
 On first launch it creates a workspace at `~/Documents/CV Studio` with a starter
 CV, and opens it.
 
-There are three screens, switched from the control at the top left. It opens on
-Jobs, because the work is applying for jobs: a CV is something an application
-either has or has not got yet.
+There are two screens, switched from the control at the top left, and an editor
+you reach by opening a document. It opens on Jobs, because the work is applying
+for jobs: a CV is something an application either has or has not got yet.
 
-**CVs** is the editor. The left rail lists your documents and, under them, an
-outline of the open one. The rendered page is always on screen; the tabs choose
-what stands beside it.
+**The editor** is not a third screen you pick. Opening a document from an
+application, or from the base, takes you to it, and `← Applications` takes you
+back — to the application that document was written for, if it has one. So does
+`Esc`. While you are in it the top bar carries the document's own actions
+(Design, Export, Render) and nothing else.
+
+Inside it, the left rail lists your documents and, under them, an outline of the
+open one. The rendered page is always on screen; the tabs choose what stands
+beside it.
 
 **Page** gives it the whole pane and you edit the document on the document:
 click any block and a card opens beside it with that entry's fields, the page
@@ -85,6 +91,7 @@ kind once.
 
 | | |
 |---|---|
+| **Getting back** | `← Applications`, or `Esc`, returns from a document to the application it was written for, with its row selected — widening the filter if it had been hidden |
 | **Page / Form / YAML** | The page on its own, or the page beside every field at once, or beside the raw file with syntax highlighting |
 | **Base CV** | One document every tailored copy starts from, pinned above the applications. Stored in the workspace, so an AI client can read it |
 | **Tailor a CV** | An application with no CV offers one. A click copies the base, names it, links it and opens it |

@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.12.0"
+VERSION = "0.12.1"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -2591,6 +2591,13 @@ button:disabled{opacity:.4;cursor:default}
 .doctitle .t{font-size:13px;font-weight:500;color:var(--c050);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 .doctitle .f{font-size:11px;color:var(--c300);white-space:nowrap;flex:none}
+/* The way out of the editor, in the slot the view switcher uses on the screens
+   that have one. Its label is fixed rather than naming the application: the
+   title beside it already does that, and a width that changes per document
+   would move the whole bar every time you opened one. */
+.back{flex:none}
+/* The action cluster, as two halves that swap whole. */
+.acts{display:flex;align-items:center;gap:8px}
 
 .search{display:flex;align-items:center;gap:8px;width:220px;border:1px solid var(--c500);
   border-radius:5px;background:var(--c900);padding:4px 10px}
@@ -3651,15 +3658,23 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <button id="w-min" title="Minimise" aria-label="Minimise"></button>
     <button id="w-max" title="Maximise" aria-label="Maximise"></button>
   </div>
+  <!-- Two screens, not three. The editor is not a peer of these: it is where
+       opening a document takes you, and #back is the way out of it. A tab for
+       it would be a tab that is empty until you have been somewhere else
+       first. -->
   <div class="seg" id="nav" role="tablist" aria-label="View">
-    <button role="tab" data-view="cvs" aria-selected="false">CVs</button>
     <button role="tab" data-view="jobs" aria-selected="true">Jobs</button>
     <button role="tab" data-view="funnel" aria-selected="false">Funnel</button>
   </div>
+  <button class="cbtn back" id="back" hidden>&#8592; Applications</button>
 
   <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
   <div class="grow" id="chrome-gap"></div>
 
+  <!-- The bar has two shapes, one per kind of screen, rather than six things
+       hidden independently. Anything that stays put on both -- the AI dots and
+       the gear -- sits outside these so the right edge never moves. -->
+  <span class="acts" id="act-home">
   <div class="seg tight" id="range" hidden role="tablist" aria-label="Date range">
     <button role="tab" data-since="" aria-selected="true">All time</button>
     <button role="tab" data-since="6m" aria-selected="false">6 months</button>
@@ -3670,11 +3685,14 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       style="flex:none;color:var(--c300)"><circle cx="11" cy="11" r="7"/>
       <path d="M20 20l-4-4"/></svg>
     <input id="jobq" type="search" placeholder="Search jobs" aria-label="Search jobs"></label>
+  <button class="pbtn" id="btn-newjob">New job&#8230;</button>
+  </span>
 
+  <span class="acts" id="act-doc" hidden>
   <button class="cbtn" id="btn-design" title="Theme, typeface and page size">Design</button>
   <button class="cbtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
   <button class="pbtn" id="btn-render">Render</button>
-  <button class="pbtn" id="btn-newjob" hidden>New job&#8230;</button>
+  </span>
   <button class="cbtn ai" id="btn-ai" title="AI clients" aria-label="AI clients">
     <span class="aic" data-client="claude" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
@@ -4220,23 +4238,40 @@ const appliedAt=j=>{
 const isoToday=()=>new Date().toISOString().slice(0,10);
 
 /* ---- view switching ---------------------------------------------------- */
+/* The app has two kinds of screen -- a list you navigate, and one document you
+   work on -- so the chrome has two shapes rather than six elements hidden
+   independently of each other. The gap between them is what pins the cluster
+   to the right edge, and that has to hold in both or the gear moves when you
+   switch. */
 function setView(v){
   S.view=v;
+  const doc=v==="cvs";
   $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
   ["cvs","jobs","funnel"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
-  $("#doctitle").hidden = v!=="cvs";
-  /* The gap is what pins the action cluster to the right edge, and that has
-     to hold on every tab or the gear moves when you switch. */
+  $("#nav").hidden=doc;
+  $("#back").hidden=!doc;
+  $("#doctitle").hidden=!doc;
+  $("#act-home").hidden=doc;
+  $("#act-doc").hidden=!doc;
+  /* Within the list half, which one it is still decides these two. */
   $("#search").hidden = v!=="jobs";
   $("#range").hidden = v!=="funnel";
-  $("#btn-design").hidden = v!=="cvs";
-  $("#btn-pdf").hidden = v!=="cvs";
-  $("#btn-render").hidden = v!=="cvs";
   $("#btn-newjob").hidden = v!=="jobs";
   if(v==="jobs"){ loadJobs(); loadAlerts() }
   if(v==="funnel") loadFunnel();
   paintStatus();
 }
+/* Out of the editor, to the application the open document was written for.
+   Derived from the link rather than remembered as history: a stack can go
+   stale and this cannot, and "this document belongs to Acme" is the relation
+   that is actually true. With nothing linked it is the list you left, which
+   still has whatever you had selected -- S.jsel survives the trip. */
+function goBack(){
+  const j=linkedJob();
+  setView("jobs");
+  if(j) selectJob(j.id);
+}
+$("#back").onclick=goBack;
 $$("#nav button").forEach(b=>b.onclick=()=>setView(b.dataset.view));
 
 /* ---- status bar --------------------------------------------------------- */
@@ -4809,7 +4844,6 @@ async function pulse(){
     try{
       const st=await api("/api/state");
       S.state=st; renderDocs(st.documents); paintBase();
-      if(!S.path) paintEmptyEditor();
     }catch(e){}
   }
   if(!S.path) return;
@@ -4966,6 +5000,15 @@ document.addEventListener("keydown",e=>{
     if(!$("#sheet").hidden) return closeSheet();
     if(!$("#ovl-design").hidden||!$("#ovl-settings").hidden) return closeOverlays();
     if(S.view==="cvs"&&!$("#ed").hidden){ e.preventDefault(); return closeEditor() }
+    /* Last in the chain: once the sheet, the overlays and the block editor
+       have each had their turn, Escape in the editor is the way back out of
+       it. Not while typing -- Escape in a field belongs to the field. */
+    if(S.view==="cvs"){
+      const el=document.activeElement;
+      if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      e.preventDefault();
+      return goBack();
+    }
   }
   /* Arrows walk the document while the editor is open, so you can read a CV
      block by block without reaching for the outline. Out of the way of a
@@ -4998,11 +5041,10 @@ async function boot(){
      visited. */
   setView("jobs");
   paintBase();
-  /* The editor is reachable from the nav with nothing open in it, so it needs
-     something to say. Opening a document from an application fills it. */
+  /* No document is open, and none can be reached except by opening one, so
+     there is no empty editor to write anything into. */
   $("#btn-render").disabled=true;
   buildOutline();   /* nothing is open, so the Outline heading goes too */
-  paintEmptyEditor();
   loadAI();
   pulse();
   setInterval(pulse,2500);
@@ -6530,26 +6572,6 @@ function baseSheet(){
     }catch(e){ toast(e.message,true) }
   };
 }
-/* The editor with nothing open in it. Reachable from the nav now that the app
-   does not open a document for you. */
-function paintEmptyEditor(){
-  if(S.path) return;
-  const b=S.state&&S.state.base;
-  $("#pane-page").innerHTML='<div class="empty"><h3>Nothing open</h3>'+
-    '<p>Documents are reached through the applications they were written for. '+
-    'Pick one from the Jobs list, or open the CV they are all copied from.</p>'+
-    '<p>Either way it is a plain YAML file in your workspace, so you always own '+
-    'it. No database, no account, nothing leaves your machine.</p>'+
-    '<div class="cta">'+
-    (b&&!b.missing?'<button class="sbtn primary" id="emptybase">Open '+
-      esc(baseLabel())+'</button>':
-      '<button class="sbtn primary" id="emptynew">Create a CV</button>')+
-    '<button class="sbtn" id="emptyjobs">Go to applications</button></div></div>';
-  const ob=$("#emptybase"); if(ob) ob.onclick=()=>openDoc(b.path);
-  const nb=$("#emptynew"); if(nb) nb.onclick=()=>newDocumentSheet();
-  $("#emptyjobs").onclick=()=>setView("jobs");
-}
-
 /* ---- tailoring a CV for an application -----------------------------------
    The one action the home screen exists to offer. Not a dialog: a dialog is
    for choices, and every choice here has already been made -- the base is
