@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.12.4"
+VERSION = "0.13.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -3259,16 +3259,62 @@ body.dragging{cursor:col-resize;user-select:none}
 /* The base CV, pinned above the applications it feeds. It is not a row of the
    table -- it is the thing the table's rows are copies of -- so it reads as a
    header band rather than a first entry, and it stays put while they scroll. */
-.baserow{flex:none;display:flex;align-items:center;gap:9px;height:38px;padding:0 12px;
-  background:var(--panel);border-bottom:1px solid var(--rule-strong)}
+/* It used to be a 38px band three shades from the table header, with the
+   document's name set *smaller* than the company names it is the parent of,
+   and its buttons pinned a thousand pixels away at the other edge. It was
+   there and nobody could see it. Now it is its own surface, the name outranks
+   the rows beneath it, and the actions sit beside the name where the eye
+   already is. */
+.baserow{flex:none;display:flex;align-items:center;gap:10px;min-height:46px;
+  padding:0 14px;background:var(--bar);
+  border-bottom:1px solid var(--rule-strong);box-shadow:inset 3px 0 0 var(--acc)}
 .baserow .bl{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--t500);flex:none}
-.baserow .bn{font-size:12.5px;font-weight:600;color:var(--t900);min-width:0;
+.baserow .bn{font-size:14.5px;font-weight:600;color:var(--t900);min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.baserow .bsub{font-size:11px;color:var(--t500);min-width:0;
+.baserow .bsub{font-size:11.5px;color:var(--t500);min-width:0;flex:none;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .baserow.gone .bn{text-decoration:line-through;color:var(--t500)}
 .baserow .obtn{flex:none}
+/* Nothing is pinned to the right edge any more, so the trailing grow only has
+   to soak up what is left after the buttons. */
+.baserow .grow{flex:1;min-width:0}
+
+/* ------------------------------------------------------------- Documents -- */
+.docpane{flex:1;min-width:0;min-height:0;overflow-y:auto;background:var(--app)}
+.docwrap{max-width:900px;margin:0 auto;padding:22px 24px 64px}
+/* The base is not an item in the list. It is the one the list is copied from,
+   so it is a card above the lanes rather than a first row inside them. */
+.bcard{display:flex;align-items:center;gap:13px;padding:15px 17px;
+  background:var(--field);border:1px solid var(--bd-field);border-radius:10px;
+  box-shadow:inset 3px 0 0 var(--acc)}
+.bcard .bl{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--t500);flex:none}
+.bcard .bn{font-size:16px;font-weight:600;color:var(--t900);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bcard .bsub{font-size:11.5px;color:var(--t500);flex:none}
+.bcard.gone .bn{text-decoration:line-through;color:var(--t500)}
+.dlane{margin-top:26px}
+.dlane h4{margin:0 0 2px;padding:0 12px;font-size:9.5px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--t500);
+  display:flex;align-items:baseline;gap:8px}
+.dlane h4 .n{color:var(--t400);letter-spacing:0;font-weight:500}
+.dlane .why{padding:3px 12px 7px;font-size:11.5px;color:var(--t500);max-width:66ch}
+.drow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 84px;
+  align-items:center;gap:10px;width:100%;height:36px;padding:0 12px;
+  text-align:left;border:0;border-bottom:1px solid var(--bd-inner);
+  background:transparent;color:var(--t900);font-size:12.5px;cursor:pointer;
+  font-family:inherit}
+.drow:hover{background:var(--row-hover)}
+.drow .dn{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  display:flex;align-items:center;gap:7px}
+.drow .dfor{color:var(--t600);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;display:flex;align-items:center;gap:7px}
+.drow .dwhen{color:var(--t500);font-size:11.5px;text-align:right}
+.drow .dkind{flex:none;font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--t500);border:1px solid var(--bd-field);border-radius:3px;
+  padding:1px 4px;line-height:1.5}
+.dempty{padding:10px 12px;font-size:12px;color:var(--t500)}
 .thead,.trow{display:grid;
   grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,1.15fr) 186px 86px 96px;
   align-items:center}
@@ -3827,7 +3873,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
        it would be a tab that is empty until you have been somewhere else
        first. -->
   <div class="seg" id="nav" role="tablist" aria-label="View">
-    <button role="tab" data-view="jobs" aria-selected="true">Jobs</button>
+    <button role="tab" data-view="jobs" aria-selected="true">Applications</button>
+    <button role="tab" data-view="docs" aria-selected="false">Documents</button>
     <button role="tab" data-view="funnel" aria-selected="false">Funnel</button>
   </div>
   <button class="cbtn back" id="back" hidden>&#8592; Applications</button>
@@ -3848,8 +3895,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"
       style="flex:none;color:var(--c300)"><circle cx="11" cy="11" r="7"/>
       <path d="M20 20l-4-4"/></svg>
-    <input id="jobq" type="search" placeholder="Search jobs" aria-label="Search jobs"></label>
-  <button class="pbtn" id="btn-newjob">New job&#8230;</button>
+    <input id="jobq" type="search" placeholder="Search applications" aria-label="Search applications"></label>
+  <button class="pbtn" id="btn-newjob">New application&#8230;</button>
+  <button class="pbtn" id="btn-newdoc" hidden>New document&#8230;</button>
   </span>
 
   <span class="acts" id="act-doc" hidden>
@@ -4022,6 +4070,21 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     </aside>
   </section>
 
+  <!-- ---------------------------------------------------------- Documents -->
+  <!-- The app's second noun. Applications are the work; documents are what the
+       work is done with -- and until this screen the only list of them lived
+       inside the editor, so finding a document meant already having one open.
+       A CV written for an application is reachable from that application's
+       row; one written for nothing was reachable from nowhere. -->
+  <section class="view" id="v-docs" hidden>
+    <div class="docpane">
+      <div class="docwrap">
+        <div id="docbase"></div>
+        <div id="doclanes"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ------------------------------------------------------------- Funnel -->
   <section class="view" id="v-funnel" hidden>
     <div class="fn-left">
@@ -4164,7 +4227,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <div class="tool"><span class="n">find_job &nbsp;list_jobs &nbsp;read_job</span>
             <p>Reads applications, and works out which one a message is about</p></div>
           <div class="tool"><span class="n">job_alerts</span>
-            <p>The same list as Attention in the Jobs view, read out loud</p></div>
+            <p>The same list as Attention in the Applications view, read out loud</p></div>
           <div class="tool"><span class="n">add_job</span>
             <p>Adds one from a posting you paste, and refuses likely duplicates</p></div>
           <div class="tool"><span class="n">set_company_logo</span>
@@ -4323,7 +4386,9 @@ const post=(u,body)=>api(u,{method:"POST",headers:{"Content-Type":"application/j
 const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function shortDate(iso){
   if(!iso) return "";
-  const d=new Date(String(iso).slice(0,19));
+  /* The tracker stores ISO strings; a document's age arrives as an mtime that
+     has already been turned into a Date. Both want the same "14 Sep". */
+  const d=iso instanceof Date?iso:new Date(String(iso).slice(0,19));
   if(isNaN(d)) return String(iso).slice(0,10);
   return d.getDate()+" "+MONTHS[d.getMonth()]+
     (d.getFullYear()!==new Date().getFullYear()?" "+String(d.getFullYear()).slice(2):"");
@@ -4414,9 +4479,10 @@ function setView(v){
   S.view=v;
   const doc=v==="cvs";
   $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
-  ["cvs","jobs","funnel"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
+  ["cvs","jobs","docs","funnel"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
   $("#nav").hidden=doc;
   $("#back").hidden=!doc;
+  if(doc) paintBackLabel();
   $("#doctitle").hidden=!doc;
   $("#act-home").hidden=doc;
   $("#act-doc").hidden=!doc;
@@ -4424,7 +4490,12 @@ function setView(v){
   $("#search").hidden = v!=="jobs";
   $("#range").hidden = v!=="funnel";
   $("#btn-newjob").hidden = v!=="jobs";
+  $("#btn-newdoc").hidden = v!=="docs";
   if(v==="jobs"){ loadJobs(); loadAlerts() }
+  /* Which application a document was written for is a fact about the jobs, so
+     this screen needs them too -- and you can land on it without ever having
+     opened the list. Draw what is known now, fill in the rest when it lands. */
+  if(v==="docs"){ drawDocuments(); if(!S.jready) loadJobs(true) }
   if(v==="funnel") loadFunnel();
   paintStatus();
 }
@@ -4435,8 +4506,14 @@ function setView(v){
    still has whatever you had selected -- S.jsel survives the trip. */
 function goBack(){
   const j=linkedJob();
-  setView("jobs");
-  if(j) selectJob(j.id);
+  if(j){ setView("jobs"); selectJob(j.id); return }
+  setView(S.fromList==="docs"?"docs":"jobs");
+}
+/* The button says where it goes, which is not always the applications. */
+function paintBackLabel(){
+  const j=linkedJob();
+  $("#back").textContent =
+    (!j&&S.fromList==="docs") ? "← Documents" : "← Applications";
 }
 $("#back").onclick=goBack;
 $$("#nav button").forEach(b=>b.onclick=()=>setView(b.dataset.view));
@@ -4479,12 +4556,19 @@ function paintStatus(){
     R.title=(S.state&&S.state.workspace)||"";
   }else if(S.view==="jobs"){
     L.className="mono";
-    L.textContent=S.jobs.length+" job"+(S.jobs.length===1?"":"s")+
+    L.textContent=S.jobs.length+" application"+(S.jobs.length===1?"":"s")+
       (S.jsel?" · 1 selected":"");
     R.textContent="applications.db";
+  }else if(S.view==="docs"){
+    /* The applications view names the store its rows live in; these rows live
+       in the workspace folder, so that is what belongs in the same slot. */
+    const n=((S.state&&S.state.documents)||[]).length;
+    L.className="mono";
+    L.textContent=n+" document"+(n===1?"":"s");
+    R.textContent=(S.state&&S.state.workspace)||"";
   }else{
     L.className="mono";
-    L.textContent="click a band to filter the Jobs list";
+    L.textContent="click a band to filter the applications";
     R.textContent="";
   }
 }
@@ -4829,6 +4913,10 @@ function setProv(prov){
    card repeated inside every block's editor. */
 function paintLink(){
   const chip=$("#linkchip"), j=linkedJob();
+  /* The same answer the chip is about to draw decides where Back goes, and it
+     is only knowable once the document and the applications have both landed
+     -- which is here, not in setView. */
+  paintBackLabel();
   if(!S.path||!S.jready){ chip.hidden=true; return }
   if(!j){
     chip.innerHTML='<span>Link to an application</span>';
@@ -5376,6 +5464,10 @@ function renderDocs(docs){
 
 async function openDoc(path){
   closeOverlays();
+  /* Which list you came from. Not a history stack -- one bit, read once on the
+     way out. The application a document belongs to is still the better answer
+     when there is one, and goBack asks for that first. */
+  if(S.view==="jobs"||S.view==="docs") S.fromList=S.view;
   setView("cvs");
   S.path=path; S.dirty=false; S.savedAt=null; S.sel=null; S.openSection=null;
   S.prov=null; $("#provchip").hidden=true;
@@ -5796,10 +5888,10 @@ function linkJobSheet(){
         open.map(j=>'<option value="'+esc(j.id)+'">'+esc(j.title)+' · '+
           esc(j.company)+'</option>').join("")+'</select></div>'
       : '<div class="fg w88"><p class="note muted">Every application already has '+
-        'one. Start a new application, or swap the document over from the Jobs '+
-        'screen.</p></div>')+
+        'one. Start a new application, or swap the document over from the '+
+        'Applications screen.</p></div>')+
     '<div class="foot">'+
-    (now?'<button class="sbtn" id="lj-show">Show in Jobs</button>'+
+    (now?'<button class="sbtn" id="lj-show">Show in Applications</button>'+
          '<button class="sbtn danger" id="lj-unlink">Unlink</button>':"")+
     '<div class="grow"></div>'+
     '<button class="sbtn" data-cancel>Cancel</button>'+
@@ -6539,6 +6631,7 @@ async function loadJobs(quiet){
     return;
   }
   if(S.view==="jobs") drawJobs();
+  if(S.view==="docs") drawDocuments();
   if(S.view==="cvs"&&S.path){
     paintTitle(); paintLink();
     if(!$("#ed").hidden) buildInspector();
@@ -6680,35 +6773,115 @@ function visibleJobs(){
    ideas get confused in the first place. */
 function baseLabel(){ const b=S.state&&S.state.base;
   return b?b.path.split("/").pop().replace(/\.ya?ml$/,""):null }
-function paintBase(){
-  const el=$("#baserow"), b=S.state&&S.state.base;
-  el.classList.toggle("gone",!!(b&&b.missing));
-  if(!b){
-    el.innerHTML='<span class="bl">Base CV</span>'+
+/* The band above the applications and the card on the Documents screen are the
+   same statement about the same document, so it is written once and mounted
+   twice. The handlers hang off data attributes rather than ids: both elements
+   are in the DOM whichever screen is showing, and one id in two places is one
+   id too many. */
+function baseHTML(b){
+  if(!b)
+    return '<span class="bl">Base CV</span>'+
       '<span class="bsub">Not chosen yet. Every tailored CV starts as a copy '+
-      'of one.</span><div class="grow"></div>'+
-      '<button class="obtn" id="base-pick">Choose\u2026</button>';
-  }else if(b.missing){
-    el.innerHTML='<span class="bl">Base CV</span>'+
+      'of one.</span>'+
+      '<button class="obtn" data-base-pick>Choose\u2026</button>'+
+      '<div class="grow"></div>';
+  if(b.missing)
+    return '<span class="bl">Base CV</span>'+
       '<span class="bn">'+esc(baseLabel())+'</span>'+
       '<span class="bsub">is no longer in the workspace</span>'+
-      '<div class="grow"></div>'+
-      '<button class="obtn" id="base-pick">Choose another\u2026</button>';
-  }else{
-    const pages=S.pages[b.path];
-    el.innerHTML='<span class="bl">Base CV</span>'+
-      '<span class="bn">'+esc(baseLabel())+'</span>'+
-      '<span class="bsub">'+(pages?pages+" page"+(pages===1?"":"s"):"")+'</span>'+
-      '<div class="grow"></div>'+
-      '<button class="obtn" id="base-open">Open</button>'+
-      '<button class="obtn" id="base-pick">Change\u2026</button>';
-  }
-  const open=$("#base-open");
+      '<button class="obtn" data-base-pick>Choose another\u2026</button>'+
+      '<div class="grow"></div>';
+  const pages=S.pages[b.path];
+  return '<span class="bl">Base CV</span>'+
+    '<span class="bn">'+esc(baseLabel())+'</span>'+
+    '<span class="bsub">'+(pages?pages+" page"+(pages===1?"":"s"):"")+'</span>'+
+    '<button class="obtn" data-base-open>Open</button>'+
+    '<button class="obtn" data-base-pick>Change\u2026</button>'+
+    '<div class="grow"></div>';
+}
+function mountBase(el,cls){
+  if(!el) return;
+  const b=S.state&&S.state.base;
+  el.className=cls+(b&&b.missing?" gone":"");
+  el.innerHTML=baseHTML(b);
+  const open=el.querySelector("[data-base-open]");
   if(open) open.onclick=()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
     openDoc(b.path);
   };
-  $("#base-pick").onclick=baseSheet;
+  el.querySelector("[data-base-pick]").onclick=baseSheet;
+}
+function paintBase(){
+  mountBase($("#baserow"),"baserow");
+  mountBase($("#docbase"),"bcard");
+}
+
+/* A document's age. "720h" is what ago() would say about a CV last touched in
+   the spring, which is true and useless, so anything older than yesterday gets
+   the same date the applications table uses. */
+function mtimeLabel(t){
+  if(!t) return "";
+  const d=new Date(t*1000), now=new Date();
+  const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()
+    &&a.getDate()===b.getDate();
+  if(same(d,now)) return "today";
+  const y=new Date(now); y.setDate(y.getDate()-1);
+  return same(d,y)?"yesterday":shortDate(d);
+}
+
+/* Two lanes, and the second is the reason this screen exists. A CV written for
+   an application is reachable from that application's row; one written for
+   nothing was reachable from nowhere, because the only list of documents lived
+   inside the editor and you needed a document open to see it. */
+function drawDocuments(){
+  mountBase($("#docbase"),"bcard");
+  const docs=(S.state&&S.state.documents)||[];
+  const basePath=(S.state&&S.state.base&&S.state.base.path)||null;
+  const owner={};
+  for(const j of (S.jobs||[])){
+    if(j.cv_path) owner[j.cv_path]=j;
+    if(j.letter_path) owner[j.letter_path]=j;
+  }
+  const attached=[], loose=[];
+  for(const d of docs){
+    if(d.path===basePath) continue;
+    (owner[d.path]?attached:loose).push(d);
+  }
+  const recent=(a,b)=>(b.mtime||0)-(a.mtime||0);
+  attached.sort(recent); loose.sort(recent);
+
+  const row=d=>{
+    const j=owner[d.path], letter=d.group==="Cover letters";
+    const copied=d.base?d.base.split("/").pop().replace(/\.ya?ml$/,""):null;
+    const about=j
+      ? '<span class="dot '+statusTone(j.status)+'"></span>'+
+        esc(j.company)+' \u00b7 '+esc(j.title)
+      : copied?'copied from '+esc(copied):'';
+    return '<button class="drow" data-open="'+esc(d.path)+'">'+
+      '<span class="dn">'+(letter?'<span class="dkind">Letter</span>':'')+
+        esc(d.label)+'</span>'+
+      '<span class="dfor">'+about+'</span>'+
+      '<span class="dwhen">'+esc(mtimeLabel(d.mtime))+'</span></button>';
+  };
+  const lane=(title,list,why)=>
+    '<div class="dlane"><h4>'+title+'<span class="n">'+list.length+'</span></h4>'+
+    (why?'<div class="why">'+why+'</div>':'')+
+    (list.length?list.map(row).join(""):
+      '<div class="dempty">Nothing here yet.</div>')+'</div>';
+
+  $("#doclanes").innerHTML=
+    lane("Written for an application",attached,
+      "Each of these is attached to the application it was tailored for. "+
+      "Opening one from here is the same as opening it from that row.")+
+    lane("Everything else",loose,
+      "CVs and letters that no application points at \u2014 a master copy, an "+
+      "old version, a draft you have not attached yet.");
+  $$("#doclanes .drow").forEach(b=>{
+    b.onclick=()=>{
+      if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+      openDoc(b.dataset.open);
+    };
+  });
 }
 function baseSheet(){
   const b=S.state&&S.state.base;
@@ -7107,6 +7280,7 @@ function newJobSheet(seed){
   $("#nj-company").focus();
 }
 $("#btn-newjob").onclick=()=>newJobSheet();
+$("#btn-newdoc").onclick=()=>newDocumentSheet();
 
 /* =========================================================================
    Funnel
@@ -7458,7 +7632,7 @@ function newDocumentSheet(){
       '<label>Role</label><input id="nd-role" autocomplete="off">'+
       '<label>Save as</label><input id="nd-name" readonly class="mono">'+
       '<div></div><label class="check"><input type="checkbox" id="nd-draft" checked>'+
-        '<i>✓</i>Add a Draft row to the Jobs list</label>'+
+        '<i>✓</i>Add a Draft row to the applications</label>'+
     '</div>'+
     '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
     '<button class="sbtn primary" id="nd-go">Create</button></div>');
@@ -7497,7 +7671,7 @@ function newDocumentSheet(){
         theme:prefs().theme||null});
       if(kind==="cv"&&$("#nd-draft").checked&&company&&role){
         try{ await post("/api/jobs",{company,title:role,status:"pending",cv_path:r.path}) }
-        catch(e){ toast("Document created, but the Jobs row failed: "+e.message,true) }
+        catch(e){ toast("Document created, but the application row failed: "+e.message,true) }
       }
       closeSheet();
       const st=await api("/api/state"); S.state=st; renderDocs(st.documents);

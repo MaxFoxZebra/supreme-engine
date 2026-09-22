@@ -8,7 +8,23 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## 0.12.4
+## 0.13.0
+
+- **Your documents have a screen.** Until now the only list of them lived
+  inside the editor, so finding a CV meant already having one open — and a CV
+  written for nothing, a master copy or an old version, was reachable from
+  nowhere at all. **Documents** sits beside Applications and lists everything:
+  the ones written for an application, each showing which one, and the ones
+  written for nothing.
+- **The base CV can be seen.** It was a thin band the colour of the table
+  header, its name set smaller than the company names below it, with its
+  buttons a screen-width away at the other edge. It is now its own surface,
+  the name outranks the rows it is the parent of, and Open sits next to it.
+- **Back knows where you came from.** Leaving a document returns you to the
+  application it was written for, as before — or to Documents, if that is
+  where you opened it and it belongs to no application. The button says which.
+- **Jobs is called Applications**, in the tab, the search box, the footer and
+  everywhere else the app had been saying both.
 
 - **Hermes Agent is a fourth AI client.** One button in Settings → AI clients,
   the same as the others, and it covers Hermes Desktop, the TUI and the CLI at
