@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.11.1"
+VERSION = "0.12.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -940,6 +940,56 @@ def note_lineage(path: Path, base: str | None) -> None:
     _edits_write(data)
 
 
+def base_cv() -> dict | None:
+    """The CV every tailored copy starts from, as {path, at, missing}.
+
+    Kept in the workspace beside the edits rather than in the browser's
+    preferences, because it is a fact about this set of documents and not about
+    this machine -- and because a model working in here has to be able to read
+    it. Which document you tailor from is the first thing it needs to know.
+
+    Distinct from the per-document `base` that note_lineage records. That one
+    says what a particular copy came from and stays true even when this moves;
+    this one only says where the next copy should come from.
+
+    Pure: a missing file is reported, never quietly repointed or cleared.
+    """
+    chosen = _edits_read().get("base") or {}
+    if chosen.get("path"):
+        return {"path": chosen["path"], "at": chosen.get("at"),
+                "missing": not safe_path(chosen["path"]).exists()}
+    # Nothing chosen. One CV is not a choice, it is the answer -- but two are,
+    # and picking for you would put a document you never nominated at the top
+    # of the screen and copy every tailored CV from it.
+    mine = [d for d in list_documents() if d["group"] == "My CVs"]
+    if len(mine) == 1:
+        return {"path": mine[0]["path"], "at": None, "missing": False}
+    return None
+
+
+def set_base_cv(path: str | None) -> None:
+    """Nominate a document as the base, or clear the nomination with None."""
+    data = _edits_read()
+    if path is None:
+        data.pop("base", None)
+    else:
+        target = safe_path(path)
+        if not target.exists():
+            raise FileNotFoundError(path)
+        if not is_cv_yaml(target):
+            raise ValueError(f"{path} is not a CV.")
+        if rel(target).startswith("letters/"):
+            raise ValueError("A cover letter cannot be the base CV.")
+        data["base"] = {"path": rel(target), "at": time.time()}
+    _edits_write(data)
+    # _edits_write swallows write failures on purpose -- a lost mark is not
+    # worth failing a save over. A choice the user just made is different: it
+    # would come back as the old base with nothing said, which is the kind of
+    # bug nobody ever diagnoses. So read it back and complain.
+    if (_edits_read().get("base") or {}).get("path") != (data.get("base") or {}).get("path"):
+        raise OSError(f"Could not record the base CV in {EDITS_FILE}.")
+
+
 def provenance(path: Path, data: dict | None) -> dict:
     """Who last wrote each field of this document, and how it differs from its base.
 
@@ -1187,6 +1237,10 @@ def bootstrap(workspace: Path) -> bool:
     (workspace / "assets").mkdir(exist_ok=True)
     if not any((workspace / "profile").glob("*.y*ml")):
         (workspace / "profile" / "my-cv.yaml").write_text(STARTER_CV, encoding="utf-8")
+        # The one moment the base is not a guess: this is the only CV there is,
+        # and the app put it there. Nominating it now means a new workspace has
+        # something to tailor from before anybody has been asked anything.
+        set_base_cv("profile/my-cv.yaml")
         created = True
     return created
 
@@ -1913,7 +1967,12 @@ def openapi_spec() -> dict:
                 "responses": ok}},
             "/api/new": {"post": {"summary": "Create a CV, blank or duplicated",
                 "requestBody": body({"name": {"type": "string"},
+                                     "kind": {"type": "string"},
                                      "from": {"type": "string"}}), "responses": ok}},
+            "/api/base": {"post": {"summary":
+                "Nominate the CV that tailored copies start from; null clears it",
+                "requestBody": body({"path": {"type": "string"}}),
+                "responses": ok}},
             "/api/jobs": {
                 "get": {"summary": "List job applications", "responses": ok},
                 "post": {"summary": "Create a job application",
@@ -2155,7 +2214,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             if u.path == "/api/state":
                 return self._json({
-                    "documents": list_documents(),
+                    "documents": list_documents(), "base": base_cv(),
                     "themes": available_themes(),
                     "page_sizes": PAGE_SIZES,
                     "fonts": font_families(),
@@ -2333,6 +2392,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # it all along -- it was simply thrown away on write.
                 note_lineage(dest, rel(safe_path(src)) if src else None)
                 return self._json({"ok": True, "path": rel(dest)})
+            if u.path == "/api/base":
+                # {"path": null} clears the nomination rather than deleting
+                # anything: the document is untouched either way.
+                set_base_cv(payload.get("path") or None)
+                return self._json({"ok": True, "base": base_cv()})
             return self._json({"error": "not found"}, 404)
         except PermissionError as exc:
             return self._json({"error": str(exc)}, 403)
@@ -3054,6 +3118,19 @@ body.dragging{cursor:col-resize;user-select:none}
 /* ---------- jobs table --------------------------------------------------- */
 .tablewrap{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;
   background:var(--app)}
+/* The base CV, pinned above the applications it feeds. It is not a row of the
+   table -- it is the thing the table's rows are copies of -- so it reads as a
+   header band rather than a first entry, and it stays put while they scroll. */
+.baserow{flex:none;display:flex;align-items:center;gap:9px;height:38px;padding:0 12px;
+  background:var(--panel);border-bottom:1px solid var(--rule-strong)}
+.baserow .bl{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--t500);flex:none}
+.baserow .bn{font-size:12.5px;font-weight:600;color:var(--t900);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.baserow .bsub{font-size:11px;color:var(--t500);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.baserow.gone .bn{text-decoration:line-through;color:var(--t500)}
+.baserow .obtn{flex:none}
 .thead,.trow{display:grid;
   grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,1.15fr) 186px 86px 96px;
   align-items:center}
@@ -3081,6 +3158,12 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
 /* the most repeated string in the table, so it has to clear AA */
 .trow .docs.none{color:var(--t500);font-size:12px}
 .trow.sel .docs.none{color:#cdc6b5}
+/* An application with no CV is the one row that wants something doing, so it
+   offers rather than just reporting. Not a <button>: .trow is itself a button
+   and nesting one is invalid, which is why data-open is a span too. */
+.trow .docs.make{color:var(--acc-text);font-size:12px;cursor:pointer}
+.trow .docs.busy{color:var(--t500);font-size:12px;cursor:default}
+.trow .docs.busy:hover{text-decoration:none}
 .trow .docs:hover{text-decoration:underline}
 .trow .st{display:flex;align-items:center;gap:7px}
 .trow .money{font-size:11.5px}
@@ -3569,8 +3652,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <button id="w-max" title="Maximise" aria-label="Maximise"></button>
   </div>
   <div class="seg" id="nav" role="tablist" aria-label="View">
-    <button role="tab" data-view="cvs" aria-selected="true">CVs</button>
-    <button role="tab" data-view="jobs" aria-selected="false">Jobs</button>
+    <button role="tab" data-view="cvs" aria-selected="false">CVs</button>
+    <button role="tab" data-view="jobs" aria-selected="true">Jobs</button>
     <button role="tab" data-view="funnel" aria-selected="false">Funnel</button>
   </div>
 
@@ -3618,7 +3701,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 
 <main>
   <!-- ---------------------------------------------------------------- CVs -->
-  <section class="view" id="v-cvs">
+  <section class="view" id="v-cvs" hidden>
     <aside class="rail rail-cvs">
       <div class="rail-label mono">Documents</div>
       <div class="rail-list" id="doclist"></div>
@@ -3710,7 +3793,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   </div>
 
   <!-- --------------------------------------------------------------- Jobs -->
-  <section class="view" id="v-jobs" hidden>
+  <!-- Home. The work is applying for jobs; a CV is something an application
+       either has or has not got yet, which is what the list is for. -->
+  <section class="view" id="v-jobs">
     <aside class="rail rail-jobs">
       <div id="attentionwrap" hidden>
         <div class="rail-label mono attn">Attention</div>
@@ -3722,6 +3807,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       <div id="savedlist"></div>
     </aside>
     <div class="tablewrap">
+      <!-- The one document every tailored CV is copied from, above the list of
+           the copies it feeds. -->
+      <div class="baserow" id="baserow"></div>
       <div class="thead"><span>Company</span><span>Role</span>
         <span>Documents</span><span>Status</span>
         <span>Applied</span><span>Follow-up</span></div>
@@ -4000,7 +4088,7 @@ const tok=()=>API_TOKEN?"&token="+encodeURIComponent(API_TOKEN):"";
    away: the funnel can hand a status filter to Jobs, and Jobs can hand a
    document to the editor, without either reloading. */
 const S={
-  view:"cvs", state:null,
+  view:"jobs", state:null,
   path:null, doc:null, data:null, tab:"page",
   dirty:false, savedAt:null, busy:false,
   pdf:null, render:null, renderMs:null, live:"idle", liveMsg:"",
@@ -4018,6 +4106,7 @@ const S={
   pages:{},                 /* path -> page count, learned as things render */
   themePages:{},            /* theme -> page count for the open document */
   jobs:[], statuses:[], nodes:{}, labels:{}, jready:false,
+  tailoring:new Set(),      /* applications whose CV is being copied right now */
   jfilter:{kind:"all", value:""}, jsel:null,
   funnel:null, since:"", fnode:null,
   schema:null, schemaTheme:null,
@@ -4711,10 +4800,17 @@ async function pulse(){
          buildOutline(); buildInspector(); }catch(e){}
   }
 
-  /* A document appearing or disappearing means Claude created or removed one. */
+  /* A document appearing or disappearing means Claude created or removed one.
+     The edits stamp covers the base as well, since the nomination lives in the
+     same sidecar -- so a base set from an AI client shows up here within a
+     poll rather than waiting for a reload. */
   const names=o=>JSON.stringify(Object.keys(o.docs).sort());
-  if(names(before)!==names(p)){
-    try{ renderDocs((await api("/api/state")).documents) }catch(e){}
+  if(names(before)!==names(p)||before.edits!==p.edits){
+    try{
+      const st=await api("/api/state");
+      S.state=st; renderDocs(st.documents); paintBase();
+      if(!S.path) paintEmptyEditor();
+    }catch(e){}
   }
   if(!S.path) return;
   const now=p.docs[S.path];
@@ -4896,23 +4992,17 @@ async function boot(){
   const was=prefs().tab;
   if(was==="form"||was==="yaml") showTab(was);
   renderDocs(d.documents);
-  loadJobs(true);
-  loadAlerts();
-  if(d.documents.length) openDoc(d.documents[0].path);
-  else{
-    $("#pane-page").innerHTML='<div class="empty"><h3>No CVs yet</h3>'+
-      '<p>Ask Claude or ChatGPT to write one, or start from a blank file here. '+
-      'The model does the writing; this is where you see the page and fix what '+
-      'it got wrong.</p>'+
-      '<p>Either way it is a plain YAML file in your workspace, so you always own '+
-      'it. No database, no account, nothing leaves your machine.</p>'+
-      '<div class="cta"><button class="sbtn primary" id="firstcta">Create a CV</button>'+
-      '<button class="sbtn" id="firstai">Connect an AI client</button></div></div>';
-    $("#firstcta").onclick=()=>newDocumentSheet();
-    $("#firstai").onclick=()=>$("#btn-ai").click();
-    $("#btn-render").disabled=true;
-    buildOutline();   /* nothing is open, so the Outline heading goes too */
-  }
+  /* Home is the applications list. setView makes the jobs calls itself, and
+     letting it do so un-quieted is the point: a jobs store that will not open
+     is now a broken home screen, which should say so rather than wait to be
+     visited. */
+  setView("jobs");
+  paintBase();
+  /* The editor is reachable from the nav with nothing open in it, so it needs
+     something to say. Opening a document from an application fills it. */
+  $("#btn-render").disabled=true;
+  buildOutline();   /* nothing is open, so the Outline heading goes too */
+  paintEmptyEditor();
   loadAI();
   pulse();
   setInterval(pulse,2500);
@@ -6371,13 +6461,155 @@ function visibleJobs(){
   return rows;
 }
 
+/* ---- the base CV --------------------------------------------------------
+   One document every tailored CV is copied from. It is pinned above the
+   applications rather than listed among the documents because it is what they
+   are all made of: the question "which CV is this one a version of" now has
+   one answer instead of one per file. */
+/* Not baseName(): that one already means "the file this document was copied
+   from" a few hundred lines up, and two answers to one name is how the two
+   ideas get confused in the first place. */
+function baseLabel(){ const b=S.state&&S.state.base;
+  return b?b.path.split("/").pop().replace(/\.ya?ml$/,""):null }
+function paintBase(){
+  const el=$("#baserow"), b=S.state&&S.state.base;
+  el.classList.toggle("gone",!!(b&&b.missing));
+  if(!b){
+    el.innerHTML='<span class="bl">Base CV</span>'+
+      '<span class="bsub">Not chosen yet. Every tailored CV starts as a copy '+
+      'of one.</span><div class="grow"></div>'+
+      '<button class="obtn" id="base-pick">Choose\u2026</button>';
+  }else if(b.missing){
+    el.innerHTML='<span class="bl">Base CV</span>'+
+      '<span class="bn">'+esc(baseLabel())+'</span>'+
+      '<span class="bsub">is no longer in the workspace</span>'+
+      '<div class="grow"></div>'+
+      '<button class="obtn" id="base-pick">Choose another\u2026</button>';
+  }else{
+    const pages=S.pages[b.path];
+    el.innerHTML='<span class="bl">Base CV</span>'+
+      '<span class="bn">'+esc(baseLabel())+'</span>'+
+      '<span class="bsub">'+(pages?pages+" page"+(pages===1?"":"s"):"")+'</span>'+
+      '<div class="grow"></div>'+
+      '<button class="obtn" id="base-open">Open</button>'+
+      '<button class="obtn" id="base-pick">Change\u2026</button>';
+  }
+  const open=$("#base-open");
+  if(open) open.onclick=()=>{
+    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    openDoc(b.path);
+  };
+  $("#base-pick").onclick=baseSheet;
+}
+function baseSheet(){
+  const b=S.state&&S.state.base;
+  /* Letters are excluded for the same reason the New document sheet filters
+     its Base on list: a cover letter as the thing every CV is copied from
+     produces nonsense. */
+  const docs=(S.state.documents||[]).filter(d=>d.group!=="Cover letters");
+  if(!docs.length) return toast("There are no CVs in the workspace yet.",true);
+  openSheet(
+    '<div><h3 id="sheet-title">Base CV</h3><p>Every new CV starts as a copy of '+
+    'this one, and a tailored CV is measured against whatever it was copied '+
+    'from. Changing it touches no document: CVs already tailored keep the base '+
+    'they were made from.</p></div>'+
+    '<div class="fg w88"><label>Use</label><select id="bs-doc">'+
+      docs.map(d=>'<option value="'+esc(d.path)+'"'+
+        (b&&b.path===d.path?" selected":"")+'>'+esc(d.label)+'</option>').join("")+
+    '</select></div>'+
+    '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
+    '<button class="sbtn primary" id="bs-go">Set as base</button></div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#bs-go").onclick=async()=>{
+    const path=$("#bs-doc").value;
+    try{
+      const r=await post("/api/base",{path:path});
+      S.state.base=r.base;
+      closeSheet(); paintBase();
+      toast(baseLabel()+" is the base CV");
+    }catch(e){ toast(e.message,true) }
+  };
+}
+/* The editor with nothing open in it. Reachable from the nav now that the app
+   does not open a document for you. */
+function paintEmptyEditor(){
+  if(S.path) return;
+  const b=S.state&&S.state.base;
+  $("#pane-page").innerHTML='<div class="empty"><h3>Nothing open</h3>'+
+    '<p>Documents are reached through the applications they were written for. '+
+    'Pick one from the Jobs list, or open the CV they are all copied from.</p>'+
+    '<p>Either way it is a plain YAML file in your workspace, so you always own '+
+    'it. No database, no account, nothing leaves your machine.</p>'+
+    '<div class="cta">'+
+    (b&&!b.missing?'<button class="sbtn primary" id="emptybase">Open '+
+      esc(baseLabel())+'</button>':
+      '<button class="sbtn primary" id="emptynew">Create a CV</button>')+
+    '<button class="sbtn" id="emptyjobs">Go to applications</button></div></div>';
+  const ob=$("#emptybase"); if(ob) ob.onclick=()=>openDoc(b.path);
+  const nb=$("#emptynew"); if(nb) nb.onclick=()=>newDocumentSheet();
+  $("#emptyjobs").onclick=()=>setView("jobs");
+}
+
+/* ---- tailoring a CV for an application -----------------------------------
+   The one action the home screen exists to offer. Not a dialog: a dialog is
+   for choices, and every choice here has already been made -- the base is
+   pinned, the name comes from the application, and the link is the whole
+   point. The New document sheet stays for when you do want the choices. */
+function uniqueDocName(stem){
+  /* Two applications to one company for one role is ordinary -- re-applying, or
+     two openings -- so the second one gets a suffix rather than a dead end. */
+  const taken=p=>(S.state.documents||[]).some(d=>d.path==="profile/"+p+".yaml");
+  if(!taken(stem)) return stem;
+  for(let n=2;n<50;n++) if(!taken(stem+"-"+n)) return stem+"-"+n;
+  return stem+"-"+Date.now();
+}
+async function tailorFor(id){
+  const j=(S.jobs||[]).find(x=>x.id===id);
+  if(!j||S.tailoring.has(id)) return;
+  const b=S.state&&S.state.base;
+  if(!b||b.missing){
+    toast(b?"The base CV is missing, so there is nothing to copy."
+           :"Choose a base CV first \u2014 the tailored copy starts from it.",true);
+    return baseSheet();
+  }
+  const name=uniqueDocName(derivedName(j.title,j.company));
+  S.tailoring.add(id); drawJobs();
+  try{
+    /* /api/new already records what it was copied from, so the new document's
+       vs-base marks work with nothing extra done here. */
+    const r=await post("/api/new",{name:name,kind:"cv",from:b.path});
+    const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
+    try{
+      await post("/api/jobs/update",{id:j.id,cv_path:r.path});
+      await loadJobs();
+    }catch(e){
+      /* The document exists either way, and an unlinked document is the
+         recoverable half: the link chip in the editor attaches it. A job
+         pointing at a file that was never written would not be. */
+      toast("Created "+name+", but linking it to "+j.company+" failed: "+
+            e.message+" Use the link chip in the editor.",true);
+    }
+    openDoc(r.path);
+    toast("Tailored from "+baseLabel());
+  }catch(e){
+    toast(e.message,true);
+  }finally{
+    S.tailoring.delete(id);
+    if(S.view==="jobs") drawJobs();
+  }
+}
+
 function drawJobs(){
   drawRail();
   const rows=visibleJobs();
   const docName=p=>p?p.split("/").pop():null;
   $("#jobrows").innerHTML=rows.length?rows.map(j=>{
     const cv=docName(j.cv_path), letter=docName(j.letter_path);
-    const docs=cv?esc(cv)+(letter?" +letter":""):null;
+    /* A row with a letter and no CV used to read "no CV yet" and drop the
+       letter on the floor, which was wrong before and would now be worse: the
+       offer to make one would be standing on top of a document that exists. */
+    const docs=cv?esc(cv)+(letter?" +letter":""):(letter?esc(letter):null);
+    const openable=cv?j.cv_path:j.letter_path;
     const sal=money(j), ap=appliedAt(j);
     const due=j.followup_date&&j.followup_date<=isoToday();
     return '<button class="trow'+(DEAD_STATUS.has(j.status)?" dead":"")+
@@ -6385,24 +6617,47 @@ function drawJobs(){
       '<span class="co">'+companyMark(j)+'<span class="con">'+
         esc(j.company)+'</span></span>'+
       '<span class="role"><b>'+esc(j.title)+'</b></span>'+
-      '<span>'+(docs?'<span class="docs mono" data-open="'+esc(j.cv_path)+'">'+docs+'</span>'
-                    :'<span class="docs none">no CV yet</span>')+'</span>'+
+      '<span>'+(docs?'<span class="docs mono" data-open="'+esc(openable)+'">'+docs+'</span>'
+               :S.tailoring.has(j.id)
+                 ?'<span class="docs busy">Tailoring\u2026</span>'
+                 /* The busy label is rendered from state rather than written
+                    onto the node, because the workspace poll can redraw this
+                    whole table underneath a copy that is still running. */
+                 :'<span class="docs make" data-tailor="'+esc(j.id)+'" title="'+
+                  'Copy the base CV, name it after this application, and open it'+
+                  '">No CV yet \u2014 tailor one</span>')+'</span>'+
       '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
         esc(prettyStatus(j.status))+'</span>'+
       '<span class="when'+(ap?"":" none")+'">'+(ap?esc(shortDate(ap)):"–")+'</span>'+
       '<span class="when'+(j.followup_date?(due?" due":""):" none")+'">'+
         (j.followup_date?esc(shortDate(j.followup_date)):"–")+'</span>'+
       '</button>';
-  }).join(""):'<div class="empty"><h3>'+
-    (S.jobs.length?"Nothing matches":"No applications yet")+'</h3><p>'+
-    (S.jobs.length?"Try another filter, or clear the search."
-      :"Add the roles you are applying for. Once a few have moved through the stages, "+
-       "the funnel will show where they actually go.")+'</p></div>';
+  }).join(""):(S.jobs.length
+    ? '<div class="empty"><h3>Nothing matches</h3>'+
+      '<p>Try another filter, or clear the search.</p></div>'
+    /* The home screen of an empty workspace. This used to be the only place
+       the app explained itself, on a CVs screen nobody lands on any more. */
+    : '<div class="empty"><h3>No applications yet</h3>'+
+      '<p>Add the roles you are applying for. Each one gets a CV tailored from '+
+      'your base, in a click, and the funnel shows where they actually go.</p>'+
+      '<p>'+(S.state&&S.state.base&&!S.state.base.missing
+        ? "Your base CV is <b>"+esc(baseLabel())+"</b>. Every application starts "+
+          "as a copy of it."
+        : "Pick a base CV above and every application can start from it.")+'</p>'+
+      '<div class="cta"><button class="sbtn primary" id="jb-first">Add an application'+
+      '</button><button class="sbtn" id="jb-ai">Connect an AI client</button>'+
+      '</div></div>');
 
   $$("#jobrows [data-id]").forEach(b=>b.onclick=e=>{
-    if(e.target.closest("[data-open]")) return;
+    if(e.target.closest("[data-open],[data-tailor]")) return;
     selectJob(b.dataset.id);
   });
+  $$("#jobrows [data-tailor]").forEach(el=>el.onclick=e=>{
+    e.stopPropagation();
+    tailorFor(el.dataset.tailor);
+  });
+  const first=$("#jb-first"); if(first) first.onclick=()=>newJobSheet();
+  const jai=$("#jb-ai"); if(jai) jai.onclick=()=>$("#btn-ai").click();
   $$("#jobrows [data-open]").forEach(a=>a.onclick=e=>{
     e.stopPropagation();
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;

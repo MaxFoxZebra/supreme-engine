@@ -316,10 +316,15 @@ def _brief(job: dict) -> dict:
     `description` is the whole posting and `status_history` can be dozens of
     entries. Both are dead weight in a list of forty applications, so the list
     tools drop them and `find_job` returns enough to identify a row and no more.
+
+    `cv_path` and `letter_path` are two short strings and they are the join
+    between an application and the document that was sent for it. Stripping
+    them meant "which CV went to Acme?" had no answer here, which is the one
+    question an app organised around applications is for.
     """
     keep = ("id", "title", "company", "status", "location", "url", "source",
             "followup_date", "interview_at", "contact_email",
-            "last_contact_at", "updated_at")
+            "last_contact_at", "cv_path", "letter_path", "updated_at")
     return {k: job.get(k) for k in keep if job.get(k) is not None}
 
 
@@ -545,10 +550,21 @@ def design_options() -> dict:
 def workspace_info() -> dict:
     """Where the workspace is and what is in it."""
     ws = _ws()
+    base = studio.base_cv()
     return {
         "workspace": str(ws),
         "cv_count": len(studio.list_documents()),
         "job_count": len(studio.jobstore.list_jobs(ws)) if studio.jobstore else 0,
+        # The document every tailored CV starts from. Named here because it is
+        # the first thing worth knowing before writing a CV in this workspace:
+        # tailoring means create_cv(copy_from=<this>), not starting over.
+        "base_cv": (base or {}).get("path"),
+        "base_cv_note": (
+            "Tailor by copying it: create_cv(name=..., copy_from=<base_cv>). "
+            "The app then marks every field that differs from it."
+            if base and not base.get("missing") else
+            "The user has not chosen one, so there is nothing to tailor from "
+            "yet. Ask rather than picking a CV for them."),
         "storage": "CVs are plain YAML files the user owns. Applications are "
                    "rows in applications.db beside them, which export to JSON "
                    "and CSV so nothing is locked in.",

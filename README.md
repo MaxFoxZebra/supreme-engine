@@ -57,7 +57,9 @@ Nothing else is required. Python, RenderCV, Typst and the fonts are all bundled.
 On first launch it creates a workspace at `~/Documents/CV Studio` with a starter
 CV, and opens it.
 
-There are three screens, switched from the control at the top left.
+There are three screens, switched from the control at the top left. It opens on
+Jobs, because the work is applying for jobs: a CV is something an application
+either has or has not got yet.
 
 **CVs** is the editor. The left rail lists your documents and, under them, an
 outline of the open one. The rendered page is always on screen; the tabs choose
@@ -84,6 +86,8 @@ kind once.
 | | |
 |---|---|
 | **Page / Form / YAML** | The page on its own, or the page beside every field at once, or beside the raw file with syntax highlighting |
+| **Base CV** | One document every tailored copy starts from, pinned above the applications. Stored in the workspace, so an AI client can read it |
+| **Tailor a CV** | An application with no CV offers one. A click copies the base, names it, links it and opens it |
 | **Add and remove** | Sections and entries, from the Form. Blank entries are built from RenderCV's own models, so a half-filled one still renders |
 | **Live** | Edits re-render behind you, so the page beside the form is the page you are making, not the one you started with |
 | **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet. `↑` `↓` walk to the next block, `Esc` closes |
@@ -96,10 +100,19 @@ kind once.
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, in the outline, the block editor, the bullet and the page margin, with what the line said before. A second mark for every field that no longer matches the CV this one was tailored from. Neither is in the YAML, so neither prints |
 
-**Jobs** is `applications.db`: filter by status down the left, six columns of
-what matters across the middle, and one application's details on the right:
-status, source, fit, its documents, its history and your notes. A filename in
-the Documents column opens that CV in the editor.
+**Jobs** is home, and it is `applications.db`: filter by status down the left,
+six columns of what matters across the middle, and one application's details on
+the right: status, source, fit, its documents, its history and your notes. A
+filename in the Documents column opens that CV in the editor.
+
+Pinned above the list is your **base CV** — the one document every tailored copy
+starts from. An application that has no CV yet says so and offers to make one:
+one click copies the base, names it after the company and role, attaches it to
+the application and opens it. What it was copied from is recorded, so every
+field you then change is marked as differing from the base. Which document is
+the base lives in the workspace, not in this browser, so the models you have
+connected can see it too — `workspace_info` names it, and tailoring by hand is
+`create_cv(copy_from=…)`.
 
 **Funnel** shows where the applications went, cumulatively: how many reached an
 interview, how many converted, and where the rest dropped out. Rejections and

@@ -57,6 +57,20 @@ class Client:
             self.p.kill()
 
 
+def brief_keeps() -> str:
+    """The fields _brief lets through, read out of the server's own source.
+
+    Read rather than imported: importing mcp_server registers every tool and
+    needs its whole dependency tree, which is a lot of machinery for one
+    tuple. Read rather than copied: a copy here would only agree with itself.
+    """
+    import re
+    src = (pathlib.Path(__file__).resolve().parent.parent / "mcp_server.py"
+           ).read_text(encoding="utf-8")
+    found = re.search(r"\n    keep = \(([^)]*)\)", src)
+    return found.group(1) if found else ""
+
+
 fails = []
 def check(name, ok, detail=""):
     print(f"  {'ok  ' if ok else 'FAIL'}  {name}" + (f"  -> {detail}" if detail else ""))
@@ -109,7 +123,13 @@ if __name__ == "__main__":
           body[:70].replace("\n", " "))
 
     r = call("workspace_info", {})
-    check("workspace_info answers", "workspace" in r["result"]["content"][0]["text"])
+    info = r["result"]["content"][0]["text"]
+    check("workspace_info answers", "workspace" in info)
+    # A fresh workspace seeds one CV and nominates it, so a model has something
+    # to tailor from without asking. Without this the base is a UI-only idea and
+    # the half of the app that writes CVs cannot see it.
+    check("workspace_info names the CV to tailor from",
+          "profile/my-cv.yaml" in info, "base_cv")
 
     # The document to edit has to be made first: this used to point at a
     # profile/hard.yaml that nothing ever creates, so every check below it
@@ -256,6 +276,12 @@ if __name__ == "__main__":
           len(listed) == 2 and "description" not in listed[0]
           and "status_history" not in listed[0],
           ",".join(sorted(listed[0])))
+    # The join between an application and the document sent for it. Nothing
+    # here can set it yet, so this asserts the shape rather than a value: the
+    # keys must not be on the strip list.
+    keeps = brief_keeps()
+    check("the CV a job was sent with is not stripped out",
+          '"cv_path"' in keeps and '"letter_path"' in keeps, "_brief keeps both")
 
     r = call("read_job", {"job_id": job_id})
     check("read_job returns the posting text in full",
