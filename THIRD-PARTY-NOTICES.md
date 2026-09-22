@@ -51,19 +51,28 @@ the OpenAI mark in one place only: to identify that integration in the
 interface. It is not the application's own icon, and nothing here is built,
 endorsed or supported by OpenAI.
 
-Both marks are inlined as SVG in `server/studio.py`. The Claude one is as
-published by Anthropic in their VS Code extension; the OpenAI one is taken from
+**Hermes Agent** and **Nous Research** are trademarks of Nous Research. CV
+Studio uses the Nous Research mark in one place only: to identify that
+integration in the interface. It is not the application's own icon, and nothing
+here is built, endorsed or supported by Nous Research. Nous Research publishes
+no separate mark for Hermes Agent itself — the only artwork in its repository is
+a wordmark banner — so the company's mark identifies the row, exactly as the
+OpenAI mark identifies the row covering ChatGPT and Codex.
+
+**Mistral** and **Vibe** are trademarks of Mistral AI. CV Studio uses the
+Mistral mark in one place only: to identify that integration in the interface.
+It is not the application's own icon, and nothing here is built, endorsed or
+supported by Mistral AI.
+
+Each mark is drawn exactly as its owner publishes it, rather than redrawn or
+simplified, and all four are inlined in `server/studio.py` — three as SVG, the
+Mistral one as a base64 PNG, which is the form it is published in. The Claude
+mark is as published by Anthropic in their VS Code extension; the OpenAI and
+Nous Research ones are taken from
 [@lobehub/icons-static-svg](https://github.com/lobehub/lobe-icons) (MIT), which
 redistributes brand marks for exactly this purpose. The MIT licence covers the
 packaging of the artwork, not the trademarks themselves, which remain their
 owners'.
-
-**Hermes Agent** and **Nous Research** are Nous Research's names. The mark CV
-Studio draws for that integration, `hermes-mark` in `server/studio.py`, is
-**not** theirs: it is a plain geometric lettermark drawn for this app, standing
-in for a brand mark because there is no published one to use. Approximating
-somebody's logo is worse than not showing it, so nothing here is an imitation
-of one, and nothing here is built, endorsed or supported by Nous Research.
 
 ## Build tooling
 
