@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.14.0
 
 - **One workbench instead of two.** Only the title bar is dark now. The
   sidebars and the footer sit on the same paper as the work, so the window no
