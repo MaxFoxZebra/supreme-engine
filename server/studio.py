@@ -2744,6 +2744,9 @@ button:disabled{opacity:.4;cursor:default}
 .aic{display:flex;align-items:center;gap:4px}
 .aic svg{flex:none}
 .aic[data-client=claude] svg{color:#D97757}
+/* The same tile as in the settings badge, at dot size. See the note there. */
+.aic[data-client=hermes] svg{width:15px;height:15px;padding:2px;
+  box-sizing:border-box;background:#fff;color:#000;border-radius:3px}
 .aic .dot{width:6px;height:6px;border-radius:50%;background:var(--dot-idle);
   flex:none;transition:background .15s}
 .aic[data-state=connected] .dot{background:var(--fn-won)}
@@ -3525,10 +3528,15 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
   border-radius:9px;display:grid;place-items:center;background:var(--bar)}
 .client[data-client=claude] .badge{background:rgba(217,119,87,.14);color:#D97757}
 .client[data-client=openai] .badge{color:var(--t900)}
-.client[data-client=hermes] .badge{background:var(--row-hover);color:var(--t900)}
-/* An illustration rather than a glyph, so it needs the room the others do not:
-   at the 19px the rest are drawn at, its detail closes up into a blot. */
-.client[data-client=hermes] .badge svg{width:24px;height:24px}
+/* Nous publish this one as an avatar -- a figure on a tile -- rather than as a
+   glyph that takes the colour around it, so it is drawn that way: black on
+   white, at the 0.75 of the tile their own icon set declares. Left to take
+   currentColor like the other three it inverts on a dark background, and an
+   inverted illustration is not the mark. It also needs the extra size: at the
+   19px the rest are drawn at, its detail closes up into a blot. */
+.client[data-client=hermes] .badge{background:#fff;color:#000;
+  box-shadow:inset 0 0 0 1px var(--bd-field)}   /* white on white needs an edge */
+.client[data-client=hermes] .badge svg{width:28px;height:28px}
 .client[data-client=mistral] .badge{background:rgba(250,80,15,.12)}
 .client .who{grid-column:2;grid-row:1;display:flex;align-items:center;gap:9px;
   min-width:0;flex-wrap:wrap}
