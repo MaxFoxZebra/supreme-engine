@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.12.3"
+VERSION = "0.12.4"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -122,12 +122,14 @@ def server_launch() -> dict:
 # file. Both are enough: one says whether the connection exists, the other says
 # what the model has been doing in there.
 #
-# Three clients, three config formats, and TOML twice over is not one format.
+# Four clients, four config formats, and TOML twice over is not one format.
 # Claude Desktop keeps JSON. OpenAI keeps TOML at ~/.codex/config.toml, which
 # the ChatGPT desktop app, Codex CLI and the IDE extension all read, so
 # configuring it once covers all three. Mistral Vibe keeps TOML too, at
 # ~/.vibe/config.toml, but as an array of tables with the server's name inside
 # each one rather than in its header, so it needs its own reader and writer.
+# Hermes Agent keeps YAML, in its own home, shared by its desktop app, its TUI
+# and its CLI.
 #
 # Le Chat is absent on purpose. Its custom connectors take an https URL to a
 # remote MCP server, and this one is local and speaks stdio, so the only way to
@@ -372,6 +374,119 @@ def _vibe_write(path: Path, entry: dict) -> None:
     path.write_text(out, encoding="utf-8")
 
 
+# ---- YAML, the way Hermes Agent keeps it ---------------------------------
+#
+# A mapping keyed by server name, like Claude Desktop's, but in YAML -- and one
+# file for the desktop app, the TUI and the CLI alike, so configuring it once
+# covers all three. ruamel is already here for the CVs, so this is the one
+# client config the app can edit without flattening the comments and ordering
+# around it: the entry is updated in place and everything else in the file is
+# left exactly as it was.
+
+def _hermes_config_path() -> Path:
+    """config.yaml inside Hermes' home, resolved the way Hermes resolves it.
+
+    HERMES_HOME wins -- it is also how a named profile is selected, as
+    <root>/profiles/<name> -- then the platform default, which is not the same
+    shape on Windows as elsewhere. Guessing ~/.hermes there would write a file
+    Hermes never reads, and the app would then report itself connected.
+    """
+    home = (os.environ.get("HERMES_HOME") or "").strip()
+    if home:
+        base = Path(os.path.expandvars(os.path.expanduser(home)))
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or
+                    Path.home() / "AppData" / "Local") / "hermes"
+    else:
+        base = Path.home() / ".hermes"
+    return base / "config.yaml"
+
+
+def _yaml_servers(data):
+    """The mcp_servers mapping, complaining rather than guessing."""
+    if not hasattr(data, "get"):
+        raise ValueError("the config file is not a YAML mapping")
+    servers = data.get("mcp_servers")
+    if servers is None:
+        return None
+    if not hasattr(servers, "get"):
+        raise ValueError('"mcp_servers" is not a YAML mapping')
+    return servers
+
+
+def _yaml_read(path: Path) -> dict | None:
+    """Ours, reduced to the shape every other reader returns.
+
+    Hermes takes a dozen optional keys per server. They belong to whoever set
+    them, not to this app, so they are not reported: ai_connect compares what
+    it reads against what ai_entry() asks for, and an entry carrying a
+    `timeout` the user added would never compare equal, so every write would be
+    read back as wrong and rolled back.
+
+    `enabled: false` is the exception, and it is reported. A disabled server is
+    one Hermes will not start, so an app that called that connected would be
+    lying; surfacing it makes the entry differ from what is wanted, which is
+    what sends it to _yaml_write to be turned back on.
+    """
+    data = yaml_rt.load(path.read_text(encoding="utf-8"))
+    if data is None:
+        return None
+    servers = _yaml_servers(data)
+    entry = servers.get(MCP_KEY) if servers is not None else None
+    if not hasattr(entry, "get"):
+        return None
+    ours = {"command": to_plain(entry.get("command")),
+            "args": to_plain(entry.get("args"))}
+    if entry.get("enabled") is False:
+        ours["enabled"] = False
+    return ours
+
+
+def _yaml_write(path: Path, entry: dict) -> None:
+    """Set our command and args, and touch nothing else.
+
+    Hermes takes a dozen optional keys per server -- timeouts, tool filters,
+    whether to start it lazily. Replacing the whole entry would throw away
+    whatever the user had set there, so only the two fields this app owns are
+    written.
+
+    `enabled: false` is the one other key touched, and only when it is already
+    there and false. Pressing Set up on a server that is switched off and
+    leaving it switched off is not setting it up.
+    """
+    import io as _io
+
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    data = yaml_rt.load(text) if text.strip() else None
+    if data is None:
+        data = {}
+    servers = _yaml_servers(data)
+    if servers is None:
+        data["mcp_servers"] = {}
+        servers = data["mcp_servers"]
+    ours = servers.get(MCP_KEY)
+    if not hasattr(ours, "get"):
+        ours = {}
+        servers[MCP_KEY] = ours
+    ours["command"] = entry["command"]
+    ours["args"] = list(entry["args"])
+    if ours.get("enabled") is False:
+        ours["enabled"] = True
+    buf = _io.StringIO()
+    yaml_rt.dump(data, buf)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(buf.getvalue(), encoding="utf-8")
+
+
+def _yaml_snippet(entry: dict) -> str:
+    import io as _io
+
+    buf = _io.StringIO()
+    yaml_rt.dump({"mcp_servers": {MCP_KEY: {
+        "command": entry["command"], "args": list(entry["args"])}}}, buf)
+    return buf.getvalue().rstrip("\n")
+
+
 AI_CLIENTS = {
     "claude": {
         "label": "Claude Desktop",
@@ -388,6 +503,17 @@ AI_CLIENTS = {
         "restart": "Restart the ChatGPT app, or start a new Codex session.",
         "manual": "The ChatGPT app, Codex CLI and the Codex IDE extension "
                   "share this file, so this configures all three.",
+    },
+    "hermes": {
+        "label": "Hermes Agent",
+        "path": _hermes_config_path,
+        "read": _yaml_read, "write": _yaml_write, "snippet": _yaml_snippet,
+        "restart": "Start Hermes, or run /reload-mcp in a session that is "
+                   "already open, and the tools appear in the registry.",
+        "manual": "Hermes Desktop, the TUI and the CLI all read one config, "
+                  "so this configures all three. It lives in Hermes' home: "
+                  "HERMES_HOME if you have set one, otherwise ~/.hermes, or "
+                  "%LOCALAPPDATA%\\hermes on Windows.",
     },
     "mistral": {
         "label": "Mistral Vibe",
@@ -2001,7 +2127,7 @@ def openapi_spec() -> dict:
             "/api/ai/connect": {"post": {"summary":
                 "Add this workspace to one AI client's MCP config",
                 "requestBody": body({"client": {"type": "string",
-                                                "enum": ["claude", "openai", "mistral"]}}),
+                                                "enum": list(AI_CLIENTS)}}),
                 "responses": ok}},
             "/api/skills": {"get": {"summary":
                 "The CV Studio skills on this machine, and whether they need the MCP",
@@ -2724,6 +2850,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .pmark[data-by=claude]{color:#D97757}
 .pmark[data-by=openai]{color:var(--t700)}
 .pmark[data-by=mistral]{color:#FA520F}
+.pmark[data-by=hermes]{color:var(--t700)}
 .pmark[data-by=ai]{color:var(--t600)}
 .pmark[data-by=you]{display:none}       /* your own edits are the default */
 /* Stands for something underneath rather than for the line it sits on. */
@@ -2757,6 +2884,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .pgmark[data-by=claude]{color:#D97757}
 .pgmark[data-by=openai]{color:#5b5750}
 .pgmark[data-by=mistral]{color:#FA520F}
+.pgmark[data-by=hermes]{color:#5b5750}
 .pgmark[data-by=ai]{color:#8a877f;font-size:9px}
 .pgmark[data-by=you]{display:none}
 
@@ -3397,6 +3525,7 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
   border-radius:9px;display:grid;place-items:center;background:var(--bar)}
 .client[data-client=claude] .badge{background:rgba(217,119,87,.14);color:#D97757}
 .client[data-client=openai] .badge{color:var(--t900)}
+.client[data-client=hermes] .badge{background:var(--row-hover);color:var(--t700)}
 .client[data-client=mistral] .badge{background:rgba(250,80,15,.12)}
 .client .who{grid-column:2;grid-row:1;display:flex;align-items:center;gap:9px;
   min-width:0;flex-wrap:wrap}
@@ -3660,6 +3789,14 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 
   <symbol id="openai-mark" viewBox="0 0 24 24"><path fill="currentColor"
     fill-rule="evenodd" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"/></symbol>
+  <!-- Hermes Agent, as a plain lettermark rather than its own logo. The two
+       marks above are the real ones, used with the permission their owners
+       publish them under; this one stands in because there is no such
+       published mark to use, and approximating somebody's logo is worse than
+       not showing it. -->
+  <symbol id="hermes-mark" viewBox="0 0 24 24"><path fill="currentColor"
+    d="M5 4h3v16H5z M16 4h3v16h-3z M8 10.5h8v3H8z"/></symbol>
+
   <symbol id="mistral-mark" viewBox="44 124 559 399">
     <image x="0" y="0" width="648" height="648"
       href="data:image/png;base64,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"/>
@@ -3714,6 +3851,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <span class="aic" data-client="openai" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
       ><use href="#openai-mark"/></svg><i class="dot"></i></span>
+    <span class="aic" data-client="hermes" data-state="unknown"><svg width="13"
+      height="13" viewBox="0 0 24 24" aria-hidden="true"
+      ><use href="#hermes-mark"/></svg><i class="dot"></i></span>
     <span class="aic" data-client="mistral" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
       ><use href="#mistral-mark"/></svg><i class="dot"></i></span>
@@ -4579,7 +4719,7 @@ function paintAILog(){
    Field addresses are the dotted form of the same path the inspector already
    binds its inputs to, so a mark is a lookup rather than a search. */
 const PROV_LABEL={claude:"Claude",openai:"OpenAI",mistral:"Mistral",
-  ai:"An AI client",you:"You"};
+  hermes:"Hermes",ai:"An AI client",you:"You"};
 const provKey=path=>path.join(".");
 function provOf(path){
   const f=S.prov&&S.prov.fields;

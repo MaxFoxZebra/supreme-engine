@@ -24,8 +24,9 @@ ever touch that folder.
 
 Connecting a client is one button in **Settings → AI clients**: Claude Desktop;
 OpenAI, where the same config file covers the ChatGPT app, the Codex CLI and the
-Codex IDE extension; or Mistral Vibe. See [MCP.md](MCP.md) for what the model
-can and cannot do.
+Codex IDE extension; Hermes Agent, where one config covers Hermes Desktop, the
+TUI and the CLI; or Mistral Vibe. See [MCP.md](MCP.md) for what the model can
+and cannot do.
 
 ## Install
 
@@ -102,7 +103,7 @@ kind once.
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
 | **Appearance** | Light or dark, or follow the system. In Settings. The rendered CV page stays white either way: it is a document, not a surface |
-| **AI clients** | Whether Claude, OpenAI and Mistral Vibe are wired up to this workspace, in the title bar, one mark and one dot each. Clicking sets them up, and shows what the model has been doing in here |
+| **AI clients** | Whether Claude, OpenAI, Hermes Agent and Mistral Vibe are wired up to this workspace, in the title bar, one mark and one dot each. Clicking sets them up, and shows what the model has been doing in here |
 | **Skills** | The job-search skills, packaged as uploads for the Claude Desktop app. Claude Code reads them off disk already |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, in the outline, the block editor, the bullet and the page margin, with what the line said before. A second mark for every field that no longer matches the CV this one was tailored from. Neither is in the YAML, so neither prints |

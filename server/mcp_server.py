@@ -61,7 +61,7 @@ def _ws() -> Path:
 
 
 # How a client names itself at initialize, mapped onto the ids the app already
-# uses for the three it can configure. The app normally passes --client, since
+# uses for the clients it can configure. The app normally passes --client, since
 # it wrote the config and therefore knows; this is the fallback for a config
 # somebody wrote by hand, where the handshake is the only thing that knows.
 CLIENT_NAMES = {
@@ -70,6 +70,7 @@ CLIENT_NAMES = {
     "codex": "openai", "codex-cli": "openai", "chatgpt": "openai",
     "openai": "openai", "openai-codex": "openai",
     "vibe": "mistral", "mistral": "mistral", "mistral-vibe": "mistral",
+    "hermes": "hermes", "hermes-agent": "hermes", "nous": "hermes",
 }
 
 

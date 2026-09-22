@@ -58,6 +58,13 @@ redistributes brand marks for exactly this purpose. The MIT licence covers the
 packaging of the artwork, not the trademarks themselves, which remain their
 owners'.
 
+**Hermes Agent** and **Nous Research** are Nous Research's names. The mark CV
+Studio draws for that integration, `hermes-mark` in `server/studio.py`, is
+**not** theirs: it is a plain geometric lettermark drawn for this app, standing
+in for a brand mark because there is no published one to use. Approximating
+somebody's logo is worse than not showing it, so nothing here is an imitation
+of one, and nothing here is built, endorsed or supported by Nous Research.
+
 ## Build tooling
 
 [PyInstaller](https://github.com/pyinstaller/pyinstaller) 6.22.2 is licensed

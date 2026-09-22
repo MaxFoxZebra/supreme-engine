@@ -8,6 +8,20 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.12.4
+
+- **Hermes Agent is a fourth AI client.** One button in Settings → AI clients,
+  the same as the others, and it covers Hermes Desktop, the TUI and the CLI at
+  once, because they share one config. Run `/reload-mcp` and the tools are
+  there without leaving the conversation you are in.
+- That config is YAML you are likely to have hand-written, so it is **edited
+  rather than rewritten**: your comments, your ordering, your other servers and
+  whatever you set on this one — a timeout, an environment variable, a tool
+  filter — all stay exactly as they were. Only the command and the workspace
+  are ours to write.
+- Edits that arrive through Hermes are **marked as Hermes'**, beside the field,
+  in the outline and in the page margin, like every other client's.
+
 ## 0.12.3
 
 - **Release notes say what changed.** Every release used to carry the same

@@ -166,7 +166,8 @@ client is pointed at this build and this workspace.
 
 Then restart the client: Claude Desktop shows the tools under the connectors
 icon; for OpenAI, restart the ChatGPT app or start a new Codex session; for
-Mistral, start a new Vibe session.
+Hermes, start it or run `/reload-mcp` in a session already open; for Mistral,
+start a new Vibe session.
 
 The rest of this section is for doing it by hand.
 
@@ -234,6 +235,39 @@ need doubling here too.
 
 `codex mcp add cv-studio -- <command> --mcp` does the same thing from the
 command line, and `codex mcp list` shows what is configured.
+
+### Hermes Agent
+
+Hermes Desktop, the `hermes` TUI and the CLI all read one config, so setting it
+up once covers all three. It is YAML, and `mcp_servers` is a mapping keyed by
+server name — the same shape as Claude Desktop's, in a different language:
+
+```yaml
+mcp_servers:
+  cv-studio:
+    command: /Applications/CV Studio.app/Contents/Resources/server-dist/cv-studio-server
+    args:
+      - --mcp
+      - --workspace
+      - /Users/you/Documents/CV Studio
+```
+
+The file lives in Hermes' home, which is `~/.hermes/config.yaml` on macOS and
+Linux and `%LOCALAPPDATA%\hermes\config.yaml` on native Windows. If you have set
+`HERMES_HOME`, or you are using a named profile — which is a home of its own, at
+`<home>/profiles/<name>` — the config is in there instead, and setting it up
+from the app follows the environment variable.
+
+Hermes picks up a changed config on start, or with `/reload-mcp` in a session
+that is already open, so you do not have to lose the conversation you are in.
+
+Everything else in that file is left exactly as it was. It is YAML, the app is
+already carrying a round-trip YAML parser for the CVs themselves, and this is
+the one client config it can edit without reflowing the comments and ordering
+around it. Only `command` and `args` are written — a `timeout`, an `env`, a
+tool filter you have set on this server stay untouched. The one exception is
+`enabled: false`: setting up a server and leaving it switched off would not be
+setting it up, so pressing **Set up** switches it back on.
 
 ### Mistral Vibe
 
