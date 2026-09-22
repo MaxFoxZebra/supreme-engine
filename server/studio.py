@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.12.2"
+VERSION = "0.12.3"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -3258,7 +3258,21 @@ span.colog{display:grid;place-items:center;font-size:9.5px;font-weight:600;
   padding:22px 24px;display:flex;flex-direction:column;gap:16px;z-index:40}
 .sheet h3{margin:0;font-size:15px;font-weight:600}
 .sheet p{margin:4px 0 0;font-size:12.5px;color:var(--t600);line-height:1.45}
-.sheet .foot{display:flex;justify-content:flex-end;gap:8px;padding-top:2px}
+.sheet .foot{display:flex;justify-content:flex-end;gap:8px;padding-top:2px;
+  align-items:center}
+/* What a new version says about itself. Capped and scrolling: a release with
+   twenty lines of notes should not push the install button off the screen. */
+.relnotes{max-height:230px;overflow-y:auto;font-size:12.5px;line-height:1.55;
+  color:var(--t700);border-top:1px solid var(--rule);padding-top:11px}
+.relnotes p{margin:0 0 8px}
+.relnotes ul{margin:0 0 8px;padding-left:18px}
+.relnotes li{margin:0 0 5px}
+.relnotes b{color:var(--t900);font-weight:600}
+.relnotes code{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:11.5px;background:var(--field);
+  border:1px solid var(--bd-field);border-radius:3px;padding:1px 4px}
+/* Left of the buttons rather than crowded against them. */
+#u-say{margin-right:auto;font-size:11px;color:var(--t500)}
 .sheet .foot .left{margin-right:auto}
 .sbtn{font-size:12.5px;padding:6px 16px;border:1px solid var(--bd-field);border-radius:5px;
   background:var(--field);color:var(--t900)}
@@ -7752,6 +7766,87 @@ function fillSettings(){
       "--token to require a key, or --host to expose it, which forces one.";
 }
 
+/* ---- what a new version says about itself ------------------------------
+   The release notes are assembled from CHANGELOG.md and land in the updater
+   manifest, so `body` is a real account of what changed rather than the same
+   install note every time. The install note is still on the end of it, inside
+   a <details>, which is for someone downloading the file by hand -- this app
+   is already installed. Cut it off.
+
+   Rendered rather than printed: the notes are markdown, and a wall of "- **"
+   reads worse than nothing. Escaped first, then the three marks the notes
+   actually use are put back, so nothing in a release body can inject markup. */
+function updateNotes(body){
+  const head=String(body||"").split(/\n---\s*\n|<details/)[0].trim();
+  if(!head) return "";
+  const inline=t=>esc(t)
+    .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+    .replace(/`([^`]+)`/g,'<code>$1</code>');
+  /* Blocks, not lines. The notes are hard-wrapped, so a bullet is its "- "
+     line plus every continuation under it; taking each line as its own block
+     turned one bullet into a list item followed by a stray paragraph. */
+  const blocks=[];
+  for(const raw of head.split("\n")){
+    const item=raw.match(/^\s*[-*]\s+(.*)$/);
+    const last=blocks.length?blocks[blocks.length-1]:null;
+    if(item) blocks.push({list:true,text:item[1]});
+    else if(!raw.trim()){ if(last) blocks.push(null) }
+    else if(last) last.text+=" "+raw.trim();
+    else blocks.push({list:false,text:raw.trim()});
+  }
+  let html="", list=false;
+  for(const b of blocks){
+    if(!b){ if(list){ html+="</ul>"; list=false } continue }
+    if(b.list&&!list){ html+="<ul>"; list=true }
+    if(!b.list&&list){ html+="</ul>"; list=false }
+    html+=b.list?"<li>"+inline(b.text)+"</li>":"<p>"+inline(b.text)+"</p>";
+  }
+  return html+(list?"</ul>":"");
+}
+
+/* One download, wherever it was started from: the panel in Settings and the
+   panel that comes to you both report into `say`. */
+async function installUpdate(up,say,done){
+  const T=window.__TAURI__;
+  let total=0, got=0;
+  try{
+    await up.downloadAndInstall(e=>{
+      if(e.event==="Started") total=e.data.contentLength||0;
+      if(e.event==="Progress"){
+        got+=e.data.chunkLength||0;
+        say(total?"Downloading "+Math.round(got/total*100)+"%":"Downloading\u2026");
+      }
+      if(e.event==="Finished") say("Installing\u2026");
+    });
+    say("Restarting\u2026");
+    if(T.process&&T.process.relaunch) await T.process.relaunch();
+  }catch(err){ say("Update failed: "+err); if(done) done(err) }
+}
+
+/* An update used to arrive as a toast saying to go and look in Settings, which
+   is a notification about a notification. It comes to you now. Once per
+   version: saying Later means later, not at every launch until you give in --
+   Settings still has it whenever you want it. */
+function updateSheet(up){
+  if(!$("#sheet").hidden) return;      /* never over something being filled in */
+  const have=(S.state&&S.state.version)||"";
+  const notes=updateNotes(up.body);
+  openSheet(
+    '<div><h3 id="sheet-title">CV Studio '+esc(up.version)+' is ready</h3>'+
+    (have?'<p>You have '+esc(have)+'. It installs and restarts in one step; '+
+          'nothing in your workspace is touched.</p>':"")+'</div>'+
+    (notes?'<div class="relnotes" id="u-notes">'+notes+'</div>':"")+
+    '<div class="foot"><span class="mono" id="u-say"></span>'+
+    '<button class="sbtn" id="u-later">Later</button>'+
+    '<button class="sbtn primary" id="u-now">Install and restart</button></div>');
+  $("#u-later").onclick=()=>{ setPref("skipUpdate",up.version); closeSheet() };
+  $("#u-now").onclick=()=>{
+    $("#u-now").disabled=true; $("#u-later").disabled=true;
+    installUpdate(up,t=>{ $("#u-say").textContent=t },
+      ()=>{ $("#u-now").disabled=false; $("#u-later").disabled=false });
+  };
+}
+
 /* Tauri's updater verifies a signature against the public key baked into the
    build, so a compromised release host still cannot push a package this app
    will install. */
@@ -7771,25 +7866,13 @@ async function checkUpdates(loud){
       (up.body?'<br>'+esc(up.body).slice(0,300):"");
     if(act){
       act.innerHTML='<button class="sbtn primary" id="u-go">Download and install</button>';
-      $("#u-go").onclick=async()=>{
+      $("#u-go").onclick=()=>{
         $("#u-go").disabled=true;
-        let total=0, got=0;
-        try{
-          await up.downloadAndInstall(e=>{
-            if(e.event==="Started") total=e.data.contentLength||0;
-            if(e.event==="Progress"){
-              got+=e.data.chunkLength||0;
-              st.textContent=total?"Downloading "+Math.round(got/total*100)+"%"
-                                  :"Downloading…";
-            }
-            if(e.event==="Finished") st.textContent="Installing…";
-          });
-          st.textContent="Restarting…";
-          if(T.process&&T.process.relaunch) await T.process.relaunch();
-        }catch(err){ st.textContent="Update failed: "+err; $("#u-go").disabled=false }
+        installUpdate(up,t=>{ st.textContent=t },
+          ()=>{ $("#u-go").disabled=false });
       };
     }
-    if(!loud) toast("Version "+up.version+" is available (Settings to install)");
+    if(!loud&&prefs().skipUpdate!==up.version) updateSheet(up);
   }catch(e){
     /* A 404 here almost always means no release has been published yet, or the
        repository is private so the asset cannot be fetched without credentials.

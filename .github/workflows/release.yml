@@ -57,6 +57,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The release notes are read out of CHANGELOG.md, and fall back to
+          # the commit subjects since the previous tag. A shallow clone has
+          # neither the tags nor the log, so the fallback would silently be
+          # empty.
+          fetch-depth: 0
 
       # The tag names the release; tauri.conf.json names the binaries, and the
       # updater compares the latter. Tag v0.8.0 over a tree that still says
@@ -81,6 +87,44 @@ jobs:
             exit 1
           fi
           echo "Tag $RELEASE_TAG matches app version $have."
+
+      # What actually changed, rather than the same install note every time.
+      # This ends up in three places at once: the GitHub release body, the
+      # `notes` field of latest.json, and from there the panel the app shows
+      # when an update is waiting. Writing it once is the point.
+      - name: Assemble the release notes
+        if: env.RELEASE_TAG != ''
+        shell: bash
+        run: |
+          ver="${RELEASE_TAG#v}"
+          notes=""
+          if [ -f CHANGELOG.md ]; then
+            # The section for this version, up to the next heading.
+            notes=$(awk -v want="## $ver" '
+              $0 == want { on = 1; next }
+              on && /^## / { exit }
+              on { print }
+            ' CHANGELOG.md)
+          fi
+          # No section written for this version: say what the commits say
+          # rather than publishing a release with nothing in it.
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            prev=$(git tag --list 'v*' --sort=-v:refname                    | grep -vx "$RELEASE_TAG" | head -1)
+            if [ -n "$prev" ]; then
+              notes=$(git log --no-merges --format='- %s' "$prev..HEAD")
+              notes="$notes"$'\n\n'"_No CHANGELOG.md entry for $ver, so this is the commit log._"
+            else
+              notes="_No release notes for $ver._"
+            fi
+          fi
+          {
+            echo "RELEASE_NOTES<<CVSTUDIO_NOTES_EOF"
+            printf '%s\n' "$notes"
+            cat .github/install-note.md
+            echo "CVSTUDIO_NOTES_EOF"
+          } >> "$GITHUB_ENV"
+          echo "Release notes for $ver:"
+          printf '%s\n' "$notes"
 
       - uses: actions/setup-python@v6
         with:
@@ -307,29 +351,10 @@ jobs:
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: "CV Studio ${{ env.RELEASE_TAG }}"
-          releaseBody: |
-            Not notarized by Apple or signed by Microsoft, so first launch needs
-            one extra step.
-
-            **macOS**: open the disk image, drag CV Studio to Applications, then
-            run this once:
-
-            ```
-            xattr -dr com.apple.quarantine "/Applications/CV Studio.app"
-            ```
-
-            After that it opens by double-click like anything else. Without it
-            macOS reports the app as *damaged and can't be opened*, which is
-            what it says about any app that was downloaded and is not notarized.
-            The app is not damaged, and the command does not disable anything
-            system-wide: it clears the flag macOS attached to this one download.
-
-            Right-click then Open used to work instead and no longer does.
-            macOS 15 removed it, so on Sequoia and later the command above is
-            the way in.
-
-            **Windows**: SmartScreen may warn on first run. Choose
-            More info, then Run anyway. Installs per-user, no admin needed.
+          # Assembled above: what changed in this version, then the install
+          # note. Kept out of this file so the same text can be read by the
+          # step that builds the notes rather than duplicated here.
+          releaseBody: ${{ env.RELEASE_NOTES }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
