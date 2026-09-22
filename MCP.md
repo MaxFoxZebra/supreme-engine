@@ -28,7 +28,7 @@ one rendered by clicking Save.
 | `find_job` | Which application a message or event belongs to. Reports what it found and refuses to choose |
 | `job_alerts` | The same list the Jobs view shows under Attention |
 | `set_job_status` | Move one along the funnel |
-| `update_job_tracking` | Interview time, follow-up date, who is writing to you |
+| `update_job_tracking` | Interview time, follow-up date, who is writing to you, and which CV or letter was sent |
 | `add_job` | Add one, refusing a likely duplicate unless you confirm |
 | `set_company_logo` | Point every application at one company to the same logo |
 
@@ -65,6 +65,50 @@ That is also what the card in **Settings → AI clients** reports. "Configured"
 means a config file points at this build; "Connected, last heard from 4 minutes
 ago" means the client actually started the server and called something. Only
 the second is evidence.
+
+## What it cannot do
+
+Worth knowing before you ask for something and get a refusal, or assume
+something is safe that is not. This is the whole of it, checked against the
+tools rather than remembered.
+
+**It cannot destroy anything.** There is no delete tool for an application and
+none for a document, and no tool renames a file. Nothing it can do loses work.
+
+**It cannot rewrite what you wrote.** No tool takes `company`, `title` or
+`notes`. It can *append* a dated line to notes — `append_note`, on two of the
+tools — and that is all. Your notes are yours; the row stays findable under the
+name you know it by. These are not rules it is asked to follow: the parameters
+do not exist, so a model misreading its instructions still cannot do it.
+
+**Some fields are yours alone.** Fit score, both salary figures and their
+currency, and country are on the record but on no tool. Nothing an AI reads in
+a mailbox should be setting what you think a job is worth.
+
+**Some fields can only be set when the application is created.** `add_job`
+takes the posting URL, location, source and description; nothing changes them
+afterwards. If a model finds the posting link a week later it cannot add it —
+you can, in the app. That is a gap rather than a decision, and it is on the
+list.
+
+**It cannot see the funnel or export.** The rates, the drop-off, the CSV and
+JSON exports are app-side only. It can list the applications and count them
+itself.
+
+**It cannot choose your base CV.** `workspace_info` reports which document the
+tailored copies start from, so it can copy the right one, but nominating a
+different one is a decision left with you.
+
+Two things it *can* do that the tool names hide:
+
+- **Change the design.** `edit_cv_fields` writes anywhere in the file, not only
+  under `cv`, so a patch at `["design", "theme"]` switches the theme. Ask
+  `design_options` first for the legal values.
+- **Attach a document to an application**, via `cv_path` or `letter_path` on
+  `update_job_tracking`. That is the second half of tailoring: copy the base,
+  edit the copy, then say what it was for. It checks the path exists and is
+  the right kind of document before writing it, because the link is a plain
+  string in the database with nothing behind it to catch a typo.
 
 ## The application tracker
 

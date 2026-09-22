@@ -267,6 +267,33 @@ if __name__ == "__main__":
           row["interview_at"] is None and "cleared" in (row["notes"] or "").lower(),
           (row["notes"] or "").splitlines()[-1] if row["notes"] else "no note")
 
+    # Tailoring end to end, the way a model is meant to do it: copy the base
+    # this workspace names, then say what the copy was for. Without the second
+    # half the model can write a CV and never record which job it was written
+    # against, which is nine tenths of a job done.
+    call("create_cv", {"name": "mcp-probe-tailored", "copy_from": "profile/my-cv.yaml"})
+    r = call("update_job_tracking", {"job_id": job_id,
+                                     "cv_path": "profile/mcp-probe-tailored.yaml"})
+    row = json.loads(text(r))
+    check("a tailored CV can be attached to the application it was written for",
+          row["cv_path"] == "profile/mcp-probe-tailored.yaml", row.get("cv_path"))
+
+    r = call("list_jobs", {"query": co})
+    attached = [j for j in r["result"]["structuredContent"]["result"]
+                if j.get("cv_path")]
+    check("and the attachment is visible in the list afterwards", len(attached) == 1)
+
+    # The column is a bare string with no foreign key behind it, so a path that
+    # points at nothing has to be refused here or nowhere.
+    r = call("update_job_tracking", {"job_id": job_id, "cv_path": "profile/ghost.yaml"})
+    check("attaching a document that does not exist is refused", errored(r))
+    r = call("update_job_tracking", {"job_id": job_id, "cv_path": "../escape.yaml"})
+    check("attaching a path outside the workspace is refused", errored(r))
+
+    r = call("update_job_tracking", {"job_id": job_id, "cv_path": ""})
+    row = json.loads(text(r))
+    check("and it can be detached again", row.get("cv_path") is None)
+
     # A tool returning a list arrives as one content block per item, with the
     # whole array under structuredContent. Read the array, the way a client
     # that wants the collection rather than the prose would.

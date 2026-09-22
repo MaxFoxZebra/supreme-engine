@@ -308,6 +308,43 @@ def set_company_logo(company: str, image_path: str) -> str:
 # over notes they typed. Those cannot be got wrong by a model misreading its
 # instructions, because the parameters do not exist. Everything else, above
 # all the status change itself, rests on the rules in the server instructions.
+#
+# Attaching a document is inside the line rather than outside it. It adds a
+# reference and destroys nothing: the worst a wrong one does is show the wrong
+# filename on a row, which the user can see and change in a click. Leaving it
+# out was what made "tailor a CV for the Acme job" a request a model could do
+# nine tenths of -- write the document, and then not be able to say what it
+# was for. The path is checked before it is written, because the column is a
+# bare string with no foreign key behind it.
+
+
+def _document(path: str, field: str) -> str | None:
+    """Check a document path before it is written onto an application.
+
+    The link is a bare string in the database with no foreign key behind it, so
+    nothing downstream will notice a path that points at nothing -- the row
+    would simply show a filename that cannot be opened. The cheap check is
+    here, at the only place a model can write one.
+
+    An empty string clears the link, the same way it clears a date.
+    """
+    if path == "":
+        return None
+    target = studio.safe_path(path)          # raises outside the workspace
+    if not target.exists():
+        raise ValueError(f"There is no document at {path}.")
+    if not studio.is_cv_yaml(target):
+        raise ValueError(f"{path} is not a CV or cover letter.")
+    rel = studio.rel(target)
+    # Which of the two columns a document belongs in is decided by where it
+    # lives, which is the same rule the app uses. Crossing them would show a
+    # cover letter in the CV column and vice versa.
+    letter = rel.startswith("letters/")
+    if field == "cv_path" and letter:
+        raise ValueError(f"{rel} is a cover letter. Pass it as letter_path.")
+    if field == "letter_path" and not letter:
+        raise ValueError(f"{rel} is a CV. Pass it as cv_path.")
+    return rel
 
 
 def _brief(job: dict) -> dict:
@@ -465,11 +502,24 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                         followup_date: str | None = None,
                         last_contact_at: str | None = None,
                         contact_email: str | None = None,
+                        cv_path: str | None = None,
+                        letter_path: str | None = None,
                         append_note: str | None = None) -> dict:
-    """Record dates and contact details on an application, without moving it.
+    """Record dates, contacts and which documents were sent, without moving it.
 
     Deliberately separate from set_job_status: these are facts about the
     application, and the status is a judgement about it.
+
+    `cv_path` attaches a document to this application -- the other half of
+    tailoring one. Write a CV for a specific job by copying the base named in
+    workspace_info: create_cv(name=..., copy_from=<base_cv>), edit the copy,
+    then attach it here. The app then shows it in the application's row and
+    marks every field that differs from the base.
+
+    Attaching replaces whatever was attached before; it does not delete the
+    document that was there. An empty string detaches without deleting
+    anything. `letter_path` is the same for a cover letter, which is any
+    document under letters/.
 
     `interview_at` is "YYYY-MM-DDTHH:MM:SS" in the user's own local time, not
     UTC, because that is what the rest of the store uses and what the reminder
@@ -491,6 +541,9 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                          ("contact_email", contact_email)):
         if value is not None:
             data[field] = value or None
+    for field, value in (("cv_path", cv_path), ("letter_path", letter_path)):
+        if value is not None:
+            data[field] = _document(value, field)
     if not data and not append_note:
         raise ValueError("Nothing to change.")
     if interview_at == "":

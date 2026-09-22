@@ -306,10 +306,10 @@ fields per row when the model usually wants three. Add `limit`, default around
 20, and tighten the default projection. `read_job` returns the whole posting
 *and* the full status history every time; let it take a `fields` list.
 
-Also: `_brief()` drops `cv_path` and `letter_path`, so the model cannot see
-which CV was sent to an application without a second call -- while the app
-draws its link marker from exactly those fields. Cheap to add, and it is the
-join the provenance work wants anyway.
+Also: `_brief()` dropped `cv_path` and `letter_path`, so the model could not
+see which CV was sent to an application while the app drew its link marker from
+exactly those fields. *Done in v0.12.0*, and `update_job_tracking` can write
+them as of v0.12.2 -- so the join reads and writes both ways now.
 
 **6. Trim the resident schema.** 16 tools is about 2,600 tokens on every turn.
 `set_job_status` alone is ~300, because the status vocabulary is prose in the
@@ -415,10 +415,11 @@ fallback to the prose rule.
 - **`checks/mcpclient.py` pointed at a `profile/hard.yaml` that nothing
   creates**, so every assertion below it failed against a missing file.
   *Fixed:* the check now creates the document it edits.
-- **`_brief()` hides `cv_path` / `letter_path`** from every job tool, so the
-  model cannot answer "which CV did I send to Acme?" without a second call.
-  Still open, and wanted by the provenance work: it is the join between a
-  tailored CV and the application it was tailored for.
+- **`_brief()` hid `cv_path` / `letter_path`** from every job tool, so the
+  model could not answer "which CV did I send to Acme?" without a second call.
+  *Fixed in v0.12.0.* Writing them came next, in v0.12.2: a model that can
+  tailor a CV but cannot say what it was for has done nine tenths of the job.
+  What is still out of reach is mapped in MCP.md under "What it cannot do".
 - **`render_cv`'s failure string** builds `('Likely cause: ' + hint) if hint
   else ''` inside an f-string, leaving a stray blank line when there is no
   hint. Cosmetic.
