@@ -33,12 +33,21 @@ from pathlib import Path
 
 LABEL = "cvsprobe"
 
+# What RenderCV put between one entry and the next before its themes were
+# unified. 2.8 separates entries with a blank line and never writes this.
+ENTRY_GAP = "#v(design-entries-vertical-space-between-entries)"
+
 # `/ 1pt` divides a length by a length, which yields a plain float -- lengths
 # themselves are not JSON-serialisable.
 HELPER = (
     f"#let {LABEL}(n) = place(context [#metadata((n: n, p: here().page(), "
     f"x: here().position().x / 1pt, "
-    f"y: here().position().y / 1pt))<{LABEL}>])\n"
+    f"y: here().position().y / 1pt, "
+    # The sheet, asked of the page rather than inferred from the PNG. The
+    # client had been deriving it as "144dpi, so two pixels to a point", which
+    # is a guess about someone else's renderer in a map whose every other
+    # number is measured.
+    f"h: page.height / 1pt))<{LABEL}>])\n"
 )
 
 _fonts_cache: dict[str, object] = {}
@@ -70,6 +79,16 @@ def _inject(source: str) -> tuple[str, list[dict]]:
     construct or the `)` closing one. That is a far smaller assumption than
     parsing Typst, and a theme that broke it would be caught by the entry-count
     check rather than mapping clicks to the wrong entry.
+
+    A blank line is what ends a block, which is true of every RenderCV 2.8
+    theme: one entry is one top-level block and the next one is a blank line
+    away. It is not true of 2.x before the templates were unified, where one
+    entry could be two blocks written flush together and consecutive one-line
+    and bullet entries had no blank line between them at all -- a Skills
+    section of four produced one probe, the count disagreed with the YAML, and
+    the section quietly stopped being clickable. Those releases separate
+    entries with an explicit `#v(...between-entries)` instead, so that counts
+    as the end of a block too. 2.8 never emits it, so this costs it nothing.
     """
     out: list[str] = [HELPER]
     probes: list[dict] = []
@@ -85,35 +104,57 @@ def _inject(source: str) -> tuple[str, list[dict]]:
     for line in source.splitlines():
         stripped = line.strip()
         indented = line[:1].isspace()
+        opens = False            # this line is the first of a block
 
-        if depth == 0 and not indented:
+        if depth == 0:
             if not stripped:
                 in_block = False
-            elif line.startswith("= "):
+            elif stripped.startswith((")", "]", "}", ",")):
+                # A line that only closes something never opens anything. It is
+                # also the one place a probe must never go: `)` at column 0 can
+                # be closing a call whose opening line was indented, and a `#`
+                # inside an argument list is a syntax error that fails the whole
+                # compile -- taking every click target on the page with it.
+                pass
+            elif not indented and line.startswith("= "):
                 probe("header")
-                in_block = True
-            elif line.startswith("== "):
+                in_block = opens = True
+            elif not indented and line.startswith("== "):
                 section += 1
                 entry = 0
                 probe("section", s=section)
-                in_block = True
-            elif stripped.startswith(("- ", "+ ")):
+                in_block = opens = True
+            elif stripped == ENTRY_GAP:
+                in_block = False
+            elif not indented and stripped.startswith(("- ", "+ ")):
                 # List entries sit flush together with no blank line between
                 # them, so each marker starts a block of its own.
                 if section >= 0:
                     probe("entry", s=section, i=entry)
                     entry += 1
-                in_block = True
+                in_block = opens = True
             elif not in_block:
-                # Anything else at the top level is an entry -- unless we are
-                # still above the first heading, where it belongs to the header.
+                # Anything else is an entry -- unless we are still above the
+                # first heading, where it belongs to the header.
                 if section >= 0:
                     probe("entry", s=section, i=entry)
                     entry += 1
-                in_block = True
+                in_block = opens = True
 
         out.append(line)
-        if not indented:
+        # Parens are counted on top-level lines and on the opening line of a
+        # block wherever it sits. RenderCV 2.8 indents that line for some
+        # entries and not others -- an entry with no dates gets an indented
+        # `#regular-entry(` -- while the matching `)` is always at column 0.
+        # Counting only column-0 lines therefore saw the close without the
+        # open, dropped to depth 0 mid-call, and treated the next `)` as the
+        # start of an entry.
+        # ...and only once past the first heading. Everything above it is the
+        # theme's preamble, where an indented line after a blank one is not a
+        # block at all but the middle of a `#show` rule -- counting its `(`
+        # without ever seeing the matching `)` left depth stuck open and the
+        # document with no probes whatsoever.
+        if not indented or (opens and section >= 0):
             depth = max(0, depth + line.count("(") - line.count(")"))
 
     return "\n".join(out) + "\n", probes
@@ -168,7 +209,11 @@ def _text_box(source: str, marks: list[dict]) -> dict | None:
     if margin is None or not lefts:
         return None
     x0, x1 = min(lefts), width - margin
-    return {"x0": x0, "x1": x1, "page_width": width} if x1 > x0 else None
+    if x1 <= x0:
+        return None
+    heights = [m["h"] for m in marks if isinstance(m.get("h"), (int, float))]
+    return {"x0": x0, "x1": x1, "page_width": width,
+            "page_height": max(heights) if heights else None}
 
 
 def _bands(marks: list[dict]) -> list[dict]:
@@ -250,7 +295,8 @@ def build_map(typ_path: Path, outline: list[tuple[str, int]],
         p = probes[v["n"]]
         if p["kind"] == "entry" and p["s"] not in trusted:
             continue
-        mark = {"kind": p["kind"], "page": v["p"], "y": v["y"], "x": v.get("x")}
+        mark = {"kind": p["kind"], "page": v["p"], "y": v["y"], "x": v.get("x"),
+                "h": v.get("h")}
         if "s" in p:
             mark["name"] = outline[p["s"]][0]
         if "i" in p:

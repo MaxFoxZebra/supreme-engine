@@ -30,12 +30,45 @@ def strip_ansi(text: str) -> str:
     return ANSI.sub("", text)
 
 
-def rendercv_importable() -> bool:
+# Where RenderCV keeps the callable its `rendercv` console script points at.
+# It has moved: 2.3 publishes rendercv.cli:app, 2.8 rendercv.cli.entry_point:
+# entry_point. Hard-coding one turned a RenderCV upgrade into "rendercv not
+# found" -- the import fails, the in-process renderer is declared unavailable,
+# and a frozen bundle falls back to hunting for an executable it does not ship.
+# Newest first, so the version we pin costs one import.
+CLI_PATHS = (
+    "rendercv.cli.entry_point:entry_point",
+    "rendercv.cli:app",
+)
+
+
+def rendercv_cli():
+    """RenderCV's CLI callable, or None if RenderCV is not importable."""
+    import importlib
+
+    for path in CLI_PATHS:
+        module, _, attr = path.partition(":")
+        try:
+            return getattr(importlib.import_module(module), attr)
+        except Exception:
+            continue
+    # Last resort: ask the installed distribution where its script points.
+    # Left last on purpose -- a PyInstaller bundle carries the package without
+    # necessarily carrying its metadata, so this is the path most likely to be
+    # missing in the one build that matters most.
     try:
-        import rendercv.cli.entry_point  # noqa: F401
-        return True
+        from importlib.metadata import distribution
+
+        for entry in distribution("rendercv").entry_points:
+            if entry.name == "rendercv":
+                return entry.load()
     except Exception:
-        return False
+        pass
+    return None
+
+
+def rendercv_importable() -> bool:
+    return rendercv_cli() is not None
 
 
 def find_rendercv_exe() -> str | None:
@@ -54,7 +87,9 @@ def find_rendercv_exe() -> str | None:
 
 def _render_in_process(yaml_path: Path, out_dir: Path) -> tuple[bool, str]:
     """Drive RenderCV's CLI entry point without spawning a process."""
-    from rendercv.cli.entry_point import entry_point
+    entry_point = rendercv_cli()
+    if entry_point is None:
+        return False, "rendercv is installed but its CLI could not be found"
 
     argv, cwd = sys.argv, Path.cwd()
     buf = io.StringIO()
@@ -145,6 +180,16 @@ def render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
     # being described, and a leftover from another document could otherwise
     # sort ahead of it.
     pdfs = _newest(out_dir, "*.pdf")
+
+    # In-process is preferred, not infallible. A RenderCV whose CLI is not
+    # shaped the way CLI_PATHS expects can be imported, called, exit cleanly
+    # and write nothing at all -- so "it ran" is not evidence, the PDF is. When
+    # that happens and there is an executable to ask instead, ask it rather
+    # than reporting a failure we have a second route around.
+    if not pdfs and rendercv_importable() and find_rendercv_exe():
+        ok, second = _render_subprocess(yaml_path, out_dir)
+        log = f"{log}\n{strip_ansi(second)}"
+        pdfs = _newest(out_dir, "*.pdf")
     mds = _newest(out_dir, "*.md")
     typs = _newest(out_dir, "*.typ")
 

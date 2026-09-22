@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.11.0"
+VERSION = "0.11.1"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -5970,8 +5970,13 @@ function paintHits(){
   const wrap=$("#pane-page .pgwrap"), img=wrap&&wrap.querySelector(".pg");
   if(!wrap||!img||!img.naturalHeight) return;
   wrap.querySelectorAll(".hit").forEach(el=>el.remove());
-  const pageH=img.naturalHeight/2, pageW=img.naturalWidth/2;  /* 144dpi: 2px/pt */
   const box=(S.render&&S.render.map_box)||null;
+  /* The sheet in points, taken from the same measurement the bands are in.
+     Falling back to the image only when the map could not report it: "the PNG
+     is 144dpi, so two pixels to a point" was a guess about somebody else's
+     renderer, in a file whose every other number is measured. */
+  const pageH=(box&&box.page_height)||img.naturalHeight/2;
+  const pageW=(box&&box.page_width)||img.naturalWidth/2;
   /* Hug the text column when we know where it is. Spanning the whole sheet
      reads as a band laid across the paper rather than a mark on the entry. */
   const pad=6;
