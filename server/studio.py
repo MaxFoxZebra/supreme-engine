@@ -81,7 +81,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.10.0"
+VERSION = "0.11.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -1504,6 +1504,72 @@ def line_map(doc, text: str) -> dict:
     return out
 
 
+def apply_ops(path: Path, ops: list[dict], tool: str = "edit") -> dict:
+    """Add and remove whole entries and sections.
+
+    apply_patches deliberately refuses a path that is not already in the
+    document -- that refusal is what tells a model it mis-indexed an entry
+    instead of quietly writing a new one somewhere. Structure is the other
+    half of that bargain: adding an entry IS creating a path that did not
+    exist, so it has to be asked for in as many words rather than inferred
+    from a patch that happened to land past the end of a list.
+
+    RenderCV types a section by the entries in it -- every section is a
+    list[OneLineEntry] or a list[ExperienceEntry], never a mixture -- so a
+    section with nothing in it cannot be typed and fails validation. Removing
+    the last entry therefore removes the section, which is what "remove" meant
+    anyway; leaving an empty one behind would break the render of a document
+    that was fine a moment ago.
+
+    Returns the same {"applied", "missed", "changed"} shape as apply_patches.
+    """
+    data = yaml_rt.load(path.read_text(encoding="utf-8"))
+    before = to_plain(data)
+    applied: list[dict] = []
+    missed: list[dict] = []
+    cv = data.get("cv") if hasattr(data, "get") else None
+    if cv is None:
+        return {"applied": [], "missed": [{"op": o, "why": "no cv in this file"}
+                                          for o in ops], "changed": []}
+    for op in ops:
+        kind = op.get("op")
+        if cv.get("sections") is None:
+            cv["sections"] = {}
+        sections = cv["sections"]
+        try:
+            if kind == "add_section":
+                name = op["name"]
+                if name in sections:
+                    missed.append({"op": op, "why": "that section already exists"})
+                    continue
+                sections[name] = op["value"]
+            elif kind == "remove_section":
+                del sections[op["name"]]
+            elif kind == "add_entry":
+                seq = sections[op["section"]]
+                at = op.get("at")
+                at = len(seq) if at is None else max(0, min(int(at), len(seq)))
+                seq.insert(at, op["value"])
+            elif kind == "remove_entry":
+                name = op["section"]
+                seq = sections[name]
+                seq.pop(int(op["at"]))
+                if not len(seq):
+                    del sections[name]
+            else:
+                missed.append({"op": op, "why": "unknown operation"})
+                continue
+            applied.append(op)
+        except (KeyError, IndexError, ValueError, TypeError) as exc:
+            missed.append({"op": op, "why": f"{type(exc).__name__}: {exc}"})
+    import io
+    buf = io.StringIO()
+    yaml_rt.dump(data, buf)
+    path.write_text(buf.getvalue(), encoding="utf-8")
+    return {"applied": applied, "missed": missed,
+            "changed": record_edits(path, before, to_plain(data), tool)}
+
+
 def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
     """Set individual fields, keeping the rest of the file and its comments.
 
@@ -2191,6 +2257,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     wrote = write_doc(p, payload["yaml"], "save")
                 elif "patches" in payload:
                     wrote = apply_patches(p, payload["patches"], "save")
+                # Fields first, then structure. Adding an entry has to carry
+                # whatever was already typed into the form with it, or the
+                # reload that follows would hand back the file as it was
+                # before those edits and quietly lose them.
+                if payload.get("ops"):
+                    did = apply_ops(p, payload["ops"], "save")
+                    wrote = {"applied": (wrote.get("applied") or []) + did["applied"],
+                             "missed": (wrote.get("missed") or []) + did["missed"],
+                             "changed": (wrote.get("changed") or []) + did["changed"]}
                 return self._json({"ok": True, **wrote, **load_doc(p)})
             if u.path == "/api/skills/package":
                 try:
@@ -2734,6 +2809,15 @@ body.dragging{cursor:col-resize;user-select:none}
 .entry.formblock.on{border-left-color:transparent}
 .entry-hd{font-size:12.5px;font-weight:600;margin-bottom:8px;display:flex;gap:8px;
   align-items:baseline}
+/* The remove sits at the far end of the head, away from the fields: it is the
+   one control here that cannot be undone by typing something else. */
+.entry-hd .rm{margin-left:auto;color:var(--t500)}
+.entry-hd .rm:hover{color:var(--bad);border-color:var(--bad)}
+/* Adding is the last thing in a section and the last thing in the document,
+   in that order, so the form reads as a list you can add to rather than a
+   fixed shape someone else decided on. */
+.addrow{padding:2px 0 14px}
+.addrow.end{padding:4px 0 0;border-top:1px solid var(--rule)}
 /* The same second line the block editor carries, for the same reason: two
    jobs at one employer are two identical headings without it. */
 .entry-hd .sub{font-weight:400;font-size:11px;color:var(--t500);min-width:0;
@@ -4871,6 +4955,48 @@ function leafPaths(){
   }
   return out;
 }
+/* RenderCV types a section by what is in it: every section is a
+   list[OneLineEntry] or a list[ExperienceEntry] and never a mixture, so a new
+   entry has to have the shape of its neighbours and a new section has to pick
+   one. These are RenderCV's own entry models, with every required field blank
+   and the useful optional ones set to null.
+
+   null and not "": an empty string is a valid str, but it is not a valid date,
+   and `start_date: ""` fails validation outright. An absent value has to look
+   absent. */
+const ENTRY_TYPES=[
+  ["ExperienceEntry","Experience","A job: employer, role, dates and bullets",
+    ()=>({company:"",position:"",location:null,start_date:null,end_date:null,
+          highlights:[""]})],
+  ["EducationEntry","Education","A degree: school, subject, dates and bullets",
+    ()=>({institution:"",area:"",degree:null,location:null,start_date:null,
+          end_date:null,highlights:[""]})],
+  ["NormalEntry","Project","Anything with a name, dates and bullets",
+    ()=>({name:"",location:null,start_date:null,end_date:null,highlights:[""]})],
+  ["OneLineEntry","One line","A label and its details, side by side",
+    ()=>({label:"",details:""})],
+  ["BulletEntry","Bullet","A single bullet point",()=>({bullet:""})],
+  ["TextEntry","Text","A paragraph of prose",()=>""],
+  ["PublicationEntry","Publication","Title, authors, journal, DOI",
+    ()=>({title:"",authors:[""],journal:null,doi:null,date:null})],
+  ["NumberedEntry","Numbered","A numbered line",()=>({number:""})],
+  ["ReversedNumberedEntry","Numbered, counting down","A numbered line, in reverse",
+    ()=>({reversed_number:""})],
+];
+/* What a section already holds, so "add" means "another one of these" rather
+   than a question you have to answer every time. Keys rather than a guess at
+   the model name: two types can share a shape, and the keys are what the form
+   is going to draw anyway. */
+function blankLike(list){
+  const first=(list||[])[0];
+  if(first===undefined) return null;
+  if(first===null||typeof first!=="object") return "";
+  const out={};
+  for(const k of Object.keys(first))
+    out[k]=Array.isArray(first[k])?[""]:(typeof first[k]==="number"?null:
+      (/(^|_)date$/.test(k)?null:""));
+  return out;
+}
 const sectionLabel=n=>String(n).replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
 function entryTitle(it,i){
   if(it===null||typeof it!=="object")
@@ -5230,6 +5356,13 @@ function bindFields(root){
       else{
         const was=getAt(S.doc.data,path);
         if(typeof was==="number"&&v.trim()!==""&&!isNaN(v)) v=Number(v);
+        /* An emptied date has to be absent, not empty. RenderCV accepts "" for
+           any other optional string, but a date is parsed, and `start_date: ""`
+           fails validation outright -- so clearing one broke the render of a
+           document that was fine, and the blank entries Add creates start out
+           with exactly these fields empty. */
+        if(v==="") v=(/(^|_)date$/.test(String(path[path.length-1]))||was===null)
+          ? null : v;
       }
       setAt(S.data,path,v);
       /* Keep growing as you type, or it clips again the moment the text runs
@@ -5442,19 +5575,29 @@ function buildForm(){
       '<span class="count">'+list.length+' item'+(list.length===1?"":"s")+
       '</span></summary><div class="body">';
     list.forEach((it,i)=>{
-      if(it===null||typeof it!=="object"){
-        h+='<div class="fg wide formblock'+selMark({kind:"entry",name:name,i:i})+'" data-block="'+esc(name)+'" data-bi="'+i+'">'+fieldRow("text "+(i+1),["cv","sections",name,i],it,
-          {multi:true})+'</div>';
-      }else{
-        h+='<div class="entry formblock'+selMark({kind:"entry",name:name,i:i})+'" data-block="'+esc(name)+'" data-bi="'+i+'"><div class="entry-hd"><b>'+esc(entryTitle(it,i))+'</b>'+
-          '<span class="sub">'+esc(entrySub(it))+'</span></div>'+
-          '<div class="fg wide">'+Object.keys(it).map(k=>
+      /* Every entry gets the same head, a text entry included: it is where the
+         remove lives, and an entry you can add but not take away again is half
+         a control. */
+      const hd='<div class="entry-hd"><b>'+esc(entryTitle(it,i))+'</b>'+
+        '<span class="sub">'+esc(entrySub(it))+'</span>'+
+        '<button class="mini rm" data-rm="'+esc(name)+'" data-i="'+i+
+        '" title="Remove this entry" aria-label="Remove '+esc(entryTitle(it,i))+
+        '">&#10005;</button></div>';
+      const body=(it===null||typeof it!=="object")
+        ? '<div class="fg wide">'+
+            fieldRow("text",["cv","sections",name,i],it,{multi:true})+'</div>'
+        : '<div class="fg wide">'+Object.keys(it).map(k=>
             fieldRow(k,["cv","sections",name,i,k],it[k],{mono:MONO_KEYS.test(k)})).join("")+
-          '</div></div>';
-      }
+          '</div>';
+      h+='<div class="entry formblock'+selMark({kind:"entry",name:name,i:i})+
+        '" data-block="'+esc(name)+'" data-bi="'+i+'">'+hd+body+'</div>';
     });
+    h+='<div class="addrow"><button class="obtn" data-add="'+esc(name)+
+      '">Add to '+esc(sectionLabel(name))+'</button></div>';
     h+='</div></details>';
   }
+  h+='<div class="addrow end"><button class="obtn" id="add-section">'+
+    'Add a section</button></div>';
   $("#pane-form").innerHTML=h;
   /* The form's multiline fields ship at rows="3" and never grew, so a summary
      of four lines showed three and a half and the last one was cut through
@@ -5462,7 +5605,102 @@ function buildForm(){
      the form simply never asked. */
   $$("#pane-form textarea").forEach(autoGrow);
   revealSelected($("#pane-form"));
+  $$("#pane-form [data-add]").forEach(b=>b.onclick=()=>addEntry(b.dataset.add));
+  $$("#pane-form [data-rm]").forEach(b=>b.onclick=()=>removeEntry(b.dataset.rm,+b.dataset.i));
+  $("#add-section").onclick=addSectionSheet;
 }
+/* ---- adding and removing whole entries -----------------------------------
+   Structure cannot go through the working copy the way a field edit does. A
+   patch names a path that is already in the document, and a new entry is by
+   definition a path that is not, so this asks the server in as many words and
+   takes back the file it wrote. Whatever is in the form travels with it -- see
+   save(ops) -- or the reload would hand back the document as it stood before
+   the last few keystrokes. */
+async function addEntry(name){
+  const list=((S.data&&S.data.cv&&S.data.cv.sections||{})[name])||[];
+  const blank=blankLike(list);
+  /* Neighbours to copy: adding is a button, not a questionnaire. Only an empty
+     section has nothing to go on, and then there is a real question to ask. */
+  if(blank===null)
+    return typeSheet("Add to "+sectionLabel(name),
+      "This section is empty, so there is nothing to copy the shape of.",
+      null,(make)=>putEntry(name,list.length,make()));
+  putEntry(name,list.length,blank);
+}
+async function putEntry(name,at,value){
+  await save([{op:"add_entry",section:name,at:at,value:value}]);
+  select({kind:"entry",name:name,i:at});
+  /* Straight into the first field: you pressed Add because you have something
+     to type, and a blank entry with the caret somewhere else is a second
+     thing to do. */
+  const first=$("#pane-form .formblock.on input,#pane-form .formblock.on textarea");
+  if(first){ first.focus(); first.select&&first.select() }
+}
+async function removeEntry(name,at){
+  const list=((S.data&&S.data.cv&&S.data.cv.sections||{})[name])||[];
+  if(!list.length) return;
+  const last=list.length===1;
+  if(!confirm('Remove "'+entryTitle(list[at],at)+'" from '+sectionLabel(name)+"?"+
+    (last?"\n\nIt is the only entry, so the section goes with it: RenderCV "+
+          "reads a section's type from its entries and cannot render an empty "+
+          "one.":"")+
+    "\n\nThis is written to the file straight away."))
+    return;
+  await save([{op:"remove_entry",section:name,at:at}]);
+  const left=(((S.data&&S.data.cv&&S.data.cv.sections)||{})[name])||[];
+  select(left.length?{kind:"entry",name:name,i:Math.min(at,left.length-1)}:null);
+}
+function addSectionSheet(){
+  typeSheet("New section",
+    "A section is a list of one kind of entry -- RenderCV reads its type from "+
+    "what is in it -- so it starts with one blank entry of the kind you pick.",
+    "certifications",(make,name)=>addSection(name,make()));
+}
+async function addSection(name,value){
+  await save([{op:"add_section",name:name,value:[value]}]);
+  showTab("form");
+  select({kind:"entry",name:name,i:0});
+  const first=$("#pane-form .formblock.on input,#pane-form .formblock.on textarea");
+  if(first) first.focus();
+}
+/* One sheet for both questions. A new section needs a name as well as a kind;
+   an empty existing section only needs the kind, so the name row is left out
+   rather than shown greyed. */
+function typeSheet(title,blurb,namePlaceholder,go){
+  const taken=Object.keys((S.data&&S.data.cv&&S.data.cv.sections)||{});
+  openSheet(
+    '<div><h3 id="sheet-title">'+esc(title)+'</h3><p>'+esc(blurb)+'</p></div>'+
+    '<div class="fg w88">'+
+      (namePlaceholder?'<label>Name</label><input id="ts-name" autocomplete="off" '+
+        'placeholder="'+esc(namePlaceholder)+'">':"")+
+      '<label>Entries</label><select id="ts-type">'+
+        ENTRY_TYPES.map(([id,label,hint])=>'<option value="'+esc(id)+'">'+
+          esc(label)+' \u2014 '+esc(hint)+'</option>').join("")+
+      '</select>'+
+    '</div>'+
+    '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
+    '<button class="sbtn primary" id="ts-go">Add</button></div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#ts-go").onclick=()=>{
+    const make=(ENTRY_TYPES.find(t=>t[0]===$("#ts-type").value)||[])[3];
+    if(!make) return;
+    let name=null;
+    if(namePlaceholder){
+      /* A section name is a YAML key and a heading at once. Fold it to the
+         shape the rest of the file uses and let sectionLabel put the capital
+         back for display, rather than carrying "Certifications & Awards" into
+         the source as a key. */
+      name=$("#ts-name").value.trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+      if(!name) return toast("Give the section a name.",true);
+      if(taken.includes(name)) return toast("There is already a "+
+        sectionLabel(name)+" section.",true);
+    }
+    closeSheet();
+    go(make,name);
+  };
+}
+
 /* Put the caret in a field and the page goes to that entry: highlights it, and
    scrolls to it if it had drifted off. This is what the split is for -- the
    two halves are one document, not a form and a picture of a form. It replaced
@@ -5569,12 +5807,13 @@ function setPage(i){
 }
 
 /* ---- rendering ------------------------------------------------------------ */
-async function save(){
+async function save(ops){
   if(!S.path||S.busy) return;
   S.busy=true; $("#btn-render").disabled=true;
   try{
     const body=S.tab==="yaml" ? {path:S.path,yaml:$("#yaml").value}
                               : {path:S.path,patches:collectPatches()};
+    if(ops&&ops.length) body.ops=ops;
     const r=await post("/api/save",body);
     S.doc=r; S.data=r.data?JSON.parse(JSON.stringify(r.data)):null;
     /* Our own write, so take its timestamp: the poll must not read it back as
@@ -5584,11 +5823,16 @@ async function save(){
     setProv(r.prov);
     $("#yaml").value=r.yaml; paint(); setYamlError(r.parse_error);
     buildOutline(); buildInspector(); if(S.tab==="form") buildForm();
+    /* A refused operation is not a failure of the save, so it cannot be left
+       to the catch. Saying nothing would be worse: you press Add, the file is
+       rewritten without it, and the form comes back looking untouched. */
+    (r.missed||[]).filter(m=>m.op).forEach(m=>toast(
+      "Could not "+String(m.op.op||"do that").replace(/_/g," ")+": "+m.why,true));
     await doRender();
   }catch(e){ toast(e.message,true) }
   finally{ S.busy=false; $("#btn-render").disabled=false; paintStatus() }
 }
-$("#btn-render").onclick=save;
+$("#btn-render").onclick=()=>save();   /* not `save`: the click event is not ops */
 
 function collectPatches(){
   const out=leafPaths().map(p=>({path:p,value:getAt(S.data,p)}));

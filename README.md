@@ -75,9 +75,16 @@ on the page and the left pane goes to it. Drag the divider to change the share,
 and it stays where you put it. Selecting an entry in one view selects it in all
 of them.
 
+The Form is also where the document grows: every section has an **Add** under
+it, every entry a **×**, and there is an **Add a section** at the end. A new
+entry copies the shape of its neighbours, because RenderCV types a section by
+what is in it and a section holds one kind of entry; a new section asks which
+kind once.
+
 | | |
 |---|---|
 | **Page / Form / YAML** | The page on its own, or the page beside every field at once, or beside the raw file with syntax highlighting |
+| **Add and remove** | Sections and entries, from the Form. Blank entries are built from RenderCV's own models, so a half-filled one still renders |
 | **Live** | Edits re-render behind you, so the page beside the form is the page you are making, not the one you started with |
 | **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet. `↑` `↓` walk to the next block, `Esc` closes |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
