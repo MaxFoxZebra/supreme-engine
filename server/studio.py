@@ -4459,16 +4459,37 @@ body.dragging{cursor:col-resize;user-select:none}
 /* The base CV, as a card at the foot of the filters. It is not a row of the
    table -- it is the thing the table's rows are copies of -- and as a band
    across the top of the list it pushed every application down a row. */
-.baserow{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;
-  margin:14px 0 0;padding:12px 13px;background:var(--field);
-  border:1px solid var(--rule);border-radius:10px}
-.baserow .bl{flex-basis:100%;font-size:12px;font-weight:600;color:var(--t500)}
-.baserow .bn{flex-basis:100%;font-size:14px;font-weight:600;color:var(--t900);min-width:0;
+.baserow{flex:none;display:flex;flex-direction:column;gap:6px;margin:14px 0 0;padding:10px;
+  background:var(--field);border:1px solid var(--rule);border-radius:14px;
+  box-shadow:0 10px 26px -20px rgba(30,26,18,.45)}
+.baserow .bl{font-size:12px;font-weight:600;color:var(--t500)}
+.baserow .bn{font-size:14.5px;font-weight:600;color:var(--t900);min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.baserow .bsub{flex-basis:100%;font-size:12px;color:var(--t500);margin-bottom:6px}
+.baserow .bsub{font-size:12px;color:var(--t500);padding:0 4px}
 .baserow .bsub:empty{display:none}
 .baserow.gone .bn{text-decoration:line-through;color:var(--t500)}
 .baserow .obtn{flex:none}
+/* The page on a little stage: tinted, with the sheet standing on it. */
+.bstage{position:relative;display:flex;justify-content:center;padding:14px 12px 0;
+  height:150px;overflow:hidden;border-radius:10px;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--acc) 14%,var(--bar)),var(--bar) 70%)}
+.bstage .btag{position:absolute;left:8px;top:8px;z-index:1;height:20px;display:flex;align-items:center;
+  padding:0 8px;border-radius:10px;font-size:11px;font-weight:600;color:var(--acc-text);
+  background:var(--field);box-shadow:0 1px 3px rgba(30,26,18,.15)}
+.baserow .bthumb{width:132px;height:auto;aspect-ratio:210/297;border:0;border-radius:3px 3px 0 0;
+  box-shadow:0 10px 24px -10px rgba(30,26,18,.5),0 0 0 1px rgba(30,26,18,.06);
+  transition:transform .2s ease,box-shadow .2s ease}
+.baserow .bthumb:hover{transform:translateY(-4px);
+  box-shadow:0 16px 30px -12px rgba(30,26,18,.55),0 0 0 1px rgba(30,26,18,.08)}
+.baserow .bthumb img{object-fit:cover;object-position:top center}
+.bmeta{display:flex;align-items:center;gap:8px;padding:4px 4px 0;min-width:0}
+.bmeta .bn{flex:1}
+.bflags{display:flex;gap:3px;flex:none}
+.bflags .flg{width:16px;height:11px}
+.bacts{display:flex;gap:6px;padding:4px 0 0}
+.bacts .bopen{flex:1}
+.bacts .bico{width:34px;padding:0;display:grid;place-items:center;color:var(--t700)}
+.baserow .grow{display:none}
 /* The top of the base's first page: the name, the headline and the first
    section, which is what tells two CVs apart at a glance. The page stays white
    in either appearance, as it does in the editor. */
@@ -4480,9 +4501,6 @@ body.dragging{cursor:col-resize;user-select:none}
 .bthumb.empty span{font-size:11px;color:var(--t500)}
 .bthumb:hover{border-color:var(--bd-field)}
 .bthumb:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-.baserow .bthumb{flex-basis:100%;height:118px;margin-bottom:8px}
-.baserow .grow{display:none}
-
 /* ------------------------------------------------------------- Documents -- */
 .docpane{flex:1;min-width:0;min-height:0;overflow-y:auto;background:var(--app)}
 .docwrap{max-width:1000px;margin:0 auto;padding:12px 24px 64px}
@@ -10160,18 +10178,31 @@ function baseHTML(b){
       '<div class="grow"></div>';
   const pages=S.pages[b.path];
   const th=S.baseThumb&&S.baseThumb.path===b.path?S.baseThumb:null;
-  return '<button class="bthumb'+(th&&th.png?"":" empty")+'" data-base-open'+
-      ' aria-label="Open the base CV">'+
+  const fam=baseFamily();
+  const tailored=((S.state&&S.state.documents)||[]).filter(d=>d.base===b.path).length;
+  const ico=d=>'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+  /* The page on its own little stage, the way Documents shows it, with what
+     it is, the languages it comes in and how much has been made from it. */
+  return '<div class="bstage">'+
+      '<span class="btag">'+t("Base CV")+'</span>'+
+      '<button class="bthumb'+(th&&th.png?"":" empty")+'" data-base-open aria-label="'+
+        t("Open the base CV")+'">'+
       (th&&th.png?'<img alt="" src="'+esc(th.png+tok())+'">'
         :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
-    '</button>'+
-    '<span class="bl">Base CV</span>'+
-    '<span class="bn">'+esc(baseLabel())+'</span>'+
-    '<span class="bsub">'+(pages?pages+" page"+(pages===1?"":"s"):"")+'</span>'+
-    '<button class="obtn" data-base-open>Open</button>'+
-    '<button class="obtn" data-base-design>Design</button>'+
-    '<button class="obtn" data-base-pick>Change\u2026</button>'+
-    '<div class="grow"></div>';
+      '</button></div>'+
+    '<div class="bmeta"><span class="bn">'+esc(baseLabel())+'</span>'+
+      (fam.length>1?'<span class="bflags">'+fam.map(m=>flag(m.lang)||lchip(m.lang)).join("")+'</span>':'')+
+    '</div>'+
+    '<span class="bsub">'+[pages?pages+" page"+(pages===1?"":"s"):"",
+      tailored?tailored+" tailored from it":"Every tailored CV starts here"].filter(Boolean).join(" · ")+'</span>'+
+    '<div class="bacts"><button class="obtn bopen" data-base-open>Open</button>'+
+      '<button class="obtn bico" data-base-design title="Design" aria-label="Design">'+
+        ico('<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/>'+
+          '<circle cx="6.5" cy="12.5" r="1"/><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4A5.6 5.6 0 0 0 22 9.8C22 5.5 17.5 2 12 2z"/>')+'</button>'+
+      '<button class="obtn bico" data-base-pick title="Change base…" aria-label="Change base…">'+
+        ico('<path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/>')+'</button>'+
+    '</div>';
 }
 /* The same base, on Documents, at the size of a page you can read. */
 function baseHeroHTML(b){
