@@ -23,6 +23,7 @@ cd server
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
+| `a11yscan.js` | Every screen in light and dark: text below WCAG AA contrast, things you can click but not reach with Tab, controls with no name, Tab stops with no visible ring. |
 | `i18nscan.js` | Every screen in English and French; lists text left untranslated. |
 | `i18nserver.py` | Every message the server can send (errors, render hints) has a translation. The catalogue is `i18n/catalogue.py`; `python i18n/build.py` writes `static/i18n.js` from it. |
 | `crop.py` | Crops and zooms a PNG using only the stdlib, so a screenshot can be read at a size where design decisions are visible. |

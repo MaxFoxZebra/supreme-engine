@@ -112,6 +112,9 @@ jobs:
       - name: Every screen translated
         run: node checks/i18nscan.js "http://127.0.0.1:8750/?token=t&lang=en"
 
+      - name: Accessibility (contrast, keyboard, names)
+        run: node checks/a11yscan.js "http://127.0.0.1:8750/?token=t"
+
       - name: Server log, when something failed
         if: failure()
         run: cat "$RUNNER_TEMP/server.log" || true

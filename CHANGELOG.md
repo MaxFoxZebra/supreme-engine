@@ -14,11 +14,22 @@ tag, so a release is never published with nothing said about it.
   0.20.0 and 0.21.0, opening a CV with the app in one of those languages
   could lock the window: the translator kept rewriting a page count ("1
   page") back and forth. Fixed.
+- **Easier to read, and to use without a mouse.** Coloured text (the
+  calendar's chips, overdue follow-ups, offers, the funnel's tooltip, the
+  Next up seconds) now meets the WCAG AA contrast bar in light and dark
+  mode. Pressing Tab reaches every control, including
+  the rows of the calendar's journeys, and always shows where you are;
+  Enter and Space work on anything that acts as a button. Settings are
+  announced by their titles to a screen reader, the mini month says how
+  much is planned each day, and the Next up countdown reads as one time.
+  With notifications off, their settings can no longer be changed from the
+  keyboard either.
 - **Every screen in your language.** The last English left on the French,
   Spanish and Portuguese screens is translated: the assistant's status,
   the letterhead note, the funnel, the application's documents and more,
   and the messages that say what went wrong: a failed import, a render
-  error's hint, a name already taken.
+  error's hint, a name already taken. A phrase with two plurals in it now
+  agrees in both words ("2 choses prévues", not "2 choses prévue(s)").
   Date fields now show dates the way your language writes them, whatever
   language the system itself is in.
 

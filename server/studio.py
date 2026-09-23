@@ -3992,6 +3992,8 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   /* the funnel, which is drawn rather than styled inline so it follows the theme */
   --fn-total:#33312b; --fn-neutral:#7d7767; --fn-positive:#a8761f; --fn-label:#33312b;
   --fn-offer:#3f8f76; --fn-lost-late:#7d2f3f;
+  /* the same, dark enough to be read as text (WCAG AA) */
+  --fn-positive-text:#8a5a14; --fn-offer-text:#286b57; --fn-lost-text:#a83519; --fn-wait-text:#3a6ea5;
   --co-1:#6f6a60; --co-2:#7d766a; --co-3:#63605c; --co-4:#77706a;
   --co-5:#6a6660; --co-6:#807a70;
   --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
@@ -4026,6 +4028,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
   --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
   --fn-offer:#4fae90; --fn-lost-late:#a8415a;
+  --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
@@ -4048,6 +4051,7 @@ INDEX_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
     --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
     --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
   --fn-offer:#4fae90; --fn-lost-late:#a8415a;
+  --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
@@ -4136,7 +4140,7 @@ button:disabled{opacity:.4;cursor:default}
 .nu .ey i{width:7px;height:7px;border-radius:50%;background:var(--acc);flex:none;animation:nu-live 1.6s ease-in-out infinite}
 .nu .ey.late{color:var(--bad)}
 .nu .ey.late i{background:var(--bad);animation:nu-late 1.8s ease-out infinite}
-.nu .ey.due{color:var(--fn-wait)}
+.nu .ey.due{color:var(--fn-wait-text)}
 .nu .ey.due i{background:var(--fn-wait);animation:none}
 .nu .who{font-size:15px;font-weight:600;color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nu .who span{font-weight:400;color:var(--t600)}
@@ -4146,7 +4150,7 @@ button:disabled{opacity:.4;cursor:default}
 .nu .cd{display:flex;align-items:baseline;gap:3px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--t900)}
 .nu .cd b{font-size:22px;font-weight:600}
 .nu .cd u{text-decoration:none;font-size:11.5px;color:var(--t500);margin-right:6px}
-.nu .cd b.s{color:var(--acc)}
+.nu .cd b.s{color:var(--acc-text)}
 .nu .acts{display:flex;gap:8px}
 .nu .acts .obtn{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;font-weight:500;white-space:nowrap}
 .nu .obtn.dark{background:var(--t900);color:var(--app);border-color:var(--t900)}
@@ -5100,7 +5104,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   gap:2px;margin-top:14px;padding:10px 12px;border-radius:12px;color:var(--t400)}
 .fj-conv b{font-size:17px;font-weight:600;color:var(--t900);font-variant-numeric:tabular-nums}
 .fj-conv span{font-size:11.5px;color:var(--t500);white-space:nowrap}
-.fj-conv.acc{background:var(--acc-wash);color:var(--acc);box-shadow:inset 0 0 0 1px
+.fj-conv.acc{background:var(--acc-wash);color:var(--acc-text);box-shadow:inset 0 0 0 1px
   color-mix(in srgb,var(--acc) 35%,transparent)}
 .fj-conv.acc b,.fj-conv.acc span{color:var(--acc-text)}
 .fj-conv.acc span{font-weight:500}
@@ -5120,7 +5124,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   /* Light: a white card like the others, in the funnel's light palette. */
   --sk-total:#8f8878;--sk-draft:#b3ad9d;--sk-waiting:#3a6ea5;--sk-live:#a8761f;--sk-offer:#3f8f76;
   --sk-won:#007a5e;--sk-closed:#7a5cb8;--sk-lost:#a83519;--sk-lost-late:#7d2f3f;--sk-a0:.22;--sk-a1:.5;
-  --sk-fg:#1b1a17;--sk-mute:#686459;--sk-chip:rgba(255,255,255,.94);--sk-chip-t:#4a463d;
+  --sk-fg:#1b1a17;--sk-mute:#686459;--sk-tip-go:#d19a45;--sk-chip:rgba(255,255,255,.94);--sk-chip-t:#4a463d;
   --sk-chip-line:rgba(27,26,23,.12);--sk-chip-shadow:rgba(27,26,23,.10);--sk-ring:#1b1a17;--sk-bg-t:#f5f2ea;
   color:var(--sk-fg);background:var(--field);border:1px solid var(--rule);
   box-shadow:0 14px 40px -28px rgba(27,26,23,.35)}
@@ -5128,14 +5132,14 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 :root[data-theme=dark] .fn-stage{
   --sk-total:#8f8877;--sk-draft:#6e685a;--sk-waiting:#5b8fc9;--sk-live:#d19a45;--sk-offer:#4fae90;
   --sk-won:#2bb58c;--sk-closed:#9b7ad6;--sk-lost:#cf5a39;--sk-lost-late:#b0485f;--sk-a0:.30;--sk-a1:.62;
-  --sk-fg:#f5f2ea;--sk-mute:#a5a091;--sk-chip:rgba(27,26,23,.88);--sk-chip-t:#cfcabd;
+  --sk-fg:#f5f2ea;--sk-mute:#a5a091;--sk-tip-go:#8a5a14;--sk-chip:rgba(27,26,23,.88);--sk-chip-t:#cfcabd;
   --sk-chip-line:rgba(255,255,255,.08);--sk-chip-shadow:rgba(0,0,0,.35);--sk-ring:#f5f2ea;--sk-bg-t:#1b1a17;
   border-color:transparent;box-shadow:0 18px 50px -24px rgba(0,0,0,.55);
   background:radial-gradient(900px 420px at 30% 0%,#2a2722 0%,#1b1a17 55%,#161513 100%)}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .fn-stage{
   --sk-total:#8f8877;--sk-draft:#6e685a;--sk-waiting:#5b8fc9;--sk-live:#d19a45;--sk-offer:#4fae90;
   --sk-won:#2bb58c;--sk-closed:#9b7ad6;--sk-lost:#cf5a39;--sk-lost-late:#b0485f;--sk-a0:.30;--sk-a1:.62;
-  --sk-fg:#f5f2ea;--sk-mute:#a5a091;--sk-chip:rgba(27,26,23,.88);--sk-chip-t:#cfcabd;
+  --sk-fg:#f5f2ea;--sk-mute:#a5a091;--sk-tip-go:#8a5a14;--sk-chip:rgba(27,26,23,.88);--sk-chip-t:#cfcabd;
   --sk-chip-line:rgba(255,255,255,.08);--sk-chip-shadow:rgba(0,0,0,.35);--sk-ring:#f5f2ea;--sk-bg-t:#1b1a17;
   border-color:transparent;box-shadow:0 18px 50px -24px rgba(0,0,0,.55);
   background:radial-gradient(900px 420px at 30% 0%,#2a2722 0%,#1b1a17 55%,#161513 100%)}}
@@ -5178,7 +5182,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   font-size:12.5px;box-shadow:0 12px 30px rgba(0,0,0,.3);pointer-events:none}
 /* The opposite of the stage it sits on, so it stands off it either way. */
 .sk-tip b{font-size:13.5px}.sk-tip span{opacity:.75}.sk-tip .who{opacity:.9}
-.sk-tip .go{color:var(--sk-live);font-weight:500;margin-top:2px;opacity:1}
+.sk-tip .go{color:var(--sk-tip-go);font-weight:500;margin-top:2px;opacity:1}
 
 /* Momentum. */
 .fn-weeks{display:flex;align-items:flex-end;gap:5px;height:150px;margin-top:12px;
@@ -5193,7 +5197,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .fn-wax{display:flex;justify-content:space-between;margin-top:6px;font-size:11.5px;color:var(--t500)}
 .fn-mhead{display:flex;align-items:baseline;gap:18px;margin-top:4px}
 .fn-mhead .sub{font-size:12.5px;color:var(--t500);line-height:1.45}
-.fn-mhead .sub b{color:var(--fn-offer);font-weight:500}
+.fn-mhead .sub b{color:var(--fn-offer-text);font-weight:500}
 
 /* Still in play, or what is behind the stage you clicked. */
 .fn-list{display:flex;flex-direction:column;padding:0;overflow:hidden}
@@ -5327,7 +5331,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-cd{display:flex;align-items:flex-end;gap:18px;margin-top:16px;flex-wrap:wrap}
 .cal-cd .n{font-size:44px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
 .cal-cd .u{font-size:11.5px;color:var(--acc-text);font-weight:600;margin-top:4px;text-transform:uppercase}
-.cal-cd .s .n{color:var(--acc)}
+.cal-cd .s .n{color:var(--acc-text)}
 .cal-cd .when{padding-bottom:6px;font-size:13.5px;color:var(--t800);line-height:1.45}
 .cal-checks{display:flex;flex-direction:column;gap:8px;margin-top:16px}
 .cal-check{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--t800)}
@@ -5356,10 +5360,20 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-mgrid .dw{font-size:10.5px;font-weight:600;color:var(--t500);text-align:center}
 .cal-md{position:relative;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
   font-size:12px;font-weight:600;color:var(--t900);background:var(--bd-inner);cursor:pointer}
-.cal-md.out{background:transparent;color:var(--t400);cursor:default}
+.cal-md.out{background:transparent;color:var(--t500);cursor:default}
 .cal-md.l1{background:color-mix(in srgb,var(--acc) 22%,var(--field))}
 .cal-md.l2{background:color-mix(in srgb,var(--acc) 45%,var(--field))}
 .cal-md.l3{background:color-mix(in srgb,var(--acc) 75%,var(--field))}
+/* On dark, a strong mix is too light for the light numbers on it: a gentler
+   ramp keeps every accent above 4.5:1. */
+:root[data-theme=dark] .cal-md.l1{background:color-mix(in srgb,var(--acc) 16%,var(--field))}
+:root[data-theme=dark] .cal-md.l2{background:color-mix(in srgb,var(--acc) 32%,var(--field))}
+:root[data-theme=dark] .cal-md.l3{background:color-mix(in srgb,var(--acc) 55%,var(--field))}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme=light]) .cal-md.l1{background:color-mix(in srgb,var(--acc) 16%,var(--field))}
+  :root:not([data-theme=light]) .cal-md.l2{background:color-mix(in srgb,var(--acc) 32%,var(--field))}
+  :root:not([data-theme=light]) .cal-md.l3{background:color-mix(in srgb,var(--acc) 55%,var(--field))}
+}
 .cal-md.today{box-shadow:0 0 0 2px var(--t900)}
 .cal-md i{position:absolute;right:4px;top:4px;width:7px;height:7px;border-radius:2px;background:var(--t900);transform:rotate(45deg)}
 .cal-legend{display:flex;align-items:center;gap:14px;font-size:11.5px;color:var(--t500)}
@@ -5402,10 +5416,10 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .jr-dot.rp{background:var(--fn-positive);box-shadow:0 0 0 3px color-mix(in srgb,var(--fn-positive) 22%,transparent)}
 .jr-x{position:absolute;top:10px;margin-left:-5px;font-size:16px;line-height:16px;color:var(--fn-lost);font-weight:700}
 .jr-lab{position:absolute;top:9px;height:20px;display:flex;align-items:center;padding:0 8px;border-radius:10px;font-size:11.5px;
-  white-space:nowrap;background:color-mix(in srgb,var(--fn-wait) 12%,var(--field));color:var(--fn-wait);z-index:1}
+  white-space:nowrap;background:color-mix(in srgb,var(--fn-wait) 12%,var(--field));color:var(--fn-wait-text);z-index:1}
 .jr-lab.iv{background:var(--t900);color:var(--app);font-weight:600;box-shadow:0 6px 16px -6px rgba(0,0,0,.4)}
-.jr-lab.late{background:color-mix(in srgb,var(--fn-lost) 12%,var(--field));color:var(--fn-lost);font-weight:600}
-.jr-lab.x{background:transparent;color:var(--fn-lost)}
+.jr-lab.late{background:color-mix(in srgb,var(--fn-lost) 12%,var(--field));color:var(--fn-lost-text);font-weight:600}
+.jr-lab.x{background:transparent;color:var(--fn-lost-text)}
 .jr-more{padding:10px 0 0 var(--jr-lx);font-size:12.5px;color:var(--t500)}
 .cal-in .jr-seg{animation:cv-grow .8s cubic-bezier(.3,.7,.2,1) both}
 .cal-in .jr-iv{animation:cv-pop .6s both,cv-glow 2.4s ease-in-out 2.4s infinite}
@@ -5427,7 +5441,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-cell.today{background:color-mix(in srgb,var(--acc) 6%,var(--field));box-shadow:inset 0 0 0 1.5px var(--acc)}
 .cal-cell.drop{box-shadow:inset 0 0 0 2px var(--fn-wait);background:color-mix(in srgb,var(--fn-wait) 8%,var(--field))}
 .cal-cell .d{height:24px;display:flex;align-items:center;font-size:12.5px;font-weight:600;color:var(--t700)}
-.cal-cell.out .d{color:var(--t400)}
+.cal-cell.out .d{color:var(--t500)}
 .cal-cell.today .d span{width:24px;height:24px;border-radius:12px;background:var(--acc);color:#1b1a17;display:grid;place-items:center;font-weight:700}
 .cal-cell .act{margin-top:auto;display:flex;flex-wrap:wrap;gap:2px 8px;font-size:11px;color:var(--t500)}
 .cal-cell .act span{display:flex;align-items:center;gap:4px;white-space:nowrap}
@@ -5438,16 +5452,16 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-chip.iv{background:color-mix(in srgb,var(--fn-positive) 18%,var(--field));color:var(--acc-text);font-weight:600}
 .cal-chip.iv .pt{width:6px;height:6px;flex:none;border-radius:50%;background:var(--fn-positive)}
 .cal-chip.iv .gl{margin-left:auto;display:flex;color:var(--fn-positive)}
-.cal-chip.fu{border:1px dashed color-mix(in srgb,var(--fn-wait) 45%,transparent);color:var(--fn-wait);background:var(--field)}
-.cal-chip.fu.late{border:1px solid color-mix(in srgb,var(--fn-lost) 40%,transparent);color:var(--fn-lost);
+.cal-chip.fu{border:1px dashed color-mix(in srgb,var(--fn-wait) 45%,transparent);color:var(--fn-wait-text);background:var(--field)}
+.cal-chip.fu.late{border:1px solid color-mix(in srgb,var(--fn-lost) 40%,transparent);color:var(--fn-lost-text);
   background:color-mix(in srgb,var(--fn-lost) 7%,var(--field))}
-.cal-chip.of{background:color-mix(in srgb,var(--fn-offer) 18%,var(--field));color:var(--fn-offer);font-weight:600}
+.cal-chip.of{background:color-mix(in srgb,var(--fn-offer) 18%,var(--field));color:var(--fn-offer-text);font-weight:600}
 .cal-chip.rp{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fn-positive) 40%,transparent);color:var(--acc-text)}
 .cal-chip[draggable=true]{cursor:grab}
 .cal-side{display:flex;flex-direction:column;overflow:hidden}
 .cal-side .cal-ch{padding:16px 18px 10px}
 .cal-late{margin:0 12px 8px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--fn-lost) 9%,var(--field));
-  color:var(--fn-lost);font-size:12.5px;line-height:1.45}
+  color:var(--fn-lost-text);font-size:12.5px;line-height:1.45}
 .cal-item{display:flex;gap:12px;padding:11px 18px;border-top:1px solid var(--bd-inner);text-align:left;width:100%}
 .cal-item:hover{background:var(--row-hover)}
 .cal-item .bar{width:3px;flex:none;border-radius:2px}
@@ -5455,7 +5469,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-item .tx small{font-size:12px;color:var(--t500)}
 .cal-item .tx b{font-size:13.5px;font-weight:600}
 .cal-item .tx span{font-size:12px;color:var(--t700)}
-.cal-item .tx em{font-style:normal;display:flex;align-items:center;gap:5px;margin-top:3px;font-size:11.5px;color:var(--fn-positive)}
+.cal-item .tx em{font-style:normal;display:flex;align-items:center;gap:5px;margin-top:3px;font-size:11.5px;color:var(--fn-positive-text)}
 .cal-none{padding:14px 18px;font-size:13px;color:var(--t500)}
 
 /* Week */
@@ -5478,7 +5492,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-blk{position:absolute;border-radius:8px;padding:4px 8px;line-height:1.25;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;overflow:hidden;
   background:color-mix(in srgb,var(--fn-positive) 18%,var(--field));border-left:3px solid var(--fn-positive);text-align:left;cursor:pointer}
 .cal-blk b{font-size:12px;color:var(--acc-text)}.cal-blk span{font-size:11.5px;color:var(--acc-text)}
-.cal-blk em{font-style:normal;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--fn-positive)}
+.cal-blk em{font-style:normal;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--fn-positive-text)}
 .cal-blk.on{box-shadow:0 0 0 2px var(--t900),0 10px 24px -8px rgba(0,0,0,.35)}
 .cal-nowline{position:absolute;height:2px;background:var(--fn-lost);z-index:2}
 .cal-nowline::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--fn-lost)}
@@ -6293,7 +6307,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .tzmap .ghost{fill:none;stroke:var(--t700);stroke-width:1.5;opacity:.8}
 .tzmap .cap{display:flex;align-items:center;gap:14px;margin-top:8px;font-size:12px;color:var(--t500)}
 .tzmap .cap b{color:var(--t900);font-weight:600}
-.tzmap .cap .sw{display:inline-flex;align-items:center;gap:5px}
+.tzmap .cap .sw{display:inline-flex;align-items:center;gap:5px;cursor:default}
 .tzmap .cap .sw i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .tzmap .cap .grow{flex:1}
 .tzmap .tip{position:absolute;pointer-events:none;transform:translate(-50%,-130%);padding:4px 8px;
@@ -7337,8 +7351,12 @@ const uiLocale=()=>UI_LANGS[UI_LANG];
 const I18N_D=(window.I18N||{})[UI_LANG]||null, I18N_P=(window.I18N_RX||{})[UI_LANG]||[];
 /* The catalogue writes a plural as "envoyée(s)"; with the count in front of
    it, it becomes the right form. French counts 0 and 1 as singular. */
-const plur=r=>r.indexOf("(s)")<0?r:r.replace(/(\d+)([^\d()]*?)\(s\)/g,
-  (m,n,mid)=>n+mid+((UI_LANG==="fr"?+n<2:+n===1)?"":"s"));
+const plur=r=>{
+  if(r.indexOf("(s)")<0) return r;
+  /* Every "(s)" follows the nearest number before it: "2 choses prévues". */
+  let n=null;
+  return r.replace(/(\d+)|\(s\)/g,(m,d)=>d!=null?(n=+d,m):n==null?m:(UI_LANG==="fr"?n<2:n===1)?"":"s");
+};
 function t(s,v){
   let r=(I18N_D&&I18N_D[s])||s;
   if(v) r=r.replace(/\{(\w+)\}/g,(m,k)=>v[k]??m);
@@ -9753,7 +9771,7 @@ function renderDocs(docs){
   S.state.documents=docs;
   const host=$("#doclist");
   const newRow='<button class="row" id="doc-new"><span class="mark"></span>'+
-    '<span class="lbl" style="color:var(--c200)">+ New document…</span></button>';
+    '<span class="lbl" style="color:var(--t500)">+ New document…</span></button>';
   if(!docs.length){
     host.innerHTML='<p style="color:var(--c300);font-size:12.5px;padding:6px 8px">'+
       'Nothing here yet.</p>'+newRow;
@@ -11162,7 +11180,10 @@ function fillNotify(){
   const on=$("#s-notify"), iv=$("#s-notify-iv"), fu=$("#s-notify-fu"), st=$("#s-notify-state"), A=notifyApi();
   const pr=prefs();
   on.checked=notifyOn(); iv.value=pr.notify_iv??"60,10"; fu.value=String(pr.notify_fu??"9");
-  $$("#sp-notify .nf-sub").forEach(r=>r.classList.toggle("off",!on.checked));
+  /* Off means off for the keyboard too, not only for the mouse. */
+  $$("#sp-notify .nf-sub").forEach(r=>{ r.classList.toggle("off",!on.checked);
+    r.setAttribute("aria-disabled",String(!on.checked));
+    r.querySelectorAll("select,input,button").forEach(c=>c.disabled=!on.checked) });
   const say=async()=>{
     if(!A){ st.textContent=t("This window cannot show notifications."); on.disabled=true; return }
     const g=await A.granted().catch(()=>false);
@@ -12295,7 +12316,7 @@ function drawJobInspector(){
       '</div>'+
       '<div class="col">'+
         '<div class="block"><span class="blabel">Notes</span>'+
-          '<textarea data-j="notes" class="notes">'+esc(j.notes||"")+'</textarea></div>'+
+          '<textarea data-j="notes" class="notes" aria-label="Notes">'+esc(j.notes||"")+'</textarea></div>'+
         '<div class="block grow">'+posting+'</div>'+
       '</div>'+
     '</div>';
@@ -13185,7 +13206,7 @@ function drawNextUp(){
   }else{
     if(next){
       const j=next.job;
-      html+=ivPart(j)+'<div class="end"><div class="cd" id="nu-cd"></div><div class="acts">'+
+      html+=ivPart(j)+'<div class="end"><div class="cd" id="nu-cd" role="timer"></div><div class="acts">'+
         '<button class="obtn" data-nu-ics="'+esc(j.id)+'">'+t("Add to calendar")+'</button>'+
         '<button class="obtn dark" data-nu-open="'+esc(j.id)+'">'+t("Prepare")+'</button></div></div></div>';
       cols+="minmax(0,1.35fr) ";
@@ -13238,8 +13259,10 @@ function drawNextUp(){
       if(!cd&&!lf){ clearInterval(S.nuTick); return }
       const left=Math.max(0,next.at-new Date());
       const d=Math.floor(left/864e5), h=Math.floor(left/36e5)%24, m=Math.floor(left/6e4)%60, s=Math.floor(left/1e3)%60;
-      if(cd) cd.innerHTML=(d?'<b>'+d+'</b><u>'+U.d+'</u>':'')+'<b>'+p(h)+'</b><u>h</u><b>'+p(m)+'</b><u>'+
+      if(cd){ cd.innerHTML=(d?'<b>'+d+'</b><u>'+U.d+'</u>':'')+'<b>'+p(h)+'</b><u>h</u><b>'+p(m)+'</b><u>'+
         U.m+'</u><b class="s">'+p(s)+'</b><u>s</u>';
+        /* Read as one time, not digit by digit; a timer is never announced unasked. */
+        cd.setAttribute("aria-label",(d?d+" "+U.d+" ":"")+h+" h "+m+" min") }
       if(lf) lf.textContent=(h?h+" h ":"")+m+" min";
       if(left<=0) drawNextUp();
     };
@@ -13382,7 +13405,7 @@ function calMini(ev){
     const inm=k.slice(0,7)===month, n=busy[k]||0, lv=!inm?"":n>=4?" l3":n>=2?" l2":n?" l1":"";
     cells+='<button class="cal-md'+(inm?"":" out")+lv+(k===today?" today":"")+'" data-day="'+k+'" style="animation-delay:'+
       (.4+i*.018).toFixed(3)+'s"'+(inm?'':' tabindex="-1"')+' aria-label="'+esc(fmtKey(k,{day:"numeric",month:"long"}))+
-      (iv.has(k)?', '+t("Interview"):'')+'">'+Number(k.slice(8))+(inm&&iv.has(k)?'<i></i>':'')+'</button>';
+      (iv.has(k)?', '+t("Interview"):'')+(inm&&n?', '+t("{n} thing(s) planned",{n}):'')+'">'+Number(k.slice(8))+(inm&&iv.has(k)?'<i></i>':'')+'</button>';
   }
   const dows=Array.from({length:7},(_,i)=>'<span class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"narrow"}))+'</span>').join("");
   const acc=["var(--bd-inner)","color-mix(in srgb,var(--acc) 22%,var(--field))","color-mix(in srgb,var(--acc) 45%,var(--field))",
@@ -13448,7 +13471,7 @@ function calJourneys(ev){
       '<span class="jr-lab x" style="left:calc('+pct(k)+'% + 10px)">'+esc(prettyStatus(j.status))+'</span>' }
     if(aheadKeys.length&&!closed){ const far=aheadKeys.sort().slice(-1)[0];
       segs+='<span class="jr-dash" style="left:'+(pct(today)+.5/days*100)+'%;width:'+Math.max(0,pct(far)-pct(today)-.5/days*100)+'%"></span>' }
-    return '<div class="jr-lane'+(closed?" closed":"")+' cal-r" data-open-job="'+esc(j.id)+'" style="animation-delay:'+(.3+i*.05).toFixed(2)+
+    return '<div class="jr-lane'+(closed?" closed":"")+' cal-r" role="button" tabindex="0" data-open-job="'+esc(j.id)+'" style="animation-delay:'+(.3+i*.05).toFixed(2)+
       's"><div class="jr-who">'+companyMark(j)+'<span style="min-width:0"><b>'+esc(j.company)+'</b><small>'+esc(j.title)+
       (j.location?' · '+esc(j.location):'')+'</small></span></div><div class="jr-track">'+segs+marks+'</div></div>';
   }).join("");
@@ -14268,7 +14291,21 @@ function applyAppearance(){
 }
 applyAppearance();
 
+/* A settings row says what its control is in the words beside it: tie them
+   together, so a screen reader reads the title, then the explanation. */
+function nameRows(){
+  document.querySelectorAll(".srow").forEach((row,i)=>{
+    const b=row.querySelector(":scope>div>b"), d=row.querySelector(":scope>div>span");
+    if(!b) return;
+    b.id=b.id||"srow-t"+i; if(d) d.id=d.id||"srow-d"+i;
+    row.querySelectorAll("select,input,textarea").forEach(c=>{
+      if(c.getAttribute("aria-label")||c.getAttribute("aria-labelledby")) return;
+      c.setAttribute("aria-labelledby",b.id); if(d) c.setAttribute("aria-describedby",d.id);
+    });
+  });
+}
 function openSettings(pane){
+  if(!openSettings.named){ nameRows(); openSettings.named=true }
   $("#ovl-design").hidden=true;
   $("#ovl-settings").hidden=false;
   fillSettings();
@@ -14278,6 +14315,14 @@ $("#btn-settings").onclick=()=>{
   if($("#ovl-settings").hidden) openSettings("workspace");
   else closeOverlays();
 };
+/* Something drawn as a button that is not a <button> answers Enter and
+   Space the way one would, unless it already handles them itself. */
+document.addEventListener("keydown",e=>{
+  if(e.defaultPrevented||(e.key!=="Enter"&&e.key!==" ")) return;
+  const el=e.target;
+  if(!el.matches||!el.matches('[role=button]:not(button)')) return;
+  e.preventDefault(); el.dispatchEvent(new MouseEvent("click",{bubbles:true}));
+});
 /* The one shortcut every desktop user tries. */
 document.addEventListener("keydown",e=>{
   if((e.ctrlKey||e.metaKey)&&e.key===","){
