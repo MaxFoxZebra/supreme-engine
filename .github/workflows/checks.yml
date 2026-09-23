@@ -86,6 +86,9 @@ jobs:
       - name: Backups
         run: python checks/backuptest.py
 
+      - name: Search
+        run: python checks/searchtest.py
+
       - name: Translations built and complete
         run: |
           python i18n/build.py

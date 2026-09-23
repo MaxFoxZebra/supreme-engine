@@ -8,6 +8,16 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Search everything, from anywhere.** Ctrl K (⌘K on a Mac), or the
+  magnifier in the top bar. Before you type it offers what you opened last
+  and the places you go most; as you type it finds applications by company
+  and role, documents by name and by what is written in them, and the words
+  inside postings and notes, each with the match highlighted. Arrows and
+  Enter to open, and a place like Settings › Notifications is a few letters
+  away. Accents and capitals do not matter.
+
 ## 0.22.0
 
 - **The editor no longer freezes in French, Spanish or Portuguese.** In

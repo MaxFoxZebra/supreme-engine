@@ -2015,6 +2015,7 @@ const LT={path:null, doc:null, meta:{}, body:"", dirty:false, tab:"write", pages
 const isLetterPath=p=>/\.md$/i.test(p||"");
 
 async function openLetter(path){
+  if(path) palRemember({doc:path});
   if(S.view==="jobs"||S.view==="docs") S.fromList=S.view;
   closeOverlays();
   try{
@@ -2520,6 +2521,7 @@ function renderDocs(docs){
 
 async function openDoc(path){
   if(isLetterPath(path)) return openLetter(path);
+  if(path) palRemember({doc:path});
   closeOverlays();
   /* Which list you came from. Not a history stack -- one bit, read once on the
      way out. The application a document belongs to is still the better answer
@@ -4715,6 +4717,7 @@ $("#jobq").addEventListener("input",()=>drawJobs());
 
 function selectJob(id){
   S.jsel=id;
+  if(id) palRemember({job:id});
   const j=S.jobs.find(x=>x.id===id);
   /* A job reached from the editor or the funnel may be filtered out of the
      current view; widen the filter rather than selecting something invisible. */
@@ -7351,6 +7354,188 @@ function markYamlSelection(){
 $("#yaml").addEventListener("scroll",()=>{
   const band=$(".edwrap .yband");
   if(band) band.style.transform="translateY("+(-$("#yaml").scrollTop)+"px)";
+});
+
+/* ---- Search: everything, from anywhere ------------------------------------
+   Ctrl K (⌘K on a Mac), or the magnifier in the top bar. Before you type: what
+   you opened last, and the places people go. As you type: applications by
+   company and role, documents by name and by what is in them (the server reads
+   those), the words inside postings and notes, and the places again. */
+const PAL={sel:0,items:[],q:"",docs:null,seq:0};
+const PAL_ICONS={
+  doc:'<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/>',
+  letter:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  cal:'<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  funnel:'<path d="M4 5h16l-6 8v6l-4-2v-4z"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+};
+const palIcon=k=>'<span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+  'stroke-width="2" aria-hidden="true">'+PAL_ICONS[k]+'</svg></span>';
+const PAL_MAC=/Mac|iPhone|iPad/.test(navigator.platform||"");
+/* The places, in the order people want them. */
+const palPlaces=()=>[
+  {label:t("New application"),icon:"plus",run:()=>{ setView("jobs"); newJobSheet() }},
+  {label:t("New document"),sub:t("CV or cover letter"),icon:"plus",run:()=>newDocumentSheet()},
+  {label:t("Applications"),icon:"list",run:()=>{ S.jfilter={kind:"all",value:""}; setView("jobs"); drawJobs() }},
+  {label:t("Documents"),icon:"doc",run:()=>setView("docs")},
+  {label:t("Funnel"),icon:"funnel",run:()=>setView("funnel")},
+  {label:t("Calendar"),icon:"cal",run:()=>setView("cal")},
+  ...[["workspace","Workspace"],["editor","Editor"],["region","Language & region"],["notify","Notifications"],
+      ["ai","AI clients"],["api","API"],["updates","Updates"],["about","About"]]
+    .map(([k,l])=>({label:t("Settings")+" › "+t(l),icon:"gear",stay:true,run:()=>openSettings(k)})),
+];
+/* Lower case without accents, one character for one, so a position in the
+   folded text is a position in the original. */
+const palFold=s=>Array.from(String(s||""),c=>(c.normalize("NFD")[0]||c).toLowerCase()).join("");
+const palWords=q=>palFold(q).split(/\s+/).filter(Boolean);
+const palHas=(text,words)=>{ const f=palFold(text); return words.every(w=>f.includes(w)) };
+/* The text with every word found in it marked. */
+function palMark(text,words){
+  text=String(text||""); const f=palFold(text), spans=[];
+  words.forEach(w=>{ let i=f.indexOf(w); while(i>=0){ spans.push([i,i+w.length]); i=f.indexOf(w,i+w.length) } });
+  spans.sort((a,b)=>a[0]-b[0]);
+  let out="", at=0;
+  spans.forEach(([a,b])=>{ if(a<at) a=at; if(b<=a) return;
+    out+=esc(text.slice(at,a))+"<mark>"+esc(text.slice(a,b))+"</mark>"; at=b });
+  return out+esc(text.slice(at));
+}
+/* A few words either side of the first match, on one line. */
+function palSnip(text,words){
+  const flat=String(text||"").replace(/[#*_>`\[\]]/g,"").replace(/\s+/g," ").trim();
+  const at=palFold(flat).indexOf(words[0]); if(at<0) return flat.slice(0,110);
+  const a=Math.max(0,at-48), b=Math.min(flat.length,at+80);
+  return (a?"…":"")+flat.slice(a,b).trim()+(b<flat.length?"…":"");
+}
+const palJobLine=j=>[prettyStatus(j.status)?t(prettyStatus(j.status)):"",j.location].filter(Boolean).join(" · ");
+
+function palRemember(item){
+  const key=item.job?"job:"+item.job:"doc:"+item.doc;
+  const list=(prefs().recent||[]).filter(x=>(x.job?"job:"+x.job:"doc:"+x.doc)!==key);
+  list.unshift(item);
+  prefs().recent=list.slice(0,6);
+  clearTimeout(PAL.saveT);
+  /* Walking the list with the arrows opens one application after another:
+     remember where it settled, not every stop. */
+  PAL.saveT=setTimeout(()=>setPref("recent",prefs().recent),900);
+}
+
+function palBuild(){
+  const q=PAL.q.trim(), words=palWords(q), groups=[];
+  const docs=(S.state&&S.state.documents)||[];
+  const docItem=(d,sub,kind)=>({html:palIcon(isLetterPath(d.path)?"letter":"doc"),
+    title:esc(d.label||d.path), sub, kind:kind||t(isLetterPath(d.path)?"Letter":"CV"), run:()=>openDoc(d.path)});
+  const jobItem=(j,sub,kind,title)=>({html:'<span class="ic">'+companyMark(j)+'</span>',
+    title:title||esc(j.company)+" · "+esc(j.title), sub:sub==null?esc(palJobLine(j)):sub,
+    kind:kind||t("Application"), run:()=>openJob(j.id)});
+  if(!words.length){
+    const recent=(prefs().recent||[]).map(r=>{
+      if(r.job){ const j=(S.jobs||[]).find(x=>x.id===r.job); return j&&jobItem(j) }
+      const d=docs.find(x=>x.path===r.doc); return d&&docItem(d,esc(d.path))
+    }).filter(Boolean).slice(0,4);
+    if(recent.length) groups.push([t("Recent"),recent]);
+    /* New application, New document, Calendar, Funnel, Settings › Notifications. */
+    const pl=palPlaces();
+    groups.push([t("Go to"),[0,1,5,4,9].map(i=>pl[i])
+      .map(p=>({html:palIcon(p.icon),title:esc(p.label),sub:p.sub?esc(p.sub):"",kind:"",stay:p.stay,run:p.run}))]);
+  } else {
+    const jobs=S.jobs||[], apps=[], inside=[];
+    jobs.forEach(j=>{
+      const head=[j.company,j.title,j.location].join(" ");
+      if(palHas(head,words)) apps.push(jobItem(j,null,null,palMark(j.company,words)+" · "+palMark(j.title,words)));
+      else for(const [field,label] of [["notes","Notes"],["description","Posting"]]){
+        if(j[field]&&palHas(head+" "+j[field],words)&&palHas(j[field],words.slice(0,1))){
+          inside.push(jobItem(j,esc(t(label))+": “"+palMark(palSnip(j[field],words),words)+"”",t(label)));
+          break;
+        }
+      }
+    });
+    if(apps.length) groups.push([t("Applications"),apps.slice(0,6),apps.length]);
+    const seen=new Set(), dl=[];
+    docs.forEach(d=>{ if(palHas(d.label+" "+d.path,words)){ seen.add(d.path); dl.push(docItem(d,esc(d.path))) } });
+    (PAL.docs||[]).forEach(d=>{ if(seen.has(d.path)) return;
+      dl.push(docItem(d,palMark(d.line,words))) });
+    if(dl.length) groups.push([t("Documents"),dl.slice(0,6),dl.length]);
+    if(inside.length) groups.push([t("In postings and notes"),inside.slice(0,5),inside.length]);
+    const places=palPlaces().filter(p=>palHas(p.label,words));
+    if(places.length) groups.push([t("Go to"),places.slice(0,4).map(p=>({html:palIcon(p.icon),
+      title:palMark(p.label,words),sub:p.sub?esc(p.sub):"",kind:"",stay:p.stay,run:p.run}))]);
+  }
+  return groups;
+}
+
+function palDraw(){
+  const groups=palBuild(), list=$("#pal-list");
+  PAL.items=[]; let html="";
+  groups.forEach(([head,items,n])=>{
+    html+='<div class="pal-h" role="presentation">'+esc(head)+(n>1?'<span>'+n+'</span>':"")+'</div>';
+    items.forEach(it=>{
+      const i=PAL.items.push(it)-1;
+      html+='<button type="button" class="pal-it" role="option" id="pal-o'+i+'" data-i="'+i+'" tabindex="-1" '+
+        'aria-selected="'+(i===PAL.sel)+'">'+it.html+
+        '<span class="tx"><b data-noi18n>'+it.title+'</b>'+(it.sub?'<small data-noi18n>'+it.sub+'</small>':"")+'</span>'+
+        (it.kind?'<span class="kd">'+esc(it.kind)+'</span>':"")+'</button>';
+    });
+  });
+  if(!PAL.items.length) html='<div class="pal-none">'+esc(t("Nothing matches “{q}”.",{q:PAL.q.trim()}))+'</div>';
+  list.innerHTML=html;
+  PAL.sel=Math.min(PAL.sel,Math.max(0,PAL.items.length-1));
+  const n=PAL.items.length;
+  $("#pal-count").textContent=PAL.q.trim()?t("{n} result(s)",{n}):(PAL_MAC?t("⌘K, from anywhere"):t("Ctrl K, from anywhere"));
+  $("#pal-in").setAttribute("aria-activedescendant",n?"pal-o"+PAL.sel:"");
+  $$("#pal-list .pal-it").forEach(b=>{
+    b.onclick=()=>palRun(+b.dataset.i);
+    b.onmousemove=()=>{ if(PAL.sel!==+b.dataset.i){ PAL.sel=+b.dataset.i; palMarkSel() } };
+  });
+}
+function palMarkSel(){
+  $$("#pal-list .pal-it").forEach(b=>b.setAttribute("aria-selected",String(+b.dataset.i===PAL.sel)));
+  $("#pal-in").setAttribute("aria-activedescendant",PAL.items.length?"pal-o"+PAL.sel:"");
+  const el=$("#pal-o"+PAL.sel); if(el) el.scrollIntoView({block:"nearest"});
+}
+function palRun(i){
+  const it=PAL.items[i]; if(!it) return;
+  /* Settings opens over the editor; everything else leaves it. */
+  if(S.dirty&&!it.stay&&!confirm(t("You have unsaved changes. Discard them?"))) return;
+  closePal();
+  it.run();
+}
+async function palFetch(){
+  const q=PAL.q.trim(), seq=++PAL.seq;
+  if(!q){ PAL.docs=null; return }
+  try{
+    const r=await api("/api/search?q="+encodeURIComponent(q));
+    if(seq!==PAL.seq) return;       /* a newer query already answered */
+    PAL.docs=r.documents||[]; palDraw();
+  }catch(e){}
+}
+function openPal(){
+  if(onbOpen()) return;
+  if(!S.jready) loadJobs(true);
+  PAL.q=""; PAL.sel=0; PAL.docs=null;
+  $("#pal").hidden=false; $("#pal-scrim").hidden=false;
+  const inp=$("#pal-in"); inp.value=""; palDraw(); inp.focus();
+}
+function closePal(){ $("#pal").hidden=true; $("#pal-scrim").hidden=true }
+$("#pal-scrim").onclick=closePal;
+$("#btn-search").onclick=()=>$("#pal").hidden?openPal():closePal();
+$("#pal-in").addEventListener("input",e=>{
+  PAL.q=e.target.value; PAL.sel=0; palDraw();
+  clearTimeout(PAL.fetchT); PAL.fetchT=setTimeout(palFetch,140);
+});
+$("#pal-in").addEventListener("keydown",e=>{
+  const n=PAL.items.length;
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault(); if(!n) return;
+    PAL.sel=(PAL.sel+(e.key==="ArrowDown"?1:-1)+n)%n; palMarkSel();
+  }else if(e.key==="Enter"){ e.preventDefault(); palRun(PAL.sel) }
+  else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); closePal() }
+});
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&e.key.toLowerCase()==="k"){
+    e.preventDefault(); $("#pal").hidden?openPal():closePal();
+  }
 });
 
 boot();

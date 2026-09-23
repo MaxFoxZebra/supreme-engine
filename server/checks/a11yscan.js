@@ -160,6 +160,9 @@ async function main() {
     ["week", `document.querySelector('#cal-views [data-cv=week]').click()`],
     ...["workspace", "editor", "region", "notify", "ai", "api", "updates", "about"].map(p =>
       ["settings " + p, `openSettings("${p}")`]),
+    ["search", `closeOverlays(); openPal()`],
+    ["search results", `(()=>{ const i=document.querySelector("#pal-in"); i.value="platform";
+      i.dispatchEvent(new Event("input",{bubbles:true})) })()`],
   ];
   const found = new Map(); let broken = 0;
   for (const theme of ["light", "dark"]) {

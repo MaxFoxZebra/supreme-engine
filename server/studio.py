@@ -34,6 +34,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import zipfile
 import webbrowser
 from pathlib import Path
@@ -2358,6 +2359,44 @@ def document_files() -> list[tuple[Path, str, str]]:
     return found
 
 
+def _fold(text: str) -> str:
+    """Lower case without accents, one character for one, so an index in the
+    folded text is an index in the original: "résumé" finds "resume"."""
+    return "".join((unicodedata.normalize("NFD", c)[:1] or c).lower() for c in text)
+
+
+def search_documents(q: str, limit: int = 8) -> list[dict]:
+    """Documents whose text holds every word of q, with the line around the
+    first word found. For the search box: the page has the documents' names,
+    not what is in them."""
+    words = [w for w in _fold(q).split() if w]
+    if not words:
+        return []
+    out = []
+    for d in list_documents():
+        try:
+            text = safe_path(d["path"]).read_text(encoding="utf-8")
+        except (OSError, ValueError, PermissionError):
+            continue
+        folded = _fold(text)
+        if not all(w in folded for w in words):
+            continue
+        at = folded.find(words[0])
+        start = text.rfind("\n", 0, at) + 1
+        end = text.find("\n", at)
+        # A YAML list item or a Markdown bullet: the words, not the dash.
+        line = re.sub(r"^[-*]\s+", "", text[start:end if end >= 0 else len(text)].strip())
+        if len(line) > 140:
+            # Keep the match in view when the line is long.
+            cut = max(0, at - start - 60)
+            line = ("…" if cut else "") + line[cut:cut + 130].strip() + "…"
+        out.append({"path": d["path"], "label": d.get("label") or d["path"],
+                    "group": d.get("group"), "line": line})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def list_documents() -> list[dict]:
     """Every CV in the workspace, with who last worked on it.
 
@@ -3273,6 +3312,11 @@ def openapi_spec() -> dict:
             "/api/funnel": {"get": {"summary":
                 "Application funnel: node counts, flows and conversion rates",
                 "responses": ok}},
+            "/api/search": {"get": {"summary":
+                "Documents whose text holds every word of q (accents and case "
+                "ignored), with the line where the first word was found",
+                "parameters": [{"name": "q", "in": "query", "schema": {"type": "string"}}],
+                "responses": ok}},
             "/api/alerts": {"get": {"summary":
                 "Applications needing attention: interviews due, follow-ups "
                 "due, interviews with no outcome, and silence since applying",
@@ -3613,6 +3657,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json(jobstore.funnel(
                     WORKSPACE, q.get("since", [None])[0]))
+            if u.path == "/api/search":
+                return self._json({"documents": search_documents(q.get("q", [""])[0])})
             if u.path == "/api/alerts":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -4030,6 +4076,10 @@ const API_TOKEN=__API_TOKEN__;
       height="13" viewBox="0 0 24 24" aria-hidden="true"
       ><use href="#mistral-mark"/></svg><i class="dot"></i></span>
   </button>
+  <button class="cbtn icon" id="btn-search" title="Search everything (Ctrl K)"
+    aria-label="Search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/>
+    <path d="M20 20l-4-4"/></svg></button>
   <button class="cbtn icon" id="btn-settings" title="Settings, setup and help"
     aria-label="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/>
@@ -4335,6 +4385,19 @@ const API_TOKEN=__API_TOKEN__;
 
 <div id="toasts" aria-live="polite"></div>
 <div class="scrim" id="scrim" hidden></div>
+<div class="pal-scrim" id="pal-scrim" hidden></div>
+<div class="pal" id="pal" hidden role="dialog" aria-modal="true" aria-label="Search">
+  <label class="pal-q"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/>
+    <path d="M20 20l-4-4"/></svg>
+    <input id="pal-in" type="search" autocomplete="off" spellcheck="false" role="combobox"
+      aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list"
+      placeholder="Search applications, documents, postings, or go to…" aria-label="Search">
+    <kbd>Esc</kbd></label>
+  <div class="pal-list" id="pal-list" role="listbox" aria-label="Results"></div>
+  <div class="pal-foot"><span><kbd>↑↓</kbd> move</span><span><kbd>Enter</kbd> open</span>
+    <span class="grow"></span><span id="pal-count"></span></div>
+</div>
 <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true"
   aria-labelledby="sheet-title"></div>
 <!-- The first launch, over the whole window: drawn by onboardingSheet(). -->

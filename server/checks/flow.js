@@ -157,6 +157,23 @@ design:
   check("letters are no longer prefixed in the label",
     r && !r.rows.some(x => /^Letter /.test(x)), JSON.stringify(r.rows));
 
+  /* Search: Ctrl K, a few letters of a company, Enter, and its application is open. */
+  r = await evalJs(`(async () => {
+    closeSheet(); setView("jobs"); closePeek();
+    document.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));
+    const open = !document.querySelector("#pal").hidden;
+    const i = document.querySelector("#pal-in"); i.value = "qont";
+    i.dispatchEvent(new Event("input",{bubbles:true}));
+    await new Promise(r => setTimeout(r, 400));
+    const first = (document.querySelector("#pal-list .pal-it b")||{}).textContent;
+    i.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));
+    await new Promise(r => setTimeout(r, 400));
+    const j = S.jobs.find(x => x.id === S.jsel);
+    return {open, first, closed: document.querySelector("#pal").hidden, company: j && j.company};
+  })()`);
+  check("Ctrl K opens search, and Enter opens what it found",
+    r && r.open && /Qonto/.test(r.first || "") && r.closed && r.company === "Qonto", JSON.stringify(r));
+
   console.log(fails ? `\n${fails} failure(s)` : "\nall flows pass");
   ws.close(); process.exit(fails ? 1 : 0);
 }
