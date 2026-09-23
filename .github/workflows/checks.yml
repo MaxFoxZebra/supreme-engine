@@ -46,6 +46,9 @@ jobs:
           pip install --only-binary=:all: cryptography
           pip install "rendercv[full]==2.8" "ruamel.yaml==0.19.1" "mcp==2.2.0" \
             "pypdf==6.19.0" "tzdata==2026.4"
+          # For the checks only: phototest makes its test JPEGs with it. The
+          # app itself is built without Pillow.
+          pip install pillow
 
       - name: Scripts parse
         run: python checks/jscheck.py
