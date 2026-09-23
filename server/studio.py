@@ -65,6 +65,7 @@ except ImportError:  # clicking the page is a bonus, not a requirement
 
 import ats  # noqa: E402
 import cjkfonts  # noqa: E402
+import sample  # noqa: E402
 import importer  # noqa: E402
 import languages  # noqa: E402
 import letters  # noqa: E402
@@ -1862,6 +1863,34 @@ def watch_parent(pid: int) -> None:
     threading.Thread(target=loop, daemon=True).start()
 
 
+# The workspace to come back to from the sample data. Held in memory only: a
+# restart always opens your own, whatever was on screen when it quit.
+REAL_WORKSPACE: Path | None = None
+
+
+def in_sample() -> bool:
+    return WORKSPACE.resolve() == sample.folder().resolve()
+
+
+def open_sample() -> dict:
+    """Rebuild the sample folder and switch the app to it."""
+    global WORKSPACE, REAL_WORKSPACE
+    if not in_sample():
+        REAL_WORKSPACE = WORKSPACE
+    WORKSPACE = sample.folder()
+    try:
+        return sample.build(sys.modules[__name__])
+    except Exception:
+        WORKSPACE = REAL_WORKSPACE or WORKSPACE
+        raise
+
+
+def close_sample() -> None:
+    global WORKSPACE
+    if in_sample() and REAL_WORKSPACE is not None:
+        WORKSPACE = REAL_WORKSPACE
+
+
 def bootstrap(workspace: Path) -> bool:
     """Create and seed the workspace. Returns True when this was a first run."""
     created = not workspace.exists()
@@ -3016,6 +3045,11 @@ def openapi_spec() -> dict:
                 "requestBody": body({"name": {"type": "string"},
                                      "kind": {"type": "string"},
                                      "from": {"type": "string"}}), "responses": ok}},
+            "/api/sample": {"post": {"summary":
+                "Switch to freshly made sample data (on: true) or back to your own "
+                "workspace (on: false). Your workspace is never written to",
+                "requestBody": body({"on": {"type": "boolean"}}),
+                "responses": ok}},
             "/api/base": {"post": {"summary":
                 "Nominate the CV that tailored copies start from; null clears it",
                 "requestBody": body({"path": {"type": "string"}}),
@@ -3295,7 +3329,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "page_sizes": PAGE_SIZES,
                     "fonts": font_families(),
                     "workspace": str(WORKSPACE),
-                    "first_run": FIRST_RUN,
+                    "sample": in_sample(),
+                    "first_run": FIRST_RUN and not in_sample(),
                     "starter": starter_untouched(),
                     "version": VERSION,
                     "platform": sys.platform,
@@ -3596,6 +3631,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # it all along -- it was simply thrown away on write.
                 note_lineage(dest, rel(safe_path(src)) if src else None)
                 return self._json({"ok": True, "path": rel(dest)})
+            if u.path == "/api/sample":
+                # Sample data lives in its own folder; switching never writes
+                # to the workspace you came from.
+                if payload.get("on"):
+                    return self._json({"ok": True, **open_sample()})
+                close_sample()
+                return self._json({"ok": True})
             if u.path == "/api/base":
                 # {"path": null} clears the nomination rather than deleting
                 # anything: the document is untouched either way.
@@ -4465,12 +4507,25 @@ body.dragging{cursor:col-resize;user-select:none}
   color:var(--acc-text)}
 .btabs .behind i{width:7px;height:7px;border-radius:50%;background:var(--acc)}
 .btabs .add{border:1px dashed var(--bd-field);color:var(--t600)}
+.samp-pill{display:flex;align-items:center;gap:8px;height:30px;padding:0 6px 0 12px;margin-right:12px;
+  border-radius:15px;background:rgba(192,138,62,.16);box-shadow:inset 0 0 0 1px rgba(232,188,124,.45);
+  color:#e8bc7c;font-size:12.5px;font-weight:600}
+.samp-pill i{width:7px;height:7px;border-radius:50%;background:#e8bc7c}
+.samp-pill b{height:22px;display:flex;align-items:center;padding:0 10px;border-radius:11px;
+  background:#e8bc7c;color:#1b1a17;font-weight:600;font-size:12px}
+.samp-pill:hover b{background:#f0cb93}
 /* A language, as its code: EN, FR. Dark when it is the one you are on. */
 .lchip{display:inline-flex;align-items:center;height:19px;padding:0 6px;border-radius:5px;
   font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;font-weight:600;
   letter-spacing:.04em;background:transparent;box-shadow:inset 0 0 0 1px var(--bd-field);
   color:var(--t700);flex:none}
 .lchip.on{background:var(--c800);color:var(--cw);box-shadow:none}
+.flg{width:15px;height:10px;border-radius:2px;flex:none;display:inline-block;
+  box-shadow:0 0 0 .5px rgba(0,0,0,.25)}
+.lchip .flg{margin-right:4px}
+#dfilter .flg{margin-right:6px;vertical-align:-1px}
+.ap-lang{display:flex;align-items:center;gap:7px;min-width:0}
+.ap-lang .flg{width:18px;height:12px;border-radius:2px;flex:none;box-shadow:0 0 0 .5px rgba(0,0,0,.25)}
 :root[data-theme=dark] .lchip.on{background:var(--cw);color:var(--c800)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .lchip.on{
   background:var(--cw);color:var(--c800)}}
@@ -5868,6 +5923,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   <!-- Only what is true on every screen lives up here -- the AI clients and
        the gear -- so the bar never changes shape. What belongs to a screen
        sits in that screen's own header. -->
+  <!-- Says, on every screen, that none of what is showing is yours. -->
+  <button class="samp-pill" id="samp-pill" hidden title="Back to your own workspace">
+    <i aria-hidden="true"></i>Sample data<b>Back to my workspace</b></button>
   <button class="cbtn ai" id="btn-ai" title="AI clients" aria-label="AI clients">
     <span class="aic" data-client="claude" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
@@ -6228,6 +6286,12 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           first launch: import a CV from a PDF or LinkedIn, your name at the top of the
           base CV, how it prints, and an AI client.</span></div>
           <button class="obtn" id="s-setup">Run setup again</button></div>
+        <div class="srow"><div><b>Sample data</b><span id="s-sample-say">See the app in use:
+          about sixty applications in every state over five months, tailored CVs, cover
+          letters, and the base CV in French, Spanish and Brazilian Portuguese. It opens in
+          a folder of its own, made fresh each time; your workspace is not touched, and a
+          restart brings you back to it.</span></div>
+          <button class="obtn" id="s-sample">Open sample data</button></div>
         <div class="srow"><div><b>Folder</b><span id="s-ws" class="mono"></span></div>
           <button class="obtn" id="s-open">Open folder</button></div>
         <div class="srow"><div><b>Documents</b><span id="s-count"></span></div></div>
@@ -7498,7 +7562,19 @@ async function boot(){
   pulse();
   setInterval(pulse,2500);
   paintStatus();
-  if(shouldOnboard(d)) onboardingSheet();
+  const pill=$("#samp-pill");
+  pill.hidden=!d.sample; pill.onclick=()=>setSample(false,pill);
+  if(!d.sample&&shouldOnboard(d)) onboardingSheet();
+}
+/* Into the sample folder, or back to your own. Everything on screen belongs
+   to one workspace, so the page starts over in the other one. */
+async function setSample(on,btn){
+  if(btn){ btn.disabled=true; if(on) btn.textContent="Making it…" }
+  try{
+    const r=await post("/api/sample",{on});
+    if(!r.ok) throw new Error(r.error||"Could not switch");
+    location.reload();
+  }catch(e){ if(btn) btn.disabled=false; toast(e.message,true) }
 }
 
 /* =========================================================================
@@ -10044,7 +10120,30 @@ function mtimeLabel(t){
    anything: a client acts when you ask it to, so the app says what to ask. */
 const langOf=c=>((S.state&&S.state.languages)||[]).find(l=>l.code===c)||
   {code:c||"en",native:String(c||"en").toUpperCase(),english:String(c||"en").toUpperCase()};
-const lchip=(c,on)=>'<span class="lchip'+(on?' on':'')+'">'+esc(String(c||"en").toUpperCase())+'</span>';
+/* Flags for the languages people most often write a CV in here, drawn rather
+   than emoji: Windows prints a flag emoji as two letters. English is the US
+   flag and Portuguese the Brazilian one, as asked; the code is printed beside
+   the flag either way, so a flag is never the only thing saying which. */
+const FLAGS={
+  fr:'<rect width="10" height="20" fill="#0055A4"/><rect x="10" width="10" height="20" fill="#fff"/>'+
+    '<rect x="20" width="10" height="20" fill="#EF4135"/>',
+  es:'<rect width="30" height="20" fill="#AA151B"/><rect y="5" width="30" height="10" fill="#F1BF00"/>',
+  en:'<rect width="30" height="20" fill="#fff"/>'+[0,2,4,6,8,10,12].map(i=>'<rect y="'+(i*20/13).toFixed(2)+
+    '" width="30" height="'+(20/13).toFixed(2)+'" fill="#B22234"/>').join("")+
+    '<rect width="13" height="10.77" fill="#3C3B6E"/>'+[[2.5,2.2],[6.5,2.2],[10.5,2.2],[4.5,5.4],[8.5,5.4],
+    [2.5,8.6],[6.5,8.6],[10.5,8.6]].map(([x,y])=>'<circle cx="'+x+'" cy="'+y+'" r=".75" fill="#fff"/>').join(""),
+  pt:'<rect width="30" height="20" fill="#009B3A"/><path d="M15 2.2 27.6 10 15 17.8 2.4 10z" fill="#FEDF00"/>'+
+    '<circle cx="15" cy="10" r="4.6" fill="#002776"/>',
+};
+const flag=c=>FLAGS[c]?'<svg class="flg" viewBox="0 0 30 20" aria-hidden="true">'+FLAGS[c]+'</svg>':"";
+/* The flag beside an application's language follows the choice at once. */
+document.addEventListener("change",e=>{
+  const sel=e.target.closest&&e.target.closest(".ap-lang select"); if(!sel) return;
+  sel.parentNode.querySelector(".flg")?.remove();
+  sel.insertAdjacentHTML("beforebegin",flag(sel.value));
+});
+const lchip=(c,on)=>{ const k=String(c||"en").toLowerCase();
+  return '<span class="lchip'+(on?' on':'')+(FLAGS[k]?' fl':'')+'">'+flag(k)+esc(k.toUpperCase())+'</span>' };
 /* The base CV and its translations: the set the Documents tabs move between. */
 function baseFamily(){
   const b=S.state&&S.state.base; if(!b||b.missing) return [];
@@ -10240,7 +10339,7 @@ function drawDocuments(){
   else{
     filt.hidden=false;
     filt.innerHTML=[null,...langs].map(c=>'<button data-dl="'+(c||"")+'" aria-pressed="'+
-      String((S.docLang||null)===c)+'">'+(c?esc(langOf(c).native):"All languages")+
+      String((S.docLang||null)===c)+'">'+(c?flag(c)+esc(langOf(c).native):"All languages")+
       '</button>').join("");
     $$("#dfilter [data-dl]").forEach(b=>b.onclick=()=>{ S.docLang=b.dataset.dl||null;
       drawDocuments() });
@@ -10757,10 +10856,10 @@ function drawJobInspector(){
     '<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+' title="'+n+' of 5" aria-label="'+
     n+' of 5"></button>').join("")+'</div>';
   const guess=j.language_guess, curL=j.language||"";
-  const langCtl='<select data-j="language" aria-label="Language">'+
+  const langCtl='<span class="ap-lang">'+flag(curL||guess)+'<select data-j="language" aria-label="Language">'+
     '<option value=""'+(curL?"":" selected")+'>'+(guess?"Looks like "+esc(langOf(guess).native):"Not set")+'</option>'+
     ((S.state&&S.state.languages)||[]).map(l=>'<option value="'+l.code+'"'+(l.code===curL?" selected":"")+'>'+
-      esc(l.native)+'</option>').join("")+'</select>';
+      esc(l.native)+'</option>').join("")+'</select></span>';
   const facts='<div class="ap-facts">'+
     fact("Status",statusCtl)+
     fact("Follow up",'<input data-j="followup_date" type="date" aria-label="Follow up" value="'+esc(j.followup_date||"")+'">')+
@@ -12319,6 +12418,9 @@ function fillSettings(){
     try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) }
   };
   $("#s-setup").onclick=()=>{ closeOverlays(); onboardingSheet() };
+  const sb=$("#s-sample");
+  sb.textContent=st.sample?"Back to my workspace":"Open sample data";
+  sb.onclick=()=>setSample(!st.sample,sb);
   $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
   /* Revealing is deliberate and one click; copying never needs it. */
   const key=$("#s-key");

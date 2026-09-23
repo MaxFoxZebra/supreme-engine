@@ -8,6 +8,20 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Sample data, to see the app in use.** Settings → Workspace → Open sample
+  data switches to a separate folder, made fresh each time, with 64
+  applications over five months in every status (follow-ups due, interviews
+  coming up, offers to decide on), postings, notes, five tailored CVs, four
+  cover letters, and the base CV in French, Spanish and Brazilian Portuguese.
+  A pill in the top bar says you are looking at it and takes you back. Your
+  own workspace is never written to, and a restart always opens it.
+- **Flags beside languages.** France, Spain, Brazil for Portuguese and the US
+  for English, drawn rather than emoji so they look the same on Windows, on
+  the base CV's language tabs, the Documents filter, the application's
+  language and every language chip. The code stays beside the flag.
+
 ## 0.17.0
 
 - **The funnel, rebuilt.** It opens on five numbers across the top, sent,
