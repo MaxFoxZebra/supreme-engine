@@ -41,7 +41,6 @@ tag, so a release is never published with nothing said about it.
 - **Where you found it is chosen, not typed**: a menu of job boards with their
   logos, then the company's careers page, a referral, a recruiter, or
   anything else.
-
 - **A CV in more than one language.** On Documents, **+ Add a language** on
   the base CV makes a copy in any of the 22 languages RenderCV prints, saved
   beside it (`my-cv.fr.yaml`) and linked to it. The copy already has its
