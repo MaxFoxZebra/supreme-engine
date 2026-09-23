@@ -5273,7 +5273,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 @keyframes fx-pop{0%{opacity:0;transform:scale(.4)}70%{opacity:1;transform:scale(1.15)}100%{opacity:1;transform:scale(1)}}
 @keyframes fx-node{from{opacity:0;transform:scaleY(.2)}to{opacity:1;transform:none}}
 @keyframes fx-pulse{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.9)}}
-@keyframes fx-breathe{0%,100%{opacity:.55}50%{opacity:1}}
+/* A ring that swells and fades, so the word inside stays at full strength. */
+@keyframes fx-breathe{0%,100%{box-shadow:0 0 0 0 rgba(232,188,124,0)}50%{box-shadow:0 0 0 3px rgba(232,188,124,.4)}}
 .fx-in .fx-r{animation:fx-rise .7s cubic-bezier(.2,.8,.2,1) both}
 .fx-in .fj-bar span,.fx-in .fn-src .fill{animation:fx-grow 1.1s cubic-bezier(.2,.8,.2,1) both}
 .fx-in .fj-conv{animation:fx-pop .6s cubic-bezier(.2,.8,.2,1) both}

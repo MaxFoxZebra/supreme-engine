@@ -48,7 +48,10 @@ async function main() {
   /* Runs in the page: what is wrong with what is showing. */
   const probe = `(() => {
     /* Measure where things settle, not halfway through an entrance. */
-    document.getAnimations().forEach(a => { try { if (a.effect.getComputedTiming().iterations !== Infinity) a.finish() } catch (e) {} });
+    /* One that never ends is held at its start, so a result never depends
+       on the moment it was taken. */
+    document.getAnimations().forEach(a => { try {
+      if (a.effect.getComputedTiming().iterations !== Infinity) a.finish(); else { a.pause(); a.currentTime = 0 } } catch (e) {} });
     const out = [];
     const vis = el => { const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false;
       for (let e = el; e; e = e.parentElement) { const cs = getComputedStyle(e);
