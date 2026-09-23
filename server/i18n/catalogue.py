@@ -752,6 +752,7 @@ C = {
     "day": ("jour", "día", "dia"),
     "days": ("jours", "días", "dias"),
     "each application from sent to where it is now, and what is ahead": ("chaque candidature, de l'envoi à aujourd'hui, et ce qui vient", "cada candidatura desde el envío hasta hoy, y lo que viene", "cada candidatura do envio até agora, e o que vem pela frente"),
+    "every tailored CV starts as a copy of it": ("chaque CV adapté part d'une copie de celui-ci", "cada CV adaptado empieza como una copia de él", "cada CV adaptado começa como uma cópia dele"),
     "file not found": ("fichier introuvable", "archivo no encontrado", "arquivo não encontrado"),
     "from": ("de", "de", "de"),
     "from that folder.": ("depuis ce dossier.", "desde esa carpeta.", "dessa pasta."),
@@ -911,4 +912,6 @@ RX = [
     ("^That PDF could not be read \\((.+)\\)\\.$", "Ce PDF n'a pas pu être lu ($1).", "No se pudo leer ese PDF ($1).", "Não foi possível ler esse PDF ($1)."),
     ("^Could not read the PDF: (.+)$", "Impossible de lire le PDF : $1", "No se pudo leer el PDF: $1", "Não foi possível ler o PDF: $1"),
     ("^(.+) already exists\\.$", "$1 existe déjà.", "$1 ya existe.", "$1 já existe."),
+    ("^(\\d+) words?$", "$1 mot(s)", "$1 palabra(s)", "$1 palavra(s)"),
+    ("^(.+) · (\\d+) words?$", "$1 · $2 mot(s)", "$1 · $2 palabra(s)", "$1 · $2 palavra(s)"),
 ]

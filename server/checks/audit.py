@@ -6,6 +6,10 @@ import re, pathlib, collections
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 src = (ROOT / "studio.py").read_text(encoding="utf-8")
 html = re.search(r'INDEX_HTML = r"""(.*?)"""', src, re.S).group(1)
+# The page as the browser assembles it: its styles and its script live in
+# static/, and are read here as if they were still inline.
+html += ("<style>" + (ROOT / "static" / "app.css").read_text(encoding="utf-8") + "</style>"
+         "<script>" + (ROOT / "static" / "app.js").read_text(encoding="utf-8") + "</script>")
 js = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
 css = "\n".join(re.findall(r"<style>(.*?)</style>", html, re.S))
 markup = re.sub(r"<script>.*?</script>|<style>.*?</style>", "", html, flags=re.S)

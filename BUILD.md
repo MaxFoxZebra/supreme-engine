@@ -23,8 +23,9 @@ python dev.py
 ```
 
 Serves on 127.0.0.1:8722, opens a browser, and restarts whenever you save
-`studio.py`, `cv_render.py`, `cv_map.py`, `jobs.py` or `mcp_server.py`. Edit,
-save, refresh: about two seconds. A syntax error is reported and it waits for
+`studio.py`, `cv_render.py`, `cv_map.py`, `jobs.py`, `mcp_server.py`, or the
+interface in `static/app.js` and `static/app.css`. Edit, save, refresh: about
+two seconds. A syntax error is reported and it waits for
 the next save rather than restart-looping.
 
 Useful flags: `--no-open` to keep it from stealing focus, `--workspace DIR` to
@@ -289,13 +290,15 @@ installer is `currentUser` mode, so there is no admin prompt.
 ├── dist/index.html         loading screen shown while the server starts
 ├── server/                 the Python server, frozen into the bundle
 │   ├── server_main.py      PyInstaller entry point; --mcp switches to MCP
-│   ├── studio.py           interface and API
+│   ├── studio.py           the API, and the page's markup (INDEX_HTML)
 │   ├── cv_render.py        RenderCV wrapper
 │   ├── cv_map.py           where each block landed on the page
 │   ├── jobs.py             applications.db
 │   ├── mcp_server.py       MCP surface (see MCP.md)
 │   ├── dev.py              hot-restarting dev server
-│   └── static/             vendored d3, the interface fonts and the app mark
+│   ├── i18n/               the translation catalogue; build.py writes static/i18n.js
+│   └── static/             the interface (app.js, app.css), i18n.js, vendored d3,
+│                           the interface fonts and the app mark
 └── src-tauri/
     ├── Cargo.toml          release profile tuned for size (opt-level z, LTO, strip)
     ├── tauri.conf.json     bundle config, updater endpoint and public key

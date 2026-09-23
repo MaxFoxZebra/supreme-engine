@@ -53,7 +53,7 @@ async function main() {
   /* The CV's own words (its sections, entries and RenderCV's field names in
      the form and the outline) and the page itself are not the interface. */
   const collect = `(() => {
-    const OWN = "#pane-page,.pg,.hits,svg,script,style,.mono,code,.dfx-v,kbd,#outline,#pane-form summary,#pane-form .entry-hd,#pane-form label,#doctitle,.tool .n,.blk,.lchip,.langs";
+    const OWN = "#pane-page,.pg,.hits,svg,script,style,code,.dfx-v,kbd,#outline,#pane-form summary,#pane-form .entry-hd,#pane-form label,#doctitle,.tool .n,.blk,.lchip,.langs";
     const out = new Set();
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
       acceptNode: x => { const el = x.nodeType === 1 ? x : x.parentElement;

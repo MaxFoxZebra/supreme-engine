@@ -62,7 +62,7 @@ def stamps() -> dict[str, float]:
         f = HERE / name
         if f.exists():
             out[name] = f.stat().st_mtime
-    for f in (HERE / "static").glob("*.js"):
+    for f in [*(HERE / "static").glob("*.js"), *(HERE / "static").glob("*.css")]:
         out[f.name] = f.stat().st_mtime
     return out
 
