@@ -21,6 +21,15 @@ tag, so a release is never published with nothing said about it.
 - **The base CV card shows the base CV.** A snapshot of its first page, as
   actually rendered, sits in the card on Applications and on Documents, and
   clicking it opens the CV. It updates when you or a model change the file.
+- **ATS check.** Reads the CV's PDF the way an applicant tracking system
+  does and shows you the text it gets, beside what went wrong: contact icons
+  that extract as junk characters, a LinkedIn shown as a bare username,
+  headings a parser will not recognise, entries missing or out of order in
+  the text layer, roles without dates. The two commonest problems have a
+  one-click fix. Against an application's saved posting, or one you paste,
+  it lists the keywords the posting asks for and which ones the CV uses. From
+  the editor's **ATS check** button, or from an application. Claude can run
+  it too, with `ats_check`.
 - **Applications Claude adds come with the company's logo.** Given the
   company's website, `add_job` fetches its icon from that site and shows it on
   the row; a second role at the same company reuses it. The request goes to

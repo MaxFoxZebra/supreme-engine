@@ -62,6 +62,8 @@ try:
 except ImportError:  # clicking the page is a bonus, not a requirement
     cv_map = None
 
+import ats  # noqa: E402
+
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
 SAFE_ASSET = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -2141,6 +2143,98 @@ def render(path: Path) -> dict:
     return _shape(render_file(path, output_dir(path)), path)
 
 
+def current_pdf(path: Path) -> tuple[Path | None, dict | None]:
+    """The PDF for this document as it now stands, rendering it if the one on
+    disk is older than the YAML. Returns (pdf, None) or (None, failed render)."""
+    out = output_dir(path)
+    pdfs = sorted(out.glob("*.pdf"), key=lambda f: f.stat().st_mtime,
+                  reverse=True) if out.is_dir() else []
+    if pdfs and pdfs[0].stat().st_mtime >= path.stat().st_mtime:
+        return pdfs[0], None
+    r = render(path)
+    if not r.get("ok"):
+        return None, r
+    return WORKSPACE / r["pdf"], None
+
+
+def job_for(path: Path, job_id: str | None = None) -> dict | None:
+    """The application to check a CV against: the one named, else the one this
+    CV is attached to."""
+    if jobstore is None:
+        return None
+    jobs = jobstore.list_jobs(WORKSPACE)
+    if job_id:
+        return next((j for j in jobs if j["id"] == job_id), None)
+    return next((j for j in jobs if j.get("cv_path") == rel(path)), None)
+
+
+def ats_report(path: Path, job_id: str | None = None,
+               posting: str | None = None) -> dict:
+    """What an ATS reads from this CV's PDF, and how it meets a posting.
+
+    The posting is the one pasted, else the named application's, else the
+    application this CV is attached to. No posting is not an error: the
+    parsing checks stand on their own.
+    """
+    pdf, failed = current_pdf(path)
+    if pdf is None:
+        return {"ok": False, "error": (failed or {}).get("hint") or
+                "The CV did not render, so there is no PDF to read."}
+    try:
+        pages = ats.pdf_text(pdf)
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not read the PDF: {exc}"}
+    data = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))) or {}
+    text = "\n".join(pages)
+    out = {"ok": True, "pdf": rel(pdf), "pages": len(pages),
+           "words": len(text.split()), "text": text[:8000],
+           "checks": ats.parse_checks(pages, data), "against": None,
+           "keywords": None}
+    # An empty posting is a choice ("check it against nothing"), not an
+    # absence, so only None falls back to the attached application.
+    job = None if posting is not None else job_for(path, job_id)
+    source = posting.strip() if posting is not None else (job or {}).get("description")
+    if job:
+        out["against"] = {"job_id": job["id"], "company": job.get("company"),
+                          "title": job.get("title"),
+                          "has_posting": bool(job.get("description"))}
+    elif source:
+        out["against"] = {"pasted": True, "has_posting": True}
+    if source:
+        terms = ats.keywords(source, (job or {}).get("company"))
+        out["keywords"] = ats.match(terms, text)
+    return out
+
+
+# The two parsing problems RenderCV's own design options solve, keyed by the
+# id parse_checks gives them.
+ATS_FIXES = {
+    "icons": (["design", "header", "connections", "show_icons"], False),
+    "urls": (["design", "header", "connections",
+              "display_urls_instead_of_usernames"], True),
+}
+
+
+def ats_fix(path: Path, fix: str) -> dict:
+    if fix not in ATS_FIXES:
+        raise ValueError(f"Unknown fix: {fix}")
+    keys, value = ATS_FIXES[fix]
+    from ruamel.yaml.comments import CommentedMap
+    doc = yaml_rt.load(path.read_text(encoding="utf-8"))
+    node = doc
+    for k in keys[:-1]:
+        # apply_patches will not create a missing branch, and the starter CV
+        # has no design.header at all, so this builds it.
+        if not isinstance(node.get(k), dict):
+            node[k] = CommentedMap()
+        node = node[k]
+    node[keys[-1]] = value
+    import io
+    buf = io.StringIO()
+    yaml_rt.dump(doc, buf)
+    return write_doc(path, buf.getvalue(), "save")
+
+
 def thumb(path: Path) -> dict:
     """The first page as it was last rendered, and whether that is still true.
 
@@ -2361,6 +2455,18 @@ def openapi_spec() -> dict:
                 "What a tailored CV changed from the document it was copied from",
                 "parameters": [{"name": "path", "in": "query", "required": True,
                                 "schema": {"type": "string"}}],
+                "responses": ok}},
+            "/api/ats": {"post": {"summary":
+                "What an ATS reads from a CV's PDF, and which of a posting's keywords it uses",
+                "requestBody": body({"path": {"type": "string"},
+                                     "job_id": {"type": "string"},
+                                     "posting": {"type": "string"}}),
+                "responses": ok}},
+            "/api/ats/fix": {"post": {"summary":
+                "Apply one of the design changes an ATS check offers, then check again",
+                "requestBody": body({"path": {"type": "string"},
+                                     "fix": {"type": "string",
+                                             "enum": ["icons", "urls"]}}),
                 "responses": ok}},
             "/api/open": {"post": {"summary":
                 "Open a web link in the system browser",
@@ -2736,6 +2842,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json(jobstore.update_job(
                     WORKSPACE, payload.pop("id", ""), payload))
+            if u.path == "/api/ats":
+                return self._json(ats_report(safe_path(payload["path"]),
+                                             payload.get("job_id"),
+                                             payload.get("posting")))
+            if u.path == "/api/ats/fix":
+                p = safe_path(payload["path"])
+                ats_fix(p, payload.get("fix", ""))
+                return self._json({"ok": True, **ats_report(p, payload.get("job_id"),
+                                                             payload.get("posting"))})
             if u.path == "/api/open":
                 # A link out of the app. The desktop webview drops target=_blank
                 # on the floor, so the page asks for it here and the system
@@ -3874,6 +3989,62 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   .ob-fig,.ob-shot{width:160px}
 }
 
+/* ---------- ATS check ------------------------------------------------------ */
+.sheet.ats{width:980px}
+.ats-top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between}
+.ats-vs{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t600);
+  flex:none;margin-top:2px}
+.ats-vs select{max-width:280px;font-size:12.5px;padding:5px 8px;border-radius:5px;
+  border:1px solid var(--bd-field);background:var(--field);color:var(--t900)}
+.ats-paste{width:100%;min-height:110px;resize:vertical;font:12.5px/1.5 inherit;padding:9px 10px;
+  border:1px solid var(--bd-field);border-radius:6px;background:var(--field);color:var(--t900)}
+.ats-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:22px;
+  min-height:0;transition:opacity .15s}
+.ats-body.busy{opacity:.55}
+.ats-body>.sp-note,.ats-body>.note{grid-column:1/-1}
+.ats-main{display:flex;flex-direction:column;gap:20px;min-width:0}
+.ats-sec{display:flex;flex-direction:column;gap:8px}
+.ats-sec .blabel em,.ats-read .blabel em{font-style:normal;font-weight:400;color:var(--t500);
+  font-size:12px;margin-left:8px}
+.ats-sec .sp-note{margin:4px 0 0}
+.ats-score{display:flex;align-items:baseline;gap:8px}
+.ats-score b{font-size:26px;font-weight:500;color:var(--t900);line-height:1}
+.ats-score span{font-size:12.5px;color:var(--t600)}
+/* The live metric, so the one place in the sheet the accent goes. */
+.meter{height:5px;border-radius:3px;background:var(--rule);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--acc);border-radius:3px}
+.kwlabel{font-size:11.5px;color:var(--t500);margin-top:4px}
+.kws{display:flex;flex-wrap:wrap;gap:5px}
+.kw{font-size:12px;padding:2px 8px;border-radius:10px;border:1px dashed var(--t400);
+  color:var(--t800)}
+.kw.on{border:1px solid transparent;background:var(--bar);color:var(--t700)}
+.kw i{font-style:normal;color:var(--fn-won);margin-right:4px;font-size:11px}
+.checks{list-style:none;margin:0;padding:0;border:1px solid var(--bd-field);border-radius:9px;
+  background:var(--field);overflow:hidden}
+.checks li{display:flex;gap:10px;align-items:flex-start;padding:9px 11px}
+.checks li+li{border-top:1px solid var(--bd-inner)}
+.checks li>i{flex:none;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;
+  font-style:normal;font-size:10.5px;font-weight:700;margin-top:1px}
+.checks li.ok>i{background:color-mix(in srgb,var(--fn-won) 18%,transparent);color:var(--fn-won)}
+.checks li.warn>i{background:var(--bar);color:var(--t800);box-shadow:inset 0 0 0 1px var(--t400)}
+.checks li.bad>i{background:var(--bad-bg);color:var(--bad)}
+.checks li>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.checks b{font-size:12.5px;font-weight:600;color:var(--t900)}
+.checks span{font-size:12px;color:var(--t600);line-height:1.45}
+.checks li.ok span{color:var(--t500)}
+.checks .obtn{flex:none;align-self:center}
+.ats-read{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ats-read pre{margin:0;padding:12px 13px;max-height:520px;overflow:auto;white-space:pre-wrap;
+  word-break:break-word;font-size:11.5px;line-height:1.55;color:var(--t800);
+  background:var(--field);border:1px solid var(--bd-field);border-radius:9px}
+.ats-read .pua{font-style:normal;color:var(--bad);background:var(--bad-bg);border-radius:2px;
+  padding:0 1px}
+.ats-link{margin-top:-6px}
+@media (max-width:900px){
+  .ats-body{grid-template-columns:1fr}
+  .ats-top{flex-direction:column}
+}
+
 /* segmented control on paper */
 .seg.paper{background:var(--seg-track);width:fit-content}
 .seg.paper button{color:var(--t700);padding:4px 15px;font-size:12.5px}
@@ -4375,6 +4546,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
         <div class="grow"></div>
         <span class="acts" id="act-doc">
+          <button class="obtn" id="btn-ats" title="What an applicant tracking system reads from this CV">ATS check</button>
           <button class="obtn" id="btn-design" title="Theme, typeface and page size">Design</button>
           <button class="obtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
           <button class="pbtn" id="btn-render">Render</button>
@@ -4680,6 +4852,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
             <p>Reads the YAML, lists what is in the workspace</p></div>
           <div class="tool"><span class="n">write_cv</span>
             <p>Replaces a whole file. Blunt, and it drops comments</p></div>
+          <div class="tool"><span class="n">ats_check</span>
+            <p>Reads the PDF the way an ATS does, and which of the posting's keywords it uses</p></div>
           <div class="tool"><span class="n">design_options</span>
             <p>Themes, typefaces and page sizes it may choose from</p></div>
           <div class="tool"><span class="n">workspace_info</span>
@@ -5871,6 +6045,130 @@ async function boot(){
   paintStatus();
   if(shouldOnboard(d)) onboardingSheet();
 }
+
+/* =========================================================================
+   ATS check
+   ========================================================================= */
+/* What an applicant tracking system reads out of the PDF, beside the page it
+   came from. The parsing checks read the real file; the keywords are a count
+   of what the posting asks for and whether the CV says it, and are labelled
+   as a heuristic because they are one. */
+const ATS={path:null, job:null, paste:"", busy:false};
+function atsJobs(){
+  return (S.jobs||[]).filter(j=>j.description);
+}
+async function atsSheet(path,jobId){
+  if(!path) return;
+  if(!S.jready){ try{ await loadJobs(true) }catch(e){} }
+  ATS.path=path; ATS.paste="";
+  const linked=(S.jobs||[]).find(j=>j.cv_path===path);
+  ATS.job=jobId||(linked&&linked.description?linked.id:"")||"";
+  const withPosting=atsJobs();
+  const name=path.split("/").pop().replace(/\.ya?ml$/,"");
+  $("#sheet").classList.add("ats");
+  openSheet(
+    '<div class="ats-top"><div><h3 id="sheet-title">ATS check</h3>'+
+      '<p>What an applicant tracking system reads from <b>'+esc(name)+'</b>’s PDF, '+
+      'and which of a posting’s keywords it uses.</p></div>'+
+      '<label class="ats-vs">Against <select id="ats-job">'+
+        '<option value="">No posting</option>'+
+        withPosting.map(j=>'<option value="'+esc(j.id)+'"'+(j.id===ATS.job?" selected":"")+'>'+
+          esc(j.company)+' · '+esc(j.title)+'</option>').join("")+
+        '<option value="__paste">Paste a posting…</option>'+
+      '</select></label></div>'+
+    '<textarea id="ats-paste" class="ats-paste" hidden placeholder="Paste the job posting here"></textarea>'+
+    '<div class="ats-body" id="ats-body"><p class="sp-note">Reading the PDF…</p></div>'+
+    '<div class="foot"><button class="sbtn" data-cancel>Close</button>'+
+      '<button class="sbtn" id="ats-run">Check again</button></div>',
+    ()=>$("#sheet").classList.remove("ats"));
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#ats-job").onchange=e=>{
+    const v=e.target.value, pasting=v==="__paste";
+    $("#ats-paste").hidden=!pasting;
+    if(pasting){ $("#ats-paste").focus(); return }
+    ATS.job=v; ATS.paste=""; atsRun();
+  };
+  let t=null;
+  $("#ats-paste").oninput=e=>{ clearTimeout(t); ATS.paste=e.target.value;
+    t=setTimeout(()=>{ if(ATS.paste.trim().length>80) atsRun() },600) };
+  $("#ats-run").onclick=()=>atsRun();
+  atsRun();
+}
+async function atsRun(fix){
+  if(ATS.busy) return;
+  ATS.busy=true;
+  const body=$("#ats-body"); if(!body){ ATS.busy=false; return }
+  body.classList.add("busy");
+  $("#ats-run").disabled=true;
+  const req={path:ATS.path};
+  if(ATS.paste.trim()) req.posting=ATS.paste;
+  else if(ATS.job) req.job_id=ATS.job;
+  /* "No posting" has to say so, or the server falls back to the application
+     the CV is attached to. */
+  else req.posting="";
+  try{
+    const r=await post(fix?"/api/ats/fix":"/api/ats",fix?Object.assign({fix},req):req);
+    if($("#ats-body")) atsPaint(r);
+    if(fix){
+      toast("Changed the design. Check again to see it");
+      if(S.path===ATS.path&&!S.dirty) openDoc(ATS.path);
+      S.baseThumb=null; paintBase();
+    }
+  }catch(e){ if($("#ats-body")) body.innerHTML='<p class="note">'+esc(e.message)+'</p>' }
+  ATS.busy=false;
+  if($("#ats-body")){ body.classList.remove("busy"); $("#ats-run").disabled=false }
+}
+/* Private-use characters are what icon fonts extract as. Shown as a box, the
+   way a parser that keeps them would print them, so the finding above can be
+   seen in the text below. */
+const atsReadable=t=>esc(t).replace(/[-]/g,'<i class="pua" title="An icon, read as an unreadable character">□</i>');
+function atsPaint(r){
+  const body=$("#ats-body");
+  if(!r.ok){ body.innerHTML='<p class="note">'+esc(r.error||"The check could not run.")+'</p>'; return }
+  const kw=r.keywords, vs=r.against;
+  let match;
+  if(kw&&kw.total){
+    const chip=(t,on)=>'<span class="kw'+(on?" on":"")+'">'+(on?'<i>✓</i>':'')+esc(t.term)+'</span>';
+    match='<section class="ats-sec"><span class="blabel">Keywords from the posting</span>'+
+      '<div class="ats-score"><b class="mono">'+kw.found.length+'</b><span>of '+kw.total+
+        ' used in this CV'+(vs&&vs.company?' · '+esc(vs.company):'')+'</span></div>'+
+      '<div class="meter"><i style="width:'+(kw.rate||0)+'%"></i></div>'+
+      (kw.missing.length?'<div class="kwlabel">Not in the CV</div><div class="kws">'+
+        kw.missing.map(t=>chip(t,false)).join("")+'</div>':'')+
+      (kw.found.length?'<div class="kwlabel">In the CV</div><div class="kws">'+
+        kw.found.map(t=>chip(t,true)).join("")+'</div>':'')+
+      '<p class="sp-note">Picked out of the posting by how often, and where, it asks for '+
+      'them: a prompt, not a verdict. Worth working in only where they are true of you, '+
+      'in the words the posting uses.</p></section>';
+  }else if(vs&&vs.company&&!vs.has_posting){
+    match='<section class="ats-sec"><span class="blabel">Keywords from the posting</span>'+
+      '<p class="note">'+esc(vs.company)+' has no saved posting. Paste one, or add it to the '+
+      'application, to see which of its keywords this CV uses.</p></section>';
+  }else{
+    match='<section class="ats-sec"><span class="blabel">Keywords from the posting</span>'+
+      '<p class="note">Choose an application with a saved posting, or paste one, to see '+
+      'which of its keywords this CV uses.</p></section>';
+  }
+  const icon={ok:"✓",warn:"!",bad:"×"};
+  const problems=r.checks.filter(c=>c.level!=="ok").length;
+  const checks='<section class="ats-sec"><span class="blabel">How it parses'+
+      '<em>'+(problems?problems+" to look at":"nothing to fix")+'</em></span>'+
+    '<ul class="checks">'+r.checks.map(c=>'<li class="'+c.level+'"><i>'+icon[c.level]+'</i>'+
+      '<div><b>'+esc(c.title)+'</b><span>'+esc(c.detail)+'</span></div>'+
+      (c.fix?'<button class="obtn" data-fix="'+c.fix+'"'+
+        (S.path===ATS.path&&S.dirty?' disabled title="Save your changes first"':'')+'>Fix</button>':'')+
+      '</li>').join("")+'</ul></section>';
+  body.innerHTML='<div class="ats-main">'+match+checks+'</div>'+
+    '<div class="ats-read"><span class="blabel">What it reads<em>'+r.pages+' page'+
+      (r.pages===1?"":"s")+' · '+r.words+' words</em></span>'+
+      '<pre class="mono">'+atsReadable(r.text)+'</pre></div>';
+  $$("#ats-body [data-fix]").forEach(b=>b.onclick=()=>{ b.disabled=true; atsRun(b.dataset.fix) });
+}
+$("#btn-ats").onclick=()=>{
+  if(!S.path) return;
+  if(S.dirty) toast("Checking the saved file. Save to include your edits");
+  atsSheet(S.path);
+};
 
 /* =========================================================================
    Setup
@@ -7984,6 +8282,9 @@ function drawJobInspector(){
         '<div class="block"><span class="blabel">Documents</span><div class="card">'+
           docRow("CV","cv_path","My CVs")+docRow("Cover letter","letter_path","Cover letters")+
           posting+'</div></div>'+
+        (j.cv_path?'<div class="block ats-link"><button class="alink" id="job-ats">'+
+          'Check this CV the way an ATS reads it'+(j.description?' against the posting':'')+
+          '</button></div>':'')+
         (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
           'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
           esc(j.cv_path)+'"></div></div>':'')+
@@ -8002,6 +8303,8 @@ function drawJobInspector(){
 
   const diff=$("#jdiff");
   if(diff) fillBaseDiff(diff,j.cv_path);
+  const ab=$("#job-ats");
+  if(ab) ab.onclick=()=>atsSheet(j.cv_path,j.description?j.id:"");
   body.querySelectorAll("[data-j]").forEach(el=>{
     el.onchange=()=>{
       let v=el.value;

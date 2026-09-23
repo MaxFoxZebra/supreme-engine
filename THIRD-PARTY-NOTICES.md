@@ -12,6 +12,7 @@ distributing this application under the MIT licence.
 | [rendercv-fonts](https://pypi.org/project/rendercv-fonts/) | 0.5.1 | MIT (individual families: SIL Open Font License or Apache-2.0) |
 | [Typst](https://github.com/typst/typst) (via the `typst` package) | 0.15.0 | Apache-2.0 |
 | [ruamel.yaml](https://sourceforge.net/projects/ruamel-yaml/) | 0.19.1 | MIT |
+| [pypdf](https://github.com/py-pdf/pypdf) | 6.19.0 | BSD-3-Clause |
 | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | 2.1.1 | MIT |
 | [pydantic](https://github.com/pydantic/pydantic) / pydantic-core | 2.13.5 | MIT |
 | [typer](https://github.com/fastapi/typer), [rich](https://github.com/Textualize/rich), [markdown-it-py](https://github.com/executablebooks/markdown-it-py), annotated-types | n/a | MIT |

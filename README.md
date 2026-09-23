@@ -103,6 +103,7 @@ kind once.
 | **Live** | Edits re-render behind you, so the page beside the form is the page you are making, not the one you started with |
 | **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet. `↑` `↓` walk to the next block, `Esc` closes |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
+| **ATS check** | The text an applicant tracking system actually gets out of the PDF, what in it will not parse (icon glyphs, bare usernames, unusual headings, entries out of order), with a one-click fix for the common ones, and which of the posting's keywords the CV uses. A count, not a score: there is no universal ATS score to compute |
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
 | **Appearance** | Light or dark, or follow the system. In Settings. The rendered CV page stays white either way: it is a document, not a surface |

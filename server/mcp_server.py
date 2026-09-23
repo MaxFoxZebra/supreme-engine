@@ -623,6 +623,39 @@ def add_job(company: str, title: str, status: str = "pending",
 
 
 @tool
+def ats_check(path: str, job_id: str | None = None) -> dict:
+    """Read a CV's rendered PDF the way an applicant tracking system does.
+
+    Renders first if the PDF is older than the YAML. Returns the parsing
+    problems found (icons that extract as junk characters, a profile shown as
+    a bare username, non-standard headings, entries missing or out of order in
+    the text layer) and, against the posting of `job_id` or of the application
+    this CV is attached to, which of the posting's keywords the CV uses.
+
+    Use it after tailoring. A missing keyword is worth working in only where
+    it is true of the user: never add a skill they have not claimed. The
+    keyword list is picked out of the posting by a heuristic, so read it as a
+    prompt, not a checklist. `design.header.connections.show_icons: false` and
+    `display_urls_instead_of_usernames: true` fix the two commonest parsing
+    problems.
+    """
+    r = studio.ats_report(studio.safe_path(path), job_id)
+    if not r.get("ok"):
+        raise ValueError(r.get("error") or "The check could not run.")
+    kw = r.get("keywords")
+    return {
+        "pages": r["pages"], "words": r["words"],
+        "problems": [{"title": c["title"], "detail": c["detail"]}
+                     for c in r["checks"] if c["level"] != "ok"],
+        "against": r.get("against"),
+        "keywords": None if not kw else {
+            "used": f"{len(kw['found'])} of {kw['total']}",
+            "found": [t["term"] for t in kw["found"]],
+            "missing": [t["term"] for t in kw["missing"]]},
+    }
+
+
+@tool
 def design_options() -> dict:
     """The themes, fonts and page sizes available for the design block."""
     # available_themes() asks RenderCV rather than trusting the fallback list,
