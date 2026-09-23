@@ -10,6 +10,9 @@ tag, so a release is never published with nothing said about it.
 
 ## 0.18.0
 
+- **The funnel chart follows the theme.** In light mode it sits on a white
+  card like everything else, in the light palette; in dark mode it keeps the
+  dark stage. Labels and the hover card adjust with it.
 - **Sample data, to see the app in use.** Settings → Workspace → Open sample
   data switches to a separate folder, made fresh each time, with 64
   applications over five months in every status (follow-ups due, interviews

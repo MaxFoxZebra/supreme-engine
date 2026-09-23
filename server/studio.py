@@ -4718,49 +4718,69 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 /* The chart's stage. Its own palette, the dark theme's funnel colours, in
    both themes: glow and moving light only read on a dark ground. */
 .fn-stage{position:relative;display:flex;flex-direction:column;min-width:0;min-height:520px;
-  outline:1px solid rgba(255,255,255,.05);outline-offset:-1px;
-  padding:22px 24px 20px;border-radius:16px;color:#f5f2ea;overflow:hidden;
-  background:radial-gradient(900px 420px at 30% 0%,#2a2722 0%,#1b1a17 55%,#161513 100%);
-  box-shadow:0 18px 50px -24px rgba(27,26,23,.55)}
+  padding:22px 24px 20px;border-radius:16px;overflow:hidden;
+  /* Light: a white card like the others, in the funnel's light palette. */
+  --sk-total:#8f8878;--sk-draft:#b3ad9d;--sk-waiting:#3a6ea5;--sk-live:#a8761f;--sk-offer:#3f8f76;
+  --sk-won:#007a5e;--sk-closed:#7a5cb8;--sk-lost:#a83519;--sk-lost-late:#7d2f3f;--sk-a0:.22;--sk-a1:.5;
+  --sk-fg:#1b1a17;--sk-mute:#686459;--sk-chip:rgba(255,255,255,.94);--sk-chip-t:#4a463d;
+  --sk-chip-line:rgba(27,26,23,.12);--sk-chip-shadow:rgba(27,26,23,.10);--sk-ring:#1b1a17;--sk-bg-t:#f5f2ea;
+  color:var(--sk-fg);background:var(--field);border:1px solid var(--rule);
+  box-shadow:0 14px 40px -28px rgba(27,26,23,.35)}
+/* Dark: the stage it was designed as. Glow and moving light read best here. */
+:root[data-theme=dark] .fn-stage{
+  --sk-total:#8f8877;--sk-draft:#6e685a;--sk-waiting:#5b8fc9;--sk-live:#d19a45;--sk-offer:#4fae90;
+  --sk-won:#2bb58c;--sk-closed:#9b7ad6;--sk-lost:#cf5a39;--sk-lost-late:#b0485f;--sk-a0:.30;--sk-a1:.62;
+  --sk-fg:#f5f2ea;--sk-mute:#a5a091;--sk-chip:rgba(27,26,23,.88);--sk-chip-t:#cfcabd;
+  --sk-chip-line:rgba(255,255,255,.08);--sk-chip-shadow:rgba(0,0,0,.35);--sk-ring:#f5f2ea;--sk-bg-t:#1b1a17;
+  border-color:transparent;box-shadow:0 18px 50px -24px rgba(0,0,0,.55);
+  background:radial-gradient(900px 420px at 30% 0%,#2a2722 0%,#1b1a17 55%,#161513 100%)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .fn-stage{
+  --sk-total:#8f8877;--sk-draft:#6e685a;--sk-waiting:#5b8fc9;--sk-live:#d19a45;--sk-offer:#4fae90;
+  --sk-won:#2bb58c;--sk-closed:#9b7ad6;--sk-lost:#cf5a39;--sk-lost-late:#b0485f;--sk-a0:.30;--sk-a1:.62;
+  --sk-fg:#f5f2ea;--sk-mute:#a5a091;--sk-chip:rgba(27,26,23,.88);--sk-chip-t:#cfcabd;
+  --sk-chip-line:rgba(255,255,255,.08);--sk-chip-shadow:rgba(0,0,0,.35);--sk-ring:#f5f2ea;--sk-bg-t:#1b1a17;
+  border-color:transparent;box-shadow:0 18px 50px -24px rgba(0,0,0,.55);
+  background:radial-gradient(900px 420px at 30% 0%,#2a2722 0%,#1b1a17 55%,#161513 100%)}}
 .fn-shead{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.fn-shead h2{margin:0;font-size:15px;font-weight:600;color:#f5f2ea}
-#fn-hint{font-size:12.5px;color:#a5a091}
-#fn-hint b{color:#f5f2ea;font-weight:600}
-.fn-legend{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#a5a091}
-.fn-legend i{position:relative;width:8px;height:8px;border-radius:50%;background:#e8bc7c}
+.fn-shead h2{margin:0;font-size:15px;font-weight:600;color:var(--sk-fg)}
+#fn-hint{font-size:12.5px;color:var(--sk-mute)}
+#fn-hint b{color:var(--sk-fg);font-weight:600}
+.fn-legend{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--sk-mute)}
+.fn-legend i{position:relative;width:8px;height:8px;border-radius:50%;background:var(--sk-live)}
 .fn-legend i::after{content:"";position:absolute;inset:0;border-radius:50%;
-  border:1.5px solid #e8bc7c;animation:fx-pulse 1.8s ease-out infinite}
+  border:1.5px solid var(--sk-live);animation:fx-pulse 1.8s ease-out infinite}
 #chart{position:relative;flex:1;min-height:0;margin-top:22px}
 #chart svg{display:block;overflow:visible}
-#chart .empty h3{color:#f5f2ea}#chart .empty p{color:#a5a091}
+#chart .empty h3{color:var(--sk-fg)}#chart .empty p{color:var(--sk-mute)}
 .sk-link{transition:opacity .25s,filter .2s}
 .sk-link.sk-dim{opacity:.07}
 .sk-hit{cursor:pointer;outline:none}
-.sk-hit:focus-visible .sk-node{stroke:#f5f2ea;stroke-width:2}
+.sk-hit:focus-visible .sk-node{stroke:var(--sk-ring);stroke-width:2}
 .sk-node{transition:opacity .25s}
 .sk-hit.sk-dim .sk-node{opacity:.35}
-.sk-node.sk-on{stroke:#f5f2ea;stroke-width:2;paint-order:stroke}
+.sk-node.sk-on{stroke:var(--sk-ring);stroke-width:2;paint-order:stroke}
 /* Pulses outward by the same few pixels on every side, whatever the stage's
    height; a scaled ring turned a tall stage into a ghost twice its size. */
 .sk-ring{fill:none;animation:fx-ring 1.8s ease-out infinite}
 @keyframes fx-ring{0%{stroke-width:1.5;stroke-opacity:.9}100%{stroke-width:9;stroke-opacity:0}}
 .sk-chip{position:absolute;display:flex;align-items:center;gap:6px;height:24px;
-  padding:0 9px 0 8px;border-radius:12px;background:rgba(27,26,23,.88);
-  box-shadow:0 0 0 1px rgba(255,255,255,.08),0 4px 14px rgba(0,0,0,.35);
-  font-size:12px;color:#cfcabd;white-space:nowrap;pointer-events:none;transition:opacity .25s}
+  padding:0 9px 0 8px;border-radius:12px;background:var(--sk-chip);
+  box-shadow:0 0 0 1px var(--sk-chip-line),0 4px 14px var(--sk-chip-shadow);
+  font-size:12px;color:var(--sk-chip-t);white-space:nowrap;pointer-events:none;transition:opacity .25s}
 .sk-chip i{width:7px;height:7px;border-radius:2px}
-.sk-chip b{color:#f5f2ea;font-weight:600;font-variant-numeric:tabular-nums}
-.sk-chip span{color:#8f8a7c;font-size:11.5px}
+.sk-chip b{color:var(--sk-fg);font-weight:600;font-variant-numeric:tabular-nums}
+.sk-chip span{color:var(--sk-mute);font-size:11.5px}
 .sk-chip em{font-style:normal;font-size:10.5px;font-weight:600;color:#1b1a17;
   background:#e8bc7c;border-radius:8px;padding:1px 6px;animation:fx-breathe 2.2s ease-in-out infinite}
-.sk-chip.won{box-shadow:0 0 0 1px #2bb58c,0 0 22px rgba(43,181,140,.45);color:#d9f2ea}
-.sk-chip.won b{color:#7fe0c0}
+.sk-chip.won{box-shadow:0 0 0 1px var(--sk-won),0 0 22px color-mix(in srgb,var(--sk-won) 40%,transparent)}
+.sk-chip.won b{color:var(--sk-won)}
 .sk-chip.sk-dim{opacity:.4}
 .sk-tip{position:absolute;z-index:3;display:flex;flex-direction:column;gap:3px;min-width:210px;
-  max-width:300px;padding:11px 13px;border-radius:10px;background:#f5f2ea;color:#1b1a17;
-  font-size:12.5px;box-shadow:0 12px 30px rgba(0,0,0,.45);pointer-events:none}
-.sk-tip b{font-size:13.5px}.sk-tip span{color:#5b574d}.sk-tip .who{color:#33302a}
-.sk-tip .go{color:#8a5316;font-weight:500;margin-top:2px}
+  max-width:300px;padding:11px 13px;border-radius:10px;background:var(--sk-fg);color:var(--sk-bg-t);
+  font-size:12.5px;box-shadow:0 12px 30px rgba(0,0,0,.3);pointer-events:none}
+/* The opposite of the stage it sits on, so it stands off it either way. */
+.sk-tip b{font-size:13.5px}.sk-tip span{opacity:.75}.sk-tip .who{opacity:.9}
+.sk-tip .go{color:var(--sk-live);font-weight:500;margin-top:2px;opacity:1}
 
 /* Momentum. */
 .fn-weeks{display:flex;align-items:flex-end;gap:5px;height:150px;margin-top:12px;
@@ -6196,7 +6216,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <!-- Sent to accepted, as five numbers and the rate between each pair. -->
         <section class="fn-card fn-journey" id="fn-journey" aria-label="From sent to accepted"></section>
         <div class="fn-main">
-          <!-- Dark in both themes: the one showpiece on the page. -->
+          <!-- White in light mode like every card; a dark stage in dark mode. -->
           <section class="fn-stage" aria-labelledby="fn-stage-h">
             <div class="fn-shead"><h2 id="fn-stage-h">Where they went</h2><span id="fn-hint"></span>
               <div class="grow"></div>
@@ -11374,11 +11394,11 @@ function sinceDate(){
   return d.toISOString().slice(0,10);
 }
 
-/* The stage is dark in both themes, so the chart keeps the dark theme's
-   funnel colours whichever one the app is in. */
-const SK_COL={total:"#8f8877",draft:"#6e685a",waiting:"#5b8fc9",live:"#d19a45",
-  offer:"#4fae90",won:"#2bb58c",closed:"#9b7ad6",lost:"#cf5a39","lost-late":"#b0485f"};
-const skCol=id=>FN_TOTAL.has(id)?SK_COL.total:SK_COL[FN_TONE[id]||"draft"];
+/* The chart's colours are the stage's own variables (--sk-*), so they follow
+   the theme with it: the funnel's light palette on white, the dark one on the
+   dark stage. SVG only reads a variable from a style, never an attribute. */
+const skTone=id=>FN_TOTAL.has(id)?"total":(FN_TONE[id]||"draft");
+const skCol=id=>"var(--sk-"+skTone(id)+")";
 /* Where an application can still change. These are the stages the lights
    travel to: what is in motion is what is still in play. */
 const FN_LIVE=["awaiting","still_iv","deciding"];
@@ -11541,8 +11561,8 @@ function drawSankey(mode,animate){
   const touches=l=>!S.fnode||lineage.get(S.fnode).has(l);
 
   const defs=g.links.map((l,i)=>'<linearGradient id="skg'+i+'" gradientUnits="userSpaceOnUse" x1="'+
-    l.source.x1+'" x2="'+l.target.x0+'" y1="0" y2="0"><stop offset="0" stop-color="'+skCol(l.sid)+
-    '" stop-opacity=".30"/><stop offset="1" stop-color="'+skCol(l.tid)+'" stop-opacity=".62"/>'+
+    l.source.x1+'" x2="'+l.target.x0+'" y1="0" y2="0"><stop offset="0" style="stop-color:'+skCol(l.sid)+
+    ';stop-opacity:var(--sk-a0)"/><stop offset="1" style="stop-color:'+skCol(l.tid)+';stop-opacity:var(--sk-a1)"/>'+
     '</linearGradient>').join("");
   const bands=g.links.map((l,i)=>'<path class="sk-link'+(touches(l)?"":" sk-dim")+'" data-i="'+i+
     '" d="'+skBand(l.source.x1,l.target.x0,l.y0,l.y1,Math.max(1,l.width))+'" fill="url(#skg'+i+')" '+
@@ -11560,7 +11580,7 @@ function drawSankey(mode,animate){
     const cnt=Math.max(2,Math.min(7,Math.round(n.count/2))), dur=7.5;
     for(let k=0;k<cnt;k++){
       const jit=(((k*37)%9)-4)*.35;
-      parts+='<circle r="2.3" fill="'+skCol(id)+'" filter="url(#skglow)" transform="translate(0 '+
+      parts+='<circle r="2.3" style="fill:'+skCol(id)+'" filter="url(#skglow)" transform="translate(0 '+
         jit.toFixed(1)+')"><animateMotion dur="'+dur+'s" begin="'+(-(dur/cnt)*k).toFixed(2)+
         's" repeatCount="indefinite" path="'+d+'" keyPoints="0;1" keyTimes="0;1" calcMode="spline" '+
         'keySplines=".35 0 .65 1"/></circle>';
@@ -11576,9 +11596,9 @@ function drawSankey(mode,animate){
       '<rect x="'+(n.x0-6)+'" y="'+(n.y0-10)+'" width="'+(n.x1-n.x0+12)+'" height="'+(h+20)+
       '" fill="transparent"/>'+
       '<rect class="sk-node'+(S.fnode===n.id?" sk-on":"")+'" data-n="'+esc(n.id)+'" x="'+n.x0+
-      '" y="'+n.y0+'" width="'+(n.x1-n.x0)+'" height="'+h+'" rx="2.5" fill="'+skCol(n.id)+'"/>'+
+      '" y="'+n.y0+'" width="'+(n.x1-n.x0)+'" height="'+h+'" rx="2.5" style="fill:'+skCol(n.id)+'"/>'+
       (FN_LIVE.includes(n.id)?'<rect class="sk-ring" x="'+(n.x0-3)+'" y="'+(n.y0-3)+'" width="'+
-        (n.x1-n.x0+6)+'" height="'+(h+6)+'" rx="4" stroke="'+skCol(n.id)+'"/>':"")+'</g>';
+        (n.x1-n.x0+6)+'" height="'+(h+6)+'" rx="4" style="stroke:'+skCol(n.id)+'"/>':"")+'</g>';
   }).join("");
 
   const chips=g.nodes.map(n=>{
