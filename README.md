@@ -147,7 +147,9 @@ actually look at the result rather than guessing from the source.
 It can also keep the tracker up to date. Given a mail or calendar connector of
 its own, it reads the replies, works out which application each belongs to, and
 moves the status once you have agreed. CV Studio itself never touches a Google
-account and makes no network calls; everything arrives through the client. It
+account; everything arrives through the client. The one request it ever makes
+is for a company's logo, from that company's own website, when a model adding
+an application passes it the site. It
 cannot delete an application, rename one, or overwrite your notes, because no
 tool takes those arguments.
 

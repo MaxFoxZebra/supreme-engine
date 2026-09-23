@@ -21,6 +21,21 @@ tag, so a release is never published with nothing said about it.
 - **The base CV card shows the base CV.** A snapshot of its first page, as
   actually rendered, sits in the card on Applications and on Documents, and
   clicking it opens the CV. It updates when you or a model change the file.
+- **Applications Claude adds come with the company's logo.** Given the
+  company's website, `add_job` fetches its icon from that site and shows it on
+  the row; a second role at the same company reuses it. The request goes to
+  the company's own site and nowhere else, and a logo that cannot be found
+  never stops the application being added. `set_company_logo` takes a website
+  as well as an image on disk.
+- **Where each posting was found.** LinkedIn, Indeed, Glassdoor, Greenhouse,
+  Welcome to the Jungle and the rest show their mark beside the role, worked
+  out from the source or the link. Boards with no published mark get their
+  initials.
+- **What a tailored CV changed from the base, on the application.** Under the
+  documents, every field that differs from the CV it was copied from, what it
+  said before and what it says now, and whether the design changed.
+- **Open the posting opens it.** The desktop app ignored links that open a new
+  window, so the link to a posting did nothing. It now opens in your browser.
 - **Two renders at once no longer break each other.** Rendering changed the
   working folder of the whole app, so a render that overlapped another could
   fail with an error about a file that was really there.

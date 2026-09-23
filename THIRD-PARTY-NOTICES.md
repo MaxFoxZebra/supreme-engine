@@ -34,6 +34,8 @@ Served locally so the app works offline. Licence texts ship alongside them in
 | [d3-shape](https://github.com/d3/d3-shape) | ISC |
 | [d3-path](https://github.com/d3/d3-path) | ISC |
 | [IBM Plex Sans / IBM Plex Mono](https://github.com/IBM/plex) | SIL Open Font License 1.1 |
+| Job board marks from [Simple Icons](https://github.com/simple-icons/simple-icons) | CC0 1.0 |
+| LinkedIn mark from [Font Awesome Free](https://github.com/FortAwesome/Font-Awesome) 6.7.2 | CC BY 4.0 |
 
 The Plex files are the latin and latin-ext WOFF2 subsets published by Google
 Fonts. They are the interface typefaces; the typefaces a CV is *rendered* in
@@ -73,6 +75,18 @@ Nous Research ones are taken from
 redistributes brand marks for exactly this purpose. The MIT licence covers the
 packaging of the artwork, not the trademarks themselves, which remain their
 owners'.
+
+**Job boards.** LinkedIn, Indeed, Glassdoor, Greenhouse, Wellfound, Welcome to
+the Jungle, XING, Monster and Y Combinator are trademarks of their respective
+owners. CV Studio shows each mark in one place only: beside an application, to
+say which board the posting was found on. Nothing here is built, endorsed or
+supported by any of them. The marks are inlined in `server/studio.py` as SVG,
+unaltered, from Simple Icons (CC0), except LinkedIn's, which LinkedIn asked
+Simple Icons to remove; that one is Font Awesome Free's (CC BY 4.0, by
+Fonticons, Inc.). Boards that publish no mark for this kind of use -- Lever,
+Workday, Ashby, SmartRecruiters, France Travail, Apec, HelloWork, JobTeaser --
+are shown by their initials on a neutral tile rather than by a drawing of their
+logo.
 
 ## Build tooling
 

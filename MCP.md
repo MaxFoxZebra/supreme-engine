@@ -29,8 +29,8 @@ one rendered by clicking Save.
 | `job_alerts` | The same list the Jobs view shows under Attention |
 | `set_job_status` | Move one along the funnel |
 | `update_job_tracking` | Interview time, follow-up date, who is writing to you, and which CV or letter was sent |
-| `add_job` | Add one, refusing a likely duplicate unless you confirm |
-| `set_company_logo` | Point every application at one company to the same logo |
+| `add_job` | Add one, refusing a likely duplicate unless you confirm. Given the company's website, it fetches the company's logo too |
+| `set_company_logo` | Give a company a logo, from its website or an image on disk, and use it on every application to that company |
 
 `render_cv` returning an image is the point of the whole thing. The model can
 *look* at the rendered page and catch what only shows up visually: a bullet
@@ -127,8 +127,8 @@ a time. There is no delete tool at all, deliberately, because a model misreading
 a rejection must not be able to destroy the record. None of those are promises
 about good behaviour; they are parameters that do not exist.
 
-**The Google half is not in here.** This app makes no network calls and has no
-integration with anything. Gmail and Calendar reach the model through its own
+**The Google half is not in here.** This app has no integration with anything,
+and makes one kind of network request only (company logos, below). Gmail and Calendar reach the model through its own
 connectors, and everything flows one way: it reads them, and writes what it
 learned in here. Nothing goes back, no events created, no invitations answered,
 no mail sent.
@@ -331,10 +331,16 @@ exports them to JSON or CSV.
 `write_cv` replaces the file wholesale and will drop anything not in the new
 content, which is why the tool description steers toward the former.
 
-**It is local.** The server talks to your filesystem and nothing else. There are
-no network calls, no telemetry. That is still true now the tracker is exposed:
-the mail and calendar an AI client reads reach it through *its* connectors, and
-this app never sees them. The AI client sees only what the tools return.
+**It is local.** The server talks to your filesystem, and makes one kind of
+network request: when a model adds an application and passes the company's
+website, or calls `set_company_logo` with one, the server fetches that
+company's icon from that website -- from the page, and from wherever the page
+says its icon lives. There is no logo service in between, so nothing learns the
+list of companies you apply to that the companies do not already know. The
+interface itself makes no request at all: the logo is saved in the workspace
+and drawn from there. There is no telemetry. The mail and calendar an AI client
+reads reach it through *its* connectors, and this app never sees them. The AI
+client sees only what the tools return.
 
 **Only one workspace per configured server.** Add a second entry with a
 different `--workspace` if you keep separate sets of CVs.

@@ -1168,6 +1168,73 @@ def provenance(path: Path, data: dict | None) -> dict:
     return out
 
 
+def _where_changed(path: list, mine: dict, theirs: dict) -> str:
+    """Where a changed field is, in the words the outline uses."""
+    if path[:2] != ["cv", "sections"]:
+        return "Header \u00b7 " + " \u203a ".join(str(k) for k in path[1:])
+    bits = [str(path[2]).replace("_", " ").capitalize()] if len(path) > 2 else []
+    if len(path) > 3:
+        i = int(path[3])
+        entry = get_at(mine, path[:4])
+        if entry is None:
+            entry = get_at(theirs, path[:4])
+        if isinstance(entry, dict):
+            bits.append(entry_title(entry, i))
+    rest = path[4:]
+    if rest:
+        key = str(rest[0])
+        if len(rest) > 1 and key == "highlights":
+            bits.append(f"bullet {int(rest[1]) + 1}")
+        else:
+            bits.append(key.replace("_", " "))
+    return " \u203a ".join(bits)
+
+
+def _brief(v) -> str | None:
+    if v is None:
+        return None
+    if isinstance(v, dict):
+        return entry_title(v, 0)
+    if isinstance(v, list):
+        return f"{len(v)} item{'' if len(v) == 1 else 's'}"
+    text = " ".join(str(v).split())
+    return text if len(text) <= 160 else text[:157] + "\u2026"
+
+
+def base_diff(path: Path) -> dict:
+    """What a tailored CV changed from the one it was copied from, line by line.
+
+    Against the copy's own recorded base rather than today's base CV: a CV
+    written for one job should keep saying what it changed from what it was
+    made from, even after another document becomes the base.
+    """
+    doc = (_edits_read()["docs"].get(rel(path)) or {})
+    base_path = (doc.get("base") or {}).get("path")
+    out = {"base": base_path, "missing": False, "changes": [], "design": []}
+    if not base_path:
+        return out
+    try:
+        mine = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))) or {}
+        theirs = to_plain(yaml_rt.load(
+            safe_path(base_path).read_text(encoding="utf-8"))) or {}
+    except (OSError, ValueError):
+        out["missing"] = True
+        return out
+    except Exception:
+        # Unparseable mid-edit: say nothing rather than something wrong.
+        return out
+    for f in changed_fields(theirs.get("cv"), mine.get("cv"), ["cv"]):
+        before, after = get_at(theirs, f), get_at(mine, f)
+        out["changes"].append({
+            "key": field_key(f), "where": _where_changed(f, mine, theirs),
+            "kind": "added" if before is None else "removed" if after is None
+                    else "changed",
+            "before": _brief(before), "after": _brief(after)})
+    out["design"] = sorted({str(f[1]) for f in changed_fields(
+        theirs.get("design"), mine.get("design"), ["design"]) if len(f) > 1})
+    return out
+
+
 def edits_stamp() -> float | None:
     """When the provenance file last changed, so the poll can spot a new mark."""
     try:
@@ -1414,9 +1481,10 @@ def is_cv_yaml(p: Path) -> bool:
 # --------------------------------------------------------------------------
 # Company logos
 #
-# Local files only. The app makes no network calls, and pointing an <img> at a
-# remote logo would quietly break that: every render would tell someone else's
-# server which companies you are applying to.
+# Local files only, as far as the interface is concerned. Pointing an <img> at
+# a remote logo would tell someone else's server which companies you are
+# applying to, every time the table drew. A logo is fetched once, by the MCP
+# server when a model asks, from the company's own site (fetch_logo below).
 #
 # So a logo is a file in the workspace, and a job names it. A company with no
 # logo gets a monogram instead, which is most of them and has to look
@@ -1424,7 +1492,7 @@ def is_cv_yaml(p: Path) -> bool:
 # --------------------------------------------------------------------------
 
 LOGO_DIR = "assets/logos"
-LOGO_TYPES = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"}
+LOGO_TYPES = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".ico"}
 
 
 def logo_dir() -> Path:
@@ -1463,12 +1531,145 @@ def save_logo(company: str, source: str) -> dict:
         raise ValueError(
             f"{src.suffix or 'That'} is not an image type this can show. "
             f"Use one of: {', '.join(sorted(LOGO_TYPES))}")
+    return _store_logo(company, src.read_bytes(), src.suffix.lower())
+
+
+def _store_logo(company: str, data: bytes, ext: str) -> dict:
     safe = "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
-    dest = logo_dir() / f"{safe}{src.suffix.lower()}"
+    dest = logo_dir() / f"{safe}{ext}"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, dest)
+    dest.write_bytes(data)
     return {"ok": True, "logo": dest.name, "path": rel(dest),
             "kb": round(dest.stat().st_size / 1024, 1)}
+
+
+def stored_logo(company: str) -> str | None:
+    """A logo already saved for this company, by the name save_logo gives it."""
+    safe = "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
+    for name in list_logos():
+        if Path(name).stem == safe:
+            return name
+    return None
+
+
+# Fetching one. This is the only network request anything in CV Studio makes,
+# and it is shaped so that it tells nobody anything new: it goes to the
+# company's own website, which the model was given, and to wherever that page
+# says its icon lives (often the company's own CDN) -- no logo service, no
+# search engine, nothing that would learn the list of places you are applying
+# to. The app's interface never calls it; only the MCP server
+# does, when a model asks.
+LOGO_MAX = 512 * 1024
+PAGE_MAX = 1536 * 1024
+UA = "Mozilla/5.0 (compatible; CV Studio logo fetch)"
+
+
+def _site(website: str) -> str:
+    raw = (website or "").strip()
+    if not raw:
+        raise ValueError("No website given.")
+    u = urlparse(raw if "://" in raw else "https://" + raw)
+    host = (u.hostname or "").lower()
+    if u.scheme not in ("http", "https") or "." not in host:
+        raise ValueError(f"{website!r} is not a website.")
+    return f"{u.scheme}://{host}{f':{u.port}' if u.port else ''}/"
+
+
+def _fetch(url: str, limit: int) -> bytes:
+    import urllib.request
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError("not http")
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
+    with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310 -- scheme checked
+        body = r.read(limit + 1)
+    if len(body) > limit:
+        raise ValueError("too large")
+    return body
+
+
+def _image_ext(data: bytes) -> str | None:
+    """What an image is, from its bytes. A server's Content-Type is a guess."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    if data[:4] == b"\x00\x00\x01\x00":
+        return ".ico"
+    head = data[:2048].lstrip().lower()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head):
+        # Drawn in an <img>, where a script cannot run, but also reachable as
+        # a page in its own right. Refuse anything that could do something.
+        low = data.lower()
+        if re.search(rb"<script|<foreignobject|\son[a-z]+\s*=|javascript:", low):
+            return None
+        return ".svg"
+    return None
+
+
+def _icon_links(html: str, root: str) -> list[tuple[int, str]]:
+    """Every icon the page declares, scored so the best logo comes first."""
+    from html.parser import HTMLParser
+    from urllib.parse import urljoin
+    found: list[tuple[int, str]] = []
+
+    class P(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag != "link":
+                return
+            a = {k: (v or "") for k, v in attrs}
+            rel_ = a.get("rel", "").lower()
+            href = a.get("href")
+            if not href or "icon" not in rel_ or "mask" in rel_:
+                return
+            sizes = [int(x) for x in re.findall(r"(\d+)x\d+", a.get("sizes", ""))]
+            if href.lower().split("?")[0].endswith(".svg") or "svg" in a.get("type", ""):
+                score = 1000
+            elif "apple-touch-icon" in rel_:
+                score = max(sizes or [180])
+            else:
+                score = max(sizes or [32])
+            found.append((score, urljoin(root, href)))
+
+    try:
+        P().feed(html)
+    except Exception:
+        pass
+    return found
+
+
+def fetch_logo(company: str, website: str) -> dict:
+    """Find the company's icon on its own website and store it as its logo."""
+    root = _site(website)
+    tried: list[str] = []
+    candidates: list[tuple[int, str]] = []
+    try:
+        page = _fetch(root, PAGE_MAX).decode("utf-8", errors="replace")
+        candidates += _icon_links(page, root)
+    except Exception as exc:
+        tried.append(f"{root} ({type(exc).__name__})")
+    candidates += [(150, root + "apple-touch-icon.png"), (16, root + "favicon.ico")]
+    seen: set[str] = set()
+    for _, url in sorted(candidates, key=lambda c: -c[0]):
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            data = _fetch(url, LOGO_MAX)
+        except Exception as exc:
+            tried.append(f"{url} ({type(exc).__name__})")
+            continue
+        ext = _image_ext(data)
+        if ext:
+            saved = _store_logo(company, data, ext)
+            saved["from"] = url
+            return saved
+        tried.append(f"{url} (not an image)")
+    raise ValueError(f"No usable logo on {urlparse(root).hostname}. Tried: " +
+                     "; ".join(tried[:6]))
 
 
 def document_files() -> list[tuple[Path, str, str]]:
@@ -2156,6 +2357,15 @@ def openapi_spec() -> dict:
                 "parameters": [{"name": "format", "in": "query",
                                 "schema": {"type": "string", "enum": ["json", "csv"]}}],
                 "responses": ok}},
+            "/api/basediff": {"get": {"summary":
+                "What a tailored CV changed from the document it was copied from",
+                "parameters": [{"name": "path", "in": "query", "required": True,
+                                "schema": {"type": "string"}}],
+                "responses": ok}},
+            "/api/open": {"post": {"summary":
+                "Open a web link in the system browser",
+                "requestBody": body({"url": {"type": "string"}}),
+                "responses": ok}},
             "/api/thumb": {"get": {"summary":
                 "A document's first page as last rendered, and whether it is current",
                 "parameters": [{"name": "path", "in": "query", "required": True,
@@ -2454,6 +2664,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json({"clients": ai_clients()})
             if u.path == "/api/pulse":
                 return self._json(pulse())
+            if u.path == "/api/basediff":
+                return self._json(base_diff(safe_path(q["path"][0])))
             if u.path == "/api/thumb":
                 return self._json(thumb(safe_path(q["path"][0])))
             if u.path == "/api/skills":
@@ -2516,12 +2728,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/jobs":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
+                if not payload.get("logo") and payload.get("company"):
+                    payload["logo"] = stored_logo(payload["company"])
                 return self._json(jobstore.add_job(WORKSPACE, payload))
             if u.path == "/api/jobs/update":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json(jobstore.update_job(
                     WORKSPACE, payload.pop("id", ""), payload))
+            if u.path == "/api/open":
+                # A link out of the app. The desktop webview drops target=_blank
+                # on the floor, so the page asks for it here and the system
+                # browser opens it. Web links only: this is not a way to launch
+                # whatever a stored URL happens to name.
+                link = str(payload.get("url") or "")
+                if urlparse(link).scheme not in ("http", "https"):
+                    return self._json({"error": "Only web links can be opened."}, 400)
+                webbrowser.open(link)
+                return self._json({"ok": True})
             if u.path == "/api/reveal":
                 target = WORKSPACE
                 sub_ = payload.get("path")
@@ -3265,7 +3489,34 @@ body.dragging{cursor:col-resize;user-select:none}
 .drow select{border:0;background:none;font-size:12.5px;color:var(--t900);flex:1;min-width:0;
   padding:0;cursor:pointer}
 .drow select.empty{color:var(--t400)}
-.alink{font-size:12px;color:var(--acc-text);flex:none}
+.alink{font-size:12px;color:var(--acc-text);flex:none;cursor:pointer}
+/* A job board's mark: small, square, in its own colours, because it is
+   identifying somebody else's product. Lettered tiles stay neutral. */
+.board{width:16px;height:16px;border-radius:4px;flex:none;display:inline-grid;
+  place-items:center;vertical-align:middle}
+.board svg{width:10px;height:10px;display:block}
+.board.lettered{background:var(--bar);color:var(--t700);font-size:8px;font-weight:600;
+  box-shadow:inset 0 0 0 1px var(--bd-field)}
+.trow .role .via{flex:none;display:inline-flex;align-self:center}
+.posting-row{justify-content:flex-start}
+.posting-row>span:not(.board){flex:1;min-width:0;text-align:left}
+.posting-row .alink{white-space:nowrap}
+.posting-row>span i{font-style:normal;font-size:11.5px;margin-left:4px}
+/* What the CV changed from its base, under the CV it describes. */
+.bdiff{font-size:12px;color:var(--t700);line-height:1.45}
+.bd-head{margin:0;display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
+.bd-head b{color:var(--t900);font-weight:600}
+.bd-design{font-size:11.5px;color:var(--t500)}
+.bd-list{list-style:none;margin:7px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.bd-list li{display:flex;flex-direction:column;gap:2px;padding-left:9px;
+  border-left:2px solid var(--rule)}
+.bd-where{font-size:11.5px;color:var(--t500)}
+.bd-kind{font-style:normal;font-size:10.5px;color:var(--t600);background:var(--bar);
+  border-radius:3px;padding:0 4px;margin-left:4px}
+.bdiff del{color:var(--t500);text-decoration:line-through;text-decoration-color:var(--t400)}
+.bdiff ins{text-decoration:none;color:var(--t900)}
+.bd-more{margin-top:7px}
+.bd-more summary{cursor:pointer;font-size:11.5px;color:var(--acc-text)}
 .alink:hover{text-decoration:underline}
 .muted{color:var(--t400)}
 
@@ -3394,12 +3645,14 @@ body.dragging{cursor:col-resize;user-select:none}
   color:var(--t900);display:flex;align-items:baseline;gap:8px}
 .dlane h4 .n{color:var(--t500);font-weight:400;font-size:13px}
 .dlane .why{padding:3px 12px 9px;font-size:13px;color:var(--t600);max-width:66ch}
-.drow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 84px;
+/* Scoped to the lanes: the application panel's document rows share the class
+   name, and an unscoped grid here turned them into three columns too. */
+.dlane .drow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 84px;
   align-items:center;gap:10px;width:100%;height:36px;padding:0 12px;
   text-align:left;border:0;border-bottom:1px solid var(--bd-inner);
   background:transparent;color:var(--t900);font-size:12.5px;cursor:pointer;
   font-family:inherit}
-.drow:hover{background:var(--row-hover)}
+.dlane .drow:hover{background:var(--row-hover)}
 .drow .dn{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   display:flex;align-items:center;gap:7px}
 .drow .dfor{color:var(--t600);overflow:hidden;text-overflow:ellipsis;
@@ -4016,6 +4269,18 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 <!-- Marks for the AI clients. The Claude one is as published by Anthropic, and
      identifies that integration and nothing else: see THIRD-PARTY-NOTICES.md. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <!-- Job boards, for where a posting was found. Simple Icons (CC0), except
+       LinkedIn, which asked Simple Icons to remove it; that one is Font
+       Awesome's (CC BY 4.0). See THIRD-PARTY-NOTICES.md. -->
+  <symbol id="board-linkedin" viewBox="0 0 448 512"><path fill="currentColor" d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z"/></symbol>
+  <symbol id="board-indeed" viewBox="0 0 24 24"><path fill="currentColor" d="M11.566 21.5633v-8.762c.2553.0231.5009.0346.758.0346 1.2225 0 2.3739-.3206 3.3506-.8928v9.6182c0 .8219-.1957 1.4287-.5757 1.8338-.378.4033-.8808.6049-1.491.6049-.6007 0-1.0766-.2016-1.468-.6183-.3781-.4032-.5739-1.01-.5739-1.8184zM11.589.5659c2.5447-.8929 5.4424-.8449 7.6186.987.405.3687.8673.8334 1.0515 1.3806.2207.6913-.7695-.073-.9057-.167-.71-.4532-1.4182-.8334-2.2127-1.0946C12.8614.3873 8.8122 2.709 6.2945 6.315c-1.0516 1.5939-1.7367 3.2721-2.299 5.1174-.0614.2017-.1094.4647-.2207.6413-.1113.2036-.048-.5453-.048-.5702.0845-.7623.2438-1.4997.4414-2.237C5.3292 5.3375 7.897 2.0655 11.5891.5658zm4.9281 7.0587c0 1.6686-1.353 3.0224-3.0205 3.0224-1.6677 0-3.0186-1.3538-3.0186-3.0224 0-1.6687 1.351-3.0224 3.0186-3.0224 1.6676 0 3.0205 1.3518 3.0205 3.0224Z"/></symbol>
+  <symbol id="board-glassdoor" viewBox="0 0 24 24"><path fill="currentColor" d="M14.1093.0006c-.0749-.0074-.1348.0522-.1348.127v3.451c0 .0673.0537.1194.121.127 2.619.172 4.6092.9501 4.6092 3.6814H13.086a.1343.1343 0 0 0-.1348.1347v8.9644c0 .0748.06.1347.1348.1347h10.0034c.0748 0 .1347-.0599.1347-.1347V7.342c0-2.2374-.7996-4.0558-2.4159-5.3279C19.3191.8469 17.0874.1428 14.1093.0006ZM.9107 7.387a.1342.1342 0 0 0-.1347.1347v8.9566c0 .0748.06.1347.1347.1347h5.6189c0 2.7313-1.9902 3.5094-4.6091 3.6815-.0674.0075-.1192.0596-.1192.127v3.451c0 .0747.06.1343.1348.1269 2.9781-.1422 5.2078-.8463 6.6969-2.0136 1.6163-1.272 2.4159-3.0905 2.4159-5.3278V7.5217a.1343.1343 0 0 0-.1348-.1347z"/></symbol>
+  <symbol id="board-greenhouse" viewBox="0 0 24 24"><path fill="currentColor" d="M16.279 7.13c0 1.16-.49 2.185-1.293 2.987-.891.891-2.184 1.114-2.184 1.872 0 1.025 1.65.713 3.231 2.295 1.048 1.047 1.694 2.43 1.694 4.034C17.727 21.482 15.187 24 12 24c-3.187 0-5.727-2.518-5.727-5.68 0-1.607.646-2.989 1.694-4.036 1.582-1.582 3.23-1.27 3.23-2.295 0-.758-1.292-.98-2.183-1.872-.802-.802-1.293-1.827-1.293-3.03 0-2.318 1.895-4.19 4.212-4.19.446 0 .847.067 1.181.067.602 0 .914-.268.914-.691 0-.245-.112-.557-.112-.891 0-.758.647-1.382 1.427-1.382s1.404.646 1.404 1.426c0 .825-.647 1.204-1.137 1.382-.401.134-.713.312-.713.713 0 .758 1.382 1.493 1.382 3.61zm-.446 11.19c0-2.206-1.627-3.99-3.833-3.99-2.206 0-3.833 1.784-3.833 3.99 0 2.184 1.627 3.989 3.833 3.989 2.206 0 3.833-1.808 3.833-3.99zM14.518 7.086c0-1.404-1.136-2.562-2.518-2.562S9.482 5.682 9.482 7.086 10.618 9.65 12 9.65s2.518-1.159 2.518-2.563z"/></symbol>
+  <symbol id="board-wellfound" viewBox="0 0 24 24"><path fill="currentColor" d="M23.998 8.128c.063-1.379-1.612-2.376-2.795-1.664-1.23.598-1.322 2.52-.156 3.234 1.2.862 2.995-.09 2.951-1.57zm0 7.748c.063-1.38-1.612-2.377-2.795-1.665-1.23.598-1.322 2.52-.156 3.234 1.2.863 2.995-.09 2.951-1.57zm-20.5 1.762L0 6.364h3.257l2.066 8.106 2.245-8.106h3.267l2.244 8.106 2.065-8.106h3.257l-3.54 11.274H11.39c-.73-2.713-1.46-5.426-2.188-8.14l-2.233 8.14H3.5z"/></symbol>
+  <symbol id="board-welcometothejungle" viewBox="0 0 24 24"><path fill="currentColor" d="M22.62 3.783c-1.115-1.811-4.355-2.604-6.713-.265-.132.135-.306.548.218 1.104 1.097 1.149 6.819 7.046 4.702 12.196-1.028 2.504-3.953 2.073-5.052-2.076a23.184 23.184 0 0 1-.473-9.367s.105-.394-.065-.52c-.117-.087-.305-.05-.547.33-.06.096-.048.076-.106.178l-.003.002c-1.622 2.688-3.272 5.874-4.049 7.07.38-1.803-.101-4.283-.85-6.359l-.142-.375c-.692-1.776-1.524-2.974-1.776-3.245-.03-.033-.105-.094-.353-.094H.398c-.49 0-.448.412-.293.561 1.862 2.178 7.289 10.343 4.773 18.355-.194.619.11.944.612.305 2.206-2.81 4.942-7.598 6.925-11.187-.437 1.245-.822 2.63-1.028 4.083-.435 3.064.487 5.37 1.162 6.58.345.619.803.998 1.988.824 6.045-.885 8.06-6.117 8.805-8.77 1.357-4.839.363-7.568-.722-9.33"/></symbol>
+  <symbol id="board-xing" viewBox="0 0 24 24"><path fill="currentColor" d="M18.188 0c-.517 0-.741.325-.927.66 0 0-7.455 13.224-7.702 13.657.015.024 4.919 9.023 4.919 9.023.17.308.436.66.967.66h3.454c.211 0 .375-.078.463-.22.089-.151.089-.346-.009-.536l-4.879-8.916c-.004-.006-.004-.016 0-.022L22.139.756c.095-.191.097-.387.006-.535C22.056.078 21.894 0 21.686 0h-3.498zM3.648 4.74c-.211 0-.385.074-.473.216-.09.149-.078.339.02.531l2.34 4.05c.004.01.004.016 0 .021L1.86 16.051c-.099.188-.093.381 0 .529.085.142.239.234.45.234h3.461c.518 0 .766-.348.945-.667l3.734-6.609-2.378-4.155c-.172-.315-.434-.659-.962-.659H3.648v.016z"/></symbol>
+  <symbol id="board-monster" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0V24H5.42V12.39L12 18.19L18.58 12.39V24H24V0L12 11.23L0 0Z"/></symbol>
+  <symbol id="board-ycombinator" viewBox="0 0 24 24"><path fill="currentColor" d="M0 24V0h24v24H0zM6.951 5.896l4.112 7.708v5.064h1.583v-4.972l4.148-7.799h-1.749l-2.457 4.875c-.372.745-.688 1.434-.688 1.434s-.297-.708-.651-1.434L8.831 5.896h-1.88z"/></symbol>
   <symbol id="claude-mark" viewBox="0 0 24 24"><path fill="currentColor"
     fill-rule="nonzero" d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"/></symbol>
 
@@ -4662,6 +4927,104 @@ function companyMark(j){
   return '<span class="colog mono" style="background:'+companyTint(j.company)+
     '">'+esc(initials(j.company))+'</span>';
 }
+
+/* Where a posting was found. The source is what someone said -- "LinkedIn",
+   "via a recruiter on Indeed" -- so it wins over the link, which for a board
+   that forwards to the company's own careers page names the wrong place.
+   Boards that publish no mark anyone may use get their initials on a neutral
+   tile, like a company with no logo, rather than a drawing of their logo. */
+const BOARDS=[
+  {id:"linkedin",label:"LinkedIn",bg:"#0A66C2",fg:"#fff",
+   host:/(^|\.)linkedin\.com$/,word:/linked\s?in/i},
+  {id:"indeed",label:"Indeed",bg:"#003A9B",fg:"#fff",host:/(^|\.)indeed\./,word:/indeed/i},
+  {id:"glassdoor",label:"Glassdoor",bg:"#00A162",fg:"#fff",
+   host:/(^|\.)glassdoor\./,word:/glassdoor/i},
+  {id:"greenhouse",label:"Greenhouse",bg:"#24A47F",fg:"#fff",
+   host:/(^|\.)greenhouse\.io$/,word:/greenhouse/i},
+  {id:"wellfound",label:"Wellfound",bg:"#000",fg:"#fff",
+   host:/(^|\.)(wellfound\.com|angel\.co)$/,word:/wellfound|angel\.?list/i},
+  {id:"welcometothejungle",label:"Welcome to the Jungle",bg:"#FFCD00",fg:"#000",
+   host:/(^|\.)welcometothejungle\.com$/,word:/welcome to the jungle|\bwttj\b/i},
+  {id:"xing",label:"XING",bg:"#006567",fg:"#fff",host:/(^|\.)xing\.com$/,word:/\bxing\b/i},
+  {id:"monster",label:"Monster",bg:"#6D4C9F",fg:"#fff",host:/(^|\.)monster\./,
+   word:/\bmonster\b/i},
+  {id:"ycombinator",label:"Work at a Startup",bg:"#F0652F",fg:"#fff",
+   host:/(^|\.)(workatastartup|ycombinator)\.com$/,word:/y\s?combinator|work at a startup/i},
+  {id:"lever",label:"Lever",letters:"Lv",host:/(^|\.)lever\.co$/,word:/\blever\b/i},
+  {id:"workday",label:"Workday",letters:"Wd",
+   host:/(^|\.)(myworkdayjobs|workday)\.com$/,word:/workday/i},
+  {id:"ashby",label:"Ashby",letters:"As",host:/(^|\.)ashbyhq\.com$/,word:/\bashby/i},
+  {id:"smartrecruiters",label:"SmartRecruiters",letters:"SR",
+   host:/(^|\.)smartrecruiters\.com$/,word:/smart\s?recruiters/i},
+  {id:"francetravail",label:"France Travail",letters:"FT",
+   host:/(^|\.)(francetravail|pole-emploi)\.fr$/,word:/france travail|p[o\u00f4]le.emploi/i},
+  {id:"apec",label:"Apec",letters:"Ap",host:/(^|\.)apec\.fr$/,word:/\bapec\b/i},
+  {id:"hellowork",label:"HelloWork",letters:"HW",host:/(^|\.)hellowork\.com$/,
+   word:/hello\s?work/i},
+  {id:"jobteaser",label:"JobTeaser",letters:"JT",host:/(^|\.)jobteaser\.com$/,
+   word:/job\s?teaser/i},
+];
+function jobBoard(j){
+  const said=String(j.source||"");
+  if(said){ const b=BOARDS.find(b=>b.word.test(said)); if(b) return b }
+  let host="";
+  try{ host=new URL(j.url).hostname.toLowerCase() }catch(e){}
+  return host?BOARDS.find(b=>b.host.test(host))||null:null;
+}
+function boardMark(b){
+  if(b.letters) return '<span class="board lettered mono" aria-hidden="true">'+
+    esc(b.letters)+'</span>';
+  return '<span class="board" aria-hidden="true" style="background:'+b.bg+';color:'+b.fg+
+    '"><svg viewBox="0 0 24 24"><use href="#board-'+b.id+'"/></svg></span>';
+}
+
+/* What the tailored CV changed from the one it was copied from. The editor
+   has been marking these field by field since lineage was recorded; this is
+   the same list said once, on the application, where the question "what did
+   I send them" gets asked. */
+const DIFF_SHOWN=4;
+async function fillBaseDiff(el,path){
+  let d;
+  try{ d=await api("/api/basediff?path="+encodeURIComponent(path)) }
+  catch(e){ return }
+  if(!el.isConnected||el.dataset.path!==path) return;
+  const box=el.closest(".block")||el;
+  const base=d.base?d.base.split("/").pop().replace(/\.ya?ml$/,""):null;
+  if(!base) return;
+  box.hidden=false;
+  if(d.missing){
+    el.innerHTML='<p class="bd-head">Copied from <b>'+esc(base)+'</b>, which is no longer '+
+      'in the workspace, so there is nothing to compare it with.</p>';
+    return;
+  }
+  const n=d.changes.length;
+  const item=c=>'<li><span class="bd-where">'+esc(c.where)+
+      (c.kind==="changed"?"":' <em class="bd-kind '+c.kind+'">'+c.kind+'</em>')+'</span>'+
+    (c.before&&c.kind!=="added"?'<del>'+esc(c.before)+'</del>':'')+
+    (c.after&&c.kind!=="removed"?'<ins>'+esc(c.after)+'</ins>':'')+'</li>';
+  el.innerHTML=
+    '<p class="bd-head">'+(n
+      ?'<b>'+n+' change'+(n===1?"":"s")+'</b> from <b>'+esc(base)+'</b>'
+      :'Same as <b>'+esc(base)+'</b> so far. Nothing has been tailored yet.')+
+    (d.design.length?'<span class="bd-design">Design: '+esc(d.design.join(", "))+'</span>':'')+
+    '</p>'+
+    (n?'<ul class="bd-list">'+d.changes.slice(0,DIFF_SHOWN).map(item).join("")+'</ul>':'')+
+    (n>DIFF_SHOWN?'<details class="bd-more"><summary>'+(n-DIFF_SHOWN)+' more</summary>'+
+      '<ul class="bd-list">'+d.changes.slice(DIFF_SHOWN).map(item).join("")+'</ul></details>':'');
+}
+
+/* Links out of the app. The desktop webview ignores target=_blank -- the
+   click simply went nowhere -- so outside a browser tab the server opens the
+   link in the system browser instead. In a browser tab the default works and
+   is left alone. */
+document.addEventListener("click",e=>{
+  const a=e.target.closest&&e.target.closest('a[target="_blank"]');
+  if(!a||!window.__TAURI__) return;
+  const href=a.href||"";
+  if(!/^https?:/i.test(href)) return;
+  e.preventDefault();
+  post("/api/open",{url:href}).catch(err=>toast(err.message,true));
+});
 
 const money=j=>{
   const v=j.salary_offered||j.salary_expected;
@@ -7421,11 +7784,14 @@ function drawJobs(){
     const openable=cv?j.cv_path:j.letter_path;
     const sal=money(j), ap=appliedAt(j);
     const due=j.followup_date&&j.followup_date<=isoToday();
+    const jb=jobBoard(j);
     return '<button class="trow'+(DEAD_STATUS.has(j.status)?" dead":"")+
       (S.jsel===j.id?" sel":"")+'" data-id="'+esc(j.id)+'">'+
       '<span class="co">'+companyMark(j)+'<span class="con">'+
         esc(j.company)+'</span></span>'+
-      '<span class="role"><b>'+esc(j.title)+'</b></span>'+
+      '<span class="role"><b>'+esc(j.title)+'</b>'+
+        (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
+      '</span>'+
       '<span>'+(docs?'<span class="docs mono" data-open="'+esc(openable)+'">'+docs+'</span>'
                :S.tailoring.has(j.id)
                  ?'<span class="docs busy">Tailoring\u2026</span>'
@@ -7585,9 +7951,14 @@ function drawJobInspector(){
       '<p class="note muted">Not saved. Paste it in when you add an application, '+
       'or ask a model to -- it is what a tailored CV gets written against once '+
       'the advert is gone.</p></div>';
-  const posting=j.url?'<div class="drow"><span class="muted">'+
-    esc(j.url.replace(/^https?:\/\//,"").slice(0,40))+'</span>'+
-    '<a class="alink" href="'+esc(j.url)+'" target="_blank" rel="noreferrer">Open</a></div>':"";
+  const jb=jobBoard(j);
+  const posting=j.url||jb?'<div class="drow posting-row">'+
+    (jb?boardMark(jb):'')+
+    '<span class="'+(jb?"":"muted")+'">'+(jb?esc(jb.label)+
+      (j.url?' <i class="muted">'+esc(j.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,34))+'</i>':'')
+      :esc(j.url.replace(/^https?:\/\//,"").slice(0,40)))+'</span>'+
+    (j.url?'<a class="alink" href="'+esc(j.url)+'" target="_blank" rel="noreferrer">'+
+      'Open the posting</a>':'')+'</div>':"";
 
   const hist=(j.status_history||[]);
   const timeline=hist.length?'<div class="tl">'+hist.map(h=>
@@ -7613,6 +7984,9 @@ function drawJobInspector(){
         '<div class="block"><span class="blabel">Documents</span><div class="card">'+
           docRow("CV","cv_path","My CVs")+docRow("Cover letter","letter_path","Cover letters")+
           posting+'</div></div>'+
+        (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
+          'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
+          esc(j.cv_path)+'"></div></div>':'')+
         '<details class="fold"><summary>Company, role and the rest</summary>'+
           '<div class="fg2" style="margin-top:11px">'+more+'</div></details>'+
         '<div class="block ruled foot-del"><button class="sbtn danger" id="job-del">'+
@@ -7626,6 +8000,8 @@ function drawJobInspector(){
       '</div>'+
     '</div>';
 
+  const diff=$("#jdiff");
+  if(diff) fillBaseDiff(diff,j.cv_path);
   body.querySelectorAll("[data-j]").forEach(el=>{
     el.onchange=()=>{
       let v=el.value;
