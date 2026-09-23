@@ -40,6 +40,12 @@ tag, so a release is never published with nothing said about it.
   Anything it was unsure of is listed to check, such as a phone number with
   no country code. The file is read on your machine and nothing is uploaded;
   CV Studio never signs in to LinkedIn.
+- **Documents shows your documents.** The base CV sits at the top as its
+  whole first page, readable, beside how many CVs were tailored from it and
+  how many went out with an application. Every other CV and letter is a card
+  with its own rendered page, the application it was written for and its
+  status. Pages missing or older than their file render one at a time while
+  the screen is open.
 - **Import on Documents** does the same for any CV later: it becomes a new
   document in your base CV's design, and the base is left alone.
 - **The base CV card shows the base CV.** A snapshot of its first page, as

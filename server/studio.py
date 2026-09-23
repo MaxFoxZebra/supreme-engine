@@ -3826,43 +3826,67 @@ body.dragging{cursor:col-resize;user-select:none}
 .bthumb:hover{border-color:var(--bd-field)}
 .bthumb:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .baserow .bthumb{flex-basis:100%;height:118px;margin-bottom:8px}
-.bcard .bthumb{width:66px;height:86px}
 .baserow .grow{display:none}
 
 /* ------------------------------------------------------------- Documents -- */
 .docpane{flex:1;min-width:0;min-height:0;overflow-y:auto;background:var(--app)}
 .docwrap{max-width:1000px;margin:0 auto;padding:12px 24px 64px}
 .docwrap>.phead{padding:10px 0 18px}
-/* The base is not an item in the list. It is the one the list is copied from,
-   so it is a card above the lanes rather than a first row inside them. */
-.bcard{display:flex;align-items:center;gap:13px;padding:16px 18px;
-  background:var(--field);border:1px solid var(--rule);border-radius:12px}
-.bcard .bl{font-size:12px;font-weight:600;color:var(--t500);flex:none}
-.bcard .bn{font-size:16px;font-weight:600;color:var(--t900);min-width:0;
+/* The base as a sheet of paper you can read, beside what it is and what came
+   of it: the page is the point of a CV, so the card shows the whole of page
+   one rather than a strip of it. */
+.bhero{display:flex;gap:28px;padding:22px;background:var(--field);border:1px solid var(--rule);
+  border-radius:14px}
+.bhero .bthumb{width:196px;aspect-ratio:210/297;height:auto;border-radius:3px;
+  box-shadow:0 10px 28px -12px rgba(30,26,18,.45),0 1px 2px rgba(30,26,18,.12)}
+.bhero .bthumb img{object-fit:contain}
+.bhero .bbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;padding-top:4px}
+.bhero .bl{font-size:12px;font-weight:600;color:var(--acc-text)}
+.bhero .bn{margin:0;font-size:24px;font-weight:700;letter-spacing:-.015em;color:var(--t900);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bcard .bsub{font-size:12px;color:var(--t500);flex:none}
-.bcard.gone .bn{text-decoration:line-through;color:var(--t500)}
-.dlane{margin-top:30px}
-.dlane h4{margin:0 0 2px;padding:0 12px;font-size:14px;font-weight:600;
-  color:var(--t900);display:flex;align-items:baseline;gap:8px}
-.dlane h4 .n{color:var(--t500);font-weight:400;font-size:13px}
-.dlane .why{padding:3px 12px 9px;font-size:13px;color:var(--t600);max-width:66ch}
-/* Scoped to the lanes: the application panel's document rows share the class
-   name, and an unscoped grid here turned them into three columns too. */
-.dlane .drow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 84px;
-  align-items:center;gap:10px;width:100%;height:36px;padding:0 12px;
-  text-align:left;border:0;border-bottom:1px solid var(--bd-inner);
-  background:transparent;color:var(--t900);font-size:12.5px;cursor:pointer;
-  font-family:inherit}
-.dlane .drow:hover{background:var(--row-hover)}
-.drow .dn{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  display:flex;align-items:center;gap:7px}
-.drow .dfor{color:var(--t600);overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;display:flex;align-items:center;gap:7px}
-.drow .dwhen{color:var(--t500);font-size:11.5px;text-align:right}
-.drow .dkind{flex:none;font-size:10.5px;color:var(--t600);background:var(--bar);
-  border-radius:9px;padding:1px 7px;line-height:1.5}
-.dempty{padding:10px 12px;font-size:13px;color:var(--t500)}
+.bhero .bmeta{font-size:13px;color:var(--t500)}
+.bhero .bwhy{margin:8px 0 0;font-size:13.5px;line-height:1.55;color:var(--t700);max-width:60ch}
+.bstats{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+.bstats div{min-width:120px;padding:10px 14px;border-radius:10px;background:var(--app);
+  border:1px solid var(--bd-inner);display:flex;flex-direction:column;gap:2px}
+.bstats b{font-size:20px;font-weight:600;color:var(--t900);font-variant-numeric:tabular-nums}
+.bstats span{font-size:12px;color:var(--t500)}
+.bhero .bacts{margin-top:auto;padding-top:18px;display:flex;gap:8px;flex-wrap:wrap}
+.bhero.gone .bn{text-decoration:line-through;color:var(--t500)}
+.bhero.none{align-items:center}
+/* The other documents, as pages. */
+.dsec{margin-top:34px}
+.dsec h2{margin:0;font-size:15px;font-weight:600;color:var(--t900);display:flex;
+  align-items:baseline;gap:8px}
+.dsec h2 .n{color:var(--t500);font-weight:400;font-size:13px}
+.dsec .why{margin:4px 0 14px;font-size:13px;color:var(--t600);max-width:70ch}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:18px}
+.dcard{display:flex;flex-direction:column;gap:10px;padding:0;border:0;background:none;
+  text-align:left;color:var(--t900);cursor:pointer;font-family:inherit;min-width:0}
+.dcard .pg{position:relative;aspect-ratio:210/297;background:#fff;border:1px solid var(--rule);
+  border-radius:4px;overflow:hidden;box-shadow:0 6px 18px -12px rgba(30,26,18,.4);
+  transition:transform .15s,box-shadow .15s;display:grid;place-items:center}
+.dcard .pg img{width:100%;height:100%;object-fit:contain;object-position:top;display:block}
+.dcard .pg>span{font-size:11.5px;color:#6b675d}
+.dcard:hover .pg{transform:translateY(-2px);box-shadow:0 14px 28px -14px rgba(30,26,18,.5);
+  border-color:var(--bd-field)}
+.dcard:focus-visible{outline:none}
+.dcard:focus-visible .pg{outline:2px solid var(--acc);outline-offset:3px}
+.dcard .tag{position:absolute;right:8px;bottom:8px;font-size:10.5px;font-weight:600;
+  padding:2px 8px;border-radius:9px;background:var(--c800);color:var(--cw)}
+.dcard .meta{display:flex;flex-direction:column;align-items:stretch;gap:3px;padding:0 2px;
+  min-width:0;text-align:left}
+.dcard .meta b{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.dcard .meta span{font-size:12px;color:var(--t600);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;display:flex;align-items:center;justify-content:flex-start;gap:6px}
+.dcard .meta em{font-style:normal;color:var(--t500)}
+.dempty{padding:26px 20px;border:1.5px dashed var(--rule-strong);border-radius:12px;
+  font-size:13px;line-height:1.5;color:var(--t500);text-align:center}
+@media (max-width:720px){
+  .bhero{flex-direction:column}
+  .bhero .bthumb{width:150px}
+}
 .thead,.trow{display:grid;
   grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,1.15fr) 186px 86px 96px;
   align-items:center}
@@ -5355,6 +5379,7 @@ const S={
   pdf:null, render:null, renderMs:null, live:"idle", liveMsg:"",
   page:0, zoom:1, zoomAuto:true, fill:null,
   sel:null, openSection:null,
+  docThumbs:{},             /* each document's first page, for Documents */
   ai:null,                  /* which AI clients are wired up to us */
   prov:null,                /* who wrote each field, and what differs from the base */
   pulse:null,               /* last workspace poll: file stamps and AI activity */
@@ -7932,7 +7957,7 @@ async function adoptRender(r){
   const b=S.state&&S.state.base;
   if(b&&b.path===S.path&&r.pngs.length){
     S.baseThumb={path:S.path,png:r.pngs[0],failed:false};
-    mountBase($("#docbase"),"bcard"); mountBase($("#baserow"),"baserow");
+    mountBase($("#docbase"),"bhero"); mountBase($("#baserow"),"baserow");
   }
   if(DZ.theme) S.themePages[DZ.theme]=r.pages;
   if(S.page>=r.pngs.length) S.page=Math.max(0,r.pngs.length-1);
@@ -8480,11 +8505,46 @@ function baseHTML(b){
     '<button class="obtn" data-base-pick>Change\u2026</button>'+
     '<div class="grow"></div>';
 }
+/* The same base, on Documents, at the size of a page you can read. */
+function baseHeroHTML(b){
+  if(!b||b.missing) return '<div class="bbody"><span class="bl">Base CV</span>'+
+    (b?'<h2 class="bn">'+esc(baseLabel())+'</h2><span class="bmeta">is no longer in the '+
+      'workspace</span>':'<h2 class="bn">Not chosen yet</h2>')+
+    '<p class="bwhy">Every CV you tailor for an application starts as a copy of the base.</p>'+
+    '<div class="bacts"><button class="pbtn" data-base-pick>'+(b?"Choose another":"Choose")+
+      '&#8230;</button></div></div>';
+  const pages=S.pages[b.path];
+  const th=S.baseThumb&&S.baseThumb.path===b.path?S.baseThumb:null;
+  const docs=(S.state&&S.state.documents)||[];
+  const me=docs.find(d=>d.path===b.path);
+  const kids=docs.filter(d=>d.base===b.path);
+  const used=new Set((S.jobs||[]).map(j=>j.cv_path).filter(Boolean));
+  const sent=kids.filter(d=>used.has(d.path)).length;
+  return '<button class="bthumb'+(th&&th.png?"":" empty")+'" data-base-open'+
+      ' aria-label="Open the base CV">'+
+      (th&&th.png?'<img alt="Page one of the base CV" src="'+esc(th.png+tok())+'">'
+        :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
+    '</button>'+
+    '<div class="bbody"><span class="bl">Base CV</span>'+
+      '<h2 class="bn">'+esc(baseLabel())+'</h2>'+
+      '<span class="bmeta">'+[pages?pages+" page"+(pages===1?"":"s"):"",
+        me&&me.mtime?"updated "+mtimeLabel(me.mtime):""].filter(Boolean).join(" \u00b7 ")+
+      '</span>'+
+      '<p class="bwhy">Every CV you tailor for an application starts as a copy of this one, '+
+        'and shows what it changed from it. Improving the base improves every CV you '+
+        'tailor from now on.</p>'+
+      '<div class="bstats"><div><b>'+kids.length+'</b><span>tailored from it</span></div>'+
+        '<div><b>'+sent+'</b><span>attached to applications</span></div></div>'+
+      '<div class="bacts"><button class="pbtn" data-base-open>Open</button>'+
+        '<button class="obtn" data-base-design>Design</button>'+
+        '<button class="obtn" data-base-pick>Change base&#8230;</button></div>'+
+    '</div>';
+}
 function mountBase(el,cls){
   if(!el) return;
   const b=S.state&&S.state.base;
-  el.className=cls+(b&&b.missing?" gone":"");
-  el.innerHTML=baseHTML(b);
+  el.className=cls+(b&&b.missing?" gone":"")+(cls==="bhero"&&!b?" none":"");
+  el.innerHTML=cls==="bhero"?baseHeroHTML(b):baseHTML(b);
   el.querySelectorAll("[data-base-open]").forEach(open=>open.onclick=()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
     openDoc(b.path);
@@ -8498,7 +8558,7 @@ function mountBase(el,cls){
 }
 function paintBase(){
   mountBase($("#baserow"),"baserow");
-  mountBase($("#docbase"),"bcard");
+  mountBase($("#docbase"),"bhero");
   paintBaseChip();
   baseThumb(false);
 }
@@ -8518,7 +8578,7 @@ async function baseThumb(force){
   const put=(png,failed)=>{
     S.baseThumb={path:b.path,png:png||(S.baseThumb&&S.baseThumb.path===b.path
       ?S.baseThumb.png:null),failed:!!failed};
-    mountBase($("#baserow"),"baserow"); mountBase($("#docbase"),"bcard");
+    mountBase($("#baserow"),"baserow"); mountBase($("#docbase"),"bhero");
   };
   try{
     const t=await api("/api/thumb?path="+encodeURIComponent(b.path));
@@ -8548,9 +8608,10 @@ function mtimeLabel(t){
 /* Two lanes, and the second is the reason this screen exists. A CV written for
    an application is reachable from that application's row; one written for
    nothing was reachable from nowhere, because the only list of documents lived
-   inside the editor and you needed a document open to see it. */
+   inside the editor and you needed a document open to see it. Each is shown as
+   its page, since two CVs are told apart by looking at them. */
 function drawDocuments(){
-  mountBase($("#docbase"),"bcard");
+  mountBase($("#docbase"),"bhero");
   const docs=(S.state&&S.state.documents)||[];
   $("#dcount").textContent=String(docs.length);
   const basePath=(S.state&&S.state.base&&S.state.base.path)||null;
@@ -8567,38 +8628,85 @@ function drawDocuments(){
   const recent=(a,b)=>(b.mtime||0)-(a.mtime||0);
   attached.sort(recent); loose.sort(recent);
 
-  const row=d=>{
+  const card=d=>{
     const j=owner[d.path], letter=d.group==="Cover letters";
     const copied=d.base?d.base.split("/").pop().replace(/\.ya?ml$/,""):null;
     const about=j
-      ? '<span class="dot '+statusTone(j.status)+'"></span>'+
-        esc(j.company)+' \u00b7 '+esc(j.title)
-      : copied?'copied from '+esc(copied):'';
-    return '<button class="drow" data-open="'+esc(d.path)+'">'+
-      '<span class="dn">'+(letter?'<span class="dkind">Letter</span>':'')+
-        esc(d.label)+'</span>'+
-      '<span class="dfor">'+about+'</span>'+
-      '<span class="dwhen">'+esc(mtimeLabel(d.mtime))+'</span></button>';
+      ? '<span class="dot '+statusTone(j.status)+'"></span>'+esc(j.company)+' \u00b7 '+esc(j.title)
+      : copied?'Copied from '+esc(copied):letter?'Cover letter':'Not attached';
+    const th=S.docThumbs[d.path];
+    return '<button class="dcard" data-open="'+esc(d.path)+'" title="'+esc(d.path)+'">'+
+      '<span class="pg">'+(th&&th.png?'<img alt="" loading="lazy" src="'+esc(th.png+tok())+'">'
+        :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
+        (letter?'<span class="tag">Letter</span>':'')+'</span>'+
+      '<span class="meta"><b>'+esc(d.label)+'</b><span>'+about+'</span>'+
+        '<em>'+esc(mtimeLabel(d.mtime))+(S.pages[d.path]?" \u00b7 "+S.pages[d.path]+
+          " page"+(S.pages[d.path]===1?"":"s"):"")+'</em></span></button>';
   };
-  const lane=(title,list,why)=>
-    '<div class="dlane"><h4>'+title+'<span class="n">'+list.length+'</span></h4>'+
-    (why?'<div class="why">'+why+'</div>':'')+
-    (list.length?list.map(row).join(""):
-      '<div class="dempty">Nothing here yet.</div>')+'</div>';
+  const lane=(title,list,why,empty)=>
+    '<section class="dsec"><h2>'+title+'<span class="n">'+list.length+'</span></h2>'+
+    '<p class="why">'+why+'</p>'+
+    (list.length?'<div class="dgrid">'+list.map(card).join("")+'</div>'
+      :'<div class="dempty">'+empty+'</div>')+'</section>';
 
   $("#doclanes").innerHTML=
     lane("Written for an application",attached,
-      "Each of these is attached to the application it was tailored for. "+
-      "Opening one from here is the same as opening it from that row.")+
+      "Each is attached to the application it was tailored for. Opening one here is the "+
+      "same as opening it from that row.",
+      "None yet. On Applications, <b>Tailor a CV</b> on a row copies the base CV for it.")+
     lane("Everything else",loose,
-      "CVs and letters that no application points at \u2014 a master copy, an "+
-      "old version, a draft you have not attached yet.");
-  $$("#doclanes .drow").forEach(b=>{
+      "CVs and letters no application points at: a master copy, an old version, a draft "+
+      "you have not attached yet.",
+      "Nothing here. <b>New document</b> or <b>Import</b> puts a CV here.");
+  $$("#doclanes .dcard").forEach(b=>{
     b.onclick=()=>{
       if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
       openDoc(b.dataset.open);
     };
   });
+  docThumbs();
+}
+/* Every card's page. What is on disk is shown at once; anything missing or
+   older than its YAML is rendered one at a time behind it, and only while
+   Documents is on screen, so a big workspace never queues up Typst for a
+   screen nobody is looking at. */
+let docThumbRun=0;
+async function docThumbs(){
+  const run=++docThumbRun;
+  const basePath=(S.state&&S.state.base&&S.state.base.path)||null;
+  const docs=((S.state&&S.state.documents)||[]).filter(d=>d.path!==basePath);
+  const stale=[];
+  for(const d of docs){
+    const have=S.docThumbs[d.path];
+    if(have&&have.mtime===d.mtime) continue;
+    try{
+      const t=await api("/api/thumb?path="+encodeURIComponent(d.path));
+      if(run!==docThumbRun) return;
+      S.docThumbs[d.path]={png:t.png,mtime:t.fresh?d.mtime:null};
+      if(t.png) docPaintThumb(d.path);
+      if(!t.fresh) stale.push(d);
+    }catch(e){ return }
+  }
+  for(const d of stale){
+    if(run!==docThumbRun||S.view!=="docs") return;
+    try{
+      const r=await post("/api/render",{path:d.path});
+      if(r.ok){ S.pages[d.path]=r.pages; S.docThumbs[d.path]={png:r.pngs[0],mtime:d.mtime} }
+      else S.docThumbs[d.path]={png:(S.docThumbs[d.path]||{}).png,failed:true,mtime:d.mtime};
+      docPaintThumb(d.path);
+    }catch(e){ return }
+  }
+}
+function docPaintThumb(path){
+  const b=$('#doclanes .dcard[data-open="'+CSS.escape(path)+'"] .pg'); if(!b) return;
+  const th=S.docThumbs[path], tag=b.querySelector(".tag");
+  b.innerHTML=th&&th.png?'<img alt="" src="'+esc(th.png+tok())+'">'
+    :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>';
+  if(tag) b.append(tag);
+  const em=b.parentElement.querySelector(".meta em"), d=((S.state&&S.state.documents)||[])
+    .find(x=>x.path===path);
+  if(em&&d) em.textContent=mtimeLabel(d.mtime)+(S.pages[path]?" \u00b7 "+S.pages[path]+
+    " page"+(S.pages[path]===1?"":"s"):"");
 }
 function baseSheet(){
   const b=S.state&&S.state.base;
