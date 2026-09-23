@@ -69,6 +69,7 @@ import sample  # noqa: E402
 import importer  # noqa: E402
 import languages  # noqa: E402
 import letters  # noqa: E402
+import backups  # noqa: E402
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -1056,6 +1057,25 @@ def _forget_deleted(data: dict) -> bool:
     for p in gone:
         del data["docs"][p]
     return bool(gone)
+
+
+def backup_dir() -> Path:
+    return cjkfonts.cache_dir().parent
+
+
+def start_backups() -> None:
+    """The day's backup of the workspace you work in, checked each hour.
+    Never of sample data, which is made fresh every time anyway."""
+    def loop() -> None:
+        time.sleep(20)                  # out of the way of the first render
+        while True:
+            try:
+                if not in_sample() and WORKSPACE.is_dir() and backups.due(backup_dir(), WORKSPACE):
+                    backups.make(backup_dir(), WORKSPACE)
+            except Exception as exc:    # a failed backup must never take the app down
+                print(f"backup failed: {exc}", file=sys.stderr)
+            time.sleep(3600)
+    threading.Thread(target=loop, daemon=True).start()
 
 
 def _rewrite_refs(old: str, new: str | None) -> None:
@@ -3216,6 +3236,14 @@ def openapi_spec() -> dict:
                 "Set the language a CV prints in (its locale); the text is not changed",
                 "requestBody": body({"path": {"type": "string"}, "language": {"type": "string"}}),
                 "responses": ok}},
+            "/api/backups": {"get": {"summary":
+                "This workspace's backups, newest first, and the folder they are in",
+                "responses": ok}},
+            "/api/backups/new": {"post": {"summary": "Back the workspace up now",
+                "responses": ok}},
+            "/api/backups/restore": {"post": {"summary":
+                "Put a backup's files back into the workspace (what is there is backed up first)",
+                "requestBody": body({"name": {"type": "string"}}), "responses": ok}},
             "/api/sample": {"post": {"summary":
                 "Switch to freshly made sample data (on: true) or back to your own "
                 "workspace (on: false). Your workspace is never written to",
@@ -3593,6 +3621,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 body = jobstore.ics(WORKSPACE, q.get("id", [None])[0]).encode("utf-8")
                 return self._send(200, body, "text/calendar; charset=utf-8")
+            if u.path == "/api/backups":
+                return self._json({"backups": backups.listing(backup_dir(), WORKSPACE),
+                                   "folder": str(backups.folder(backup_dir(), WORKSPACE)),
+                                   "keep": backups.KEEP, "sample": in_sample()})
             if u.path == "/api/jobs/trash":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -3861,6 +3893,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/language/set":
                 return self._json({"ok": True, **set_cv_language(
                     safe_path(payload.get("path", "")), payload.get("language", ""))})
+            if u.path == "/api/backups/new":
+                if in_sample():
+                    return self._json({"error": "Sample data is not backed up; it is made fresh each time."}, 409)
+                return self._json({"ok": True, **backups.make(backup_dir(), WORKSPACE, "manual")})
+            if u.path == "/api/backups/restore":
+                if in_sample():
+                    return self._json({"error": "Go back to your workspace to restore it."}, 409)
+                try:
+                    return self._json({"ok": True, **backups.restore(backup_dir(), WORKSPACE,
+                                                                     payload.get("name", ""))})
+                except FileNotFoundError:
+                    return self._json({"error": "That backup no longer exists."}, 404)
             if u.path == "/api/prefs":
                 # {"set": {key: value}} merges; {"replace": {...}} is the one
                 # move from the page's old storage into the file.
@@ -6215,6 +6259,11 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sp-note{color:var(--t600);font-size:12px;line-height:1.6;margin:14px 0 0;max-width:62ch}
 .srow{display:flex;align-items:center;gap:28px;padding:14px 0;border-top:1px solid var(--rule)}
 .srow.nf-sub.off{opacity:.45;pointer-events:none}
+.bk-list{display:flex;flex-direction:column;max-height:320px;overflow:auto;border:1px solid var(--rule);border-radius:10px}
+.bk-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px}
+.bk-row+.bk-row{border-top:1px solid var(--bd-inner)}
+.bk-row span{display:flex;flex-direction:column;gap:1px;font-size:13px}
+.bk-row small{font-size:11.5px;color:var(--t500)}
 /* The time zone on a little world: the land in dots, the night where it is
    night now, your zone's band and your city pinned, the places you have an
    interview linked to it. Clicking picks the nearest city. */
@@ -7004,6 +7053,10 @@ if(_p.appearance==="dark"||_p.appearance==="light") document.documentElement.dat
           first launch: import a CV from a PDF or LinkedIn, your name at the top of the
           base CV, how it prints, and an AI client.</span></div>
           <button class="obtn" id="s-setup">Run setup again</button></div>
+        <div class="srow"><div><b>Backups</b><span id="s-bk-say">A copy of this workspace every day,
+          beside the app, the last fourteen kept.</span></div>
+          <div class="acts"><button class="obtn" id="s-bk-list">Restore…</button>
+          <button class="obtn" id="s-bk-now">Back up now</button></div></div>
         <div class="srow"><div><b>Sample data</b><span id="s-sample-say">See the app in use:
           about sixty applications in every state over five months, tailored CVs, cover
           letters, and the base CV in French, Spanish and Brazilian Portuguese. It opens in
@@ -11020,6 +11073,40 @@ async function notifyTick(){
 }
 setInterval(notifyTick,30000);
 async function notifyAlerts(){ notifyTick() }
+/* Backups: when the last one was, one now, and putting one back. */
+async function fillBackups(){
+  const say=$("#s-bk-say"), now=$("#s-bk-now"), list=$("#s-bk-list");
+  let r; try{ r=await api("/api/backups") }catch(e){ return }
+  const last=r.backups[0];
+  if(r.sample){ say.textContent=t("Sample data is not backed up; it is made fresh each time."); now.disabled=list.disabled=true; return }
+  now.disabled=list.disabled=false;
+  const relT=at=>{ const sec=(at*1000-Date.now())/1000, f=new Intl.RelativeTimeFormat(uiLocale(),{numeric:"auto"});
+    const a=Math.abs(sec); return a<3600?f.format(Math.round(sec/60),"minute"):a<86400?f.format(Math.round(sec/3600),"hour")
+      :f.format(Math.round(sec/86400),"day") };
+  say.textContent=last?t("Last one {when}. {n} kept, beside the app.",{when:relT(last.at),n:r.backups.length})
+    :t("A copy of this workspace every day, beside the app, the last fourteen kept.");
+  list.disabled=!r.backups.length;
+  now.onclick=async()=>{ now.disabled=true;
+    try{ await post("/api/backups/new",{}); toast(t("Backed up")); fillBackups() }
+    catch(e){ toast(e.message,true); now.disabled=false } };
+  list.onclick=()=>{
+    const kb=n=>n>1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
+    const when=a=>new Intl.DateTimeFormat(uiLocale(),{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(a*1000));
+    openSheet('<div><h3>'+t("Restore a backup")+'</h3><p>'+t("Its files are put back into the workspace. What is there now is backed up first, so this can be undone the same way.")+'</p></div>'+
+      '<div class="bk-list">'+r.backups.map(b=>'<div class="bk-row"><span><b>'+esc(when(b.at))+'</b>'+
+        '<small>'+esc(kb(b.size))+(/before-restore/.test(b.name)?' · '+t("before a restore"):/manual/.test(b.name)?' · '+t("made by hand"):'')+'</small></span>'+
+        '<button class="sbtn" data-bk="'+esc(b.name)+'">'+t("Restore")+'</button></div>').join("")+'</div>'+
+      '<p class="note muted mono" style="font-size:11.5px">'+esc(r.folder)+'</p>'+
+      '<div class="foot"><div class="grow"></div><button class="sbtn" data-cancel>'+t("Close")+'</button></div>');
+    $("#sheet [data-cancel]").onclick=closeSheet;
+    $$("#sheet [data-bk]").forEach(b=>b.onclick=async()=>{
+      if(!b.dataset.sure){ b.dataset.sure="1"; b.textContent=t("Restore it"); b.classList.add("danger"); return }
+      try{ await post("/api/backups/restore",{name:b.dataset.bk}); closeSheet();
+        toast(t("Restored. Reloading…")); setTimeout(()=>location.reload(),900) }
+      catch(e){ toast(e.message,true) }
+    });
+  };
+}
 function fillNotify(){
   const on=$("#s-notify"), iv=$("#s-notify-iv"), fu=$("#s-notify-fu"), st=$("#s-notify-state"), A=notifyApi();
   const pr=prefs();
@@ -14166,6 +14253,7 @@ $$("[data-copy]").forEach(b=>b.onclick=async()=>{
 
 function fillSettings(){
   fillNotify();
+  fillBackups();
   const st=S.state||{}, base=location.origin, pr=prefs();
   $("#s-ws").textContent=st.workspace||"";
   $("#s-count").textContent=(st.documents||[]).length+" documents";
@@ -14501,6 +14589,7 @@ def main() -> int:
     WORKSPACE = Path(args.workspace).resolve() if args.workspace else DEFAULT_WORKSPACE
     FIRST_RUN = bootstrap(WORKSPACE)
     cjkfonts.register()
+    start_backups()
 
     API_TOKEN = args.token
     if args.host not in ("127.0.0.1", "localhost", "::1") and not API_TOKEN:

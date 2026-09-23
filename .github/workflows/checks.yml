@@ -80,6 +80,9 @@ jobs:
       - name: Trash and rename
         run: python checks/trashtest.py
 
+      - name: Backups
+        run: python checks/backuptest.py
+
       - name: MCP over stdio
         run: |
           mkdir -p "$RUNNER_TEMP/mcp-ws"

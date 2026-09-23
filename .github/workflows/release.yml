@@ -196,6 +196,7 @@ jobs:
             --hidden-import letters \
             --hidden-import cjkfonts \
             --hidden-import sample \
+            --hidden-import backups \
             --exclude-module PIL \
             --paths . \
             server_main.py

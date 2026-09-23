@@ -10,6 +10,12 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Backups, every day.** CV Studio zips your workspace once a day into its
+  own data folder (not the workspace, which you may sync elsewhere) and keeps
+  the last fourteen: the CVs, letters, applications, the photo and the logos,
+  with the database copied consistently even mid-write. Settings › Workspace
+  has *Back up now* and *Restore…*, and a restore backs up what is there
+  first, so it can be undone the same way.
 - **Nothing is lost to a click.** Deleting an application moves it to a
   trash kept for thirty days, and the toast that says so has *Undo*, which
   brings it back with its history and documents. Documents can now be
