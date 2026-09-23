@@ -11909,13 +11909,18 @@ function drawSankey(mode,animate){
     const n=g.nodes.find(n=>n.id===id); if(!n) return;
     const ch=chain(id); if(!ch.length) return;
     const d="M"+skCenter(ch[0])+ch.slice(1).map(l=>" L"+skCenter(l)).join("");
-    const cnt=Math.max(2,Math.min(7,Math.round(n.count/2))), dur=7.5;
+    /* A stream rather than a line: more lights where more is waiting, spread
+       across the narrowest band they pass through, each its own size, glow
+       and pace, so they drift like a current instead of marching in step. */
+    const band=Math.max(2,Math.min(...ch.map(l=>l.width)));
+    const cnt=Math.max(4,Math.min(22,Math.round(n.count*1.2)));
     for(let k=0;k<cnt;k++){
-      const jit=(((k*37)%9)-4)*.35;
-      parts+='<circle r="2.3" style="fill:'+skCol(id)+'" filter="url(#skglow)" transform="translate(0 '+
-        jit.toFixed(1)+')"><animateMotion dur="'+dur+'s" begin="'+(-(dur/cnt)*k).toFixed(2)+
-        's" repeatCount="indefinite" path="'+d+'" keyPoints="0;1" keyTimes="0;1" calcMode="spline" '+
-        'keySplines=".35 0 .65 1"/></circle>';
+      const r1=((k*73)%97)/97, r2=((k*41+13)%89)/89, r3=((k*29+7)%83)/83;
+      const dur=6+r1*3.5, jit=(r2-.5)*band*.8;
+      parts+='<circle r="'+(1.5+r3*1.3).toFixed(2)+'" style="fill:'+skCol(id)+';opacity:'+(.55+r1*.45).toFixed(2)+
+        '" filter="url(#skglow)" transform="translate(0 '+jit.toFixed(1)+')"><animateMotion dur="'+dur.toFixed(2)+
+        's" begin="'+(-(dur/cnt)*k-r3*dur).toFixed(2)+'s" repeatCount="indefinite" path="'+d+'" keyPoints="0;1" '+
+        'keyTimes="0;1" calcMode="spline" keySplines=".35 0 .65 1"/></circle>';
     }
   });
 

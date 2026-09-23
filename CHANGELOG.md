@@ -10,6 +10,9 @@ tag, so a release is never published with nothing said about it.
 
 ## 0.19.0
 
+- **More light in the funnel.** The dots flowing to the stages still in play
+  are a stream now: about one per application waiting there, spread across
+  the band, each with its own size, glow and pace.
 - **A Calendar tab.** Its overview opens on your next interview: who and
   which role, a live countdown to the second, two clocks (your time and
   theirs, with how far apart they are), what is ready for it (tailored CV,
