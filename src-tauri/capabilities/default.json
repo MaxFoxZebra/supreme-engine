@@ -20,6 +20,9 @@
     "core:window:allow-set-title",
     "updater:default",
     "process:allow-restart",
-    "notification:default"
+    "notification:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }

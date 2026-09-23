@@ -16,6 +16,8 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(windows)]
@@ -67,8 +69,69 @@ fn port_open(port: u16) -> bool {
         .is_some()
 }
 
+/// The preferences the server keeps for the interface, in the same app data
+/// folder it uses (see prefs_path in studio.py and cache_dir in cjkfonts.py).
+fn prefs_file() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(|d| PathBuf::from(d).join("CV Studio").join("prefs.json"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var_os("HOME").map(|h| {
+            PathBuf::from(h).join("Library/Application Support/CV Studio/prefs.json")
+        })
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
+        Some(base.join("cv-studio").join("prefs.json"))
+    }
+}
+
+/// Whether closing the window should leave the app running in the tray. Only
+/// with notifications on, since reminders are the only thing it does unseen,
+/// and not if the user turned that off. Read at the moment of closing, so a
+/// change in Settings applies without telling the shell anything.
+fn keep_running() -> bool {
+    let Some(v) = prefs_file()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    else {
+        return false;
+    };
+    let on = |k: &str, default: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(default);
+    on("notify", false) && on("keep_running", true)
+}
+
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+fn stop_server(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<Server>() {
+        if let Some(mut child) = state.0.lock().unwrap().take() {
+            let _ = child.kill();
+        }
+    }
+}
+
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        // First, so a second launch hands over to this one before it starts a
+        // server of its own on the same workspace.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -78,6 +141,29 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             let port = free_port();
+
+            // The tray: where the app lives while the window is closed and
+            // reminders are on. Built even when that is off, so there is
+            // always one place to quit from; a failure to make one (no tray
+            // on this desktop) is not a reason to stop.
+            let open_i = MenuItem::with_id(app, "open", "Open CV Studio", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit CV Studio", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
+            let mut tray = TrayIconBuilder::with_id("main")
+                .tooltip("CV Studio")
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "open" => show_main(app),
+                    "quit" => {
+                        stop_server(app);
+                        app.exit(0);
+                    }
+                    _ => {}
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            let _ = tray.build(app);
 
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("CV Studio")
@@ -160,17 +246,26 @@ fn main() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                if let Some(state) = window.app_handle().try_state::<Server>() {
-                    if let Some(mut child) = state.0.lock().unwrap().take() {
-                        let _ = child.kill();
-                    }
-                }
+        .on_window_event(|window, event| match event {
+            // With reminders on, closing hides the window rather than
+            // quitting, or they would never come. Quit from the tray.
+            tauri::WindowEvent::CloseRequested { api, .. } if keep_running() => {
+                api.prevent_close();
+                let _ = window.hide();
             }
+            tauri::WindowEvent::Destroyed => stop_server(window.app_handle()),
+            _ => {}
         })
-        .run(tauri::generate_context!())
-        .expect("error while running CV Studio");
+        .build(tauri::generate_context!())
+        .expect("error while building CV Studio");
+
+    app.run(|app, event| match event {
+        // The Dock icon clicked while the window is hidden.
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => show_main(app),
+        tauri::RunEvent::Exit => stop_server(app),
+        _ => {}
+    });
 }
 
 fn show_error(window: &tauri::WebviewWindow, msg: &str) {

@@ -6876,8 +6876,7 @@ if(_p.appearance==="dark"||_p.appearance==="light") document.documentElement.dat
       <section class="sp" id="sp-notify" hidden>
         <h3>Notifications</h3>
         <p class="sp-lede">Reminders from CV Studio, as your system's notifications: before an
-          interview, and on the morning a follow-up is due. They come while the app is open,
-          even in the background. Off until you turn them on.</p>
+          interview, and on the morning a follow-up is due. Off until you turn them on.</p>
         <div class="srow"><div><b>Notifications</b><span id="s-notify-state">Off.</span></div>
           <label class="tgl"><input type="checkbox" id="s-notify"><i></i></label></div>
         <div class="srow nf-sub"><div><b>Interviews</b><span>With the time in yours and in theirs.</span></div>
@@ -6897,6 +6896,12 @@ if(_p.appearance==="dark"||_p.appearance==="light") document.documentElement.dat
             <option value="10">At 10:00</option>
             <option value="14">At 14:00</option>
           </select></div>
+        <div class="srow nf-sub" data-desk hidden><div><b>Keep running when the window is closed</b><span>So
+          reminders still come. CV Studio stays in the tray (the menu bar on a Mac); quit it from there.</span></div>
+          <label class="tgl"><input type="checkbox" id="s-keep"><i></i></label></div>
+        <div class="srow" data-desk hidden><div><b>Open at login</b><span>Starts CV Studio, in the tray, when you
+          log in, so a reminder is not missed because the app was never opened.</span></div>
+          <label class="tgl"><input type="checkbox" id="s-autostart"><i></i></label></div>
         <div class="srow nf-sub"><div><b>Try it</b><span>Sends one now, so you can see where they appear.</span></div>
           <button class="obtn" id="s-notify-test">Send a test</button></div>
       </section>
@@ -10853,6 +10858,21 @@ function fillNotify(){
   };
   iv.onchange=()=>{ setPref("notify_iv",iv.value); notifyTick() };
   fu.onchange=()=>{ setPref("notify_fu",fu.value); notifyTick() };
+  /* The desktop app only: the window can close to the tray, and the app can
+     open at login. The shell reads keep_running from the same file when the
+     window closes. */
+  const T=window.__TAURI__, AS=T&&T.autostart;
+  $$("#sp-notify [data-desk]").forEach(r=>r.hidden=!T);
+  const keep=$("#s-keep"), auto=$("#s-autostart");
+  keep.checked=pr.keep_running!==false;
+  keep.onchange=()=>setPref("keep_running",keep.checked);
+  if(AS){
+    AS.isEnabled().then(v=>{ auto.checked=!!v }).catch(()=>{ auto.closest(".srow").hidden=true });
+    auto.onchange=async()=>{
+      try{ await (auto.checked?AS.enable():AS.disable()) }
+      catch(e){ auto.checked=!auto.checked; toast(t("Could not change that: {e}",{e:String(e&&e.message||e)}),true) }
+    };
+  }else if(auto) auto.closest(".srow").hidden=true;
   $("#s-notify-test").onclick=async()=>{
     const ok=await notifySend(null,t("CV Studio"),t("This is how a reminder will look."));
     if(!ok) toast(t("Notifications are blocked for CV Studio in your system settings."),true);

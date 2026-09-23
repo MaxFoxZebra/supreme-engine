@@ -10,6 +10,15 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Reminders come with the window closed.** With notifications on, closing
+  the window leaves CV Studio in the tray (the menu bar on a Mac), where
+  *Open CV Studio* and *Quit CV Studio* live, so a 9:00 follow-up still
+  arrives. *Keep running when the window is closed* turns that off, and
+  *Open at login* starts it in the tray when you log in. Both are in
+  Settings › Notifications.
+- **One CV Studio at a time.** Opening the app while it is already running
+  brings the open window forward instead of starting a second copy on the
+  same files.
 - **Your settings survive a restart.** Theme, accent, language, time zone,
   notifications and the rest were kept in the window's own storage, which the
   desktop app lost at every launch (it serves the window from a new port each
