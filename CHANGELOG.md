@@ -43,6 +43,16 @@ tag, so a release is never published with nothing said about it.
   takes it off every CV that showed it, so none of them stops rendering.
 - Sheets opened from Design or Settings now open on top of them rather than
   behind.
+- **A consistency pass.** Buttons in sheets are the same shape and height as
+  the ones on the page, and every screen header's buttons are one height.
+  A selected option is a white pill everywhere, so ochre only ever marks the
+  one action on a screen; Settings → AI clients no longer shows four ochre
+  buttons at once. Form labels read "Name" and "Headline" rather than the
+  YAML keys. Applications list their CVs by name, without `.yaml`. The
+  funnel's first stage says "All applications". A translated CV is listed by
+  its name with its language, not as `my-cv.fr`, and only documents in
+  another language than the base CV carry a language tag. The document
+  count in the status bar keeps up with Documents.
 - AI clients get `add_language`, `translation_status` and
   `mark_translation_current`, and `add_job` takes the posting's language.
 

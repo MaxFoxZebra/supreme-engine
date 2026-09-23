@@ -1982,12 +1982,14 @@ def list_documents() -> list[dict]:
             lang = languages.file_language(f.read_text(encoding="utf-8"))
         except OSError:
             lang = "en"
+        trans = (docs.get(path, {}).get("translation") or {})
+        if trans.get("of") and label.endswith("." + str(trans.get("lang"))):
+            label = label[: -len(str(trans.get("lang"))) - 1]
         out.append({"path": path, "label": label, "group": group,
                     "mtime": f.stat().st_mtime, "ai": last_ai(path),
                     "base": (docs.get(path, {}).get("base") or {}).get("path"),
                     "lang": lang,
-                    "translation_of": (docs.get(path, {}).get("translation")
-                                       or {}).get("of")})
+                    "translation_of": trans.get("of")})
     return out
 
 
@@ -3543,7 +3545,9 @@ button:disabled{opacity:.4;cursor:default}
   overflow:hidden;text-overflow:ellipsis}
 .doctitle .f{font-size:11.5px;color:var(--t500);white-space:nowrap;flex:none}
 .acts{display:flex;align-items:center;gap:8px}
-.docbar .obtn{height:34px;padding:0 13px;font-size:13px;font-weight:500;color:var(--t900)}
+/* Every screen header's secondary buttons, one height with its primary. */
+.docbar .obtn,.phead .obtn{height:34px;padding:0 13px;font-size:13px;font-weight:500;
+  color:var(--t900);border-radius:8px}
 
 .search{display:flex;align-items:center;gap:8px;width:240px;height:34px;padding:0 11px;
   border:1px solid var(--bd-field);border-radius:8px;background:var(--field);color:var(--t500)}
@@ -4192,8 +4196,9 @@ body.dragging{cursor:col-resize;user-select:none}
 /* A language, as its code: EN, FR. Dark when it is the one you are on. */
 .lchip{display:inline-flex;align-items:center;height:19px;padding:0 6px;border-radius:5px;
   font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;font-weight:600;
-  letter-spacing:.04em;background:var(--bar);color:var(--t700);flex:none}
-.lchip.on{background:var(--c800);color:var(--cw)}
+  letter-spacing:.04em;background:transparent;box-shadow:inset 0 0 0 1px var(--bd-field);
+  color:var(--t700);flex:none}
+.lchip.on{background:var(--c800);color:var(--cw);box-shadow:none}
 :root[data-theme=dark] .lchip.on{background:var(--cw);color:var(--c800)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .lchip.on{
   background:var(--cw);color:var(--c800)}}
@@ -4453,11 +4458,11 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   border:1px solid var(--acc-line);border-radius:7px;padding:9px 12px}
 .imp-notes b{font-weight:600}
 .imp-notes ul{margin:4px 0 0;padding-left:18px}
-.sbtn{font-size:12.5px;padding:6px 16px;border:1px solid var(--bd-field);border-radius:5px;
+.sbtn{font-size:13px;height:34px;padding:0 16px;border:1px solid var(--bd-field);border-radius:8px;
   background:var(--field);color:var(--t900)}
 .sbtn:hover:not(:disabled){background:var(--paper-hover)}
 .sbtn.primary{background:var(--acc);color:var(--c800);font-weight:500;border-color:var(--acc);
-  padding:6px 18px}
+  padding:0 18px}
 .sbtn.primary:hover:not(:disabled){background:var(--acc-hover);border-color:var(--acc-hover)}
 .sbtn.danger{border-color:transparent;color:var(--bad);background:none}
 .sbtn.danger:hover{background:var(--bad-bg)}
@@ -4776,7 +4781,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .seg.paper{background:var(--seg-track);width:fit-content}
 .seg.paper button{color:var(--t700);padding:4px 15px;font-size:12.5px}
 .seg.paper button[aria-selected=true]{background:var(--seg-on);color:var(--t900);font-weight:500}
-.seg.paper.acc button[aria-selected=true]{background:var(--acc);color:var(--c800)}
+/* Ochre marks the one action on a screen, so a selected option is the same
+   white pill here as everywhere else. */
+.seg.paper.acc button[aria-selected=true]{box-shadow:0 1px 2px rgba(27,26,23,.1)}
 
 .check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t800);
   cursor:pointer}
@@ -6306,9 +6313,7 @@ function fillAIPanel(){
         '<span class="pill" data-state="'+(st==="connected"&&!c.last_seen?"unknown":st)+
           '"><i></i>'+aiPill(c)+'</span></div>'+
       '<div class="say">'+esc(aiSay(c))+'</div>'+
-      '<div class="go"><button class="obtn'+
-        (st==="connected"&&c.last_seen?"":" primary")+
-        '" data-connect="'+c.id+'">'+
+      '<div class="go"><button class="obtn" data-connect="'+c.id+'">'+
         (st==="connected"?"Set up again"
           :st==="absent"?"Add to its config":"Point it at this workspace")+
         '</button></div>'+
@@ -6497,7 +6502,7 @@ function valueText(v){
 }
 const baseName=()=>{
   const b=S.prov&&S.prov.base;
-  return b?b.path.split("/").pop():"the base CV";
+  return b?b.path.split("/").pop().replace(/\.ya?ml$/,""):"the base CV";
 };
 
 function setProv(prov){
@@ -7604,6 +7609,8 @@ function renderDocs(docs){
       'Nothing here yet.</p>'+newRow;
   }else{
     const groups=DOC_GROUPS.filter(g=>docs.some(d=>d.group===g));
+    /* Only a document in another language than the base CV says which. */
+    const srcLang=(baseFamily()[0]||{}).lang||"en";
     host.innerHTML=groups.map(g=>{
       const rows=docs.filter(d=>d.group===g).map(d=>{
         const pp=S.pages[d.path];
@@ -7616,6 +7623,7 @@ function renderDocs(docs){
           (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
           '<span class="mark"></span>'+
           '<span class="lbl">'+esc(d.label)+'</span>'+
+          ((d.lang||"en")!==srcLang?lchip(d.lang):'')+
           (isBase(d.path)?'<span class="btag" title="The base CV: every tailored CV '+
             'starts as a copy of it">base</span>':'')+
           markHTML(d.ai,null,true)+
@@ -7897,7 +7905,7 @@ function fieldRow(label,path,value,opts){
   const mark=arr?markHTML(provUnder(path),null,true)+
                  (baseUnder(path)?basebar():"")
                 :markHTML(provOf(path),path);
-  return '<label title="'+esc(label)+'">'+esc(String(label).replace(/_/g," "))+
+  return '<label title="'+esc(label)+'">'+esc(human(label))+
     mark+'</label>'+inputFor(path,value,opts);
 }
 /* Monospace is for things you read character by character -- a URL or a
@@ -9306,7 +9314,10 @@ function drawDocuments(){
   }
   /* The base's translations live in its tabs, not in the lanes. */
   const family=new Set(baseFamily().map(m=>m.path));
-  const langs=[...new Set(docs.map(d=>d.lang||"en"))];
+  /* The base CV's language first, then the rest by how many documents use it. */
+  const srcLang=(baseFamily()[0]||{}).lang||"en", nOf={};
+  docs.forEach(d=>{ const c=d.lang||"en"; nOf[c]=(nOf[c]||0)+1 });
+  const langs=Object.keys(nOf).sort((a,b)=>(b===srcLang)-(a===srcLang)||nOf[b]-nOf[a]);
   const filt=$("#dfilter");
   if(langs.length<2){ filt.hidden=true; S.docLang=null }
   else{
@@ -9337,7 +9348,7 @@ function drawDocuments(){
     return '<button class="dcard" data-open="'+esc(d.path)+'" title="'+esc(d.path)+'">'+
       '<span class="pg">'+(th&&th.png?'<img alt="" loading="lazy" src="'+esc(th.png+tok())+'">'
         :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
-        (langs.length>1?'<span class="langs">'+lchip(d.lang,true)+'</span>':'')+
+        ((d.lang||"en")!==srcLang?'<span class="langs">'+lchip(d.lang,true)+'</span>':'')+
         (letter?'<span class="tag">Letter</span>':'')+'</span>'+
       '<span class="meta"><b>'+esc(d.label)+'</b><span>'+about+'</span>'+
         '<em>'+esc(mtimeLabel(d.mtime))+(S.pages[d.path]?" \u00b7 "+S.pages[d.path]+
@@ -9358,6 +9369,7 @@ function drawDocuments(){
       "CVs and letters no application points at: a master copy, an old version, a draft "+
       "you have not attached yet.",
       "Nothing here. <b>New document</b> or <b>Import</b> puts a CV here.");
+  paintStatus();
   $$("#doclanes .dcard").forEach(b=>{
     b.onclick=()=>{
       if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
@@ -9546,7 +9558,7 @@ function drawJobs(){
   const rows=visibleJobs();
   $("#jtitle").textContent=filterTitle();
   $("#jcount").textContent=S.jready?String(rows.length):"";
-  const docName=p=>p?p.split("/").pop():null;
+  const docName=p=>p?p.split("/").pop().replace(/\.ya?ml$/,""):null;
   $("#jobrows").innerHTML=rows.length?rows.map(j=>{
     const cv=docName(j.cv_path), letter=docName(j.letter_path);
     /* A row with a letter and no CV used to read "no CV yet" and drop the
@@ -9564,7 +9576,7 @@ function drawJobs(){
       '<span class="role"><b>'+esc(j.title)+'</b>'+
         (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
       '</span>'+
-      '<span>'+(docs?'<span class="docs mono" data-open="'+esc(openable)+'">'+docs+'</span>'
+      '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'">'+docs+'</span>'
                :S.tailoring.has(j.id)
                  ?'<span class="docs busy">Tailoring\u2026</span>'
                  /* The busy label is rendered from state rather than written
@@ -9731,7 +9743,7 @@ function drawJobInspector(){
       '<div class="posting">'+esc(j.description)+'</div></div>'
     : '<div class="block grow"><span class="blabel">The posting</span>'+
       '<p class="note muted">Not saved. Paste it in when you add an application, '+
-      'or ask a model to -- it is what a tailored CV gets written against once '+
+      'or ask your AI client to: it is what a tailored CV is written against once '+
       'the advert is gone.</p></div>';
   const jb=jobBoard(j);
   const posting=j.url||jb?'<div class="drow posting-row">'+
