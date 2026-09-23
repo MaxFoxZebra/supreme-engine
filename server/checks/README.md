@@ -23,6 +23,7 @@ cd server
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
+| `i18nscan.js` | Every screen in English and French; lists text left untranslated. |
 | `crop.py` | Crops and zooms a PNG using only the stdlib, so a screenshot can be read at a size where design decisions are visible. |
 
 ## audit.py

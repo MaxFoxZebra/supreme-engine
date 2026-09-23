@@ -10,6 +10,16 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **The editor no longer freezes in French, Spanish or Portuguese.** In
+  0.20.0 and 0.21.0, opening a CV with the app in one of those languages
+  could lock the window: the translator kept rewriting a page count ("1
+  page") back and forth. Fixed.
+- **Every screen in your language.** The last English left on the French,
+  Spanish and Portuguese screens is translated: the assistant's status,
+  the letterhead note, the funnel, the application's documents and more.
+  Date fields now show dates the way your language writes them, whatever
+  language the system itself is in.
+
 - **Backups, every day.** CV Studio zips your workspace once a day into its
   own data folder (not the workspace, which you may sync elsewhere) and keeps
   the last fourteen: the CVs, letters, applications, the photo and the logos,

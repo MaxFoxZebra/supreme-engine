@@ -6259,6 +6259,16 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sp-note{color:var(--t600);font-size:12px;line-height:1.6;margin:14px 0 0;max-width:62ch}
 .srow{display:flex;align-items:center;gap:28px;padding:14px 0;border-top:1px solid var(--rule)}
 .srow.nf-sub.off{opacity:.45;pointer-events:none}
+/* A date field's face in the app's language; see dfxWrap. */
+.dfx{position:relative;display:flex;min-width:0;height:fit-content;align-self:start}
+.dfx>input{flex:1;min-width:0;width:100%;color:transparent}
+.dfx>input:not(:focus)::-webkit-datetime-edit{opacity:0}
+.dfx>input:focus{color:inherit}
+.dfx>input:focus+.dfx-v{visibility:hidden}
+.dfx:has(>input[hidden]){display:none}
+.dfx-v{position:absolute;inset:0 30px 0 0;display:flex;align-items:center;pointer-events:none;
+  color:var(--t900);white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}
+.dfx-v.dfx-none{color:var(--t400)}
 .bk-list{display:flex;flex-direction:column;max-height:320px;overflow:auto;border:1px solid var(--rule);border-radius:10px}
 .bk-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px}
 .bk-row+.bk-row{border-top:1px solid var(--bd-inner)}
@@ -7341,7 +7351,11 @@ function trString(str){
   let out=I18N_D[key];
   if(out==null) for(const [re,rep] of I18N_P){ if(re.test(key)){ out=key.replace(re,rep); break } }
   if(out==null||out===key) return null;
+  /* A pattern can turn "1 page" into "1 page(s)", which plur turns back into
+     "1 page": writing that would be a change of nothing, which the watcher
+     sees as a change, forever. */
   out=plur(out);
+  if(out===key) return null;
   const lead=str.match(/^\s*/)[0], trail=str.match(/\s*$/)[0];
   return lead+out+trail;
 }
@@ -7385,6 +7399,41 @@ if(I18N_D){
   } }).observe(document.body,{childList:true,subtree:true,characterData:true,
     attributes:true,attributeFilter:I18N_ATTRS});
 }
+/* Date fields in the app's language. A native date field formats itself in
+   the system's locale (mm/dd/yyyy on an English Windows, whatever language
+   the app is in), and no attribute changes that. So each one gets a face: the
+   date as the app would write it, over the field while it is not being
+   typed into. The field underneath is untouched, picker and all. */
+const DFX_FMT={date:{day:"numeric",month:"short",year:"numeric"},
+  "datetime-local":{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}};
+const DFX_VALUE=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
+function dfxPaint(inp){
+  const sp=inp.nextElementSibling; if(!sp||!sp.classList.contains("dfx-v")) return;
+  const v=DFX_VALUE.get.call(inp); let txt="";
+  if(v){ const d=inp.type==="date"?new Date(v+"T12:00:00"):new Date(v);
+    if(!isNaN(d)) try{ txt=new Intl.DateTimeFormat(uiLocale(),DFX_FMT[inp.type]).format(d) }catch(e){} }
+  sp.textContent=txt||t("No date"); sp.classList.toggle("dfx-none",!txt);
+}
+function dfxWrap(inp){
+  if(inp.dataset.dfx||!DFX_FMT[inp.type]) return;
+  inp.dataset.dfx="1";
+  const cs=getComputedStyle(inp), w=document.createElement("span"), sp=document.createElement("span");
+  w.className="dfx"; sp.className="dfx-v"; sp.setAttribute("aria-hidden","true");
+  sp.style.paddingLeft=(parseFloat(cs.paddingLeft)+parseFloat(cs.borderLeftWidth)||0)+"px";
+  sp.style.fontSize=cs.fontSize; sp.style.fontWeight=cs.fontWeight;
+  inp.replaceWith(w); w.append(inp,sp);
+  /* Code that sets the value directly fires no event; repaint on that too. */
+  Object.defineProperty(inp,"value",{configurable:true,get(){ return DFX_VALUE.get.call(this) },
+    set(v){ DFX_VALUE.set.call(this,v); dfxPaint(this) }});
+  inp.addEventListener("input",()=>dfxPaint(inp)); inp.addEventListener("change",()=>dfxPaint(inp));
+  dfxPaint(inp);
+}
+const DFX_SEL='input[type="date"],input[type="datetime-local"]';
+new MutationObserver(ms=>{ for(const m of ms) for(const n of m.addedNodes){ if(n.nodeType!==1) continue;
+  if(n.matches(DFX_SEL)) dfxWrap(n); else n.querySelectorAll&&n.querySelectorAll(DFX_SEL).forEach(dfxWrap) } })
+  .observe(document.body,{childList:true,subtree:true});
+document.querySelectorAll(DFX_SEL).forEach(dfxWrap);
+
 const tok=()=>API_TOKEN?"&token="+encodeURIComponent(API_TOKEN):"";
 
 /* One object holds everything the three screens share. Selection, filters and
@@ -7952,9 +8001,9 @@ function paintAI(){
     el.dataset.state=st;
     bits.push((c?c.label:el.dataset.client)+": "+
       (c&&st==="connected"&&c.last_seen
-        ? "Connected. Last heard from "+ago(c.last_seen*1000)+" ago."
-        : c&&st==="connected" ? "Set up, but it has not called in yet."
-        : AI_STATE[st]));
+        ? t("Connected. Last heard from {when} ago.",{when:ago(c.last_seen*1000)})
+        : c&&st==="connected" ? t("Set up, but it has not called in yet.")
+        : t(AI_STATE[st])));
   });
   $("#btn-ai").title=bits.join("\n");
   if(!$("#ovl-settings").hidden) fillAIPanel();
@@ -9353,7 +9402,7 @@ function ltFont(fam){
 function ltPaint(){
   const d=LT.doc, h=(d&&d.head)||{}, j=ltJob();
   const bar=$("#lt-bar"); if(bar) bar.remove();
-  $("#lt-title").textContent="Cover letter"+(j?" · "+j.company:LT.meta.company?" · "+LT.meta.company:"");
+  $("#lt-title").textContent=t("Cover letter")+(j?" · "+j.company:LT.meta.company?" · "+LT.meta.company:"");
   $("#lt-file").textContent=LT.path.split("/").pop();
   ltBackLabel();
   $$("#lt-tabs [data-lt]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.lt===LT.tab)));
@@ -9380,7 +9429,7 @@ function ltPaint(){
       'padding:'+(ltMM(mg.top)*u)+'px '+(ltMM(mg.right)*u)+'px '+(ltMM(mg.bottom)*u)+'px '+(ltMM(mg.left)*u)+'px;'+
       'box-sizing:border-box;font-family:\''+esc(h.font||"Source Sans 3")+'\',sans-serif;font-size:'+(10.5*pt)+'px;'+
       'line-height:1.52;color:'+esc(h.body_color||"#000")+'">'+
-      '<div class="lh" tabindex="0" role="link" aria-label="Letterhead, from '+esc(h.cv||"the CV")+'. Opens that CV." id="lt-lh">'+
+      '<div class="lh" tabindex="0" role="link" aria-label="'+esc(t("Letterhead, from {cv}. Opens that CV.",{cv:h.cv||t("the CV")}))+'" id="lt-lh">'+
         '<span class="tag">From '+esc((h.cv||"the CV").split("/").pop().replace(/\.ya?ml$/,""))+' · <u>change it there</u></span>'+
         '<div style="font-family:\''+esc(h.name_font||h.font)+'\',sans-serif;font-size:'+(24*pt)+'px;line-height:1.1;'+
           'font-weight:'+(h.name_bold?700:400)+';color:'+esc(h.name_color)+'">'+esc(h.name)+'</div>'+
@@ -9724,7 +9773,7 @@ function renderDocs(docs){
         const job=S.jobs.find(j=>j.cv_path===d.path||j.letter_path===d.path);
         return '<button class="row'+(tr?" tr":"")+(d.path===S.path?" sel":"")+
           '" data-path="'+esc(d.path)+'" title="'+esc(d.path)+
-          (d.base?"\ntailored from "+esc(d.base):"")+
+          (d.base?"\n"+esc(t("tailored from {p}",{p:d.base})):"")+
           (d.ai?"\n"+esc(whoLabel(d.ai))+" worked on this "+
             ago(d.ai.at*1000)+" ago":"")+
           (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
@@ -9734,7 +9783,7 @@ function renderDocs(docs){
           (isBase(d.path)?'<span class="btag" title="The base CV: every tailored CV '+
             'starts as a copy of it">base</span>':'')+
           markHTML(d.ai,null,true)+
-          (job?'<span class="tie" title="Linked to '+
+          (job?'<span class="tie" title="'+esc(t("Linked to"))+' '+
             esc(job.title+" · "+job.company)+'"></span>':"")+
           '<span class="ct mono">'+(pp?pp+"pp":"")+'</span></button>';
       }).join("");
@@ -11877,7 +11926,7 @@ function drawJobs(){
     /* A row with a letter and no CV used to read "no CV yet" and drop the
        letter on the floor, which was wrong before and would now be worse: the
        offer to make one would be standing on top of a document that exists. */
-    const docs=cv?esc(cv)+(letter?" +letter":""):(letter?esc(letter):null);
+    const docs=cv?esc(cv)+(letter?" + "+esc(t("letter")):""):(letter?esc(letter):null);
     const openable=cv?j.cv_path:j.letter_path;
     const ap=appliedAt(j);
     const due=j.followup_date&&j.followup_date<=isoToday();
@@ -12722,7 +12771,7 @@ function drawSankey(mode,animate){
     const h=Math.max(3,n.y1-n.y0);
     const off=S.fnode&&S.fnode!==n.id&&![...lineage.get(S.fnode)].some(l=>l.sid===n.id||l.tid===n.id);
     return '<g class="sk-hit'+(off?" sk-dim":"")+'" data-node="'+esc(n.id)+'" role="button" tabindex="0" '+
-      'aria-label="'+esc(n.label)+': '+n.count+'. List them" style="animation-delay:'+
+      'aria-label="'+esc(t(n.label))+': '+n.count+'. '+esc(t("List them"))+'" style="animation-delay:'+
       (.7+n.depth*.28).toFixed(2)+'s">'+
       '<rect x="'+(n.x0-6)+'" y="'+(n.y0-10)+'" width="'+(n.x1-n.x0+12)+'" height="'+(h+20)+
       '" fill="transparent"/>'+
@@ -12994,8 +13043,8 @@ function drawReplies(){
     '<span class="med" style="left:'+(Math.min(med,cap)/cap*100).toFixed(2)+'%"></span></div>'+
     '<div class="fn-dax">'+ticks.map(d=>'<span>'+(d?d/7+" wk":"0")+'</span>').join("")+'</div></div>'+
     (never?'<div style="width:34px;flex:none"><div class="fn-dots" style="height:'+
-      Math.min(100,Math.ceil(Math.min(never,30)/3)*11)+'px;margin:0" role="img" aria-label="'+never+
-      ' never answered">'+ghost+'</div><div class="fn-dax" style="justify-content:center">never</div></div>':'')+
+      Math.min(100,Math.ceil(Math.min(never,30)/3)*11)+'px;margin:0" role="img" aria-label="'+esc(t("{n} never answered",{n:never}))+
+      '">'+ghost+'</div><div class="fn-dax" style="justify-content:center">'+t("never")+'</div></div>':'')+
     '</div><p>'+(days.length<5?"A few more answers and this will say when to stop waiting."
       :p90<=21?"9 in 10 answers came within "+p90+" days. Past that, follow up once, or let it go."
       :"Answers can take a while here: 1 in 10 came after "+p90+" days.")+'</p>';

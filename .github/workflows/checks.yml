@@ -103,6 +103,9 @@ jobs:
           done
           node checks/flow.js "http://127.0.0.1:8750/?token=t&lang=en"
 
+      - name: Every screen translated
+        run: node checks/i18nscan.js "http://127.0.0.1:8750/?token=t&lang=en"
+
       - name: Server log, when something failed
         if: failure()
         run: cat "$RUNNER_TEMP/server.log" || true
