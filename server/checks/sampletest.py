@@ -41,6 +41,8 @@ def main() -> int:
     langs = {t["lang"] for t in studio.translations_of(studio.WORKSPACE / "profile/my-cv.yaml")}
     check("the base CV in fr, es and pt", langs == {"fr", "es", "pt"}, repr(langs))
     check("tailored CVs and letters", r["tailored"] >= 4 and r["letters"] >= 3, repr(r))
+    bare = sorted({j["company"] for j in jobs if not studio.logo_url(j.get("logo"))})
+    check("every company has its logo", not bare, ", ".join(bare))
     alerts = studio.jobstore.alerts(studio.WORKSPACE)["counts"]
     check("something needs attention", alerts["followup_due"] + alerts["interview_soon"] > 0)
     letter = next(p for p in (studio.WORKSPACE / "letters").glob("*.md"))

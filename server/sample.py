@@ -199,23 +199,26 @@ Procuramos uma pessoa **Engenheira de Plataforma** para o time de infraestrutura
 """,
 }
 
+# Every one of these has a logo in static/sample-logos: its mark from Simple
+# Icons (CC0, simpleicons.org) on a tile in its brand colour.
 COMPANIES = [
-    ("Doctolib", "Paris", "fr"), ("Alan", "Paris", "fr"), ("Qonto", "Paris", "fr"),
-    ("Datadog", "Paris", "en"), ("Back Market", "Paris", "fr"), ("Mistral AI", "Paris", "en"),
-    ("Contentsquare", "Paris", "en"), ("BlaBlaCar", "Paris", "fr"), ("Swile", "Montpellier", "fr"),
-    ("Pennylane", "Paris", "fr"), ("Algolia", "Paris", "en"), ("Criteo", "Paris", "en"),
-    ("Ledger", "Paris", "en"), ("Deezer", "Paris", "fr"), ("Ubisoft", "Lyon", "fr"),
-    ("Spendesk", "Paris", "en"), ("Malt", "Lyon", "fr"), ("PayFit", "Paris", "fr"),
-    ("Aircall", "Paris", "en"), ("Lydia", "Paris", "fr"), ("Sorare", "Paris", "en"),
-    ("Dataiku", "Paris", "en"), ("ManoMano", "Bordeaux", "fr"), ("Vinted", "Remote", "en"),
-    ("Mirakl", "Paris", "en"), ("Ankorstore", "Paris", "en"), ("Stripe", "London", "en"),
+    ("Dailymotion", "Paris", "fr"), ("Brevo", "Paris", "fr"), ("Qwant", "Paris", "fr"),
+    ("Datadog", "Paris", "en"), ("Deliveroo", "London", "en"), ("Mistral AI", "Paris", "en"),
+    ("Revolut", "London", "en"), ("SNCF", "Paris", "fr"), ("Airbus", "Toulouse", "fr"),
+    ("Figma", "London", "en"), ("Algolia", "Paris", "en"), ("Adyen", "Amsterdam", "en"),
+    ("Wise", "London", "en"), ("Deezer", "Paris", "fr"), ("Ubisoft", "Lyon", "fr"),
+    ("N26", "Berlin", "en"), ("Malt", "Lyon", "fr"), ("Personio", "Munich", "en"),
+    ("Aircall", "Paris", "en"), ("Lydia", "Paris", "fr"), ("Klarna", "Stockholm", "en"),
+    ("Dataiku", "Paris", "en"), ("Renault", "Paris", "fr"), ("Vinted", "Remote", "en"),
+    ("Booking.com", "Amsterdam", "en"), ("Zalando", "Berlin", "en"), ("Stripe", "London", "en"),
     ("GitLab", "Remote", "en"), ("Scaleway", "Paris", "fr"), ("OVHcloud", "Lyon", "fr"),
-    ("Hugging Face", "Remote", "en"), ("Pigment", "Paris", "en"), ("Monzo", "London", "en"),
+    ("Hugging Face", "Remote", "en"), ("Shopify", "Remote", "en"), ("Monzo", "London", "en"),
     ("Spotify", "Stockholm", "en"), ("Cloudflare", "Lisbon", "en"),
-    ("Cabify", "Madrid", "es"), ("Glovo", "Barcelona", "es"), ("Idealista", "Madrid", "es"),
+    ("Typeform", "Barcelona", "es"), ("Glovo", "Barcelona", "es"), ("Movistar", "Madrid", "es"),
     ("Nubank", "São Paulo", "pt"), ("iFood", "São Paulo", "pt"), ("VTEX", "Rio de Janeiro", "pt"),
 ]
-ZONES = {"London": "Europe/London", "Madrid": "Europe/Madrid", "Barcelona": "Europe/Madrid",
+ZONES = {"London": "Europe/London", "Amsterdam": "Europe/Amsterdam", "Berlin": "Europe/Berlin",
+         "Munich": "Europe/Berlin", "Madrid": "Europe/Madrid", "Barcelona": "Europe/Madrid",
          "São Paulo": "America/Sao_Paulo", "Rio de Janeiro": "America/Sao_Paulo",
          "Stockholm": "Europe/Stockholm", "Lisbon": "Europe/Lisbon"}
 TITLES = ["Platform Engineer", "Senior Backend Engineer", "Staff Engineer", "Site Reliability Engineer",
@@ -286,6 +289,16 @@ def build(studio) -> dict:
     studio.apply_patches(base, [{"path": ["cv", "headline"],
                                  "value": "Senior Platform Engineer · Kubernetes, Go"}])
 
+    # The logos, copied in the way save_logo would store them.
+    logos = {}
+    ldir = studio.logo_dir()
+    ldir.mkdir(parents=True, exist_ok=True)
+    for company, _, _ in COMPANIES:
+        src = studio.STATIC_DIR / "sample-logos" / f"{studio._logo_stem(company)}.svg"
+        if src.is_file():
+            shutil.copyfile(src, ldir / src.name)
+            logos[company] = src.name
+
     jobs = studio.jobstore
     made = []
     for i in range(64):
@@ -332,6 +345,7 @@ def build(studio) -> dict:
             "location": city, "score": R.randint(2, 5), "language": plang,
             "salary_currency": "GBP" if city == "London" else "EUR",
             "url": "https://example.com/jobs/" + company.lower().replace(" ", "-"),
+            "logo": logos.get(company),
         }
         if R.random() < .5:
             data["description"] = POSTINGS[kind]
@@ -368,7 +382,7 @@ def build(studio) -> dict:
             "status": "pending", "score": 4, "language": "pt" if city == "São Paulo" else "en",
             "description": POSTINGS["pt" if city == "São Paulo" else "sre"],
             "interview_at": _iso((now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0)),
-            "interview_tz": ZONES[city],
+            "interview_tz": ZONES[city], "logo": logos.get(company),
             "notes": "Second round: system design, 60 minutes, video call."})
         hist = [{"status": "pending", "at": _iso(sent - dt.timedelta(days=1))},
                 {"status": "applied", "at": _iso(sent)}, {"status": "interviewing", "at": _iso(iv)}]

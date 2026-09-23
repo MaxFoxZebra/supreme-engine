@@ -5276,6 +5276,42 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .onb-cta:hover{background:var(--acc-hover)}
 .onb-skip{border:0;background:none;font-size:13.5px;color:var(--c200)}
 .onb-skip:hover{color:var(--cw)}
+.onb-or{display:flex;align-items:center;gap:12px;width:340px;max-width:80vw;margin-top:6px;
+  color:var(--c300);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase}
+.onb-or::before,.onb-or::after{content:"";flex:1;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent)}
+.onb-demo{position:relative;display:flex;align-items:center;gap:14px;max-width:min(460px,90vw);
+  padding:12px 16px 12px 12px;border-radius:14px;text-align:left;color:var(--cw);
+  background:linear-gradient(rgba(28,26,24,.92),rgba(28,26,24,.92)) padding-box,
+    linear-gradient(120deg,rgba(192,138,62,.75),rgba(255,255,255,.12) 40%,rgba(120,160,220,.55) 75%,
+    rgba(192,138,62,.75)) border-box;
+  background-size:100% 100%,240% 100%;border:1px solid transparent;
+  box-shadow:0 10px 30px rgba(0,0,0,.28);animation:onb-sheen 6s linear infinite;
+  transition:transform .18s ease,box-shadow .18s ease}
+.onb-demo:hover{transform:translateY(-2px);box-shadow:0 14px 36px rgba(192,138,62,.22)}
+.onb-demo:disabled{opacity:.75;cursor:progress;transform:none}
+.onb-demo .dm-ic{flex:none;width:40px;height:40px;border-radius:11px;display:grid;place-items:center;
+  color:var(--acc-text-dark);background:radial-gradient(circle at 30% 25%,rgba(192,138,62,.38),
+  rgba(192,138,62,.1))}
+.onb-demo .dm-tx{display:flex;flex-direction:column;gap:3px;min-width:0}
+.onb-demo b{font-size:14.5px;font-weight:600}
+.onb-demo small{font-size:12.5px;line-height:1.4;color:var(--c200)}
+.onb-demo .dm-go{flex:none;margin-left:4px;color:var(--c200);transition:transform .18s ease,color .18s}
+.onb-demo:hover .dm-go{transform:translateX(3px);color:var(--acc-text-dark)}
+.onb-demo.busy .dm-ic svg{animation:onb-spin 1s linear infinite}
+@keyframes onb-sheen{from{background-position:0 0,0 0}to{background-position:0 0,240% 0}}
+@keyframes onb-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.onb-demo{animation:none}}
+/* With the sample-data card under it, the welcome needs a tighter rhythm to
+   fit a laptop screen without scrolling. */
+@media (max-height:960px){
+  .onb-hero{padding-top:clamp(28px,6vh,64px)}
+  .onb-mark{width:116px;height:116px}.onb-mark img{width:104px;height:104px}
+  .onb-word{margin-top:20px;font-size:56px}
+  .onb-lede{margin-top:14px;font-size:18px}
+  .onb-facts{margin-top:30px}.onb-fact{padding:15px 18px}
+  .onb-go{margin-top:28px;gap:10px}
+}
 .onb-pips{position:absolute;left:0;right:0;bottom:22px;display:flex;justify-content:center;gap:8px}
 .onb-pips i{width:8px;height:4px;border-radius:2px;background:var(--c400)}
 .onb-pips i.on{width:22px;background:var(--acc)}
@@ -8362,6 +8398,8 @@ const OB_ICON={
   up:'<path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
   tick:'<path d="M5 12l5 5L20 7"/>',
   arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+  spark:'<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>'+
+    '<path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
 };
 const obIcon=(k,s,w)=>'<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" '+
   'stroke="currentColor" stroke-width="'+(w||2)+'" aria-hidden="true">'+OB_ICON[k]+'</svg>';
@@ -8399,7 +8437,12 @@ function obWelcome(){
     '</div>'+
     '<div class="onb-go"><button class="onb-cta" id="onb-next">Get started '+
       obIcon("arrow",16,2.4)+'</button>'+
-      '<button class="onb-skip" id="onb-skip">Skip setup, I\'ll look around first</button></div>'+
+      '<button class="onb-skip" id="onb-skip">Skip setup, I\'ll look around first</button>'+
+      '<div class="onb-or" aria-hidden="true"><span>or</span></div>'+
+      '<button class="onb-demo" id="onb-demo"><span class="dm-ic">'+obIcon("spark",18,2)+'</span>'+
+        '<span class="dm-tx"><b>Try it with sample data</b>'+
+        '<small>66 made-up applications, CVs and letters. Your own folder stays untouched.</small></span>'+
+        '<span class="dm-go">'+obIcon("arrow",15,2.4)+'</span></button></div>'+
     '<div class="onb-pips" aria-label="Step 1 of '+OB_STEPS.length+'">'+
       OB_STEPS.map((_,k)=>'<i'+(k===0?' class="on"':'')+'></i>').join("")+'</div>'+
   '</div>';
@@ -8557,6 +8600,9 @@ function obPaint(){
   const rv=$("#onb-reveal");
   if(rv) rv.onclick=async()=>{ try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) } };
   const sk=$("#onb-skip"); if(sk) sk.onclick=obClose;
+  const dm=$("#onb-demo");
+  if(dm) dm.onclick=()=>{ dm.classList.add("busy"); dm.querySelector("b").textContent=t("Making it…");
+    setSample(true,null); dm.disabled=true };
   const lt=$("#onb-later"); if(lt) lt.onclick=obClose;
   const bk=$("#onb-back"); if(bk) bk.onclick=()=>{ OB.step--; obPaint() };
   $("#onb-next").onclick=obNext;

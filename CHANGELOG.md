@@ -8,6 +8,18 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Try it before you set it up.** The welcome screen has a second way in,
+  under "Skip setup": *Try it with sample data* opens the app on the made-up
+  workspace straight away, and your own folder is never touched. The welcome
+  is a little tighter on laptop screens so it all fits without scrolling.
+- **Sample companies with their logos.** Every company in the sample data now
+  has its mark, drawn on a tile in its brand colour (from Simple Icons, which
+  ships with the app, so nothing is fetched). The few that had no mark
+  available were swapped for companies that do, among them Revolut, Figma,
+  Adyen, Zalando, Klarna and Booking.com, with their own cities and zones.
+
 ## 0.19.0
 
 - **More light in the funnel.** The dots flowing to the stages still in play
