@@ -23,12 +23,14 @@ jobs:
     defaults:
       run:
         working-directory: server
-    env:
-      # Keep the app's data folder (fonts, preferences, sample data) inside
-      # the runner's scratch space.
-      XDG_DATA_HOME: ${{ runner.temp }}/data
     steps:
       - uses: actions/checkout@v5
+
+      # The app's data folder (fonts, preferences, sample data) inside the
+      # runner's scratch space. The runner context is not available to a
+      # job-level env, hence a step.
+      - name: Scratch data folder
+        run: echo "XDG_DATA_HOME=$RUNNER_TEMP/data" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v6
         with:
