@@ -754,6 +754,15 @@ def workspace_info() -> dict:
             if base and not base.get("missing") else
             "The user has not chosen one, so there is nothing to tailor from "
             "yet. Ask rather than picking a CV for them."),
+        # The one photo the user chose for their CVs, if any. A CV shows it
+        # by pointing cv.photo at it; nothing else about it is yours to change.
+        "photo": (
+            f"{studio.PHOTO_FILE} at the workspace root. A CV shows it when "
+            "cv.photo is its path relative to that CV (../photo.jpg for one in "
+            "profile/), and hides it when cv.photo is null. Only turn it on or "
+            "off when the user asks; the photo itself is theirs to change."
+            if studio.photo_info() else
+            "None. The user adds one in the app, under Design, Photo."),
         "storage": "CVs are plain YAML files the user owns. Applications are "
                    "rows in applications.db beside them, which export to JSON "
                    "and CSV so nothing is locked in.",

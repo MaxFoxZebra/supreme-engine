@@ -1429,6 +1429,66 @@ def sync_design(path: Path) -> list[str]:
     return touched
 
 
+# --------------------------------------------------------------------------
+# Photo
+#
+# One photo per workspace, photo.jpg at its root, already cropped square and
+# shrunk by the app before it arrives. RenderCV prints cv.photo from a path
+# relative to the YAML, so each CV that shows it points at it relatively
+# (../photo.jpg from profile/): tailored copies land beside their source and
+# keep working, and the folder still moves as one.
+# --------------------------------------------------------------------------
+
+PHOTO_FILE = "photo.jpg"
+PHOTO_MAX = 3_000_000
+
+
+def photo_info() -> dict | None:
+    f = WORKSPACE / PHOTO_FILE
+    if not f.is_file():
+        return None
+    st = f.stat()
+    return {"path": PHOTO_FILE, "bytes": st.st_size,
+            "url": f"/api/asset?path={PHOTO_FILE}&v={int(st.st_mtime * 1000)}"}
+
+
+def photo_ref(doc: Path) -> str:
+    """The workspace photo's path as this document has to write it."""
+    return Path(os.path.relpath(WORKSPACE / PHOTO_FILE, doc.parent)).as_posix()
+
+
+def save_photo(data: bytes) -> dict:
+    if not data.startswith(b"\xff\xd8"):
+        raise ValueError("The photo has to arrive as a JPEG.")
+    if len(data) > PHOTO_MAX:
+        raise ValueError("That photo is too large. Crop it again.")
+    (WORKSPACE / PHOTO_FILE).write_bytes(data)
+    return photo_info()
+
+
+def remove_photo() -> dict:
+    """Delete the workspace photo, and take it off every CV that showed it:
+    RenderCV refuses a photo path that does not exist, so leaving the
+    references would break every one of those CVs."""
+    cleared = []
+    for f, _, _ in document_files():
+        try:
+            if "photo:" not in f.read_text(encoding="utf-8"):
+                continue
+            data = to_plain(yaml_rt.load(f.read_text(encoding="utf-8"))) or {}
+            ref = (data.get("cv") or {}).get("photo")
+            if ref and (f.parent / str(ref)).resolve() == (WORKSPACE / PHOTO_FILE).resolve():
+                apply_patches(f, [{"path": ["cv", "photo"], "value": None}], "photo")
+                cleared.append(rel(f))
+        except Exception:
+            continue
+    try:
+        (WORKSPACE / PHOTO_FILE).unlink()
+    except FileNotFoundError:
+        pass
+    return {"ok": True, "cleared": cleared}
+
+
 def edits_stamp() -> float | None:
     """When the provenance file last changed, so the poll can spot a new mark."""
     try:
@@ -2049,7 +2109,10 @@ def load_doc(path: Path) -> dict:
             # Which language this is in, the other languages of the same CV,
             # and what its source changed since it was translated.
             "family": language_family(path),
-            "drift": translation_drift(path)}
+            "drift": translation_drift(path),
+            # How this document would point at the workspace photo, when
+            # there is one to point at.
+            "photo_ref": photo_ref(path) if photo_info() else None}
 
 
 def line_map(doc, text: str) -> dict:
@@ -2422,7 +2485,32 @@ def ats_report(path: Path, job_id: str | None = None,
     if source:
         terms = ats.keywords(source, (job or {}).get("company"))
         out["keywords"] = ats.match(terms, text)
+    # Where the job is does not depend on which posting it is checked against.
+    where = job or job_for(path, job_id)
+    if where and (data.get("cv") or {}).get("photo") and photo_unusual(where):
+        out["checks"].append({
+            "id": "photo", "level": "warn",
+            "title": "A photo, for a posting where CVs usually have none",
+            "detail": "This application is in the UK, the US or Ireland, where "
+                      "recruiters usually ask for CVs without a photo, and some "
+                      "systems set aside CVs that have one. Turn it off for this "
+                      "CV with the Photo chip in the editor."})
     return out
+
+
+# Where recruiters usually ask for CVs without a photo, read from where the
+# job is. Only the application's own location fields: a posting that merely
+# mentions London is not evidence.
+PHOTO_UNUSUAL = re.compile(
+    r"(?i)\b(united kingdom|uk|u\.k\.|england|scotland|wales|northern ireland|"
+    r"london|manchester|edinburgh|glasgow|bristol|cambridge, uk|united states|usa|"
+    r"u\.s\.a?\.?|us|new york|san francisco|seattle|boston|austin|chicago|"
+    r"los angeles|ireland|dublin|cork)\b")
+
+
+def photo_unusual(job: dict) -> bool:
+    where = " ".join(str(job.get(k) or "") for k in ("country", "location"))
+    return bool(PHOTO_UNUSUAL.search(where))
 
 
 # The two parsing problems RenderCV's own design options solve, keyed by the
@@ -2678,6 +2766,13 @@ def openapi_spec() -> dict:
                 "requestBody": body({"path": {"type": "string"},
                                      "yaml": {"type": "string"},
                                      "patches": {"type": "array", "items": {}}}),
+                "responses": ok}},
+            "/api/photo": {"post": {"summary":
+                "Save the workspace photo, a square JPEG the app has already cropped",
+                "requestBody": body({"data": {"type": "string", "description": "base64 JPEG"}}),
+                "responses": ok}},
+            "/api/photo/remove": {"post": {"summary":
+                "Delete the workspace photo and take it off every CV that showed it",
                 "responses": ok}},
             "/api/language/add": {"post": {"summary":
                 "Write a translation scaffold of a CV in another language",
@@ -2977,6 +3072,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json({
                     "documents": list_documents(), "base": base_cv(),
                     "languages": languages.catalogue(),
+                    "photo": photo_info(),
                     "themes": available_themes(),
                     "page_sizes": PAGE_SIZES,
                     "fonts": font_families(),
@@ -3117,6 +3213,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(preview(safe_path(payload["path"]),
                                           payload.get("yaml"),
                                           payload.get("patches")))
+            if u.path == "/api/photo":
+                import base64
+                try:
+                    saved = save_photo(
+                        base64.b64decode(str(payload.get("data") or ""), validate=False))
+                    ref = photo_ref(safe_path(payload["path"])) if payload.get("path") else None
+                    return self._json({"ok": True, "photo": saved, "ref": ref})
+                except ValueError as exc:
+                    return self._json({"ok": False, "error": str(exc)})
+            if u.path == "/api/photo/remove":
+                return self._json(remove_photo())
             if u.path == "/api/language/add":
                 try:
                     return self._json({"ok": True, **add_language(
@@ -4309,11 +4416,13 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .b-waiting{stroke:var(--fn-wait)} .b-closed{stroke:var(--fn-closed)}
 
 /* ---------- sheets and overlays ------------------------------------------ */
-.scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:39}
+/* Above the full-screen overlays too: a sheet opened from Design or Settings
+   has to land on top of them. */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:46}
 .sheet{position:fixed;left:50%;top:52px;transform:translateX(-50%);width:620px;
   max-width:calc(100% - 40px);max-height:calc(100% - 66px);overflow-y:auto;
   background:var(--app);border-radius:0 0 9px 9px;box-shadow:0 22px 48px rgba(0,0,0,.45);
-  padding:22px 24px;display:flex;flex-direction:column;gap:16px;z-index:40}
+  padding:22px 24px;display:flex;flex-direction:column;gap:16px;z-index:47}
 .sheet h3{margin:0;font-size:15px;font-weight:600}
 .sheet p{margin:4px 0 0;font-size:12.5px;color:var(--t600);line-height:1.45}
 .sheet .foot{display:flex;justify-content:flex-end;gap:8px;padding-top:2px;
@@ -4332,6 +4441,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 /* Left of the buttons rather than crowded against them. */
 #u-say{margin-right:auto;font-size:11px;color:var(--t500)}
 .sheet .foot .left{margin-right:auto}
+.sheet .foot .sbtn{white-space:nowrap}
 /* What an import read, before it is made into a document. */
 .imp-found{margin:0;padding:0;list-style:none;border:1px solid var(--rule);border-radius:7px;
   background:var(--field)}
@@ -4716,6 +4826,62 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .dz-head p{margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--t600)}
 .dz-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 24px 28px}
 .dz-sub{margin:4px 0 6px;font-size:13px;font-weight:600;color:var(--t800)}
+/* The photo, above its size and place on the page. */
+#dz-photo{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
+.ph-drop{display:flex;flex-direction:column;align-items:center;gap:11px;padding:30px 22px;
+  border-radius:12px;border:2px dashed var(--bd-field);background:var(--row-alt);text-align:center}
+.ph-drop.over{border-color:var(--acc);background:var(--acc-wash)}
+.ph-drop .ic{width:52px;height:52px;border-radius:13px;background:var(--bar);color:var(--acc-text);
+  display:grid;place-items:center}
+.ph-drop b{font-size:14.5px;font-weight:600}
+.ph-drop span{font-size:13px;line-height:1.5;color:var(--t600);max-width:320px}
+.ph-card{border:1px solid var(--rule);border-radius:10px;background:var(--field);overflow:hidden}
+.ph-top{display:flex;align-items:center;gap:16px;padding:14px}
+.ph-top img{width:88px;height:88px;border-radius:7px;display:block;flex:none;
+  box-shadow:0 0 0 1px var(--bd-inner);background:#fff}
+.ph-top .m{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.ph-top .m b{font-size:13.5px;font-weight:600}
+.ph-top .m span{font-size:12px;color:var(--t500)}
+.ph-top .acts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.ph-top .del{border:0;background:none;color:var(--bad);font-size:12.5px;padding:0 6px}
+.ph-note{display:flex;gap:10px;padding:10px 12px;border-radius:9px;background:var(--row-alt);
+  border:1px solid var(--bd-inner);font-size:12.5px;line-height:1.5;color:var(--t700)}
+.ph-note svg{flex:none;margin-top:2px;color:var(--acc-text)}
+/* A switch, for a yes/no that takes effect at once. */
+.sw{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;cursor:pointer}
+.ph-card .sw{border-top:1px solid var(--bd-inner)}
+.sw input{position:absolute;opacity:0;width:1px;height:1px}
+.sw .tr{position:relative;width:36px;height:20px;flex:none;margin-top:1px;border-radius:10px;
+  background:var(--bd-field);transition:background .15s}
+.sw .tr::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+  border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left .15s}
+.sw input:checked+.tr{background:var(--acc)}
+.sw input:checked+.tr::after{left:18px}
+.sw input:focus-visible+.tr{outline:2px solid var(--acc);outline-offset:2px}
+.sw .tx{display:flex;flex-direction:column;gap:3px}
+.sw .tx b{font-size:13px;font-weight:600;color:var(--t900)}
+.sw .tx span{font-size:12px;line-height:1.45;color:var(--t600)}
+/* The cropper: the whole photo dimmed, the square that is kept at full strength. */
+.crop{position:relative;height:360px;border-radius:10px;overflow:hidden;background:#1b1a17;
+  touch-action:none;cursor:grab;user-select:none}
+.crop.dragging{cursor:grabbing}
+.crop img{position:absolute;left:50%;top:50%;max-width:none;pointer-events:none}
+.crop .dim{opacity:.4}
+.crop .win{position:absolute;left:50%;top:50%;width:260px;height:260px;margin:-130px 0 0 -130px;
+  overflow:hidden;box-shadow:0 0 0 2px #fff;pointer-events:none}
+.crop .win img{left:130px;top:130px}
+.crop .win.grid{inset:auto;left:50%;top:50%;background-image:linear-gradient(rgba(255,255,255,.35) 1px,
+  transparent 1px),linear-gradient(90deg,rgba(255,255,255,.35) 1px,transparent 1px);
+  background-size:86.67px 86.67px;background-position:-1px -1px}
+.cropzoom{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--t800)}
+.cropzoom input{flex:1;accent-color:var(--acc)}
+/* The photo chip in the editor's bar, and what it opens. */
+.photochip.off{color:var(--t500)}
+.photopop{position:fixed;z-index:48;width:320px;background:var(--field);border:1px solid var(--rule);
+  border-radius:11px;box-shadow:0 16px 36px -10px rgba(27,26,23,.35);overflow:hidden}
+.photopop .why{display:flex;gap:9px;padding:10px 14px 12px;border-top:1px solid var(--bd-inner);
+  background:var(--row-alt);font-size:12px;line-height:1.45;color:var(--t700)}
+.photopop .why i{width:7px;height:7px;flex:none;margin-top:5px;border-radius:50%;background:var(--acc)}
 .dz-card{border:1px solid var(--rule);border-radius:10px;background:var(--field);
   margin-bottom:18px}
 .dz-row{display:grid;grid-template-columns:160px minmax(0,1fr) 52px;align-items:center;
@@ -5248,6 +5414,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <button class="prov" id="basechip" hidden></button>
         <button class="prov" id="provchip" hidden></button>
         <button class="prov linkchip" id="linkchip" hidden></button>
+        <button class="prov photochip" id="photochip" hidden aria-haspopup="dialog"></button>
         <span class="nomap" id="nomap" hidden></span>
         <div class="grow"></div>
         <div class="meta mono" id="pmeta">
@@ -5454,6 +5621,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       </div>
       <div class="dz-scroll">
         <div class="themegrid" id="themegrid" role="radiogroup" aria-label="Theme"></div>
+        <div id="dz-photo" hidden></div>
         <div id="dz-advanced"></div>
       </div>
     </section>
@@ -7336,6 +7504,7 @@ function leafPaths(){
   HEADER_KEYS.forEach(k=>{
     if(k in cv||["name","headline","location","email"].includes(k)) out.push(["cv",k]);
   });
+  if("photo" in cv) out.push(["cv","photo"]);
   const sections=cv.sections||{};
   for(const name of Object.keys(sections)){
     (sections[name]||[]).forEach((it,i)=>{
@@ -7494,7 +7663,7 @@ async function openDoc(path){
     const dz=(doc.data&&doc.data.design)||{};
     DZ.theme=dz.theme||null;
     setYamlError(doc.parse_error);
-    paintTitle(); paintLink(); paintLang();
+    paintTitle(); paintLink(); paintLang(); paintPhotoChip();
     buildOutline();
     selectDefault();
     buildForm();
@@ -8207,7 +8376,7 @@ async function save(ops){
                               : {path:S.path,patches:collectPatches()};
     if(ops&&ops.length) body.ops=ops;
     const r=await post("/api/save",body);
-    S.doc=r; S.data=r.data?JSON.parse(JSON.stringify(r.data)):null; paintLang();
+    S.doc=r; S.data=r.data?JSON.parse(JSON.stringify(r.data)):null; paintLang(); paintPhotoChip();
     /* Our own write, so take its timestamp: the poll must not read it back as
        somebody else having changed the file. */
     S.docMtime=r.mtime; hideExternalChange();
@@ -10178,6 +10347,7 @@ $("#btn-design").onclick=async()=>{
 /* What each group is for, in a line. RenderCV's own group names are kept as
    the titles; anything it adds later just goes without a line. */
 const DZ_GROUPS={
+  photo:"One photo for your CV Studio folder. Each CV shows it or not, so you can leave it off where recruiters expect CVs without one.",
   page:"Paper size, margins, and what prints around the edges.",
   colors:"Every colour on the page. Links and section titles are the ones people notice.",
   typography:"Fonts, sizes and weight for each part of the page.",
@@ -10321,8 +10491,195 @@ function controlHTML(f,v){
   }
   return '<input type="text"'+at+' data-kind="text" value="'+esc(v==null?"":v)+'">';
 }
+/* ---- photo -----------------------------------------------------------------
+   One photo per workspace, cropped square and shrunk here before it is sent,
+   so a phone photo never reaches every PDF at full size. A CV shows it by
+   pointing cv.photo at it; that is an edit like any other, saved with Save. */
+const photoOn=()=>!!(S.data&&S.data.cv&&S.data.cv.photo);
+const PH_ICON='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+  'stroke-width="2" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>';
+const PH_TIP='<div class="ph-note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" '+
+  'stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/>'+
+  '<path d="M12 8v5M12 16v.5"/></svg><span>Expected on CVs in much of Europe, often left off in '+
+  'the UK, the US and Ireland. The ATS check says so when an application is in one of those.'+
+  '</span></div>';
+function setPhoto(on){
+  if(!S.data||!S.data.cv) return;
+  const ref=S.doc&&S.doc.photo_ref;
+  if(on&&!ref) return;
+  S.data.cv.photo=on?ref:null;
+  touch(); paintPhotoChip();
+  if(!$("#ovl-design").hidden){ paintPhoto(); paintDesignNav() }
+}
+function paintPhoto(){
+  const host=$("#dz-photo"), ph=S.state&&S.state.photo;
+  if(!ph){
+    host.innerHTML='<div class="ph-drop" id="ph-drop"><span class="ic">'+
+      PH_ICON.replace(/16/g,"24")+'</span><b>Add a photo</b>'+
+      '<span>Drop a JPEG or PNG here. You crop it to a square next, and only the cropped '+
+      'copy is kept.</span><button class="obtn" id="ph-pick">Choose a photo&#8230;</button>'+
+      '<input type="file" id="ph-file" accept="image/jpeg,image/png,image/webp" hidden></div>'+PH_TIP+
+      '<p class="sp-note">Its size and place on the page appear here once there is a photo.</p>';
+    const drop=$("#ph-drop"), file=$("#ph-file");
+    $("#ph-pick").onclick=()=>file.click();
+    file.onchange=()=>file.files[0]&&cropSheet(file.files[0]);
+    drop.ondragover=e=>{ e.preventDefault(); drop.classList.add("over") };
+    drop.ondragleave=()=>drop.classList.remove("over");
+    drop.ondrop=e=>{ e.preventDefault(); drop.classList.remove("over");
+      const f=e.dataTransfer.files[0]; if(f) cropSheet(f) };
+    return;
+  }
+  const on=photoOn(), kb=Math.max(1,Math.round(ph.bytes/1024));
+  host.innerHTML='<div class="ph-card"><div class="ph-top"><img alt="Your photo" src="'+
+      esc(ph.url+tok())+'"><div class="m"><b>photo.jpg</b><span>Square · '+kb+
+      ' KB · in your CV Studio folder</span><span class="acts">'+
+      '<button class="obtn" id="ph-replace">Replace&#8230;</button>'+
+      '<button class="obtn" id="ph-crop">Crop&#8230;</button>'+
+      '<button class="del" id="ph-del">Remove</button></span></div>'+
+      '<input type="file" id="ph-file" accept="image/jpeg,image/png,image/webp" hidden></div>'+
+    '<label class="sw"><input type="checkbox" id="ph-on"'+(on?" checked":"")+'><span class="tr"></span>'+
+      '<span class="tx"><b>Show it on this CV</b><span>CVs you tailor from this one start the '+
+      'same way. Turn it off on any of them.</span></span></label></div>'+PH_TIP;
+  const file=$("#ph-file");
+  $("#ph-replace").onclick=()=>file.click();
+  file.onchange=()=>file.files[0]&&cropSheet(file.files[0]);
+  $("#ph-crop").onclick=()=>cropSheet(ph.url+tok());
+  $("#ph-on").onchange=e=>setPhoto(e.target.checked);
+  $("#ph-del").onclick=removePhoto;
+}
+async function removePhoto(){
+  if(!confirm("Remove the photo from your CV Studio folder? It comes off every CV that shows it."))
+    return;
+  try{
+    const r=await post("/api/photo/remove",{});
+    S.state.photo=null;
+    if(S.path){
+      const d=await api("/api/doc?path="+encodeURIComponent(S.path));
+      S.doc=d; S.data=d.data?JSON.parse(JSON.stringify(d.data)):null; S.docMtime=d.mtime;
+      paint(); scheduleLive();
+    }
+    paintPhotoChip();
+    if(!$("#ovl-design").hidden){ paintAdvanced(); paintDesignNav() }
+    toast("Photo removed"+(r.cleared&&r.cleared.length?" from "+r.cleared.length+" CV"+
+      (r.cleared.length===1?"":"s"):""));
+  }catch(e){ toast(e.message,true) }
+}
+/* Drag to move, zoom to fill the square; 600 x 600 JPEG out. */
+function cropSheet(src){
+  const url=typeof src==="string"?src:URL.createObjectURL(src);
+  openSheet(
+    '<div><h3 id="sheet-title">Crop your photo</h3><p>Drag to move it, and zoom until your '+
+      'face fills most of the square.</p></div>'+
+    '<div class="crop" id="crop"><img class="dim" alt=""><div class="win"><img alt="The part '+
+      'of the photo that will be kept"></div><div class="win grid" aria-hidden="true"></div></div>'+
+    '<label class="cropzoom">Zoom <input type="range" id="crop-z" min="1" max="4" step="0.01" '+
+      'value="1"></label>'+
+    '<div class="foot"><span class="left sp-note">Saved as a 600 × 600 JPEG in your CV Studio '+
+      'folder. The original is not kept.</span><button class="sbtn" data-cancel>Cancel</button>'+
+      '<button class="sbtn primary" id="crop-go" disabled>Use this photo</button></div>');
+  const box=$("#crop"), imgs=box.querySelectorAll("img"), z=$("#crop-z");
+  const st={w:0,h:0,base:1,s:1,ox:0,oy:0};
+  const clamp=()=>{
+    const mx=Math.max(0,st.w*st.s/2-130), my=Math.max(0,st.h*st.s/2-130);
+    st.ox=Math.min(mx,Math.max(-mx,st.ox)); st.oy=Math.min(my,Math.max(-my,st.oy));
+  };
+  const draw=()=>{
+    clamp();
+    imgs.forEach(im=>{ im.style.width=(st.w*st.s)+"px";
+      im.style.transform="translate(calc(-50% + "+st.ox+"px), calc(-50% + "+st.oy+"px))" });
+  };
+  const im=new Image();
+  im.onload=()=>{
+    st.w=im.naturalWidth; st.h=im.naturalHeight;
+    st.base=260/Math.min(st.w,st.h); st.s=st.base;
+    imgs.forEach(x=>x.src=url); draw(); $("#crop-go").disabled=false;
+  };
+  im.onerror=()=>{ toast("That image could not be opened.",true); closeSheet() };
+  im.src=url;
+  z.oninput=()=>{ st.s=st.base*Number(z.value); draw() };
+  let drag=null;
+  box.onpointerdown=e=>{ drag={x:e.clientX,y:e.clientY,ox:st.ox,oy:st.oy};
+    box.setPointerCapture(e.pointerId); box.classList.add("dragging") };
+  box.onpointermove=e=>{ if(!drag) return;
+    st.ox=drag.ox+e.clientX-drag.x; st.oy=drag.oy+e.clientY-drag.y; draw() };
+  box.onpointerup=box.onpointercancel=()=>{ drag=null; box.classList.remove("dragging") };
+  box.onwheel=e=>{ e.preventDefault();
+    z.value=String(Math.min(4,Math.max(1,Number(z.value)-e.deltaY/400))); z.oninput() };
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#crop-go").onclick=async()=>{
+    const side=260/st.s, sx=st.w/2-(130+st.ox)/st.s, sy=st.h/2-(130+st.oy)/st.s;
+    const cv=document.createElement("canvas"); cv.width=cv.height=600;
+    const g=cv.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,600,600);
+    g.drawImage(im,sx,sy,side,side,0,0,600,600);
+    const data=cv.toDataURL("image/jpeg",0.85).replace(/^data:[^,]*,/,"");
+    $("#crop-go").disabled=true;
+    try{
+      const r=await post("/api/photo",{data,path:S.path||null});
+      if(!r.ok){ $("#crop-go").disabled=false; return toast(r.error,true) }
+      S.state.photo=r.photo;
+      if(S.doc&&r.ref) S.doc.photo_ref=r.ref;
+      closeSheet();
+      /* A first photo goes straight onto the CV it was added from. */
+      if(S.data&&S.data.cv&&!photoOn()) setPhoto(true); else scheduleLive();
+      if(!$("#ovl-design").hidden){ paintAdvanced(); paintDesignNav() }
+      paintPhotoChip();
+      toast("Photo saved");
+    }catch(e){ $("#crop-go").disabled=false; toast(e.message,true) }
+    if(typeof src!=="string") URL.revokeObjectURL(url);
+  };
+}
+/* The chip in the editor's bar: whether this CV shows the photo, and a switch
+   for it, with a word when the application it is for is somewhere CVs usually
+   go without one. */
+const PHOTO_UNUSUAL=/\b(united kingdom|uk|u\.k\.|england|scotland|wales|northern ireland|london|manchester|edinburgh|glasgow|bristol|united states|usa|u\.s\.a?\.?|us|new york|san francisco|seattle|boston|austin|chicago|los angeles|ireland|dublin|cork)\b/i;
+function paintPhotoChip(){
+  const chip=$("#photochip");
+  const letter=S.path&&S.path.startsWith("letters/");
+  if(!S.path||letter||!(S.state&&S.state.photo)||!S.data){ chip.hidden=true; return }
+  const on=photoOn();
+  chip.hidden=false;
+  chip.classList.toggle("off",!on);
+  chip.innerHTML=PH_ICON.replace(/16/g,"12")+'<span>Photo '+(on?"on":"off")+'</span>';
+  chip.title="Whether this CV shows your photo";
+  chip.onclick=e=>{ e.stopPropagation(); photoPop() };
+}
+function photoPop(){
+  let pop=$("#photopop");
+  if(pop){ pop.remove(); return }
+  const j=typeof linkedJob==="function"?linkedJob():null;
+  const unusual=j&&PHOTO_UNUSUAL.test((j.country||"")+" "+(j.location||""));
+  pop=document.createElement("div");
+  pop.className="photopop"; pop.id="photopop"; pop.setAttribute("role","dialog");
+  pop.setAttribute("aria-label","Photo on this CV");
+  const base=S.doc&&S.doc.prov&&S.doc.prov.base&&S.doc.prov.base.path;
+  pop.innerHTML='<label class="sw"><input type="checkbox" id="pp-on"'+(photoOn()?" checked":"")+
+    '><span class="tr"></span><span class="tx"><b>Show the photo on this CV</b><span>'+
+    (base?'For this CV only. '+esc(docLabel(base))+' keeps its own setting.'
+      :'For this CV only.')+'</span></span></label>'+
+    (unusual?'<div class="why"><i></i><span>This application is in '+esc(j.location||j.country)+
+      '. Recruiters there usually ask for CVs without a photo.</span></div>':'');
+  document.body.append(pop);
+  const r=$("#photochip").getBoundingClientRect();
+  pop.style.left=Math.min(r.left,innerWidth-330)+"px"; pop.style.top=(r.bottom+6)+"px";
+  $("#pp-on").onchange=e=>setPhoto(e.target.checked);
+  $("#pp-on").focus();
+  const off=ev=>{ if(!pop.contains(ev.target)&&ev.target!==$("#photochip")){ pop.remove();
+    document.removeEventListener("pointerdown",off,true) } };
+  document.addEventListener("pointerdown",off,true);
+}
+
+/* RenderCV keeps the photo's size and place under Header, where they mean
+   nothing until there is a photo. They get a group of their own, beside the
+   photo itself, second after Theme. */
+function designGroups(){
+  const raw=(S.schema&&S.schema.groups)||[];
+  const isPhoto=f=>f.path[0]==="header"&&/^photo_/.test(f.path[f.path.length-1]);
+  const photo=raw.flatMap(g=>g.fields.filter(isPhoto));
+  const rest=raw.map(g=>({...g,fields:g.fields.filter(f=>!isPhoto(f))})).filter(g=>g.fields.length);
+  return [{name:"photo",fields:photo}].concat(rest);
+}
 function paintAdvanced(){
-  const host=$("#dz-advanced"), groups=(S.schema&&S.schema.groups)||[];
+  const host=$("#dz-advanced"), groups=designGroups();
   if(!groups.length){
     host.innerHTML='<p class="sp-note">RenderCV did not offer a schema for this theme, '+
       'so only the theme can be chosen here. Everything else can still be edited '+
@@ -10343,7 +10700,8 @@ function paintAdvanced(){
       const v=(raw===undefined||raw===null)?f.default:raw;
       rows+='<div class="dz-row" data-def=\''+esc(JSON.stringify(f.default==null?null:f.default))+
         '\' data-was=\''+esc(JSON.stringify(v==null?null:v))+'\'><label><i class="dz-dot" title="Changed from the theme default"></i><span>'+
-        esc(human(f.path[f.path.length-1]))+'</span></label>'+
+        esc(human(g.name==="photo"?String(f.path[f.path.length-1]).replace(/^photo_/,"")
+          :f.path[f.path.length-1]))+'</span></label>'+
         '<div class="dctl">'+controlHTML(f,v)+'</div>'+
         '<button class="dreset" title="Back to the theme default">Reset</button></div>';
     });
@@ -10390,11 +10748,12 @@ function resetRow(row){
   else el.value=def==null?"":def;
 }
 function paintDesignNav(){
-  const groups=(S.schema&&S.schema.groups)||[];
+  const groups=designGroups();
   const cur=DZ.theme||(S.state.themes||[])[0];
   const items=[{k:"theme",t:"Theme",ct:themeLabel(cur||""),n:0}].concat(groups.map(g=>{
     const el=$('#dz-advanced [data-group="'+CSS.escape(g.name)+'"]');
-    return {k:g.name,t:human(g.name),ct:String(g.fields.length),
+    return {k:g.name,t:human(g.name),ct:g.name==="photo"
+      ?(!(S.state&&S.state.photo)?"None":photoOn()?"On":"Off"):String(g.fields.length),
       n:el?el.querySelectorAll(".dz-row.chg").length:0};
   }));
   $("#dz-nav").innerHTML=items.map(i=>
@@ -10412,7 +10771,10 @@ function paintDesignNav(){
 function showDesignSection(){
   const k=DZ.section||"theme", theme=k==="theme";
   $("#themegrid").hidden=!theme;
-  $$("#dz-advanced .dz-group").forEach(g=>{ g.hidden=g.dataset.group!==k });
+  $$("#dz-advanced .dz-group").forEach(g=>{ g.hidden=g.dataset.group!==k||
+    (k==="photo"&&!(S.state&&S.state.photo)) });
+  $("#dz-photo").hidden=k!=="photo";
+  if(k==="photo") paintPhoto();
   $("#dz-h").textContent=theme?"Theme":human(k);
   $("#dz-desc").textContent=theme
     ? "The starting point for every other setting. Each tile is this document in that theme."

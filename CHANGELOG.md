@@ -32,6 +32,17 @@ tag, so a release is never published with nothing said about it.
   that language, and offers to add the language first when there is none.
 - **Switch languages in the editor** from the bar at the top, and filter
   Documents by language once there is more than one.
+- **A photo, if you want one.** Design has a **Photo** group: drop in a
+  picture, crop it to a square, and it is saved small (600 × 600) in your CV
+  Studio folder, with the original not kept. Each CV shows it or not, and CVs
+  you tailor start the way their source is. A **Photo** chip in the editor
+  turns it off for one application, and says so when the application is in
+  the UK, the US or Ireland, where recruiters usually ask for CVs without
+  one; the ATS check says the same. Its size and side of the page, which
+  RenderCV keeps under Header, are in the Photo group now. Removing the photo
+  takes it off every CV that showed it, so none of them stops rendering.
+- Sheets opened from Design or Settings now open on top of them rather than
+  behind.
 - AI clients get `add_language`, `translation_status` and
   `mark_translation_current`, and `add_job` takes the posting's language.
 
