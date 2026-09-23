@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.22.0
 
 - **The editor no longer freezes in French, Spanish or Portuguese.** In
   0.20.0 and 0.21.0, opening a CV with the app in one of those languages
