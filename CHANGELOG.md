@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.15.0
 
 - **Design is a screen, and it keeps the page in view.** It opens under the
   title bar with the groups RenderCV defines down the side (Theme, Page,
