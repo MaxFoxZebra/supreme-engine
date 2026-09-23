@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.19.0
 
 - **A Calendar tab.** Its overview opens on your next interview: who and
   which role, a live countdown to the second, two clocks (your time and
