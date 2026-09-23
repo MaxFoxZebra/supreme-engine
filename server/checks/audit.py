@@ -1,6 +1,6 @@
 """A standing audit of the app: classes of mistake that are invisible without a
 browser but mechanical to find."""
-import re, sys, pathlib, collections
+import re, pathlib, collections
 
 # The server sits one level up from this folder, wherever the repo lives.
 ROOT = pathlib.Path(__file__).resolve().parent.parent

@@ -14,7 +14,6 @@ Both paths return the same dict, so callers never care which ran.
 from __future__ import annotations
 
 import io
-import json
 import os
 import re
 import shutil

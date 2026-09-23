@@ -1498,7 +1498,7 @@ LOGO_TYPES = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".ico"}
 
 
 def logo_dir() -> Path:
-    return WORKSPACE / "assets" / "logos"
+    return WORKSPACE / LOGO_DIR
 
 
 def list_logos() -> list[str]:
@@ -1536,9 +1536,12 @@ def save_logo(company: str, source: str) -> dict:
     return _store_logo(company, src.read_bytes(), src.suffix.lower())
 
 
+def _logo_stem(company: str) -> str:
+    return "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
+
+
 def _store_logo(company: str, data: bytes, ext: str) -> dict:
-    safe = "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
-    dest = logo_dir() / f"{safe}{ext}"
+    dest = logo_dir() / f"{_logo_stem(company)}{ext}"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
     return {"ok": True, "logo": dest.name, "path": rel(dest),
@@ -1547,9 +1550,9 @@ def _store_logo(company: str, data: bytes, ext: str) -> dict:
 
 def stored_logo(company: str) -> str | None:
     """A logo already saved for this company, by the name save_logo gives it."""
-    safe = "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
+    stem = _logo_stem(company)
     for name in list_logos():
-        if Path(name).stem == safe:
+        if Path(name).stem == stem:
             return name
     return None
 
@@ -1862,12 +1865,6 @@ def line_map(doc, text: str) -> dict:
     total = len(text.splitlines())
     out: dict[str, list[int]] = {}
 
-    def starts_of(node) -> list[int]:
-        try:
-            return [node.lc.key(k)[0] for k in node]
-        except Exception:
-            return []
-
     sections = cv.get("sections") if hasattr(cv, "get") else None
     # The header is everything in `cv` before the sections block begins.
     try:
@@ -2143,14 +2140,20 @@ def render(path: Path) -> dict:
     return _shape(render_file(path, output_dir(path)), path)
 
 
-def current_pdf(path: Path) -> tuple[Path | None, dict | None]:
-    """The PDF for this document as it now stands, rendering it if the one on
-    disk is older than the YAML. Returns (pdf, None) or (None, failed render)."""
+def last_pdf(path: Path) -> Path | None:
+    """The newest PDF in this document's output folder, whatever its age."""
     out = output_dir(path)
     pdfs = sorted(out.glob("*.pdf"), key=lambda f: f.stat().st_mtime,
                   reverse=True) if out.is_dir() else []
-    if pdfs and pdfs[0].stat().st_mtime >= path.stat().st_mtime:
-        return pdfs[0], None
+    return pdfs[0] if pdfs else None
+
+
+def current_pdf(path: Path) -> tuple[Path | None, dict | None]:
+    """The PDF for this document as it now stands, rendering it if the one on
+    disk is older than the YAML. Returns (pdf, None) or (None, failed render)."""
+    pdf = last_pdf(path)
+    if pdf and pdf.stat().st_mtime >= path.stat().st_mtime:
+        return pdf, None
     r = render(path)
     if not r.get("ok"):
         return None, r
@@ -2243,10 +2246,8 @@ def thumb(path: Path) -> dict:
     returned -- it is the right shape while the new one is made -- but marked,
     so the caller knows to render rather than show last week's CV as today's.
     """
-    out = output_dir(path)
-    pdfs = sorted(out.glob("*.pdf"), key=lambda f: f.stat().st_mtime,
-                  reverse=True) if out.is_dir() else []
-    first = out / f"{pdfs[0].stem}_1.png" if pdfs else None
+    pdf = last_pdf(path)
+    first = pdf.with_name(f"{pdf.stem}_1.png") if pdf else None
     if not first or not first.is_file():
         return {"png": None, "fresh": False}
     made = first.stat().st_mtime
@@ -3439,7 +3440,7 @@ body.dragging{cursor:col-resize;user-select:none}
 .fg.wide>label{padding-top:6px}
 /* background-COLOR, not the shorthand: the shorthand resets background-image
    and silently strips the chevron off every select. */
-.inp,.fg input,.fg select,.fg textarea{background-color:var(--field);
+.fg input,.fg select,.fg textarea{background-color:var(--field);
   border:1px solid var(--bd-field);
   border-radius:4px;padding:5px 8px;font-size:12.5px;color:var(--t900);width:100%;min-width:0}
 .fg textarea{font:12.5px/1.5 inherit;resize:vertical;min-height:56px}
@@ -3700,7 +3701,6 @@ body.dragging{cursor:col-resize;user-select:none}
 #status{height:24px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
   background:var(--panel);border-top:1px solid var(--rule);font-size:11px;
   color:var(--t500);user-select:none}
-#status .sep::before{content:"\00b7"}
 /* a decision you just took about someone else's edit, not routine chatter */
 #st-right.said{color:var(--acc-text);font-weight:500}
 /* the MCP boundary having just stopped something */
@@ -3975,11 +3975,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   border:1px solid var(--bd-field);border-radius:8px;background:var(--field)}
 .ob-client .badge{width:32px;height:32px;border-radius:8px;display:grid;
   place-items:center;background:var(--bar);flex:none}
-.ob-client[data-client=claude] .badge{background:rgba(217,119,87,.14);color:#D97757}
-.ob-client[data-client=hermes] .badge{background:#fff;color:#000;
-  box-shadow:inset 0 0 0 1px var(--bd-field)}
 .ob-client[data-client=hermes] .badge svg{width:24px;height:24px}
-.ob-client[data-client=mistral] .badge{background:rgba(250,80,15,.12)}
 .ob-client .nm{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--t900);
   display:flex;flex-direction:column}
 .ob-client .nm small{font-size:11.5px;font-weight:400;color:var(--t500);
@@ -4171,7 +4167,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   background:var(--field)}
 .client .badge{grid-column:1;grid-row:1/3;align-self:center;width:38px;height:38px;
   border-radius:9px;display:grid;place-items:center;background:var(--bar)}
-.client[data-client=claude] .badge{background:rgba(217,119,87,.14);color:#D97757}
+.client[data-client=claude] .badge,.ob-client[data-client=claude] .badge{
+  background:rgba(217,119,87,.14);color:#D97757}
 .client[data-client=openai] .badge{color:var(--t900)}
 /* Nous publish this one as an avatar -- a figure on a tile -- rather than as a
    glyph that takes the colour around it, so it is drawn that way: black on
@@ -4179,10 +4176,12 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
    currentColor like the other three it inverts on a dark background, and an
    inverted illustration is not the mark. It also needs the extra size: at the
    19px the rest are drawn at, its detail closes up into a blot. */
-.client[data-client=hermes] .badge{background:#fff;color:#000;
+.client[data-client=hermes] .badge,.ob-client[data-client=hermes] .badge{
+  background:#fff;color:#000;
   box-shadow:inset 0 0 0 1px var(--bd-field)}   /* white on white needs an edge */
 .client[data-client=hermes] .badge svg{width:28px;height:28px}
-.client[data-client=mistral] .badge{background:rgba(250,80,15,.12)}
+.client[data-client=mistral] .badge,.ob-client[data-client=mistral] .badge{
+  background:rgba(250,80,15,.12)}
 .client .who{grid-column:2;grid-row:1;display:flex;align-items:center;gap:9px;
   min-width:0;flex-wrap:wrap}
 .client .who b{font-size:13.5px;font-weight:600;color:var(--t900)}
@@ -5064,9 +5063,6 @@ const STATUS_TONE={
   rejected_interviewing:"lost", ghosted_interviewing:"lost",
 };
 const statusTone=st=>STATUS_TONE[st]||"draft";
-/* Which statuses still have somewhere to go -- used for the saved filters. */
-const LIVE_STATUS=new Set(Object.keys(STATUS_TONE).filter(
-  k=>STATUS_TONE[k]==="live"||STATUS_TONE[k]==="waiting"));
 const DEAD_STATUS=new Set(Object.keys(STATUS_TONE).filter(
   k=>["lost","closed","draft"].includes(STATUS_TONE[k])));
 
@@ -5200,12 +5196,6 @@ document.addEventListener("click",e=>{
   post("/api/open",{url:href}).catch(err=>toast(err.message,true));
 });
 
-const money=j=>{
-  const v=j.salary_offered||j.salary_expected;
-  if(!v) return null;
-  const sym={EUR:"€",GBP:"£",USD:"$"}[j.salary_currency]||"";
-  return sym+Number(v).toLocaleString("en-GB")+(sym?"":" "+(j.salary_currency||""));
-};
 const appliedAt=j=>{
   const h=j.status_history||[];
   for(const e of h) if(e.status==="applied") return e.at;
@@ -5800,7 +5790,6 @@ $("#pane-page").addEventListener("scroll",()=>{
    it is not the only writer. Polling one stat per document is cheap, and it is
    the difference between picking up the model's work and silently saving over
    it. */
-let pulseTimer=null;
 async function pulse(){
   if(document.hidden) return;
   let p;
@@ -8080,7 +8069,7 @@ function drawJobs(){
        offer to make one would be standing on top of a document that exists. */
     const docs=cv?esc(cv)+(letter?" +letter":""):(letter?esc(letter):null);
     const openable=cv?j.cv_path:j.letter_path;
-    const sal=money(j), ap=appliedAt(j);
+    const ap=appliedAt(j);
     const due=j.followup_date&&j.followup_date<=isoToday();
     const jb=jobBoard(j);
     return '<button class="trow'+(DEAD_STATUS.has(j.status)?" dead":"")+
