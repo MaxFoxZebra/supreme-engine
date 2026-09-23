@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, urlparse
 
 try:
     from ruamel.yaml import YAML
+    from ruamel.yaml.comments import CommentedMap
 except ImportError:  # pragma: no cover
     sys.stderr.write("ruamel.yaml is required.\n")
     raise SystemExit(1)
@@ -1773,6 +1774,15 @@ def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
             try:
                 node = node[int(k)] if isinstance(node, list) else node[k]
             except (KeyError, IndexError, ValueError, TypeError):
+                # A design setting belongs to a group the document may never
+                # have written -- a starter CV has no `design.header` at all --
+                # and the Design screen offers every one. Those groups are made
+                # on the way down. Everywhere else a missing parent still means
+                # a wrong path, and is reported rather than invented.
+                if keys[0] == "design" and isinstance(node, dict) and isinstance(k, str):
+                    node[k] = CommentedMap()
+                    node = node[k]
+                    continue
                 ok = False
                 break
         if not ok or node is None:
@@ -1962,6 +1972,44 @@ def preview(path: Path, text: str | None = None,
             pass
 
 
+def theme_preview(path: Path, theme: str, patches: list[dict] | None = None) -> dict:
+    """Page one of this document in another theme, for the Design screen.
+
+    The theme picker shows the document you are designing rather than a sample,
+    so each tile is a real render. It gets its own folder per theme: the live
+    preview clears its scratch folder on every run, and a tile that shared it
+    would take the page you are looking at down with it.
+    """
+    if theme not in available_themes():
+        raise ValueError(f"Unknown theme: {theme}")
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "-", path.stem) or "doc"
+    out = WORKSPACE / "assets" / ".themes" / stem / theme
+    if out.is_dir():
+        for stale in out.iterdir():
+            if stale.is_file():
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+    tmp = path.parent / (".cvstudio-theme" + path.suffix)
+    try:
+        tmp.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        apply_patches(tmp, list(patches or []) +
+                      [{"path": ["design", "theme"], "value": theme}])
+        result = render_file(tmp, out)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    pngs = result.get("png_pages") or []
+    if not result.get("ok") or not pngs:
+        return {"ok": False, "theme": theme}
+    stamp = int(time.time() * 1000)
+    return {"ok": True, "theme": theme, "pages": result.get("pages"),
+            "png": f"/api/asset?path={rel(Path(pngs[0]))}&v={stamp}"}
+
+
 def available_themes() -> list[str]:
     """Themes RenderCV actually ships, asked at runtime rather than hardcoded.
 
@@ -2089,6 +2137,12 @@ def openapi_spec() -> dict:
                 "Render unsaved content without writing the file",
                 "requestBody": body({"path": {"type": "string"},
                                      "yaml": {"type": "string"},
+                                     "patches": {"type": "array", "items": {}}}),
+                "responses": ok}},
+            "/api/theme-preview": {"post": {"summary":
+                "Render page one of a document in another theme",
+                "requestBody": body({"path": {"type": "string"},
+                                     "theme": {"type": "string"},
                                      "patches": {"type": "array", "items": {}}}),
                 "responses": ok}},
             "/api/new": {"post": {"summary": "Create a CV, blank or duplicated",
@@ -2470,6 +2524,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(preview(safe_path(payload["path"]),
                                           payload.get("yaml"),
                                           payload.get("patches")))
+            if u.path == "/api/theme-preview":
+                return self._json(theme_preview(safe_path(payload["path"]),
+                                                str(payload.get("theme") or ""),
+                                                payload.get("patches")))
             if u.path == "/api/jobs":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -3071,7 +3129,6 @@ body.dragging{cursor:col-resize;user-select:none}
 /* ---------- inspector --------------------------------------------------- */
 .insp{flex:none;background:var(--panel);border-left:1px solid var(--rule-strong);
   display:flex;flex-direction:column;min-height:0}
-.insp-funnel{width:296px}
 
 /* ---------- the block editor -------------------------------------------
    Anchored beside the block it edits rather than parked in a column, so the
@@ -3533,52 +3590,97 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   background:var(--c700);-webkit-app-region:drag}
 .ovl-bar button{-webkit-app-region:no-drag}
 .ovl-bar .ttl{font-size:13px;font-weight:500;color:var(--c050)}
-.ovl-body{flex:1;min-height:0;display:flex}
-.dz-left{flex:1;min-width:0;padding:22px 24px;display:flex;flex-direction:column;gap:16px;
-  background:var(--bar);overflow-y:auto}
-.themegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));
-  gap:14px}
-.thumbwrap{display:flex;flex-direction:column;gap:8px;align-items:center}
-.thumb{width:100%;aspect-ratio:1.25;background:var(--page);border:1px solid var(--rule);
-  box-shadow:0 6px 14px -8px rgba(30,26,18,.3);padding:10px 9px;display:flex;
-  flex-direction:column;gap:4px}
-.thumbwrap.sel .thumb{border-color:transparent;outline:2px solid var(--acc);
-  box-shadow:0 6px 14px -6px rgba(30,26,18,.4)}
+/* ---------- design ------------------------------------------------------- */
+/* Under the title bar rather than over it, so the tabs and the AI clients
+   stay where they always are. */
+.ovl.dz{top:52px}
+.dz-title{margin:0;font-size:17px;font-weight:600;color:var(--t900)}
+.dz-badge{height:22px;padding:0 9px;display:flex;align-items:center;border-radius:11px;
+  background:var(--bar);color:var(--t700);font-size:12px;font-weight:500;flex:none}
+.dz-note{font-size:13px;color:var(--t500);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0}
+.dz-body{flex:1;min-height:0;display:flex}
+.dz-nav{width:212px;flex:none;display:flex;flex-direction:column;gap:2px;padding:14px 10px;
+  background:var(--panel);border-right:1px solid var(--rule);overflow-y:auto}
+.dz-nav button{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 10px;
+  border-radius:7px;font-size:13.5px;color:var(--t700);text-align:left}
+.dz-nav button:hover{background:var(--paper-hover)}
+.dz-nav button[aria-current=true]{background:var(--field);color:var(--t900);font-weight:600;
+  box-shadow:0 1px 2px rgba(27,26,23,.08),0 0 0 1px var(--bd-inner)}
+.dz-nav .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dz-nav .chg{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--acc-text);
+  font-weight:500}
+.dz-nav .ct{font-size:11.5px;color:var(--t500);font-weight:400}
+.dz-dot{width:6px;height:6px;border-radius:50%;background:var(--acc);flex:none}
+.dz-key{margin-top:auto;padding:10px;border-top:1px solid var(--rule);font-size:12px;
+  color:var(--t500);display:flex;align-items:center;gap:7px}
+.dz-pane{width:520px;flex:none;display:flex;flex-direction:column;min-height:0;
+  border-right:1px solid var(--rule);background:var(--app)}
+.dz-head{flex:none;display:flex;align-items:flex-start;gap:12px;padding:20px 24px 14px}
+.dz-head>div{flex:1;min-width:0}
+.dz-head h2{margin:0;font-size:18px;font-weight:600}
+.dz-head p{margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--t600)}
+.dz-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 24px 28px}
+.dz-sub{margin:4px 0 6px;font-size:13px;font-weight:600;color:var(--t800)}
+.dz-card{border:1px solid var(--rule);border-radius:10px;background:var(--field);
+  margin-bottom:18px}
+.dz-row{display:grid;grid-template-columns:160px minmax(0,1fr) 52px;align-items:center;
+  gap:10px;min-height:46px;padding:6px 12px 6px 14px}
+.dz-row+.dz-row{border-top:1px solid var(--bd-inner)}
+.dz-group>.dz-card:last-child{margin-bottom:0}
+.dz-row>label{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--t800);
+  min-width:0}
+.dz-row>label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dz-row>label .dz-dot{visibility:hidden}
+.dz-row.chg>label .dz-dot{visibility:visible}
+.dz-row .dreset{justify-self:end;font-size:12px;font-weight:500;color:var(--acc-text);
+  visibility:hidden}
+.dz-row.chg .dreset{visibility:visible}
+.dz-row .dreset:hover{text-decoration:underline}
+.dz-pages{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;
+  align-items:center;gap:18px;padding:4px 24px 28px}
+.dz-pages img{width:100%;max-width:560px;display:block;background:var(--page);
+  box-shadow:0 2px 10px rgba(27,26,23,.14)}
+.dz-preview{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;
+  background:var(--canvas)}
+.dz-effect{flex:none;margin:14px 0 12px;display:flex;align-items:center;gap:10px;
+  min-height:32px;padding:4px 14px;border-radius:16px;background:var(--field);
+  border:1px solid var(--rule);font-size:12.5px;color:var(--t800);max-width:calc(100% - 48px)}
+.dz-effect b{font-weight:600}
+.dz-effect .sep{color:var(--t400)}
+.dz-effect .why{color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.themegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.thumbwrap{display:flex;flex-direction:column;gap:7px;padding:6px 6px 9px;border-radius:9px;
+  border:1px solid var(--bd-inner);text-align:left;width:100%}
+.thumbwrap:hover{border-color:var(--bd-field)}
+.thumbwrap.sel{background:var(--field);border:2px solid var(--acc);padding:5px 5px 8px}
+.thumbwrap img{width:100%;aspect-ratio:360/223;object-fit:cover;object-position:top;
+  display:block;border-radius:4px;box-shadow:0 0 0 1px var(--bd-inner);background:var(--page)}
+/* The drawn sketch stands in while the real render of this document arrives. */
+.thumb{width:100%;aspect-ratio:360/223;background:var(--page);border-radius:4px;
+  box-shadow:0 0 0 1px var(--bd-inner);padding:10px 9px;display:flex;
+  flex-direction:column;gap:4px;opacity:.7}
 .thumb i{display:block;background:#e0dcd1;flex:none}
 .thumb i.ink{background:#15140f}
-.thumbcap{display:flex;align-items:baseline;gap:6px}
-.thumbcap span{font-size:12.5px;color:var(--t700)}
-.thumbcap em{font-size:10.5px;font-style:normal;color:var(--t500)}
-.thumbwrap.sel .thumbcap span{color:var(--t900);font-weight:500}
-.thumbwrap.sel .thumbcap em{color:var(--acc-text)}
+.thumbcap{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:0 3px}
+.thumbcap span{font-size:13px;color:var(--t800)}
+.thumbcap em{font-size:11.5px;font-style:normal;color:var(--t500)}
+.thumbwrap.sel .thumbcap span{color:var(--t900);font-weight:600}
 
-.slider{display:flex;align-items:center;gap:11px}
-.slider input[type=range]{flex:1;-webkit-appearance:none;appearance:none;background:none;
-  height:14px;margin:0}
-.slider input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;
-  background:linear-gradient(to right,var(--acc) var(--fill,50%),var(--rule) var(--fill,50%))}
-.slider input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:var(--rule)}
-.slider input[type=range]::-moz-range-progress{height:3px;border-radius:2px;background:var(--acc)}
-.slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
-  border-radius:50%;background:var(--knob);box-shadow:0 1px 3px rgba(30,26,18,.45);margin-top:-5.5px;
-  cursor:pointer}
-.slider input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;
-  background:var(--knob);box-shadow:0 1px 3px rgba(30,26,18,.45);cursor:pointer}
-.slider .val{font-size:12px;color:var(--t700);flex:none;min-width:52px;text-align:right}
-
-.dgrid{display:grid;grid-template-columns:158px 1fr;gap:10px 12px;align-items:center}
-.dgrid>label{font-size:12px;color:var(--t600);overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
 .dctl{display:flex;align-items:center;gap:7px;min-width:0}
-.dctl input[type=text],.dctl input[type=number],.dctl select{background:var(--field);
-  border:1px solid var(--bd-field);border-radius:4px;padding:4px 7px;font-size:12.5px;
-  min-width:0;flex:1}
+/* background-COLOR: the shorthand would strip the select's chevron. */
+.dctl input[type=text],.dctl input[type=number],.dctl select,.dctl textarea{
+  background-color:var(--field);border:1px solid var(--bd-field);border-radius:7px;
+  padding:0 8px;height:32px;font-size:13px;min-width:0;flex:1}
+.dctl select{padding-right:28px}
+.dctl textarea{height:auto;padding:6px 8px;line-height:1.45;resize:vertical;
+  font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace;font-size:12px}
 .dctl input:focus,.dctl select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
-.dctl input[type=number]{max-width:84px;flex:none}
+.dctl input[type=number]{max-width:84px;flex:none;font-variant-numeric:tabular-nums}
 .dctl select.unit{max-width:66px;flex:none}
-.dctl input[type=color]{width:22px;height:22px;padding:0;border:1px solid var(--bd-field);
-  border-radius:3px;background:none;cursor:pointer;flex:none}
-.dctl input[type=checkbox]{width:15px;height:15px;accent-color:var(--acc);cursor:pointer}
+.dctl input[type=color]{width:34px;height:28px;padding:2px;border:1px solid var(--bd-field);
+  border-radius:7px;background:var(--field);cursor:pointer;flex:none}
+.dctl input[type=checkbox]{width:17px;height:17px;accent-color:var(--acc);cursor:pointer}
 .dctl .hex{font-size:11px;color:var(--t500);flex:none}
 
 /* ---------- settings ----------------------------------------------------- */
@@ -3874,7 +3976,7 @@ textarea{resize:vertical}
 @media(max-width:1100px){
   .rail-cvs{width:200px}
   .peek{width:auto;left:0}
-  .themegrid{grid-template-columns:repeat(3,1fr)}
+  .dz-pane{width:440px}
 }
 /* Phones: the two-up tiles and the card's third column both stop making
    sense well before the app itself does. */
@@ -4202,21 +4304,38 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   aria-labelledby="sheet-title"></div>
 
 <!-- ------------------------------------------------------------- Design -->
-<div class="ovl" id="ovl-design" hidden>
-  <div class="ovl-bar" data-tauri-drag-region><span class="ttl">Design</span>
-    <div class="grow"></div><button class="cbtn" data-close-ovl>Done</button></div>
-  <div class="ovl-body">
-    <div class="dz-left">
-      <span class="blabel">Theme</span>
-      <div class="themegrid" id="themegrid"></div>
-      <div class="hr"></div>
-      <div class="fg w88" id="dz-basics" style="max-width:560px"></div>
-      <div id="dz-advanced" style="max-width:560px"></div>
+<!-- A screen of its own under the title bar, not a panel over the page: every
+     setting RenderCV has, grouped the way RenderCV groups them, beside the
+     page they change. -->
+<div class="ovl dz" id="ovl-design" hidden>
+  <div class="docbar">
+    <button class="crumb" id="dz-list">Documents</button>
+    <span class="crumb-sep" aria-hidden="true">/</span>
+    <button class="crumb" id="dz-doc" data-close-ovl></button>
+    <span class="crumb-sep" aria-hidden="true">/</span>
+    <h1 class="dz-title">Design</h1>
+    <span class="dz-badge" id="dz-base" hidden>Base CV</span>
+    <span class="dz-note" id="dz-note"></span>
+    <div class="grow"></div>
+    <button class="obtn" id="dz-pdf">Export PDF&#8230;</button>
+    <button class="pbtn" data-close-ovl>Done</button>
+  </div>
+  <div class="dz-body">
+    <nav class="dz-nav" id="dz-nav" aria-label="Design settings"></nav>
+    <section class="dz-pane" aria-labelledby="dz-h">
+      <div class="dz-head">
+        <div><h2 id="dz-h"></h2><p id="dz-desc"></p></div>
+        <button class="obtn" id="dz-reset" hidden>Reset section</button>
+      </div>
+      <div class="dz-scroll">
+        <div class="themegrid" id="themegrid" role="radiogroup" aria-label="Theme"></div>
+        <div id="dz-advanced"></div>
+      </div>
+    </section>
+    <div class="dz-preview">
+      <div class="dz-effect" id="dz-effect"></div>
+      <div class="dz-pages" id="dz-pages"></div>
     </div>
-    <aside class="insp insp-funnel">
-      <div class="insp-head"><b>Effect on this CV</b></div>
-      <div class="insp-body" id="dz-effect"></div>
-    </aside>
   </div>
 </div>
 
@@ -4452,7 +4571,7 @@ const S={
   funnel:null, since:"", fnode:null,
   schema:null, schemaTheme:null,
 };
-const DZ={theme:null, family:null, page:null, size:null};
+const DZ={theme:null, section:"theme"};
 
 function toast(msg,bad){
   const t=document.createElement("div");
@@ -4600,7 +4719,7 @@ function paintBackLabel(){
   $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===to)));
 }
 $("#back").onclick=goBack;
-$$("#nav button").forEach(b=>b.onclick=()=>setView(b.dataset.view));
+$$("#nav button").forEach(b=>b.onclick=()=>{ closeOverlays(); setView(b.dataset.view) });
 
 /* ---- status bar --------------------------------------------------------- */
 function paintStatus(){
@@ -5561,7 +5680,7 @@ async function openDoc(path){
   hideExternalChange();
   /* The Design panel still holds the last document's controls, and its inputs
      are read straight into the patch list. Empty it until it is rebuilt. */
-  $("#dz-basics").innerHTML=""; $("#dz-advanced").innerHTML="";
+  $("#dz-advanced").innerHTML=""; S.thumbs=null;
   $("#pane-page").innerHTML='<div class="skel" style="width:472px;height:668px"></div>';
   $("#btn-render").disabled=false;
   renderDocs(S.state.documents);
@@ -5574,10 +5693,6 @@ async function openDoc(path){
     $("#yaml").value=doc.yaml; paint();
     const dz=(doc.data&&doc.data.design)||{};
     DZ.theme=dz.theme||null;
-    DZ.page=(dz.page&&dz.page.size)||null;
-    DZ.family=(dz.typography&&dz.typography.font_family&&dz.typography.font_family.body)||
-              dz.font_family||(dz.text&&dz.text.font_family)||null;
-    DZ.size=null;
     setYamlError(doc.parse_error);
     paintTitle(); paintLink();
     buildOutline();
@@ -6300,6 +6415,8 @@ async function save(ops){
     setProv(r.prov);
     $("#yaml").value=r.yaml; paint(); setYamlError(r.parse_error);
     buildOutline(); buildInspector(); if(S.tab==="form") buildForm();
+    /* The Design screen measures "changed" against the file, which just moved. */
+    if(!$("#ovl-design").hidden&&S.schema){ paintAdvanced(); paintDesignNav() }
     /* A refused operation is not a failure of the save, so it cannot be left
        to the catch. Saying nothing would be worse: you press Add, the file is
        rewritten without it, and the form comes back looking untouched. */
@@ -6882,6 +6999,7 @@ function baseHTML(b){
     '<span class="bn">'+esc(baseLabel())+'</span>'+
     '<span class="bsub">'+(pages?pages+" page"+(pages===1?"":"s"):"")+'</span>'+
     '<button class="obtn" data-base-open>Open</button>'+
+    '<button class="obtn" data-base-design>Design</button>'+
     '<button class="obtn" data-base-pick>Change\u2026</button>'+
     '<div class="grow"></div>';
 }
@@ -6894,6 +7012,11 @@ function mountBase(el,cls){
   if(open) open.onclick=()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
     openDoc(b.path);
+  };
+  const design=el.querySelector("[data-base-design]");
+  if(design) design.onclick=async()=>{
+    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    await openDoc(b.path); openDesign();
   };
   el.querySelector("[data-base-pick]").onclick=baseSheet;
 }
@@ -7778,13 +7901,43 @@ const themeLabel=t=>t.replace(/^engineeringclassic$/,"Engineering")
   .replace(/^(.)/,c=>c.toUpperCase());
 
 $("#btn-design").onclick=()=>openDesign();
+/* What each group is for, in a line. RenderCV's own group names are kept as
+   the titles; anything it adds later just goes without a line. */
+const DZ_GROUPS={
+  page:"Paper size, margins, and what prints around the edges.",
+  colors:"Every colour on the page. Links and section titles are the ones people notice.",
+  typography:"Fonts, sizes and weight for each part of the page.",
+  links:"How links look on the page and in the PDF.",
+  header:"Your name, headline and contact line at the top of page one.",
+  section_titles:"How each section heading is drawn.",
+  sections:"Spacing between entries, and whether a section may break across pages.",
+  entries:"The layout inside each entry: the date column, bullets and spacing.",
+  templates:"The text RenderCV fills in. Words in capitals are replaced with your data.",
+};
+const human=k=>{ const t=String(k).replace(/_/g," "); return t.charAt(0).toUpperCase()+t.slice(1) };
 async function openDesign(){
   if(!S.path) return toast("Open a document first");
   $("#ovl-settings").hidden=true; $("#ovl-design").hidden=false;
-  paintThemes(); paintEffect();
+  DZ.section=DZ.section||"theme";
+  paintDesignHead(); paintThemes(); paintEffect();
   await ensureSchema();
-  paintBasics(); paintAdvanced();
+  paintAdvanced(); paintDesignNav();
+  fillThemePreviews();
 }
+/* Whose design this is. The base CV's is the one every tailored copy starts
+   from, so it says so; any other document's is its own. */
+function paintDesignHead(){
+  const doc=(S.state.documents||[]).find(d=>d.path===S.path);
+  const base=S.state.base&&S.state.base.path===S.path;
+  $("#dz-list").textContent=$("#back").textContent;
+  $("#dz-doc").textContent=(doc&&doc.label)||S.path.split("/").pop();
+  $("#dz-base").hidden=!base;
+  $("#dz-note").textContent=base
+    ? "Tailored CVs copied from it start with this design"
+    : "Only this document. The base CV keeps its own.";
+}
+$("#dz-list").onclick=()=>{ closeOverlays(); goBack() };
+$("#dz-pdf").onclick=()=>$("#btn-pdf").click();
 async function ensureSchema(){
   const theme=DZ.theme||(S.state.themes||[])[0];
   if(S.schema&&S.schemaTheme===theme) return;
@@ -7792,94 +7945,61 @@ async function ensureSchema(){
        S.schemaTheme=theme }
   catch(e){ S.schema={groups:[]}; S.schemaTheme=theme }
 }
+
+/* The theme tiles are this document, rendered in each theme -- not a sample
+   CV and not a sketch. The current theme's tile is the live render; the rest
+   are rendered one at a time in the background when Design opens, and again
+   only once the content has changed since. A drawn sketch holds the place
+   until a tile's render lands. */
+function thumbKey(){ return S.path+"|"+JSON.stringify(contentPatches()) }
+function contentPatches(){
+  return collectPatches().filter(p=>p.path[0]!=="design");
+}
+let thumbRun=0;
+async function fillThemePreviews(){
+  const run=++thumbRun, key=thumbKey();
+  if(!S.thumbs||S.thumbs.key!==key) S.thumbs={key:key,by:{}};
+  const cur=DZ.theme||(S.state.themes||[])[0];
+  for(const t of (S.state.themes||[])){
+    if(run!==thumbRun||$("#ovl-design").hidden||S.thumbs.key!==key) return;
+    if(t===cur||S.thumbs.by[t]) continue;
+    try{
+      const r=await post("/api/theme-preview",{path:S.path,theme:t,patches:contentPatches()});
+      if(r.ok&&S.thumbs.key===key){
+        S.thumbs.by[t]={png:r.png,pages:r.pages};
+        S.themePages[t]=r.pages;
+        paintThemes();
+      }
+    }catch(e){ return }
+  }
+}
 function paintThemes(){
   const themes=(S.state&&S.state.themes)||[];
+  const cur=DZ.theme||themes[0];
+  const by=(S.thumbs&&S.thumbs.by)||{};
+  const live=S.render&&S.render.pngs&&S.render.pngs[0];
   $("#themegrid").innerHTML=themes.map(t=>{
+    const img=t===cur&&live?live+tok():(by[t]?by[t].png+tok():null);
     const pp=S.themePages[t];
-    return '<div class="thumbwrap'+(t===DZ.theme?" sel":"")+'"><button data-theme="'+esc(t)+
-      '" style="display:contents" aria-label="'+esc(themeLabel(t))+'">'+thumbHTML(t)+
-      '</button><div class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
-      '<em class="mono">'+(pp?pp+"pp":"")+'</em></div></div>';
+    return '<button class="thumbwrap'+(t===cur?" sel":"")+'" role="radio" aria-checked="'+
+      String(t===cur)+'" data-theme="'+esc(t)+'">'+
+      (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
+      '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
+      '<em>'+(pp?pp+" page"+(pp===1?"":"s"):"")+'</em></span></button>';
   }).join("");
   $$("#themegrid [data-theme]").forEach(b=>b.onclick=()=>{
+    if(b.dataset.theme===cur) return;
     DZ.theme=b.dataset.theme; S.schema=null;
     paintThemes(); touch();
-    ensureSchema().then(()=>{ paintBasics(); paintAdvanced() });
+    ensureSchema().then(()=>{ paintAdvanced(); paintDesignNav() });
   });
 }
 
-/* The one design field whose YAML path is not fixed across RenderCV versions
-   is the body size, so it is found in the schema rather than assumed. When it
-   cannot be found the slider is left out instead of writing a guess. */
-function schemaFields(){
-  const out=[];
-  ((S.schema&&S.schema.groups)||[]).forEach(g=>g.fields.forEach(f=>out.push(f)));
-  return out;
-}
-function famPaths(){
-  const found=schemaFields().map(f=>f.path).filter(p=>
-    (p[0]==="text"&&p[1]==="font_family")||(p[0]==="typography"&&p[1]==="font_family"));
-  return found.length?found
-    :[["typography","font_family","body"],["typography","font_family","name"]];
-}
-function sizeField(){
-  const fields=schemaFields().filter(f=>{
-    const p=f.path;
-    return (p[0]==="typography"&&p[1]==="font_size")||(p[0]==="text"&&p[1]==="font_size");
-  });
-  return fields.find(f=>f.path[f.path.length-1]==="body")||fields[0]||null;
-}
-const PT=v=>{ const m=/([\d.]+)/.exec(String(v==null?"":v)); return m?parseFloat(m[1]):null };
-
-function paintBasics(){
-  const fonts=(S.state&&S.state.fonts)||[];
-  const sizeF=sizeField();
-  const cur=(S.data&&S.data.design)||{};
-  if(DZ.size==null&&sizeF) DZ.size=getAt(cur,sizeF.path)!=null
-    ? String(getAt(cur,sizeF.path)) : (sizeF.default!=null?String(sizeF.default):"10pt");
-  const pt=PT(DZ.size)||10;
-  /* A document with no font_family renders in whatever the theme picks. Saying
-     so beats letting the browser show the first option and imply the CV uses a
-     typeface it has never heard of. */
-  let h='<label for="dz-face">Typeface</label>'+
-    '<select id="dz-face"><option value=""'+(DZ.family?"":" selected")+
-      '>Theme default</option>'+
-    fonts.map(f=>'<option'+(f===DZ.family?" selected":"")+'>'+
-      esc(f)+'</option>').join("")+'</select>';
-  if(sizeF) h+='<label for="dz-size">Body size</label>'+
-    '<div class="slider"><input type="range" id="dz-size" min="8" max="14" step="0.5" '+
-    'value="'+pt+'" aria-label="Body size in points">'+
-    '<span class="val mono" id="dz-size-v">'+pt+' pt</span></div>';
-  h+='<label>Page</label><div class="seg paper" id="dz-page" role="tablist">'+
-    ((S.state&&S.state.page_sizes)||["a4","us-letter"]).map(p=>
-      '<button role="tab" data-page="'+esc(p)+'" aria-selected="'+String(p===DZ.page)+'">'+
-      (p==="a4"?"A4":"US Letter")+'</button>').join("")+'</div>';
-  $("#dz-basics").innerHTML=h;
-
-  const face=$("#dz-face");
-  /* With no family chosen there is nothing to preview, and "'', serif"
-     silently renders the control in a serif the app never uses. */
-  const preview=f=>f?"'"+f+"', serif":"inherit";
-  face.style.fontFamily=preview(DZ.family);
-  face.onchange=()=>{ DZ.family=face.value||null;
-    face.style.fontFamily=preview(DZ.family); touch() };
-  const sz=$("#dz-size");
-  if(sz){
-    const fill=()=>sz.style.setProperty("--fill",
-      ((sz.value-sz.min)/(sz.max-sz.min)*100)+"%");
-    fill();
-    sz.oninput=()=>{ fill(); $("#dz-size-v").textContent=sz.value+" pt" };
-    sz.onchange=()=>{ DZ.size=sz.value+"pt"; touch() };
-  }
-  $$("#dz-page button").forEach(b=>b.onclick=()=>{
-    DZ.page=b.dataset.page;
-    $$("#dz-page button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
-    touch();
-  });
-}
-
-/* Every other design option, generated from RenderCV's own schema rather than
-   a hand-written list, so it stays correct when RenderCV adds or renames one. */
+/* Every design option, generated from RenderCV's own schema rather than a
+   hand-written list, so it stays correct when RenderCV adds or renames one.
+   All groups are built at once and only the chosen one is shown: the patch
+   list is read off these inputs, so a group that was never opened still has
+   to be there to say what it holds. */
 const UNITS=["cm","mm","in","pt","em","px"];
 const rgb2hex=v=>{
   const m=/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/.exec(v||"");
@@ -7894,97 +8014,176 @@ const splitDim=v=>{
   const m=/^\s*(-?[\d.]+)\s*([a-z%]*)\s*$/i.exec(String(v==null?"":v));
   return m?{n:m[1],u:m[2]||"cm"}:{n:"",u:"cm"};
 };
+function controlHTML(f,v){
+  const dp=esc(JSON.stringify(f.path)), lbl=esc(human(f.path[f.path.length-1]));
+  const at=' data-d=\''+dp+'\' aria-label="'+lbl+'"';
+  if(f.kind==="color")
+    return '<input type="color"'+at+' data-kind="color" value="'+rgb2hex(v)+
+      '"><span class="hex mono">'+esc(String(v==null?"":v))+'</span>';
+  if(f.kind==="dimension"){
+    const d=splitDim(v);
+    return '<input type="number" step="0.05"'+at+' data-kind="dimension" value="'+
+      esc(d.n)+'"><select class="unit" aria-label="Unit">'+
+      UNITS.map(x=>'<option'+(x===d.u?" selected":"")+'>'+x+'</option>').join("")+'</select>';
+  }
+  if(f.kind==="enum")
+    return '<select'+at+' data-kind="enum">'+(f.options||[]).map(o=>
+      '<option'+(String(o)===String(v)?" selected":"")+'>'+esc(o)+'</option>').join("")+
+      '</select>';
+  if(f.kind==="bool")
+    return '<input type="checkbox"'+at+' data-kind="bool"'+(v?" checked":"")+'>';
+  if(f.kind==="number")
+    return '<input type="number"'+at+' data-kind="number" value="'+esc(v==null?"":v)+'">';
+  if(f.kind==="list")
+    return '<input type="text"'+at+' data-kind="list" value="'+esc((v||[]).join(", "))+
+      '" placeholder="comma separated">';
+  /* Templates are several lines -- the main column of an entry is a title
+     line, a summary and the highlights -- and a one-line input silently
+     drops the line breaks, so writing it back would flatten the template. */
+  if(f.path[0]==="templates"){
+    const t=v==null?"":String(v);
+    return '<textarea'+at+' data-kind="text" rows="'+Math.max(1,t.split("\n").length)+
+      '" spellcheck="false">'+esc(t)+'</textarea>';
+  }
+  return '<input type="text"'+at+' data-kind="text" value="'+esc(v==null?"":v)+'">';
+}
 function paintAdvanced(){
   const host=$("#dz-advanced"), groups=(S.schema&&S.schema.groups)||[];
   if(!groups.length){
     host.innerHTML='<p class="sp-note">RenderCV did not offer a schema for this theme, '+
-      'so only the settings above are available. Everything else can still be edited '+
+      'so only the theme can be chosen here. Everything else can still be edited '+
       'in the YAML tab.</p>';
     return;
   }
   const cur=(S.data&&S.data.design)||{};
-  const sizeP=sizeField()&&sizeField().path.join(".");
-  const famP=new Set(famPaths().map(p=>p.join(".")));
-  const chev='<svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" '+
-    'stroke="currentColor" stroke-width="3"><path d="M9 18l6-6-6-6"/></svg>';
-  let h='';
-  groups.forEach(g=>{
-    const fields=g.fields.filter(f=>{
-      const p=f.path.join(".");
-      return p!==sizeP&&!famP.has(p)&&p!=="page.size";
+  host.innerHTML=groups.map(g=>{
+    /* Deeper paths get a heading of their own -- typography.font_family.body
+       sits under "Font family" as "Body" -- in the order RenderCV lists them. */
+    let h='', open=null, rows='';
+    const flush=()=>{ if(rows) h+=(open?'<h3 class="dz-sub">'+esc(human(open))+'</h3>':"")+
+      '<div class="dz-card">'+rows+'</div>'; rows="" };
+    g.fields.forEach(f=>{
+      const sub=f.path.length>2?f.path[1]:null;
+      if(sub!==open){ flush(); open=sub }
+      const raw=getAt(cur,f.path);
+      const v=(raw===undefined||raw===null)?f.default:raw;
+      rows+='<div class="dz-row" data-def=\''+esc(JSON.stringify(f.default==null?null:f.default))+
+        '\' data-was=\''+esc(JSON.stringify(v==null?null:v))+'\'><label><i class="dz-dot" title="Changed from the theme default"></i><span>'+
+        esc(human(f.path[f.path.length-1]))+'</span></label>'+
+        '<div class="dctl">'+controlHTML(f,v)+'</div>'+
+        '<button class="dreset" title="Back to the theme default">Reset</button></div>';
     });
-    if(!fields.length) return;
-    h+='<details class="grp"><summary>'+chev+esc(g.name.replace(/_/g," "))+
-      '<span class="count">'+fields.length+'</span></summary><div class="body">'+
-      '<div class="dgrid">'+fields.map(f=>{
-        const raw=getAt(cur,f.path);
-        const v=(raw===undefined||raw===null)?f.default:raw;
-        const dp=esc(JSON.stringify(f.path));
-        const label=esc(f.path[f.path.length-1].replace(/_/g," "));
-        let ctl;
-        if(f.kind==="color")
-          ctl='<input type="color" data-d='+"'"+dp+"'"+' data-kind="color" value="'+
-            rgb2hex(v)+'"><span class="hex mono">'+esc(String(v==null?"":v))+'</span>';
-        else if(f.kind==="dimension"){
-          const d=splitDim(v);
-          ctl='<input type="number" step="0.05" data-d='+"'"+dp+"'"+
-            ' data-kind="dimension" value="'+esc(d.n)+'"><select class="unit">'+
-            UNITS.map(x=>'<option'+(x===d.u?" selected":"")+'>'+x+'</option>').join("")+
-            '</select>';
-        }
-        else if(f.kind==="enum")
-          ctl='<select data-d='+"'"+dp+"'"+' data-kind="enum">'+(f.options||[]).map(o=>
-            '<option'+(String(o)===String(v)?" selected":"")+'>'+esc(o)+'</option>')
-            .join("")+'</select>';
-        else if(f.kind==="bool")
-          ctl='<input type="checkbox" data-d='+"'"+dp+"'"+' data-kind="bool"'+
-            (v?" checked":"")+'>';
-        else if(f.kind==="number")
-          ctl='<input type="number" data-d='+"'"+dp+"'"+' data-kind="number" value="'+
-            esc(v==null?"":v)+'">';
-        else if(f.kind==="list")
-          ctl='<input type="text" data-d='+"'"+dp+"'"+' data-kind="list" value="'+
-            esc((v||[]).join(", "))+'" placeholder="comma separated">';
-        else
-          ctl='<input type="text" data-d='+"'"+dp+"'"+' data-kind="text" value="'+
-            esc(v==null?"":v)+'">';
-        return '<label title="'+esc(f.path.join("."))+'">'+label+'</label>'+
-          '<div class="dctl">'+ctl+'</div>';
-      }).join("")+'</div></div></details>';
-  });
-  host.innerHTML='<div style="margin-top:6px">'+h+'</div>';
+    flush();
+    return '<div class="dz-group" data-group="'+esc(g.name)+'" hidden>'+h+'</div>';
+  }).join("");
+  markChanged();
+  showDesignSection();
 }
+/* Read a row's control the way the patch list will, so "changed" means what
+   would actually be written differs from the theme's own value. */
+function rowValue(row){
+  const el=row.querySelector("[data-d]"), kind=el.dataset.kind;
+  if(kind==="color") return hex2rgb(el.value);
+  if(kind==="bool") return el.checked;
+  if(kind==="number") return el.value===""?null:Number(el.value);
+  if(kind==="list") return el.value.split(",").map(x=>x.trim()).filter(Boolean);
+  if(kind==="dimension"){
+    const u=row.querySelector("select.unit");
+    return el.value===""?null:String(el.value)+((u&&u.value)||"cm");
+  }
+  return el.value;
+}
+const sameVal=(a,b)=>{
+  if(a==null||a==="") a=null; if(b==null||b==="") b=null;
+  if(Array.isArray(a)||Array.isArray(b)) return JSON.stringify(a||[])===JSON.stringify(b||[]);
+  if(typeof a==="string"&&typeof b==="string"&&/rgb\(/.test(a)&&/rgb\(/.test(b))
+    return a.replace(/\s/g,"")===b.replace(/\s/g,"");
+  return String(a)===String(b);
+};
+function markChanged(){
+  $$("#dz-advanced .dz-row").forEach(r=>{
+    r.classList.toggle("chg",!sameVal(rowValue(r),JSON.parse(r.dataset.def)));
+  });
+}
+function resetRow(row){
+  const def=JSON.parse(row.dataset.def), el=row.querySelector("[data-d]"), kind=el.dataset.kind;
+  if(kind==="color"){ el.value=rgb2hex(def); const sp=row.querySelector(".hex");
+    if(sp) sp.textContent=def||"" }
+  else if(kind==="bool") el.checked=!!def;
+  else if(kind==="dimension"){ const d=splitDim(def); el.value=d.n;
+    const u=row.querySelector("select.unit"); if(u) u.value=d.u }
+  else if(kind==="list") el.value=(def||[]).join(", ");
+  else el.value=def==null?"":def;
+}
+function paintDesignNav(){
+  const groups=(S.schema&&S.schema.groups)||[];
+  const cur=DZ.theme||(S.state.themes||[])[0];
+  const items=[{k:"theme",t:"Theme",ct:themeLabel(cur||""),n:0}].concat(groups.map(g=>{
+    const el=$('#dz-advanced [data-group="'+CSS.escape(g.name)+'"]');
+    return {k:g.name,t:human(g.name),ct:String(g.fields.length),
+      n:el?el.querySelectorAll(".dz-row.chg").length:0};
+  }));
+  $("#dz-nav").innerHTML=items.map(i=>
+    '<button data-sec="'+esc(i.k)+'" aria-current="'+String(i.k===DZ.section)+'">'+
+    '<span class="nm">'+esc(i.t)+'</span>'+
+    (i.n?'<span class="chg" title="Changed from the theme default"><i class="dz-dot"></i>'+
+      i.n+'</span>':"")+
+    '<span class="ct">'+esc(i.ct)+'</span></button>').join("")+
+    '<div class="dz-key"><i class="dz-dot"></i>Changed from the theme default</div>';
+  $$("#dz-nav [data-sec]").forEach(b=>b.onclick=()=>{
+    DZ.section=b.dataset.sec; paintDesignNav(); showDesignSection();
+    $(".dz-scroll").scrollTop=0;
+  });
+}
+function showDesignSection(){
+  const k=DZ.section||"theme", theme=k==="theme";
+  $("#themegrid").hidden=!theme;
+  $$("#dz-advanced .dz-group").forEach(g=>{ g.hidden=g.dataset.group!==k });
+  $("#dz-h").textContent=theme?"Theme":human(k);
+  $("#dz-desc").textContent=theme
+    ? "The starting point for every other setting. Each tile is this document in that theme."
+    : (DZ_GROUPS[k]||"");
+  const grp=$('#dz-advanced [data-group="'+CSS.escape(k)+'"]');
+  $("#dz-reset").hidden=theme||!grp||!grp.querySelector(".dz-row.chg");
+  if(grp) grp.querySelectorAll("textarea").forEach(fitArea);
+}
+/* A template box as tall as what it holds, so no line of it is hidden. */
+function fitArea(t){ t.style.height="auto"; t.style.height=(t.scrollHeight+2)+"px" }
+$("#dz-reset").onclick=()=>{
+  const grp=$('#dz-advanced [data-group="'+CSS.escape(DZ.section)+'"]');
+  if(!grp) return;
+  grp.querySelectorAll(".dz-row.chg").forEach(resetRow);
+  markChanged(); paintDesignNav(); showDesignSection(); touch();
+};
+/* Only what you actually changed is written. Writing every field back made
+   a document carry eighty-odd copies of its theme's defaults, which then stop
+   following the theme when you switch it. */
 function advancedPatches(){
-  return $$("#dz-advanced [data-d]").map(el=>{
-    const path=JSON.parse(el.dataset.d), kind=el.dataset.kind;
-    let v;
-    if(kind==="color") v=hex2rgb(el.value);
-    else if(kind==="bool") v=el.checked;
-    else if(kind==="number") v=el.value===""?null:Number(el.value);
-    else if(kind==="list") v=el.value.split(",").map(x=>x.trim()).filter(Boolean);
-    else if(kind==="dimension"){
-      if(el.value==="") return null;
-      const u=el.parentElement.querySelector("select.unit");
-      v=String(el.value)+((u&&u.value)||"cm");
-    }
-    else v=el.value;
-    return {path:["design"].concat(path),value:v};
+  return $$("#dz-advanced .dz-row").map(row=>{
+    const el=row.querySelector("[data-d]"), v=rowValue(row);
+    if(el.dataset.kind==="dimension"&&v===null) return null;
+    if(sameVal(v,JSON.parse(row.dataset.was))) return null;
+    return {path:["design"].concat(JSON.parse(el.dataset.d)),value:v};
   }).filter(Boolean);
 }
 function designPatches(){
   const out=[];
   if(DZ.theme) out.push({path:["design","theme"],value:DZ.theme});
-  if(DZ.page)  out.push({path:["design","page","size"],value:DZ.page});
-  if(DZ.family) famPaths().forEach(p=>out.push({path:["design"].concat(p),value:DZ.family}));
-  const sf=sizeField();
-  if(sf&&DZ.size) out.push({path:["design"].concat(sf.path),value:DZ.size});
   return out.concat(advancedPatches());
 }
+$("#dz-advanced").addEventListener("click",e=>{
+  const b=e.target.closest(".dreset");
+  if(!b) return;
+  resetRow(b.closest(".dz-row"));
+  markChanged(); paintDesignNav(); showDesignSection(); touch();
+});
 $("#dz-advanced").addEventListener("input",e=>{
   if(e.target.dataset&&e.target.dataset.kind==="color"){
     const sp=e.target.parentElement.querySelector(".hex");
     if(sp) sp.textContent=hex2rgb(e.target.value);
   }
+  if(e.target.tagName==="TEXTAREA") fitArea(e.target);
+  markChanged(); paintDesignNav(); showDesignSection();
   touch();
 });
 $("#dz-advanced").addEventListener("change",touch);
@@ -7993,27 +8192,23 @@ $("#dz-advanced").addEventListener("change",touch);
    rather than predicted. */
 function paintEffect(){
   const r=S.render;
-  if(!r){ $("#dz-effect").innerHTML='<p class="note muted">Nothing rendered yet.</p>';
-    return }
+  $("#dz-pages").innerHTML=r&&r.pngs
+    ? r.pngs.map((u,i)=>'<img src="'+esc(u+tok())+'" alt="Page '+(i+1)+'">').join("")
+    : '<p class="note muted">Rendering…</p>';
+  if(!r){ $("#dz-effect").innerHTML='<span>Nothing rendered yet</span>'; return }
   const pct=S.fill==null?null:Math.round(S.fill*100);
   const known=Object.keys(S.themePages).filter(t=>t!==DZ.theme);
   const shortest=known.sort((a,b)=>S.themePages[a]-S.themePages[b])[0];
-  let note;
+  let note="";
   if(shortest&&S.themePages[shortest]<r.pages)
-    note=themeLabel(shortest)+" rendered this CV on "+S.themePages[shortest]+
-      " page"+(S.themePages[shortest]===1?"":"s")+", against "+r.pages+" here.";
-  else if(known.length)
-    note="No other theme tried so far renders this CV any shorter.";
-  else
-    note="Pick another theme to see what it does to the page count. Each one is "+
-      "rendered for real, so the number is the number.";
+    note=themeLabel(shortest)+" fits this on "+S.themePages[shortest]+
+      " page"+(S.themePages[shortest]===1?"":"s");
+  const sep='<span class="sep">·</span>';
   $("#dz-effect").innerHTML=
-    '<div class="kv"><span>Pages</span><span class="v mono">'+r.pages+'</span></div>'+
-    '<div class="kv"><span>Page '+r.pages+' fill</span><span class="v mono'+
-      (pct!=null&&pct>=90?" acc":"")+'">'+(pct==null?"–":pct+"%")+'</span></div>'+
-    '<div class="kv"><span>Words</span><span class="v mono">'+(r.ats_words||0)+
-      '</span></div>'+
-    '<div class="hr"></div><div class="note">'+esc(note)+'</div>';
+    '<span><b>'+r.pages+'</b> page'+(r.pages===1?"":"s")+'</span>'+sep+
+    '<span>page '+r.pages+' is <b>'+(pct==null?"–":pct+"%")+'</b> full</span>'+sep+
+    '<span><b>'+(r.ats_words||0)+'</b> words</span>'+
+    (note?sep+'<span class="why">'+esc(note)+'</span>':"");
 }
 
 /* =========================================================================

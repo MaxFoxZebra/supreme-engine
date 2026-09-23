@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -154,12 +155,24 @@ def _pages_of(out_dir: Path, stem: str | None) -> list[Path]:
             if _page_index(f, stem) is not None]
 
 
+# One render at a time. The in-process path changes the working directory and
+# sys.argv for the length of the run, and the server is threaded: a live
+# preview and a theme preview landing together would each run inside the
+# other's directory.
+_RENDER_LOCK = threading.Lock()
+
+
 def render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
     """Render a RenderCV YAML file and describe the result.
 
     Returns {ok, pages, png_pages, pdf, markdown, typ, ats_word_count, pdf_kb,
     log}. `pages` is exact: RenderCV emits one PNG per page.
     """
+    with _RENDER_LOCK:
+        return _render_file(yaml_path, out_dir)
+
+
+def _render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
     yaml_path = Path(yaml_path).resolve()
     out_dir = Path(out_dir)
     if not out_dir.is_absolute():
