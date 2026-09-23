@@ -64,6 +64,7 @@ except ImportError:  # clicking the page is a bonus, not a requirement
     cv_map = None
 
 import ats  # noqa: E402
+import importer  # noqa: E402
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -2473,6 +2474,11 @@ def openapi_spec() -> dict:
                                      "yaml": {"type": "string"},
                                      "patches": {"type": "array", "items": {}}}),
                 "responses": ok}},
+            "/api/import": {"post": {"summary":
+                "Read a CV from a PDF or a LinkedIn data archive, without writing anything",
+                "requestBody": body({"name": {"type": "string"},
+                                     "data": {"type": "string", "description": "base64"}}),
+                "responses": ok}},
             "/api/theme-preview": {"post": {"summary":
                 "Render page one of a document in another theme",
                 "requestBody": body({"path": {"type": "string"},
@@ -2889,6 +2895,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(preview(safe_path(payload["path"]),
                                           payload.get("yaml"),
                                           payload.get("patches")))
+            if u.path == "/api/import":
+                # The file arrives as base64 in the JSON body, read here and
+                # never stored: the caller previews the result and writes it
+                # with /api/save once the person has looked at it.
+                import base64
+                raw = str(payload.get("data") or "")
+                if len(raw) > 56_000_000:
+                    return self._json({"ok": False, "error": "That file is over 40 MB. LinkedIn's "
+                                       "basic archive is much smaller: choose Profile, Positions, "
+                                       "Education and Skills when you request it."})
+                try:
+                    data = base64.b64decode(raw, validate=False)
+                    return self._json(importer.import_file(str(payload.get("name") or ""), data))
+                except importer.ImportError_ as exc:
+                    return self._json({"ok": False, "error": str(exc)})
             if u.path == "/api/theme-preview":
                 return self._json(theme_preview(safe_path(payload["path"]),
                                                 str(payload.get("theme") or ""),
@@ -3992,6 +4013,17 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 /* Left of the buttons rather than crowded against them. */
 #u-say{margin-right:auto;font-size:11px;color:var(--t500)}
 .sheet .foot .left{margin-right:auto}
+/* What an import read, before it is made into a document. */
+.imp-found{margin:0;padding:0;list-style:none;border:1px solid var(--rule);border-radius:7px;
+  background:var(--field)}
+.imp-found li{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;font-size:12.5px}
+.imp-found li+li{border-top:1px solid var(--bd-inner)}
+.imp-found b{font-weight:500;color:var(--t900)}
+.imp-found span{color:var(--t600)}
+.imp-notes{font-size:12.5px;line-height:1.5;color:var(--t800);background:var(--acc-wash);
+  border:1px solid var(--acc-line);border-radius:7px;padding:9px 12px}
+.imp-notes b{font-weight:600}
+.imp-notes ul{margin:4px 0 0;padding-left:18px}
 .sbtn{font-size:12.5px;padding:6px 16px;border:1px solid var(--bd-field);border-radius:5px;
   background:var(--field);color:var(--t900)}
 .sbtn:hover:not(:disabled){background:var(--paper-hover)}
@@ -4002,53 +4034,257 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sbtn.danger:hover{background:var(--bad-bg)}
 
 /* ---------- setup ---------------------------------------------------------
-   The sheet, wider, with the page beside the fields that change it. */
-.sheet.ob{width:760px}
-#ob{display:flex;flex-direction:column;gap:18px}
-.ob-steps{display:flex;gap:6px;list-style:none;margin:0;padding:0;counter-reset:ob}
-.ob-steps li{flex:1;counter-increment:ob;font-size:11.5px;color:var(--t500);
-  padding-top:8px;border-top:2px solid var(--rule)}
-.ob-steps li::before{content:counter(ob) "  ";font-family:'IBM Plex Mono',ui-monospace,monospace}
-.ob-steps li.done{border-top-color:var(--t500);color:var(--t600)}
-.ob-steps li[aria-current]{border-top-color:var(--acc);color:var(--t900);font-weight:500}
-.ob-body{display:flex;gap:22px;min-height:0}
-.ob-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
-.ob-main .fg label em{font-style:normal;font-size:10.5px;color:var(--t500)}
-.ob-facts{margin:2px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
-.ob-facts li{font-size:12.5px;line-height:1.5;color:var(--t600);padding-left:14px;
-  border-left:2px solid var(--rule)}
-.ob-facts b{color:var(--t900);font-weight:600}
-.linkish{border:0;background:none;padding:0;color:var(--acc-text);font-size:12.5px;
-  cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-.ob-themes{display:flex;flex-wrap:wrap;gap:6px}
-.ob-themes button{font-size:12px;padding:4px 10px;border-radius:5px;
-  border:1px solid var(--bd-field);background:var(--field);color:var(--t700)}
-.ob-themes button:hover{background:var(--paper-hover)}
-.ob-themes button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);
-  color:var(--c800);font-weight:500}
-/* A real render at a fifth of its size: enough to see the shape, the weight of
-   the name and whether it spills, which is what the choice is about. */
-.ob-fig{margin:0;flex:none;width:236px;display:flex;flex-direction:column;gap:7px}
-.ob-shot{width:236px;aspect-ratio:210/297;background:#fff;border:1px solid var(--rule);
-  box-shadow:0 8px 20px -10px rgba(30,26,18,.35);overflow:hidden;display:grid;
-  place-items:center;transition:opacity .15s}
-.ob-shot.busy{opacity:.55}
-.ob-shot img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
-.ob-shot span{font-size:11.5px;color:#6b675d;padding:12px;text-align:center}
-.ob-fig figcaption{font-size:11px;color:var(--t500);text-align:center;min-height:15px}
-.ob-ai{display:flex;flex-direction:column;gap:8px}
-.ob-client{display:flex;align-items:center;gap:12px;padding:10px 12px;
-  border:1px solid var(--bd-field);border-radius:8px;background:var(--field)}
-.ob-client .badge{width:32px;height:32px;border-radius:8px;display:grid;
-  place-items:center;background:var(--bar);flex:none}
-.ob-client[data-client=hermes] .badge svg{width:24px;height:24px}
-.ob-client .nm{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--t900);
-  display:flex;flex-direction:column}
-.ob-client .nm small{font-size:11.5px;font-weight:400;color:var(--t500);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media (max-width:720px){
-  .ob-body.two{flex-direction:column-reverse}
-  .ob-fig,.ob-shot{width:160px}
+   The whole window, not a sheet over it: a first launch has nothing behind it
+   worth seeing yet. The welcome is dark and moves; the steps after it keep a
+   dark rail with where you are, and the paper beside it with your own page. */
+.onb{position:fixed;inset:0;z-index:70;display:flex;background:var(--app);color:var(--t900);
+  font-size:14px;overflow:hidden}
+.onb[hidden]{display:none}
+.onb-bar{position:absolute;left:0;right:0;top:0;height:30px;z-index:3;display:flex;
+  align-items:center;padding:0 14px;-webkit-app-region:drag}
+.onb-bar .lights{-webkit-app-region:no-drag}
+.onb button,.onb input,.onb label{-webkit-app-region:no-drag}
+.onb .linkish{border:0;background:none;padding:0;color:inherit;cursor:pointer;
+  text-decoration:underline;text-underline-offset:2px}
+
+/* The welcome. */
+.onb-hero{position:relative;flex:1;background:var(--c900);color:var(--cw);overflow:auto;
+  display:flex;flex-direction:column;align-items:center;padding:clamp(40px,11vh,118px) 24px 64px}
+.onb-orbs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.onb-orbs span{position:absolute;left:50%;top:0;border-radius:50%;filter:blur(90px)}
+.onb-orbs span:nth-child(1){width:360px;height:360px;margin-left:-250px;top:90px;background:#3b82c4;
+  opacity:.22;animation:onb-drift-a 14s ease-in-out infinite alternate}
+.onb-orbs span:nth-child(2){width:320px;height:320px;margin-left:-20px;top:150px;background:#8b5cf6;
+  opacity:.22;animation:onb-drift-b 16s ease-in-out infinite alternate}
+.onb-orbs span:nth-child(3){width:300px;height:300px;margin-left:-160px;top:260px;background:#f97316;
+  opacity:.16;filter:blur(100px);animation:onb-drift-b 18s ease-in-out infinite alternate}
+.onb-orbs span:nth-child(4){width:260px;height:260px;margin-left:-200px;top:40px;background:#22c55e;
+  opacity:.12;animation:onb-drift-a 20s ease-in-out infinite alternate}
+.onb-hero>*{position:relative}
+.onb-mark{width:148px;height:148px;flex:none;display:grid;place-items:center}
+.onb-mark::before{content:"";position:absolute;inset:-34px;border-radius:50%;
+  background:radial-gradient(circle,rgba(192,138,62,.35),rgba(139,92,246,.18) 45%,transparent 70%);
+  animation:onb-fade .9s ease-out .2s both,onb-glow 5s ease-in-out 1.2s infinite}
+.onb-mark img{position:relative;width:132px;height:132px;display:block;
+  animation:onb-bloom 1.1s cubic-bezier(.2,.8,.2,1) both}
+.onb-word{margin:34px 0 0;display:flex;font-size:64px;font-weight:700;letter-spacing:-.03em;
+  line-height:1;color:var(--cw)}
+.onb-word span{display:inline-block;white-space:pre;animation:onb-rise .7s cubic-bezier(.2,.8,.2,1) both}
+.onb-rule{margin-top:18px;width:64px;height:3px;border-radius:2px;background:var(--acc);
+  animation:onb-line .6s ease-out 1.45s both}
+.onb-lede{margin:20px 0 0;max-width:560px;text-align:center;font-size:19px;line-height:1.5;
+  color:var(--c100);animation:onb-rise .7s ease-out 1.6s both}
+.onb-facts{margin-top:48px;display:grid;grid-template-columns:repeat(3,minmax(0,280px));gap:16px;
+  max-width:100%}
+.onb-fact{display:flex;flex-direction:column;gap:8px;padding:18px 20px;border-radius:14px;
+  background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);
+  animation:onb-rise .7s ease-out both}
+.onb-fact .ic{width:32px;height:32px;border-radius:9px;background:rgba(192,138,62,.16);
+  color:var(--acc-text-dark);display:grid;place-items:center}
+.onb-fact b{font-size:15px;font-weight:600;color:var(--cw)}
+.onb-fact span:last-child{font-size:13.5px;line-height:1.5;color:var(--c200)}
+.onb-fact .mono{color:var(--c100);word-break:break-all}
+.onb-fact .linkish{color:var(--acc-text-dark);font-size:13.5px}
+.onb-go{margin-top:44px;display:flex;flex-direction:column;align-items:center;gap:14px;
+  animation:onb-rise .7s ease-out 2.4s both}
+.onb-cta{display:flex;align-items:center;gap:10px;height:50px;padding:0 28px;border:0;
+  border-radius:12px;background:var(--acc);color:var(--c800);font-size:16px;font-weight:600;
+  box-shadow:0 8px 24px rgba(192,138,62,.28)}
+.onb-cta:hover{background:var(--acc-hover)}
+.onb-skip{border:0;background:none;font-size:13.5px;color:var(--c200)}
+.onb-skip:hover{color:var(--cw)}
+.onb-pips{position:absolute;left:0;right:0;bottom:22px;display:flex;justify-content:center;gap:8px}
+.onb-pips i{width:8px;height:4px;border-radius:2px;background:var(--c400)}
+.onb-pips i.on{width:22px;background:var(--acc)}
+@keyframes onb-bloom{0%{opacity:0;transform:scale(.55) rotate(-8deg);filter:blur(10px)}
+  60%{opacity:1;filter:blur(0)}100%{opacity:1;transform:none}}
+@keyframes onb-glow{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:.85;transform:scale(1.08)}}
+@keyframes onb-rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+@keyframes onb-fade{from{opacity:0}to{opacity:1}}
+@keyframes onb-drift-a{from{transform:translate(-40px,-20px)}to{transform:translate(60px,40px)}}
+@keyframes onb-drift-b{from{transform:translate(50px,30px)}to{transform:translate(-50px,-40px)}}
+@keyframes onb-line{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes onb-in{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+
+/* The steps. */
+.onb-rail{width:300px;flex:none;display:flex;flex-direction:column;padding:40px 28px 26px;
+  background:var(--c900);color:var(--c100);overflow-y:auto}
+.onb-brand{display:flex;align-items:center;gap:12px;font-size:19px;font-weight:700;
+  letter-spacing:-.02em;color:var(--cw)}
+.onb-brand img{width:36px;height:36px;display:block}
+.onb-rail>p{margin:14px 0 0;font-size:13.5px;line-height:1.5;color:var(--c200)}
+.onb-steps{list-style:none;margin:40px 0 0;padding:0}
+.onb-steps li{display:flex;gap:14px}
+.onb-steps .num{display:flex;flex-direction:column;align-items:center;width:28px;flex:none}
+.onb-steps .num b{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;
+  font-size:12.5px;font-weight:600;border:1.5px solid var(--c400);color:var(--c300)}
+.onb-steps .num i{width:2px;flex-grow:1;min-height:26px;background:var(--c600)}
+.onb-steps li:last-child .num i{background:transparent}
+.onb-steps .txt{display:flex;flex-direction:column;gap:2px;padding:3px 0 22px}
+.onb-steps .txt b{font-size:14.5px;font-weight:500;color:var(--c300)}
+.onb-steps .txt span{font-size:12.5px;color:#8b877c}
+.onb-steps li.done .num b{border:0;background:var(--acc);color:var(--c900)}
+.onb-steps li.done .num i{background:var(--acc)}
+.onb-steps li.done .txt b{color:var(--cw)}
+.onb-steps li[aria-current] .num b{border:2px solid var(--acc);color:var(--cw)}
+.onb-steps li[aria-current] .txt b{color:var(--cw);font-weight:600}
+.onb-later{margin-top:auto;padding-top:24px;display:flex;flex-direction:column;gap:6px}
+.onb-later button{align-self:flex-start;border:0;background:none;padding:0;font-size:13px;
+  color:var(--c200)}
+.onb-later button:hover{color:var(--cw)}
+.onb-later span{font-size:12px;color:#8b877c}
+.onb-work{flex:1;min-width:0;display:flex;flex-direction:column}
+.onb-step{flex:1;min-height:0;display:flex;gap:48px;padding:56px 56px 0;overflow-y:auto;
+  animation:onb-in .45s ease-out both}
+.onb-main{width:520px;max-width:100%;flex:none;display:flex;flex-direction:column}
+.onb-kicker{font-size:13px;font-weight:600;color:var(--acc-text)}
+.onb-main h1{margin:8px 0 0;font-size:32px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+.onb-main>p{margin:12px 0 0;font-size:15.5px;line-height:1.55;color:var(--t700)}
+.onb-side{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:12px;
+  padding-bottom:24px}
+.onb-foot{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:10px;
+  padding:18px 56px 26px}
+.onb-foot .say{margin-right:auto;font-size:13px;color:var(--t500)}
+.onb-btn{height:44px;padding:0 20px;border-radius:10px;border:1px solid var(--bd-field);
+  background:var(--field);color:var(--t900);font-size:14.5px;font-weight:500}
+.onb-btn:hover:not(:disabled){background:var(--paper-hover)}
+.onb-btn.primary{border-color:var(--acc);background:var(--acc);color:var(--c800);
+  font-weight:600;padding:0 24px}
+.onb-btn.primary:hover:not(:disabled){background:var(--acc-hover);border-color:var(--acc-hover)}
+.onb-btn:disabled{opacity:.6}
+
+/* Start from. */
+.onb-srcs{margin-top:28px;display:flex;flex-direction:column;gap:12px}
+.onb-src{display:flex;flex-direction:column;gap:10px;padding:16px 18px;border-radius:12px;
+  border:1px solid var(--rule);background:var(--row-alt);text-align:left;color:var(--t900)}
+.onb-src:hover{border-color:var(--rule-strong)}
+.onb-src[aria-checked=true]{border:2px solid var(--acc);padding:15px 17px;background:var(--field)}
+.onb-src .row{display:flex;align-items:center;gap:14px}
+.onb-src .tile{width:40px;height:40px;flex:none;border-radius:10px;display:grid;place-items:center;
+  font-size:13px;font-weight:700;background:var(--bar);color:var(--t700)}
+.onb-src[data-src=pdf] .tile{background:#f3e1e1;color:#a83519}
+.onb-src[data-src=linkedin] .tile{background:#0a66c2;color:#fff}
+.onb-src .tile svg{width:20px;height:20px}
+.onb-src .what{flex:1;display:flex;flex-direction:column;gap:2px}
+.onb-src .what b{font-size:15px;font-weight:600}
+.onb-src .what span{font-size:13px;line-height:1.45;color:var(--t600)}
+.onb-src .radio{width:18px;height:18px;flex:none;border-radius:50%;border:1.5px solid var(--bd-field)}
+.onb-src[aria-checked=true] .radio{border:5px solid var(--acc)}
+.onb-src .how{margin-left:54px;display:flex;flex-direction:column;gap:8px;font-size:13px;
+  line-height:1.5;color:var(--t800)}
+.onb-src .how b{font-weight:600}
+.onb-src .how .quiet{color:var(--t500)}
+.onb-drop{margin-top:36px;width:100%;max-width:480px;min-height:420px;flex:1;max-height:560px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:32px;
+  border-radius:18px;border:2px dashed var(--bd-field);background:var(--row-alt);text-align:center;
+  transition:border-color .15s,background .15s}
+.onb-drop.over{border-color:var(--acc);background:var(--acc-wash)}
+.onb-drop .ic{width:64px;height:64px;border-radius:16px;background:var(--bar);color:var(--acc-text);
+  display:grid;place-items:center}
+.onb-drop b{font-size:18px;font-weight:600}
+.onb-drop>span{font-size:14px;line-height:1.5;color:var(--t600);max-width:320px}
+.onb-drop small{font-size:12.5px;color:var(--t500)}
+.onb-drop .err{font-size:13px;line-height:1.5;color:var(--bad);max-width:340px}
+.onb-drop.busy .ic svg{animation:sp 1s linear infinite}
+.onb-found{margin-top:26px;border:1px solid var(--rule);border-radius:12px;background:var(--field)}
+.onb-found div{display:flex;align-items:center;gap:12px;padding:13px 16px}
+.onb-found div+div{border-top:1px solid var(--bd-inner)}
+.onb-found i{width:24px;height:24px;flex:none;border-radius:50%;background:rgba(0,122,94,.12);
+  color:var(--fn-won);display:grid;place-items:center}
+.onb-found b{flex:1;font-size:14.5px;font-weight:500}
+.onb-found span{font-size:13.5px;color:var(--t600)}
+.onb-note{margin-top:12px;display:flex;gap:12px;padding:13px 16px;border-radius:12px;
+  background:var(--acc-wash);border:1px solid var(--acc-line);font-size:13.5px;line-height:1.5;
+  color:var(--t800)}
+.onb-note>i{width:24px;height:24px;flex:none;border-radius:50%;background:var(--acc);
+  color:var(--c800);display:grid;place-items:center;font-style:normal;font-weight:700;font-size:13px}
+.onb-note ul{margin:4px 0 0;padding-left:18px}
+.onb-small{margin:14px 0 0;font-size:13px;line-height:1.5;color:var(--t500)}
+.onb-small .linkish{color:var(--acc-text)}
+
+/* You. */
+.onb-fields{margin-top:30px;display:flex;flex-direction:column;gap:16px}
+.onb-fields label{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:500;
+  color:var(--t800)}
+.onb-fields em{font-style:normal;font-weight:400;color:var(--t500)}
+.onb-fields input{height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--bd-field);
+  background:var(--field);color:var(--t900);font-size:15px;font-family:inherit}
+.onb-fields input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
+
+/* The page, beside every step that changes it. */
+.onb-cap{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 12px;border-radius:15px;
+  background:var(--field);border:1px solid var(--rule);font-size:12.5px;color:var(--t700)}
+.onb-cap i{width:7px;height:7px;border-radius:50%;background:var(--fn-won)}
+.onb-cap.busy i{background:var(--acc);animation:pulse 1s ease-in-out infinite}
+.onb-shot{width:100%;max-width:480px;aspect-ratio:210/297;background:#fff;border-radius:2px;
+  box-shadow:0 10px 40px rgba(27,26,23,.16),0 1px 3px rgba(27,26,23,.12);overflow:hidden;
+  display:grid;place-items:center;transition:opacity .15s}
+.onb-shot.busy{opacity:.6}
+.onb-shot img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+.onb-shot span{font-size:13px;color:#6b675d;padding:16px;text-align:center}
+
+/* The page: themes and paper. */
+.onb-lab{margin-top:22px;font-size:13px;font-weight:600;color:var(--t800)}
+.onb-themes{margin-top:10px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.onb-themes button{display:flex;flex-direction:column;gap:6px;padding:5px 5px 7px;border-radius:9px;
+  border:1px solid var(--bd-inner);background:transparent;text-align:left;color:var(--t900)}
+.onb-themes button:hover{background:var(--paper-hover)}
+.onb-themes button[aria-checked=true]{border:2px solid var(--acc);padding:4px 4px 6px;
+  background:var(--field)}
+.onb-themes .pic{aspect-ratio:360/223;border-radius:4px;background:#fff;overflow:hidden;
+  box-shadow:0 0 0 1px var(--bd-inner);display:grid}
+.onb-themes .pic img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.onb-themes .pic .thumb{width:100%;height:100%}
+.onb-themes .nm{padding:0 3px;font-size:12.5px;display:flex;justify-content:space-between;gap:6px;
+  white-space:nowrap}
+.onb-themes .nm>span{overflow:hidden;text-overflow:ellipsis}
+.onb-themes .nm em{flex:none}
+.onb-themes button[aria-checked=true] .nm{font-weight:600}
+.onb-themes .nm em{font-style:normal;color:var(--t500);font-weight:400}
+.onb-seg{margin-top:10px;display:flex;align-self:flex-start;padding:3px;border-radius:10px;
+  background:var(--seg-track)}
+.onb-seg button{height:34px;padding:0 18px;border:0;border-radius:8px;background:transparent;
+  color:var(--t700);font-size:13.5px}
+.onb-seg button[aria-checked=true]{background:var(--seg-on);color:var(--t900);font-weight:600;
+  box-shadow:0 1px 2px rgba(27,26,23,.1)}
+
+/* AI. */
+.onb-ai{margin-top:28px;display:flex;flex-direction:column;gap:10px}
+.onb-client{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;
+  border:1px solid var(--rule);background:var(--field)}
+.onb-client .badge{width:40px;height:40px;flex:none;border-radius:10px;display:grid;
+  place-items:center;background:var(--bar);color:var(--t900)}
+.onb-client .badge svg{width:22px;height:22px}
+.onb-client[data-client=hermes] .badge svg{width:30px;height:30px}
+.onb-client .nm{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.onb-client .nm b{font-size:14.5px;font-weight:600}
+.onb-client .nm span{font-size:12.5px;line-height:1.4;color:var(--t600)}
+.onb-client .on{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;
+  color:var(--fn-won)}
+.onb-client .on i{width:8px;height:8px;border-radius:50%;background:currentColor}
+.onb-can{margin-top:70px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:14px;
+  padding:26px 28px;border-radius:16px;background:var(--c900);color:var(--c100);
+  border:1px solid rgba(255,255,255,.07)}
+.onb-can>b{font-size:13px;font-weight:600;color:var(--acc-text-dark)}
+.onb-can div{display:flex;gap:10px;font-size:14px;line-height:1.5;color:var(--c050)}
+.onb-can div svg{flex:none;margin-top:3px}
+.onb-can>span{font-size:12.5px;color:#8b877c}
+
+@media (max-width:1080px){
+  .onb-rail{width:230px;padding:40px 20px 20px}
+  .onb-step{gap:28px;padding:44px 32px 0}
+  .onb-foot{padding:16px 32px 22px}
+  .onb-main{width:440px}
+}
+@media (max-width:860px){
+  .onb-rail{display:none}
+  .onb-step{flex-direction:column}
+  .onb-main{width:auto}
+  .onb-facts{grid-template-columns:minmax(0,1fr)}
+  .onb-word{font-size:46px}
+}
+@media (prefers-reduced-motion:reduce){
+  .onb *,.onb *::before{animation:none!important}
 }
 
 /* ---------- ATS check ------------------------------------------------------ */
@@ -4278,20 +4514,20 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   background:var(--field)}
 .client .badge{grid-column:1;grid-row:1/3;align-self:center;width:38px;height:38px;
   border-radius:9px;display:grid;place-items:center;background:var(--bar)}
-.client[data-client=claude] .badge,.ob-client[data-client=claude] .badge{
+.client[data-client=claude] .badge,.onb-client[data-client=claude] .badge{
   background:rgba(217,119,87,.14);color:#D97757}
-.client[data-client=openai] .badge{color:var(--t900)}
+.client[data-client=openai] .badge,.onb-client[data-client=openai] .badge{color:var(--t900)}
 /* Nous publish this one as an avatar -- a figure on a tile -- rather than as a
    glyph that takes the colour around it, so it is drawn that way: black on
    white, at the 0.75 of the tile their own icon set declares. Left to take
    currentColor like the other three it inverts on a dark background, and an
    inverted illustration is not the mark. It also needs the extra size: at the
    19px the rest are drawn at, its detail closes up into a blot. */
-.client[data-client=hermes] .badge,.ob-client[data-client=hermes] .badge{
+.client[data-client=hermes] .badge,.onb-client[data-client=hermes] .badge{
   background:#fff;color:#000;
   box-shadow:inset 0 0 0 1px var(--bd-field)}   /* white on white needs an edge */
 .client[data-client=hermes] .badge svg{width:28px;height:28px}
-.client[data-client=mistral] .badge,.ob-client[data-client=mistral] .badge{
+.client[data-client=mistral] .badge,.onb-client[data-client=mistral] .badge{
   background:rgba(250,80,15,.12)}
 .client .who{grid-column:2;grid-row:1;display:flex;align-items:center;gap:9px;
   min-width:0;flex-wrap:wrap}
@@ -4811,6 +5047,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="phead">
           <h1>Documents</h1><span class="pcount" id="dcount"></span>
           <div class="grow"></div>
+          <button class="obtn" id="btn-importdoc" title="A PDF of a CV, or your LinkedIn profile or data archive">Import&#8230;</button>
+          <input type="file" id="importdoc-file" accept=".pdf,.zip,application/pdf,application/zip" hidden>
           <button class="pbtn" id="btn-newdoc">New document&#8230;</button>
         </div>
         <div id="docbase"></div>
@@ -4858,6 +5096,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 <div class="scrim" id="scrim" hidden></div>
 <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true"
   aria-labelledby="sheet-title"></div>
+<!-- The first launch, over the whole window: drawn by onboardingSheet(). -->
+<div class="onb" id="onb" hidden role="dialog" aria-modal="true" aria-labelledby="onb-title"></div>
 
 <!-- ------------------------------------------------------------- Design -->
 <!-- A screen of its own under the title bar, not a panel over the page: every
@@ -6313,10 +6553,11 @@ $("#btn-ats").onclick=()=>{
 /* =========================================================================
    Setup
    ========================================================================= */
-/* Four steps, each of which leaves something real behind: the name on the
-   base CV, the theme it prints in, a client that can write to it. Nothing here
-   is a tour of buttons -- the app is small enough to find its own way round --
-   and every step can be skipped, because the defaults already render.
+/* The whole window, on the first launch: a welcome, then four steps that each
+   leave something real behind -- the CV you already had, the name at the top
+   of the base CV, the theme it prints in, a client that can write to it.
+   Nothing here is a tour of buttons, and every step can be skipped, because
+   the defaults already render.
 
    It shows while the base is still the placeholder the app wrote, not only on
    the launch that wrote it: quitting halfway is not the same as having set up.
@@ -6324,50 +6565,69 @@ $("#btn-ats").onclick=()=>{
 const OB_FIELDS=[["name","Name","Your Name"],["headline","Headline","Your Role"],
   ["location","Location","City, Country"],["email","Email","you@example.com"],
   ["phone","Phone","+33-6-12-34-56-78"]];
+const OB_STEPS=[["Welcome","What this is"],["Start from","PDF, LinkedIn or blank"],
+  ["You","The top of your CV"],["The page","Theme and paper"],["AI","Optional"]];
 const OB={step:0, path:null, cv:{}, theme:null, size:null, png:null, busy:0, again:false,
-  t:null, err:null, pages:null};
+  t:null, err:null, pages:null, src:"pdf", imp:null, importing:false, impErr:null,
+  thumbs:null, thumbRun:0};
 
 function shouldOnboard(d){
   return !prefs().onboarded&&!!(d.first_run||d.starter)&&!!(d.base&&!d.base.missing);
 }
+const onbOpen=()=>!$("#onb").hidden;
 async function onboardingSheet(){
   const b=S.state&&S.state.base;
   if(!b||b.missing) return openSettings("workspace");
-  OB.step=0; OB.path=b.path; OB.png=null; OB.cv={};
+  Object.assign(OB,{step:0, path:b.path, png:null, cv:{}, err:null, pages:null,
+    src:"pdf", imp:null, importing:false, impErr:null, thumbs:null});
   try{
     const doc=await api("/api/doc?path="+encodeURIComponent(b.path));
     const cv=(doc.data&&doc.data.cv)||{}, des=(doc.data&&doc.data.design)||{};
-    /* A placeholder is not an answer, so it goes in as a hint instead. */
-    OB_FIELDS.forEach(([k,,ph])=>{ const v=cv[k]==null?"":String(cv[k]);
-      OB.cv[k]=v===ph?"":v });
+    OB.baseCv=cv; obFill(cv);
     OB.theme=des.theme||"engineeringclassic";
     OB.size=(des.page&&des.page.size)||"a4";
   }catch(e){ return toast(e.message,true) }
-  $("#sheet").classList.add("ob");
-  openSheet('<div id="ob"></div>',()=>{
-    $("#sheet").classList.remove("ob"); clearTimeout(OB.t);
-    setPref("onboarded",true);
-    /* Finish later keeps what is on screen, the same as Next would have. */
-    if(OB.step===1||OB.step===2)
-      post("/api/save",{path:OB.path,patches:obPatches()})
-        .then(()=>{ S.baseThumb=null; paintBase() })
-        .catch(e=>toast(e.message,true));
-  });
+  closeOverlays(); if(!$("#sheet").hidden) closeSheet();
+  $("#onb").hidden=false;
   obPaint();
-  obPreview();
 }
-/* The fields as patches. Blank means absent: RenderCV leaves a null out of the
-   header, where an empty string would print a stray separator. */
+/* A placeholder is not an answer, so it goes in as a hint instead. Only the
+   starter's placeholders, though: what an import read is what you wrote. */
+function obFill(cv,imported){
+  OB_FIELDS.forEach(([k,,ph])=>{ const v=cv[k]==null?"":String(cv[k]);
+    OB.cv[k]=!imported&&v===ph||v==="Your Name"?"":v });
+}
+/* Leaving part-way keeps what is on screen, the same as Next would have. */
+function obClose(){
+  const keep=OB.step>=2||(OB.step===1&&OB.imp);
+  $("#onb").hidden=true; $("#onb").innerHTML=""; delete $("#onb").dataset.step;
+  clearTimeout(OB.t); OB.thumbRun++;
+  setPref("onboarded",true);
+  if(keep&&OB.step!==-1)
+    post("/api/save",{path:OB.path,patches:obPatches()})
+      .then(obRefresh).catch(e=>toast(e.message,true));
+}
+async function obRefresh(){
+  try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
+  S.baseThumb=null; paintBase();
+}
+/* The fields as patches, after the imported CV if there is one: the import is
+   the body, the fields are what you corrected at the top of it. Blank means
+   absent: RenderCV leaves a null out of the header, where an empty string
+   would print a stray separator. */
+function obContentPatches(){
+  return (OB.imp?[{path:["cv"],value:OB.imp.cv}]:[]).concat(
+    OB_FIELDS.map(([k])=>({path:["cv",k],value:OB.cv[k].trim()||(k==="name"?"Your Name":null)})));
+}
 function obPatches(){
-  return OB_FIELDS.map(([k])=>({path:["cv",k],value:OB.cv[k].trim()||(k==="name"?"Your Name":null)}))
-    .concat([{path:["design","theme"],value:OB.theme},
-             {path:["design","page","size"],value:OB.size}]);
+  return obContentPatches().concat([{path:["design","theme"],value:OB.theme},
+    {path:["design","page","size"],value:OB.size}]);
 }
 /* The page itself, rendered from the scratch copy the editor previews into, so
    nothing is written until Next. One at a time, because every preview shares
    that scratch file: a burst of typing is one render, and whatever changed
    while it ran is one more after it, not a second render racing the first. */
-function obPreview(){
+function obPreview(now){
   clearTimeout(OB.t);
   OB.t=setTimeout(async()=>{
     if(OB.busy){ OB.again=true; return }
@@ -6378,116 +6638,330 @@ function obPreview(){
       OB.pages=r.ok?r.pages:null;
     }catch(e){ OB.png=null; OB.err=e.message }
     OB.busy=0;
-    if(OB.again) obPreview(); else obShot();
-  },350);
+    if(OB.again) obPreview(true); else { obShot(); obTile() }
+  },now?0:350);
 }
 function obShot(){
-  const el=$("#ob-shot"); if(!el) return;
+  const el=$("#onb-shot"); if(!el) return;
   el.classList.toggle("busy",!!OB.busy);
   el.innerHTML=OB.png
     ? '<img alt="The first page of your CV" src="'+esc(OB.png+tok())+'">'
     : '<span>'+esc(OB.busy?"Rendering…":OB.err||"")+'</span>';
-  const cap=$("#ob-cap");
-  if(cap) cap.textContent=OB.pages?OB.pages+" page"+(OB.pages===1?"":"s")+
-    " · "+themeLabel(OB.theme)+" · "+(OB.size==="a4"?"A4":"US Letter"):"";
+  const cap=$("#onb-cap"); if(!cap) return;
+  cap.classList.toggle("busy",!!OB.busy);
+  const what=OB.step===1&&OB.imp?"Imported from "+OB.imp.name:"Your page, rendered as you type";
+  cap.innerHTML='<i></i>'+esc(OB.busy&&!OB.png?"Rendering…":what+(OB.pages?" · "+OB.pages+
+    " page"+(OB.pages===1?"":"s")+" · "+themeLabel(OB.theme)+" · "+
+    (OB.size==="a4"?"A4":"US Letter"):""));
 }
-const OB_STEPS=["Welcome","You","The page","AI"];
-function obPaint(){
-  const st=S.state||{}, i=OB.step, last=i===OB_STEPS.length-1;
-  const dots='<ol class="ob-steps">'+OB_STEPS.map((t,k)=>'<li'+
-    (k===i?' aria-current="step"':k<i?' class="done"':'')+'>'+t+'</li>').join("")+'</ol>';
-  let body="";
-  if(i===0) body=
-    '<h3 id="sheet-title">Welcome to CV Studio</h3>'+
-    '<p>A CV editor that shows you the page, and an application tracker beside it. '+
-    'An AI client can read and write both, if you connect one.</p>'+
-    '<ul class="ob-facts">'+
-      '<li><b>Your files, in a folder you own.</b> <span class="mono">'+
-        esc(shortPath(st.workspace))+'</span> <button class="linkish" id="ob-reveal">Open</button></li>'+
-      '<li><b>One base CV.</b> Every CV you tailor for an application starts as a copy of it, '+
-        'so it is worth two minutes now.</li>'+
-      '<li><b>Nothing leaves this machine.</b> No account, no telemetry. A model only sees '+
-        'what you connect it to.</li>'+
-    '</ul>';
-  if(i===1) body=
-    '<h3 id="sheet-title">The top of your CV</h3>'+
-    '<p>What prints above everything else. The rest of it you can write in the editor, '+
-    'or ask a model to write from what you already have.</p>'+
-    '<div class="fg w88">'+OB_FIELDS.map(([k,l,ph])=>'<label for="ob-'+k+'">'+l+
-      (k==="phone"?' <em>optional</em>':'')+'</label>'+
-      '<input id="ob-'+k+'" data-ob="'+k+'" autocomplete="off" placeholder="'+esc(ph)+
-      '" value="'+esc(OB.cv[k])+'">').join("")+'</div>';
-  if(i===2) body=
-    '<h3 id="sheet-title">How it prints</h3>'+
-    '<p>Every option is in Design later. This is your page, rendered, not a sample.</p>'+
-    '<div class="fg w88"><label>Theme</label><div class="ob-themes" id="ob-themes">'+
-      ((st.themes)||[]).map(t=>'<button data-t="'+esc(t)+'" aria-pressed="'+
-        String(t===OB.theme)+'">'+esc(themeLabel(t))+'</button>').join("")+'</div>'+
-    '<label>Paper</label><div class="seg paper acc" id="ob-size" role="tablist">'+
-      '<button role="tab" data-s="a4" aria-selected="'+String(OB.size==="a4")+'">A4</button>'+
-      '<button role="tab" data-s="us-letter" aria-selected="'+String(OB.size!=="a4")+
-        '">US Letter</button></div></div>';
-  if(i===3){
-    const cs=S.ai||[];
-    body=
-    '<h3 id="sheet-title">Connect an AI client</h3>'+
-    '<p>Optional. Connected, it can tailor a CV to a posting, look at the page it rendered, '+
-    'and keep the applications in step with your mail. It works on this folder and nothing else.</p>'+
-    '<div class="ob-ai">'+(cs.length?cs.map(c=>{
-      const live=c.state==="connected";
-      return '<div class="ob-client" data-client="'+c.id+'">'+
-        '<span class="badge"><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">'+
-          '<use href="#'+c.id+'-mark"/></svg></span>'+
-        '<span class="nm">'+esc(c.label)+'<small>'+esc(live?c.restart:c.state==="absent"
-          ?"Connect, then "+c.restart.replace(/^./,x=>x.toLowerCase()):aiSay(c))+'</small></span>'+
-        '<span class="pill" data-state="'+(live&&!c.last_seen?"unknown":c.state)+'"><i></i>'+
-          aiPill(c)+'</span>'+
-        (live?'':'<button class="obtn" data-ob-connect="'+c.id+'">Connect</button>')+
-      '</div>'}).join(""):'<p class="sp-note">Checking…</p>')+'</div>';
-  }
-  const shot=i===1||i===2;
-  $("#ob").innerHTML=dots+
-    '<div class="ob-body'+(shot?' two':'')+'"><div class="ob-main">'+body+'</div>'+
-    (shot?'<figure class="ob-fig"><div class="ob-shot" id="ob-shot"></div>'+
-      '<figcaption id="ob-cap"></figcaption></figure>':'')+'</div>'+
-    '<div class="foot">'+
-      '<button class="sbtn left" data-cancel>'+(i===0?"Skip setup":"Finish later")+'</button>'+
-      (i>0?'<button class="sbtn" id="ob-back">Back</button>':'')+
-      '<button class="sbtn primary" id="ob-next">'+(i===0?"Get started":last?"Open my CV":"Next")+'</button>'+
-    '</div>';
-  if(shot) obShot();
 
-  $("#sheet [data-cancel]").onclick=closeSheet;
-  const rv=$("#ob-reveal");
+/* The theme tiles are your CV in each theme, as on the Design screen: the
+   current one is the live page, the rest render one at a time behind it. */
+function obTile(){
+  const t=OB.theme, b=$('#onb-themes [data-t="'+t+'"] .pic');
+  if(b&&OB.png) b.innerHTML='<img alt="" src="'+esc(OB.png+tok())+'">';
+}
+async function obThumbs(){
+  const run=++OB.thumbRun, key=JSON.stringify(obContentPatches());
+  if(!OB.thumbs||OB.thumbs.key!==key) OB.thumbs={key:key,by:{}};
+  for(const t of (S.state.themes||[])){
+    if(run!==OB.thumbRun||OB.step!==3||!onbOpen()) return;
+    if(OB.thumbs.by[t]) continue;
+    try{
+      const r=await post("/api/theme-preview",{path:OB.path,theme:t,patches:obContentPatches()});
+      if(!r.ok||run!==OB.thumbRun) continue;
+      OB.thumbs.by[t]=r;
+      const b=$('#onb-themes [data-t="'+t+'"]');
+      if(b&&t!==OB.theme) b.querySelector(".pic").innerHTML='<img alt="" src="'+esc(r.png+tok())+'">';
+      if(b) b.querySelector(".nm em").textContent=r.pages+" page"+(r.pages===1?"":"s");
+    }catch(e){ return }
+  }
+}
+
+/* A PDF or a LinkedIn archive, read on this machine by /api/import: the file
+   goes to the local server and no further. Resolves to what was read, or
+   throws with a sentence to show. */
+function importFile(file){
+  return new Promise((ok,fail)=>{
+    if(file.size>40*1024*1024) return fail(new Error("That file is over 40 MB."));
+    const rd=new FileReader();
+    rd.onerror=()=>fail(new Error("That file could not be read."));
+    rd.onload=async()=>{
+      try{
+        const r=await post("/api/import",{name:file.name,
+          data:String(rd.result).replace(/^data:[^,]*,/,"")});
+        if(!r.ok) return fail(new Error(r.error||"Nothing could be read from that file."));
+        ok({name:file.name,cv:r.cv,found:r.found||[],notes:r.notes||[],source:r.source});
+      }catch(e){ fail(e) }
+    };
+    rd.readAsDataURL(file);
+  });
+}
+async function obReadFile(file){
+  if(!file) return;
+  OB.importing=true; OB.impErr=null; obPaint();
+  try{ OB.imp=await importFile(file) }catch(e){ return obImpFail(e.message) }
+  obFill(OB.imp.cv,true); OB.importing=false; OB.png=null; OB.pages=null;
+  if(onbOpen()){ obPaint(); obPreview(true) }
+}
+function obImpFail(msg){ OB.importing=false; OB.impErr=msg; if(onbOpen()) obPaint() }
+
+const OB_ICON={
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  base:'<path d="M8 4h9l3 3v13H8z"/><path d="M4 8v12h11"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  up:'<path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
+  tick:'<path d="M5 12l5 5L20 7"/>',
+  arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+};
+const obIcon=(k,s,w)=>'<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" '+
+  'stroke="currentColor" stroke-width="'+(w||2)+'" aria-hidden="true">'+OB_ICON[k]+'</svg>';
+/* The window has no frame of its own, so a screen that covers it all carries
+   the lights and a strip to drag it by. */
+function obBar(){
+  return '<div class="onb-bar" data-tauri-drag-region>'+($("#lights").hidden?"":
+    '<div class="lights"><button data-w="w-close" title="Close" aria-label="Close"></button>'+
+    '<button data-w="w-min" title="Minimise" aria-label="Minimise"></button>'+
+    '<button data-w="w-max" title="Maximise" aria-label="Maximise"></button></div>')+'</div>';
+}
+
+function obWelcome(){
+  const st=S.state||{};
+  const letters="CV Studio".split("").map((ch,i)=>'<span aria-hidden="true" style="animation-delay:'+
+    (0.55+i*0.06).toFixed(2)+'s">'+esc(ch)+'</span>').join("");
+  const facts=[
+    ["folder","Your files, in a folder you own",'<span class="mono">'+esc(shortPath(st.workspace))+
+      '</span>. Plain YAML you can open, copy and back up without this app. '+
+      '<button class="linkish" id="onb-reveal">Open it</button>'],
+    ["base","One base CV","Every CV you tailor for an application starts as a copy of it, "+
+      "so it is worth two minutes now."],
+    ["lock","Nothing leaves this machine","No account, no telemetry. A model only sees what "+
+      "you connect it to."]];
+  return '<div class="onb-hero">'+
+    '<div class="onb-orbs" aria-hidden="true"><span></span><span></span><span></span><span></span></div>'+
+    '<div class="onb-mark"><img src="/static/brand-mark-256.png" alt=""></div>'+
+    '<h1 class="onb-word" id="onb-title" aria-label="Welcome to CV Studio">'+letters+'</h1>'+
+    '<span class="onb-rule" aria-hidden="true"></span>'+
+    '<p class="onb-lede">A CV editor that shows you the page, and an application tracker '+
+      'beside it. An AI client can read and write both, if you connect one.</p>'+
+    '<div class="onb-facts">'+facts.map(([ic,t,x],i)=>
+      '<div class="onb-fact" style="animation-delay:'+(1.85+i*0.15).toFixed(2)+'s">'+
+        '<span class="ic">'+obIcon(ic,17)+'</span><b>'+t+'</b><span>'+x+'</span></div>').join("")+
+    '</div>'+
+    '<div class="onb-go"><button class="onb-cta" id="onb-next">Get started '+
+      obIcon("arrow",16,2.4)+'</button>'+
+      '<button class="onb-skip" id="onb-skip">Skip setup, I\'ll look around first</button></div>'+
+    '<div class="onb-pips" aria-label="Step 1 of '+OB_STEPS.length+'">'+
+      OB_STEPS.map((_,k)=>'<i'+(k===0?' class="on"':'')+'></i>').join("")+'</div>'+
+  '</div>';
+}
+
+function obRail(){
+  const i=OB.step;
+  return '<aside class="onb-rail">'+
+    '<div class="onb-brand"><img src="/static/brand-mark-256.png" alt="">CV Studio</div>'+
+    '<p>Two minutes to set up your base CV. Every step can be skipped: the defaults '+
+      'already render.</p>'+
+    '<ol class="onb-steps" aria-label="Setup steps">'+OB_STEPS.map(([t,sub],k)=>
+      '<li'+(k===i?' aria-current="step"':k<i?' class="done"':'')+'>'+
+        '<span class="num"><b>'+(k<i?obIcon("tick",14,3):k+1)+'</b><i></i></span>'+
+        '<span class="txt"><b>'+t+'</b><span>'+sub+'</span></span></li>').join("")+'</ol>'+
+    '<div class="onb-later"><button id="onb-later">Finish later</button>'+
+      '<span>What you have entered is kept. Settings → Workspace runs this again.</span></div>'+
+  '</aside>';
+}
+
+const OB_CAN=["Tailor your base CV to a job posting, and show you what changed",
+  "Look at the page it rendered, and fix what does not fit",
+  "Track applications from your inbox: replies, interviews, rejections",
+  "Check a CV the way an applicant tracking system reads it"];
+
+function obStep(){
+  const i=OB.step, st=S.state||{};
+  let head, lede, main="", side="", say="";
+  const shot='<div class="onb-cap" id="onb-cap"></div><div class="onb-shot" id="onb-shot"></div>';
+  if(i===1&&OB.imp){
+    head="Here is what we read";
+    lede="From "+esc(OB.imp.name)+". The page beside this is your CV, rebuilt and rendered "+
+      "in CV Studio.";
+    main='<div class="onb-found">'+OB.imp.found.map(f=>'<div><i>'+obIcon("tick",13,3)+'</i>'+
+        '<b>'+esc(f.what)+'</b><span>'+esc(String(f.count))+'</span></div>').join("")+'</div>'+
+      (OB.imp.notes.length?'<div class="onb-note"><i>!</i><span><b>'+
+        (OB.imp.notes.length===1?"One thing to check.":OB.imp.notes.length+" things to check.")+
+        '</b>'+(OB.imp.notes.length===1?" "+esc(OB.imp.notes[0]):'<ul>'+OB.imp.notes.map(n=>
+          '<li>'+esc(n)+'</li>').join("")+'</ul>')+' Fix it on the page, or ask a connected '+
+        'AI client to tidy the import.</span></div>':'')+
+      '<p class="onb-small">Nothing is saved until you press Next. The file stays where it is; '+
+        'only what was read goes into your base CV. '+
+        '<button class="linkish" id="onb-again">Import a different file</button></p>';
+    side=shot;
+  }else if(i===1){
+    head="Start from what you have";
+    lede="Bring the CV you already have, or start from a blank one. Either way you get a "+
+      "base CV every tailored copy starts from.";
+    const srcs=[
+      ["pdf","PDF","Import a PDF of your CV","Contact details come out exactly. Jobs, "+
+        "education and skills are sorted into sections, and a connected AI client can tidy "+
+        "what the rules miss."],
+      ["linkedin",'<svg viewBox="0 0 448 512" aria-hidden="true"><use href="#board-linkedin"/></svg>',
+        "Import from LinkedIn","Your data archive or your profile saved as PDF."],
+      ["blank","+","Start from a blank CV","The starter layout, filled in as you go."]];
+    main='<div class="onb-srcs" role="radiogroup" aria-label="Start from">'+srcs.map(([k,g,t,x])=>
+      '<button class="onb-src" role="radio" data-src="'+k+'" aria-checked="'+String(OB.src===k)+'">'+
+        '<span class="row"><span class="tile">'+g+'</span><span class="what"><b>'+t+'</b>'+
+        '<span>'+x+'</span></span><span class="radio"></span></span>'+
+        (k==="linkedin"&&OB.src==="linkedin"?'<span class="how">'+
+          '<span><b>Your data archive (.zip), exact.</b> LinkedIn → Settings → Data privacy → '+
+            'Get a copy of your data. Tick Profile, Positions, Education and Skills; it '+
+            'arrives by email in about ten minutes.</span>'+
+          '<span><b>Or your profile as a PDF.</b> On your profile, More → Save to PDF.</span>'+
+          '<span class="quiet">CV Studio never signs in to LinkedIn. You bring the file.</span>'+
+        '</span>':'')+
+      '</button>').join("")+'</div>';
+    if(OB.src==="blank") side=shot;
+    else side='<div class="onb-drop'+(OB.importing?' busy':'')+'" id="onb-drop">'+
+      '<span class="ic">'+obIcon("up",30,1.8)+'</span>'+
+      '<b>'+(OB.importing?"Reading it…":"Drop your "+(OB.src==="linkedin"?"LinkedIn file":"CV")+
+        " here")+'</b>'+
+      '<span>'+(OB.src==="linkedin"?"Your LinkedIn data archive (.zip), or your profile "+
+        "saved as PDF.":"A PDF of your CV, your LinkedIn profile saved as PDF, or your "+
+        "LinkedIn data archive (.zip).")+'</span>'+
+      (OB.impErr?'<span class="err" role="alert">'+esc(OB.impErr)+'</span>':'')+
+      '<button class="onb-btn" id="onb-pick"'+(OB.importing?" disabled":"")+'>Choose a file…</button>'+
+      '<small>Read on this machine. Nothing is uploaded.</small>'+
+      '<input type="file" id="onb-file" accept=".pdf,.zip,application/pdf,application/zip" hidden>'+
+    '</div>';
+    if(OB.src!=="blank") say="No file? Next starts from the blank CV.";
+  }else if(i===2){
+    head="The top of your CV";
+    lede="What prints above everything else. The rest you can write in the editor, or ask "+
+      "a model to write from what you already have.";
+    main='<div class="onb-fields">'+OB_FIELDS.map(([k,l,ph])=>'<label>'+
+      '<span>'+l+(k==="phone"?' <em>optional</em>':'')+'</span>'+
+      '<input data-ob="'+k+'" autocomplete="off" placeholder="'+esc(ph)+'" value="'+
+        esc(OB.cv[k])+'"></label>').join("")+'</div>';
+    side=shot;
+  }else if(i===3){
+    head="How it prints";
+    lede="Pick a theme and a paper size. Every other option is in Design later. The page "+
+      "beside this is yours, rendered, not a sample.";
+    const by=(OB.thumbs&&OB.thumbs.key===JSON.stringify(obContentPatches())&&OB.thumbs.by)||{};
+    main='<div class="onb-lab" id="onb-pl">Paper</div>'+
+      '<div class="onb-seg" id="onb-size" role="radiogroup" aria-labelledby="onb-pl">'+
+        '<button role="radio" data-s="a4" aria-checked="'+String(OB.size==="a4")+'">A4</button>'+
+        '<button role="radio" data-s="us-letter" aria-checked="'+String(OB.size!=="a4")+
+          '">US Letter</button></div>'+
+      '<div class="onb-lab" id="onb-tl">Theme</div>'+
+      '<div class="onb-themes" id="onb-themes" role="radiogroup" aria-labelledby="onb-tl">'+
+      (st.themes||[]).map(t=>{
+        const img=t===OB.theme&&OB.png?OB.png:by[t]?by[t].png:null;
+        return '<button role="radio" data-t="'+esc(t)+'" aria-checked="'+String(t===OB.theme)+'">'+
+          '<span class="pic">'+(img?'<img alt="" src="'+esc(img+tok())+'">':thumbHTML(t))+'</span>'+
+          '<span class="nm"><span>'+esc(themeLabel(t))+'</span><em>'+(by[t]?by[t].pages+" page"+
+            (by[t].pages===1?"":"s"):"")+'</em></span></button>'}).join("")+'</div>';
+    side=shot;
+  }else{
+    head="Connect an AI client";
+    lede="Optional. Connected, it can tailor a CV to a posting, look at the page it rendered, "+
+      "and keep your applications in step with your mail.";
+    const cs=S.ai||[];
+    main='<div class="onb-ai">'+(cs.length?cs.map(c=>{
+      const live=c.state==="connected";
+      return '<div class="onb-client" data-client="'+c.id+'">'+
+        '<span class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#'+c.id+
+          '-mark"/></svg></span>'+
+        '<span class="nm"><b>'+esc(c.label)+'</b><span>'+esc(live?aiSay(c):c.state==="absent"
+          ?"Connect, then "+c.restart.replace(/^./,x=>x.toLowerCase()):aiSay(c))+'</span></span>'+
+        (live?'<span class="on"><i></i>'+esc(aiPill(c))+'</span>'
+             :'<button class="onb-btn" data-ob-connect="'+c.id+'">Connect</button>')+
+      '</div>'}).join(""):'<p class="onb-small">Checking…</p>')+'</div>';
+    side='<div class="onb-can"><b>Once one is connected, you can ask it to</b>'+
+      OB_CAN.map(x=>'<div><svg width="16" height="16" viewBox="0 0 24 24" fill="none" '+
+        'stroke="#c08a3e" stroke-width="2.4" aria-hidden="true">'+OB_ICON.tick+'</svg>'+
+        '<span>'+x+'</span></div>').join("")+
+      '<span>It works on your CV Studio folder and nothing else.</span></div>';
+  }
+  const last=i===OB_STEPS.length-1;
+  return obRail()+'<div class="onb-work">'+
+    '<div class="onb-step"><section class="onb-main">'+
+      '<span class="onb-kicker">Step '+(i+1)+' of '+OB_STEPS.length+'</span>'+
+      '<h1 id="onb-title">'+head+'</h1><p>'+lede+'</p>'+main+'</section>'+
+      '<aside class="onb-side">'+side+'</aside></div>'+
+    '<footer class="onb-foot"><span class="say">'+say+'</span>'+
+      '<button class="onb-btn" id="onb-back">Back</button>'+
+      '<button class="onb-btn primary" id="onb-next">'+(last?"Open my CV":"Next")+'</button>'+
+    '</footer></div>';
+}
+
+function obPaint(){
+  const i=OB.step, root=$("#onb");
+  /* Re-painting the step you are on keeps its place and skips the slide-in:
+     only moving between steps should move. */
+  const same=root.dataset.step===String(i), keep=same&&root.querySelector(".onb-step");
+  const top=keep?keep.scrollTop:0;
+  root.innerHTML=obBar()+(i===0?obWelcome():obStep());
+  root.dataset.step=String(i);
+  const stepEl=root.querySelector(".onb-step");
+  if(stepEl&&same){ stepEl.style.animation="none"; stepEl.scrollTop=top }
+
+  $$("#onb .onb-bar [data-w]").forEach(b=>b.onclick=()=>$("#"+b.dataset.w).click());
+  const rv=$("#onb-reveal");
   if(rv) rv.onclick=async()=>{ try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) } };
-  $$("#ob [data-ob]").forEach(el=>el.oninput=()=>{ OB.cv[el.dataset.ob]=el.value; obPreview() });
-  $$("#ob-themes button").forEach(bt=>bt.onclick=()=>{
-    OB.theme=bt.dataset.t;
-    $$("#ob-themes button").forEach(x=>x.setAttribute("aria-pressed",String(x===bt)));
-    obPreview();
+  const sk=$("#onb-skip"); if(sk) sk.onclick=obClose;
+  const lt=$("#onb-later"); if(lt) lt.onclick=obClose;
+  const bk=$("#onb-back"); if(bk) bk.onclick=()=>{ OB.step--; obPaint() };
+  $("#onb-next").onclick=obNext;
+
+  $$("#onb [data-src]").forEach(b=>b.onclick=()=>{
+    if(OB.src===b.dataset.src) return;
+    OB.src=b.dataset.src; OB.impErr=null; obPaint();
+    if(OB.src==="blank"&&!OB.png) obPreview(true);
   });
-  $$("#ob-size button").forEach(bt=>bt.onclick=()=>{
+  const drop=$("#onb-drop");
+  if(drop){
+    const file=$("#onb-file");
+    $("#onb-pick").onclick=()=>file.click();
+    file.onchange=()=>obReadFile(file.files[0]);
+    drop.ondragover=e=>{ e.preventDefault(); drop.classList.add("over") };
+    drop.ondragleave=()=>drop.classList.remove("over");
+    drop.ondrop=e=>{ e.preventDefault(); drop.classList.remove("over");
+      if(!OB.importing) obReadFile(e.dataTransfer.files[0]) };
+  }
+  const ag=$("#onb-again");
+  if(ag) ag.onclick=()=>{ OB.imp=null; OB.impErr=null; OB.png=null; OB.pages=null;
+    obFill(OB.baseCv||{}); obPaint() };
+  $$("#onb [data-ob]").forEach(el=>el.oninput=()=>{ OB.cv[el.dataset.ob]=el.value; obPreview() });
+  $$("#onb-themes [data-t]").forEach(bt=>bt.onclick=()=>{
+    const was=OB.theme; OB.theme=bt.dataset.t;
+    $$("#onb-themes [data-t]").forEach(x=>x.setAttribute("aria-checked",String(x===bt)));
+    /* The tile you left gets its own render back, if it has one. */
+    const old=$('#onb-themes [data-t="'+was+'"] .pic'), by=OB.thumbs&&OB.thumbs.by[was];
+    if(old&&by) old.innerHTML='<img alt="" src="'+esc(by.png+tok())+'">';
+    obPreview(true);
+  });
+  $$("#onb-size [data-s]").forEach(bt=>bt.onclick=()=>{
     OB.size=bt.dataset.s;
-    $$("#ob-size button").forEach(x=>x.setAttribute("aria-selected",String(x===bt)));
-    obPreview();
+    $$("#onb-size [data-s]").forEach(x=>x.setAttribute("aria-checked",String(x===bt)));
+    obPreview(true);
   });
-  $$("#ob [data-ob-connect]").forEach(bt=>bt.onclick=async()=>{
+  $$("#onb [data-ob-connect]").forEach(bt=>bt.onclick=async()=>{
     bt.disabled=true; bt.textContent="Connecting…";
     try{ await post("/api/ai/connect",{client:bt.dataset.obConnect}) }
     catch(e){ toast(e.message,true) }
-    await loadAI(); obPaint();
+    await loadAI(); if(onbOpen()&&OB.step===4) obPaint();
   });
-  if(i===3&&!S.ai) loadAI().then(()=>{ if(OB.step===3&&!$("#sheet").hidden) obPaint() });
-  const back=$("#ob-back");
-  if(back) back.onclick=()=>{ OB.step--; obPaint() };
-  $("#ob-next").onclick=obNext;
-  const f=$("#ob input")||$("#ob-next"); if(f) f.focus();
+  if(i===4&&!S.ai) loadAI().then(()=>{ if(OB.step===4&&onbOpen()) obPaint() });
+
+  if($("#onb-shot")){ obShot(); if(!OB.png&&!OB.busy) obPreview(true) }
+  if(i===3) obThumbs();
+  const f=$("#onb input[data-ob]")||$("#onb-next"); if(f&&!same) f.focus();
 }
+
 async function obNext(){
-  const btn=$("#ob-next");
+  const btn=$("#onb-next");
   /* The page is written when you leave the step that changed it, so Back and
      Finish later both keep what you did. */
-  if(OB.step===1||OB.step===2){
+  if(OB.step>=2||(OB.step===1&&OB.imp)){
     btn.disabled=true;
     try{ await post("/api/save",{path:OB.path,patches:obPatches()}) }
     catch(e){ btn.disabled=false; return toast(e.message,true) }
@@ -6495,11 +6969,13 @@ async function obNext(){
   }
   if(OB.step<OB_STEPS.length-1){ OB.step++; return obPaint() }
   OB.step=-1;   /* saved already: closing must not write it again */
-  closeSheet();
-  try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
-  S.baseThumb=null; paintBase();
+  obClose();
+  await obRefresh();
   openDoc(OB.path);
 }
+/* Nothing behind the setup should hear its keys: Escape is not a way out of a
+   screen that has its own Finish later, and the arrows belong to its fields. */
+window.addEventListener("keydown",e=>{ if(onbOpen()) e.stopPropagation() },true);
 
 /* =========================================================================
    Editor
@@ -8557,6 +9033,52 @@ function newJobSheet(seed){
 }
 $("#btn-newjob").onclick=()=>newJobSheet();
 $("#btn-newdoc").onclick=()=>newDocumentSheet();
+/* Import makes a new CV from a file rather than overwriting one: the design is
+   the base CV's, so it prints like everything else, and the base is left
+   alone. What was read, and anything to check, is shown before it is made. */
+$("#btn-importdoc").onclick=()=>{ $("#importdoc-file").value=""; $("#importdoc-file").click() };
+$("#importdoc-file").onchange=async()=>{
+  const file=$("#importdoc-file").files[0]; if(!file) return;
+  const btn=$("#btn-importdoc"); btn.disabled=true; btn.textContent="Reading…";
+  let imp;
+  try{ imp=await importFile(file) }
+  catch(e){ return toast(e.message,true) }
+  finally{ btn.disabled=false; btn.innerHTML="Import&#8230;" }
+  importSheet(imp);
+};
+function importSheet(imp){
+  const b=S.state&&S.state.base, base=b&&!b.missing?b.path:null;
+  const stem=slug(imp.cv.name&&imp.cv.name!=="Your Name"?imp.cv.name:
+    file_stem(imp.name))||"imported";
+  openSheet(
+    '<div><h3 id="sheet-title">Import '+esc(imp.name)+'</h3><p>'+
+      (base?'A new CV, in the base CV&#8217;s design. The base itself is not changed.'
+           :'A new CV from what was read.')+'</p></div>'+
+    '<ul class="imp-found">'+imp.found.map(f=>'<li><b>'+esc(f.what)+'</b><span>'+
+      esc(String(f.count))+'</span></li>').join("")+'</ul>'+
+    (imp.notes.length?'<div class="imp-notes"><b>To check</b><ul>'+imp.notes.map(n=>
+      '<li>'+esc(n)+'</li>').join("")+'</ul></div>':'')+
+    '<div class="fg w88"><label for="imp-name">Save as</label>'+
+      '<input id="imp-name" class="mono" autocomplete="off" value="'+
+        esc(uniqueDocName(stem+"-cv"))+'"></div>'+
+    '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
+    '<button class="sbtn primary" id="imp-go">Create and open</button></div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#imp-go").onclick=async()=>{
+    const name=$("#imp-name").value.trim().replace(/\.ya?ml$/i,"");
+    if(!name) return toast("Give it a name",true);
+    $("#imp-go").disabled=true;
+    try{
+      const r=await post("/api/new",{name,kind:"cv",from:base});
+      await post("/api/save",{path:r.path,patches:[{path:["cv"],value:imp.cv}]});
+      closeSheet();
+      const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
+      openDoc(r.path); toast("Imported "+imp.name);
+    }catch(e){ $("#imp-go").disabled=false; toast(e.message,true) }
+  };
+  $("#imp-name").select();
+}
+const file_stem=n=>String(n||"").replace(/\.[^.]+$/,"");
 
 /* =========================================================================
    Funnel

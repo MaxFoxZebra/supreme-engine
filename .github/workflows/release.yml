@@ -190,6 +190,7 @@ jobs:
             --hidden-import studio \
             --hidden-import mcp_server \
             --hidden-import ats \
+            --hidden-import importer \
             --paths . \
             server_main.py
 

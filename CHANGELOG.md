@@ -23,14 +23,25 @@ tag, so a release is never published with nothing said about it.
   never written, such as the header's alignment on a starter CV, used to be
   dropped without a word. Only what you change is written now, and template
   text keeps its line breaks.
-- **A setup on first launch.** Four short steps: what the app is and where
-  your files live, your name and contact details at the top of the base CV,
-  the theme and paper size it prints in, and an AI client to connect. Beside
-  the fields is your own page, rendered as you type and as you switch themes,
-  not a sample. Every step can be skipped, and closing it keeps what you
+- **A setup on first launch, over the whole window.** It opens on the mark
+  and the name, animated, with what the app is and where your files live.
+  Then four steps down a rail: the CV you already have, your name and contact
+  details at the top of it, the theme and paper size it prints in, and an AI
+  client to connect. Beside each is your own page, rendered as you type and as
+  you switch themes, not a sample, and every theme tile is your CV in that
+  theme. Every step can be skipped, and **Finish later** keeps what you
   entered. It comes back on the next launch if the base CV is still the
   placeholder, and **Settings → Workspace → Run setup again** brings it back
-  any time.
+  any time. With reduced motion turned on, nothing moves.
+- **Start from the CV you already have.** Setup imports a PDF of your CV,
+  your LinkedIn profile saved as PDF, or LinkedIn's data archive (the .zip it
+  emails you), and shows what it read (contact details, roles, education,
+  skills, languages) before anything is saved, beside the result rendered.
+  Anything it was unsure of is listed to check, such as a phone number with
+  no country code. The file is read on your machine and nothing is uploaded;
+  CV Studio never signs in to LinkedIn.
+- **Import on Documents** does the same for any CV later: it becomes a new
+  document in your base CV's design, and the base is left alone.
 - **The base CV card shows the base CV.** A snapshot of its first page, as
   actually rendered, sits in the card on Applications and on Documents, and
   clicking it opens the CV. It updates when you or a model change the file.
