@@ -8,6 +8,18 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Languages are opt-in.** Settings → Language & region → CVs in more than
+  one language. Off, the app never mentions languages: no tabs, flags,
+  filters or language questions when you tailor. In their place, one setting
+  for the language your CVs print in (dates, month names, "present"). It is
+  on by itself once a CV has a translation, and turning it off deletes
+  nothing.
+- **The base CV card in the sidebar** shows the page standing on a small
+  stage, with its name, a flag for each language it comes in, how many CVs
+  were tailored from it, and Open beside Design and Change.
+
 ## 0.18.0
 
 - **The funnel chart follows the theme.** In light mode it sits on a white

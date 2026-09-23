@@ -1358,6 +1358,33 @@ def add_language(path: Path, code: str) -> dict:
     return out
 
 
+def set_cv_language(path: Path, code: str) -> dict:
+    """Print a CV in another language: its locale, and nothing else.
+
+    What Settings writes when the app is used in one language. Dates, month
+    names and "present" follow; the text stays as written.
+    """
+    if code not in languages.LANGS:
+        raise ValueError(f"CV Studio cannot print a CV in {code!r}.")
+    import io
+    data = yaml_rt.load(path.read_text(encoding="utf-8"))
+    loc = data.get("locale")
+    if not isinstance(loc, dict):
+        loc = CommentedMap()
+        data["locale"] = loc
+    loc["language"] = languages.LANGS[code][0]
+    if code in languages.PRESENT:
+        loc["present"] = languages.PRESENT[code]
+    else:
+        # Left behind from another language it would print in that one, and
+        # empty RenderCV refuses the file.
+        loc.pop("present", None)
+    buf = io.StringIO()
+    yaml_rt.dump(data, buf)
+    path.write_text(buf.getvalue(), encoding="utf-8")
+    return {"path": rel(path), "lang": code}
+
+
 def _map_to_translation(path_: list, keys: dict) -> list:
     """A field's path in the source, as the same field's path in a
     translation whose section keys were renamed."""
@@ -3045,6 +3072,10 @@ def openapi_spec() -> dict:
                 "requestBody": body({"name": {"type": "string"},
                                      "kind": {"type": "string"},
                                      "from": {"type": "string"}}), "responses": ok}},
+            "/api/language/set": {"post": {"summary":
+                "Set the language a CV prints in (its locale); the text is not changed",
+                "requestBody": body({"path": {"type": "string"}, "language": {"type": "string"}}),
+                "responses": ok}},
             "/api/sample": {"post": {"summary":
                 "Switch to freshly made sample data (on: true) or back to your own "
                 "workspace (on: false). Your workspace is never written to",
@@ -3631,6 +3662,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # it all along -- it was simply thrown away on write.
                 note_lineage(dest, rel(safe_path(src)) if src else None)
                 return self._json({"ok": True, "path": rel(dest)})
+            if u.path == "/api/language/set":
+                return self._json({"ok": True, **set_cv_language(
+                    safe_path(payload.get("path", "")), payload.get("language", ""))})
             if u.path == "/api/sample":
                 # Sample data lives in its own folder; switching never writes
                 # to the workspace you came from.
@@ -4542,6 +4576,9 @@ body.dragging{cursor:col-resize;user-select:none}
   box-shadow:0 0 0 .5px rgba(0,0,0,.25)}
 .lchip .flg{margin-right:4px}
 #dfilter .flg{margin-right:6px;vertical-align:-1px}
+/* One language: no tabs, flags, filters or language fields anywhere. */
+html.mono .btabs,html.mono #dfilter,html.mono .bflags,html.mono .ap-fact.lang,
+html.mono .langs,html.mono #langsw{display:none!important}
 .ap-lang{display:flex;align-items:center;gap:7px;min-width:0}
 .ap-lang .flg{width:18px;height:12px;border-radius:2px;flex:none;box-shadow:0 0 0 .5px rgba(0,0,0,.25)}
 :root[data-theme=dark] .lchip.on{background:var(--cw);color:var(--c800)}
@@ -6353,6 +6390,13 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <select id="s-uilang"><option value="">Match system</option>
             <option value="en">English</option><option value="fr">Français</option>
             <option value="es">Español</option><option value="pt">Português (Brasil)</option></select></div>
+        <div class="srow"><div><b>CVs in more than one language</b><span>For applying in more
+          than one country: a base CV per language, kept in step with the first one. Off, the
+          app never mentions languages.</span></div>
+          <label class="tgl"><input type="checkbox" id="s-multilang"><i></i></label></div>
+        <div class="srow" id="s-cvlang-row"><div><b>Language of your CVs</b><span>Dates, month
+          names and “present” print in it, and new letters are written in it.</span></div>
+          <select id="s-cvlang"></select></div>
         <div class="srow"><div><b>Time zone</b><span>Interviews somewhere else show in
           your time, with theirs beside it.</span></div>
           <select id="s-tz"></select></div>
@@ -10212,7 +10256,7 @@ function baseHeroHTML(b){
     '<p class="bwhy">Every CV you tailor for an application starts as a copy of the base.</p>'+
     '<div class="bacts"><button class="pbtn" data-base-pick>'+(b?"Choose another":"Choose")+
       '&#8230;</button></div></div></div>';
-  const fam=baseFamily();
+  const fam=multiLang()?baseFamily():baseFamily().slice(0,1);
   let m=fam.find(x=>x.lang===S.baseLang)||fam[0];
   const docs=(S.state&&S.state.documents)||[];
   const me=docs.find(d=>d.path===m.path);
@@ -10286,6 +10330,7 @@ function mountBase(el,cls){
   if(dr) dr.onclick=()=>driftSheet(shown,S.driftBy[shown]);
 }
 function paintBase(){
+  applyMultiLang();
   mountBase($("#baserow"),"baserow");
   mountBase($("#docbase"),"bhero");
   paintBaseChip();
@@ -10375,6 +10420,16 @@ function baseFamily(){
     .map(d=>({path:d.path,lang:d.lang,source:false})));
 }
 const baseIn=lang=>baseFamily().find(m=>m.lang===lang)||null;
+/* Whether CVs come in more than one language here. Most people apply in one
+   country, and for them every tab, flag and language question is noise, so it
+   is off until a translation exists or Settings turns it on. Off hides the
+   language machinery; nothing is deleted, and translations come back as they
+   were when it is turned on again. */
+function multiLang(){
+  const p=prefs().multilang;
+  return p==null?baseFamily().length>1:!!p;
+}
+function applyMultiLang(){ document.documentElement.classList.toggle("mono",!multiLang()) }
 /* Which AI clients could do the translating, in words, for the prompts. */
 function clientsSay(){
   const on=(S.ai||[]).filter(c=>c.state==="connected").map(c=>c.label);
@@ -10557,7 +10612,7 @@ function drawDocuments(){
   docs.forEach(d=>{ const c=d.lang||"en"; nOf[c]=(nOf[c]||0)+1 });
   const langs=Object.keys(nOf).sort((a,b)=>(b===srcLang)-(a===srcLang)||nOf[b]-nOf[a]);
   const filt=$("#dfilter");
-  if(langs.length<2){ filt.hidden=true; S.docLang=null }
+  if(langs.length<2||!multiLang()){ filt.hidden=true; S.docLang=null }
   else{
     filt.hidden=false;
     filt.innerHTML=[null,...langs].map(c=>'<button data-dl="'+(c||"")+'" aria-pressed="'+
@@ -10727,7 +10782,7 @@ async function tailorFor(id,force){
      one, ask: translating the base now makes it for every later posting. */
   const lang=j.language||j.language_guess;
   const fam=baseFamily(), from=(lang&&baseIn(lang))||fam[0];
-  if(lang&&!baseIn(lang)&&!force) return tailorLangSheet(j,lang);
+  if(multiLang()&&lang&&!baseIn(lang)&&!force) return tailorLangSheet(j,lang);
   const name=uniqueDocName(derivedName(j.title,j.company));
   S.tailoring.add(id); drawJobs();
   try{
@@ -11070,7 +11125,8 @@ function drawJobInspector(){
   /* One row of facts, the documents as pages, and the posting beside them,
      read as a posting. The fields set once when the application was made are
      folded away, with the delete under them. */
-  const fact=(label,ctl)=>'<div class="ap-fact'+(label==="Interview"?" wide":"")+'"><span>'+t(label)+'</span>'+ctl+'</div>';
+  const fact=(label,ctl)=>'<div class="ap-fact'+(label==="Interview"?" wide":label==="Language"?" lang":"")+
+    '"><span>'+t(label)+'</span>'+ctl+'</div>';
   const statusCtl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span>'+
     '<select data-j="status" aria-label="Status">'+S.statuses.map(s=>'<option value="'+s+'"'+
     (s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+'</option>').join("")+'</select></span>';
@@ -12670,6 +12726,25 @@ function fillSettings(){
   const ul=$("#s-uilang");
   ul.value=pr.ui_lang||"";
   ul.onchange=()=>{ setPref("ui_lang",ul.value||null); location.reload() };
+  const ml=$("#s-multilang"), cvl=$("#s-cvlang"), bcv=st.base;
+  ml.checked=multiLang();
+  ml.onchange=()=>{ setPref("multilang",ml.checked); applyMultiLang(); paintBase();
+    if(S.view==="docs") drawDocuments(); if(S.jsel&&S.view==="jobs") drawJobs(); fillSettings() };
+  /* With one language, which one it is, written onto the base CV. With
+     several, each base CV already says its own on Documents. */
+  $("#s-cvlang-row").hidden=ml.checked||!bcv||bcv.missing;
+  const cur=(((st.documents||[]).find(d=>bcv&&d.path===bcv.path))||{}).lang||"en";
+  cvl.innerHTML=(st.languages||[]).map(l=>'<option value="'+l.code+'"'+(l.code===cur?" selected":"")+'>'+
+    esc(l.native)+(l.native!==l.english?' · '+esc(l.english):'')+'</option>').join("");
+  cvl.onchange=async()=>{
+    const l=(st.languages||[]).find(x=>x.code===cvl.value); if(!l||!bcv) return;
+    try{
+      const r=await post("/api/language/set",{path:bcv.path,language:l.code});
+      if(r&&r.ok===false) throw new Error(r.error||"Could not save");
+      const s2=await api("/api/state"); S.state=s2; renderDocs(s2.documents);
+      S.baseThumb=null; paintBase(); toast(t("Saved"));
+    }catch(e){ toast(e.message,true) }
+  };
   const tzs=$("#s-tz");
   tzs.innerHTML='<option value="">'+esc(t("Match system"))+' · '+esc(tzCity(machineTz()))+'</option>'+
     tzOptions(pr.tz||"",null);

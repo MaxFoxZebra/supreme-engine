@@ -57,7 +57,7 @@ def code_of(language: str | None) -> str:
 
 
 def catalogue() -> list[dict]:
-    return [{"code": k, "name": v[0], "native": v[1], "english": v[2]}
+    return [{"code": k, "name": v[0], "native": v[1], "english": v[2], "present": PRESENT.get(k)}
             for k, v in LANGS.items()]
 
 
