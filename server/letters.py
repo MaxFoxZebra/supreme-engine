@@ -344,6 +344,9 @@ def _font_paths(extra: list[Path]) -> list[str]:
         paths.append(str(Path(rendercv_fonts.__file__).parent))
     except Exception:
         pass
+    import cjkfonts
+    if cjkfonts.cache_dir().is_dir():
+        paths.append(str(cjkfonts.cache_dir()))
     return paths + [str(p) for p in extra if p.is_dir()]
 
 

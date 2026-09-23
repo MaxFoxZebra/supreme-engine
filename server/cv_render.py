@@ -204,6 +204,15 @@ def _render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
     if not yaml_path.exists():
         return {"ok": False, "log": f"{yaml_path} does not exist"}
 
+    # Chinese, Japanese and Korean text needs a font the build leaves out and
+    # fetches once. Waiting here makes the first such render slower, never
+    # wrong; offline it prints in a font the machine has.
+    try:
+        import cjkfonts
+        cjkfonts.ensure(yaml_path.read_text(encoding="utf-8", errors="replace"))
+    except ImportError:
+        pass
+
     # Prefer in-process when RenderCV is importable: it is faster and it is the
     # only path that works inside a frozen bundle.
     if rendercv_importable():

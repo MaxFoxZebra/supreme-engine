@@ -193,8 +193,19 @@ jobs:
             --hidden-import importer \
             --hidden-import languages \
             --hidden-import letters \
+            --hidden-import cjkfonts \
+            --exclude-module PIL \
             --paths . \
             server_main.py
+          # Pillow is there only because pypdf imports it if it can, to pull
+          # images out of a PDF, which nothing here does. 18 MB unpacked.
+          #
+          # The Chinese, Japanese and Korean cuts of Noto Sans are 44 MB of
+          # the 59 MB of fonts, for the few CVs written in those languages.
+          # cjkfonts.py fetches the pair a document needs the first time it
+          # renders, from the rendercv-fonts release pinned there.
+          rm -f dist/cv-studio-server/_internal/rendercv_fonts/"Noto Sans"/NotoSans{SC,JP,KR}-*.ttf
+          ls dist/cv-studio-server/_internal/rendercv_fonts/"Noto Sans"/NotoSans-Regular.ttf
 
       - name: Stage the server as a Tauri resource
         shell: bash

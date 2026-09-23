@@ -17,6 +17,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 
+import cjkfonts  # noqa: E402
 import languages  # noqa: E402
 import studio  # noqa: E402
 from cv_render import render_file  # noqa: E402
@@ -122,6 +123,12 @@ def main() -> int:
         "own the reliability of our services and the deployment pipeline.") == "en")
     check("a list of tools is left alone", languages.detect("Kubernetes Terraform AWS") is None)
 
+    print("Fonts a CV's text calls for")
+    for text, want in (("Alex Moreau", []), ("김민준", ["ko"]), ("山田 太郎、エンジニア", ["ja"]),
+                       ("王伟 工程师", ["zh"]), ("Moreau 김 王", ["ko", "zh"])):
+        check(f"{text}: {want or 'none'}", cjkfonts.needed(text) == want, repr(cjkfonts.needed(text)))
+    check("every cut it can fetch has its hashes",
+          all(n in cjkfonts.SHA256 for c in cjkfonts.CUTS for n in cjkfonts._files(c)))
     print()
     print(f"{fails} failure(s)" if fails else "every language check passes")
     return 1 if fails else 0

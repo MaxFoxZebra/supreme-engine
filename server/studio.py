@@ -64,6 +64,7 @@ except ImportError:  # clicking the page is a bonus, not a requirement
     cv_map = None
 
 import ats  # noqa: E402
+import cjkfonts  # noqa: E402
 import importer  # noqa: E402
 import languages  # noqa: E402
 import letters  # noqa: E402
@@ -1346,8 +1347,14 @@ def add_language(path: Path, code: str) -> dict:
         "of": rel(path), "lang": code, "from_lang": src_lang, "at": time.time(),
         "keys": renamed, "synced": source_cv, "synced_at": time.time()}
     _edits_write(record)
-    return {"path": rel(dest), "of": rel(path), "lang": code, "from_lang": src_lang,
-            "sections_titled": renamed, "sections_to_title": kept}
+    out = {"path": rel(dest), "of": rel(path), "lang": code, "from_lang": src_lang,
+           "sections_titled": renamed, "sections_to_title": kept}
+    # Fetched now rather than at the first render, so it is usually there by
+    # the time the copy is translated.
+    if cjkfonts.fetch([code]):
+        _, name, mb = cjkfonts.CUTS[code]
+        out["font"] = {"language": name, "mb": mb}
+    return out
 
 
 def _map_to_translation(path_: list, keys: dict) -> list:
@@ -1570,6 +1577,7 @@ def render_letter(path: Path) -> dict:
     meta, body = letters.parse(path.read_text(encoding="utf-8"))
     head = letter_head(meta)
     cvp = letter_cv(meta)
+    cjkfonts.ensure(path.read_text(encoding="utf-8") + head.get("name", ""))
     r = letters.render(meta, body, head, output_dir(path), letters.file_stem(head["name"]),
                        [p for p in ([cvp.parent / "fonts"] if cvp else []) + [path.parent / "fonts"]])
     if not r.get("ok"):
@@ -9997,7 +10005,9 @@ function translateNextSheet(r){
       'Dates and month names are in '+esc(to.english)+(titled?', and '+titled+' section title'+
       (titled===1?' is':'s are')+' translated':'')+'. The rest of the text is still in '+
       esc(from.english)+'.'+(left.length?' Still to title: '+left.map(esc).join(", ")+'.':'')+
-    '</p></div>'+
+    '</p>'+(r.font?'<p class="muted">Its font, '+esc(r.font.language)+' Noto Sans, is '+
+      'downloading now ('+r.font.mb+' MB, once). Until it arrives the page prints in a font '+
+      'your computer has.</p>':'')+'</div>'+
     sayBox("To have your AI client translate it, ask it:",text)+
     '<p>Or open it and translate it yourself, field by field.</p>'+
     '<div class="foot"><button class="sbtn" data-cancel>Close</button>'+
@@ -12143,6 +12153,7 @@ def main() -> int:
 
     WORKSPACE = Path(args.workspace).resolve() if args.workspace else DEFAULT_WORKSPACE
     FIRST_RUN = bootstrap(WORKSPACE)
+    cjkfonts.register()
 
     API_TOKEN = args.token
     if args.host not in ("127.0.0.1", "localhost", "::1") and not API_TOKEN:

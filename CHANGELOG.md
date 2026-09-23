@@ -8,6 +8,17 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **A third smaller.** The download is about 75 MB instead of 110 MB. The
+  Chinese, Japanese and Korean fonts, two fifths of the fonts the app carried,
+  are fetched the first time a CV needs one: when you add one of those
+  languages, or open a CV written in one. Chinese is 22 MB, Japanese and
+  Korean 11 and 12, once each, into CV Studio's folder in your app data, and
+  checked against the file they replace before they are used. Without a
+  connection the page still prints, in a font your computer has. An image
+  library nothing used is gone too.
+
 ## 0.16.0
 
 - **Cover letters are letters now.** They used to be CVs in disguise: the
