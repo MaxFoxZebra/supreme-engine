@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.17.0
 
 - **The funnel, rebuilt.** It opens on five numbers across the top, sent,
   heard back, interviewed, offers and accepted, counting up, with the rate
