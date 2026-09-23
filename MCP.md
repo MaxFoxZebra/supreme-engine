@@ -28,7 +28,7 @@ one rendered by clicking Save.
 | `find_job` | Which application a message or event belongs to. Reports what it found and refuses to choose |
 | `job_alerts` | The same list the Jobs view shows under Attention |
 | `set_job_status` | Move one along the funnel |
-| `update_job_tracking` | Interview time, follow-up date, who is writing to you, and which CV or letter was sent |
+| `update_job_tracking` | Interview time, follow-up date, who is writing to you, which CV or letter was sent, and the posting (link, text, place, source) |
 | `ats_check` | Reads a CV's PDF the way an applicant tracking system does: what fails to parse, and which of the posting's keywords it uses |
 | `add_job` | Add one, refusing a likely duplicate unless you confirm. Given the company's website, it fetches the company's logo too |
 | `set_company_logo` | Give a company a logo, from its website or an image on disk, and use it on every application to that company |
@@ -86,11 +86,12 @@ do not exist, so a model misreading its instructions still cannot do it.
 currency, and country are on the record but on no tool. Nothing an AI reads in
 a mailbox should be setting what you think a job is worth.
 
-**Some fields can only be set when the application is created.** `add_job`
-takes the posting URL, location, source and description; nothing changes them
-afterwards. If a model finds the posting link a week later it cannot add it —
-you can, in the app. That is a gap rather than a decision, and it is on the
-list.
+**The posting can be saved at any time.** `add_job` takes the posting URL,
+location, source and description, and `update_job_tracking` sets them later,
+when the model finds the link a week on or you ask it to "save the posting".
+A posting already saved is treated as yours, since you may have edited it:
+replacing it takes `replace_posting=True`, which the model should only pass
+when you asked for it. A link has to be `http://` or `https://`.
 
 **It cannot see the funnel or export.** The rates, the drop-off, the CSV and
 JSON exports are app-side only. It can list the applications and count them

@@ -279,6 +279,24 @@ if __name__ == "__main__":
           row["interview_at"] is None and "cleared" in (row["notes"] or "").lower(),
           (row["notes"] or "").splitlines()[-1] if row["notes"] else "no note")
 
+    # The posting after the fact: a link found a week later, and the text,
+    # which is not replaced unasked once one is saved (add_job saved one).
+    original = json.loads(text(call("read_job", {"job_id": job_id})))["description"]
+    r = call("update_job_tracking", {"job_id": job_id, "url": "https://jobs.example/probe",
+                                     "source": "LinkedIn", "location": "Lyon"})
+    row = json.loads(text(r))
+    check("the link, source and place can be set after the application exists",
+          row["url"] == "https://jobs.example/probe" and row["source"] == "LinkedIn"
+          and row["location"] == "Lyon")
+    r = call("update_job_tracking", {"job_id": job_id, "description": "## The role\n\n- Probe things"})
+    check("a saved posting is not replaced unasked", errored(r))
+    r = call("update_job_tracking", {"job_id": job_id, "description": "## The role\n\n- Probe things",
+                                     "replace_posting": True})
+    check("replace_posting replaces it", "Probe things" in (json.loads(text(r))["description"] or ""))
+    call("update_job_tracking", {"job_id": job_id, "description": original, "replace_posting": True})
+    r = call("update_job_tracking", {"job_id": job_id, "url": "javascript:alert(1)"})
+    check("a link that is not http(s) is refused", errored(r))
+
     # Tailoring end to end, the way a model is meant to do it: copy the base
     # this workspace names, then say what the copy was for. Without the second
     # half the model can write a CV and never record which job it was written

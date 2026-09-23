@@ -598,6 +598,11 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                         contact_email: str | None = None,
                         cv_path: str | None = None,
                         letter_path: str | None = None,
+                        url: str | None = None,
+                        description: str | None = None,
+                        location: str | None = None,
+                        source: str | None = None,
+                        replace_posting: bool = False,
                         append_note: str | None = None) -> dict:
     """Record dates, contacts and which documents were sent, without moving it.
 
@@ -631,6 +636,14 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     `last_contact_at` is when they last got in touch. Set it for an
     acknowledgement that changes nothing else, so the application stops looking
     abandoned when it is not.
+
+    The posting, once the application exists: `url` is the link to the advert,
+    `description` its full text (Markdown: headings and lists come through),
+    `location` and `source` (where it was found: "LinkedIn", "Referral"...).
+    Save the text whenever you have it: adverts come down, and a tailored CV
+    and a letter are written against it. A posting already saved is the
+    user's, who may have edited it; replacing it takes `replace_posting=True`,
+    and only when they asked.
     """
     data: dict = {}
     for field, value in (("interview_at", interview_at), ("interview_tz", interview_tz),
@@ -639,6 +652,18 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                          ("contact_email", contact_email)):
         if value is not None:
             data[field] = value or None
+    for field, value in (("url", url), ("location", location), ("source", source)):
+        if value is not None:
+            data[field] = value.strip() or None
+    if url and not url.strip().lower().startswith(("http://", "https://")):
+        raise ValueError("url must start with http:// or https://")
+    if description is not None:
+        current = read_job(job_id).get("description")
+        if current and current.strip() != description.strip() and not replace_posting:
+            raise ValueError("A posting is already saved for this application, and the "
+                             "user may have edited it. Pass replace_posting=True only if "
+                             "they asked for it to be replaced.")
+        data["description"] = description.strip() or None
     for field, value in (("cv_path", cv_path), ("letter_path", letter_path)):
         if value is not None:
             data[field] = _document(value, field)

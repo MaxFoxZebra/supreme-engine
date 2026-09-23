@@ -10,6 +10,18 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Your settings survive a restart.** Theme, accent, language, time zone,
+  notifications and the rest were kept in the window's own storage, which the
+  desktop app lost at every launch (it serves the window from a new port each
+  time, and that storage belongs to the port). They are now a file beside the
+  app, handed to the window as it opens, so the theme is right before the
+  first frame. Whatever this window had kept is moved into it on the first
+  launch after the update. The record of reminders already sent moved with
+  them, so a restart no longer sends one twice.
+- **Your AI client can save the posting later.** `update_job_tracking` now
+  takes the posting's link, text, location and where it was found, so "save
+  the posting for Mistral AI" works after the application exists. A posting
+  already saved is not replaced unless you asked for that.
 - **Reminders, as system notifications (opt-in).** Settings › Notifications
   turns them on. Before an interview (10 minutes, 1 hour, both, or the day
   before and 1 hour before), with the time in yours and in theirs; and once a

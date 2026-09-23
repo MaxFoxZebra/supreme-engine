@@ -1895,6 +1895,58 @@ def watch_parent(pid: int) -> None:
 REAL_WORKSPACE: Path | None = None
 
 
+# ---------------------------------------------------------------------------
+# Preferences
+# ---------------------------------------------------------------------------
+# Theme, language, time zone, notifications: per machine, not per workspace,
+# so a workspace copied elsewhere carries documents and not window settings.
+# They lived in the page's localStorage, which the desktop app loses at every
+# launch: it serves the page on a fresh port each time, and storage belongs
+# to the origin, port included. So they are a file in the app's data folder,
+# written into the page when it is served, so the theme is right before the
+# first paint.
+
+def prefs_path() -> Path:
+    return cjkfonts.cache_dir().parent / "prefs.json"
+
+
+def load_prefs() -> dict | None:
+    """The saved preferences, or None before anything was ever saved."""
+    try:
+        data = json.loads(prefs_path().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+_prefs_lock = threading.Lock()
+
+
+def save_prefs(changes: dict, replace: bool = False) -> dict:
+    """Merge `changes` into the saved preferences (or replace them all).
+    Two changes a moment apart arrive on two threads; one at a time, or the
+    second writes over the first."""
+    with _prefs_lock:
+        return _save_prefs(changes, replace)
+
+
+def _save_prefs(changes: dict, replace: bool) -> dict:
+    data = {} if replace else (load_prefs() or {})
+    for k, v in changes.items():
+        if not isinstance(k, str) or len(k) > 64:
+            continue
+        data[k] = v
+    raw = json.dumps(data, ensure_ascii=False, indent=1)
+    if len(raw) > 256 * 1024:
+        raise ValueError("Preferences are too large.")
+    path = prefs_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(raw, encoding="utf-8")
+    tmp.replace(path)
+    return data
+
+
 def in_sample() -> bool:
     return WORKSPACE.resolve() == sample.folder().resolve()
 
@@ -3081,6 +3133,11 @@ def openapi_spec() -> dict:
                 "workspace (on: false). Your workspace is never written to",
                 "requestBody": body({"on": {"type": "boolean"}}),
                 "responses": ok}},
+            "/api/prefs": {"post": {"summary":
+                "Save the interface's preferences (theme, language, time zone, notifications) "
+                "on this machine. set merges; replace swaps them all",
+                "requestBody": body({"set": {"type": "object"}, "replace": {"type": "object"}}),
+                "responses": ok}},
             "/api/base": {"post": {"summary":
                 "Nominate the CV that tailored copies start from; null clears it",
                 "requestBody": body({"path": {"type": "string"}}),
@@ -3351,7 +3408,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             if u.path == "/":
                 page = INDEX_HTML.replace(
-                    "__API_TOKEN__", json.dumps(API_TOKEN))
+                    "__API_TOKEN__", json.dumps(API_TOKEN)).replace(
+                    "__PREFS__", json.dumps(load_prefs()).replace("</", "<\\/"))
                 return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             if u.path == "/api/state":
                 convert_legacy_letters()
@@ -3673,6 +3731,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/language/set":
                 return self._json({"ok": True, **set_cv_language(
                     safe_path(payload.get("path", "")), payload.get("language", ""))})
+            if u.path == "/api/prefs":
+                # {"set": {key: value}} merges; {"replace": {...}} is the one
+                # move from the page's old storage into the file.
+                if isinstance(payload.get("replace"), dict):
+                    return self._json({"ok": True, "prefs": save_prefs(payload["replace"], replace=True)})
+                return self._json({"ok": True, "prefs": save_prefs(payload.get("set") or {})})
             if u.path == "/api/sample":
                 # Sample data lives in its own folder; switching never writes
                 # to the workspace you came from.
@@ -6339,9 +6403,13 @@ textarea{resize:vertical}
 <script>
 /* Ahead of everything else: a chosen theme should not flash the other one
    first. Guarded because storage throws outright in some privacy modes. */
-try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
-    if(_p.appearance==="dark"||_p.appearance==="light")
-      document.documentElement.dataset.theme=_p.appearance}catch(e){}
+/* Preferences come with the page, from a file the server keeps; before there
+   is one, from what this browser stored, which is then moved into it. */
+var _p=__PREFS__;
+if(!_p||typeof _p!=="object"){ try{_p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}")}catch(e){_p={}}
+  window.CVS_PREFS_MOVE=true }
+window.CVS_PREFS=_p;
+if(_p.appearance==="dark"||_p.appearance==="light") document.documentElement.dataset.theme=_p.appearance;
 </script>
 <script src="/static/i18n.js"></script>
 <script src="/static/worldmap.js"></script>
@@ -7046,7 +7114,7 @@ const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 const UI_LANGS={en:"en-GB",fr:"fr-FR",es:"es-ES",pt:"pt-BR"};
 function uiLang(){
   let p=new URLSearchParams(location.search).get("lang");
-  if(!p) try{ p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}").ui_lang }catch(e){}
+  if(!p||!UI_LANGS[p]) p=(window.CVS_PREFS||{}).ui_lang;
   if(p&&UI_LANGS[p]) return p;
   const n=String(navigator.language||"en").slice(0,2).toLowerCase();
   return UI_LANGS[n]?n:"en";
@@ -10694,7 +10762,6 @@ async function loadAlerts(){
    interview at the leads chosen there, and once a day for follow-ups, in one
    notification rather than one per application. Each is sent once: what was
    sent is remembered on this machine. They come while the app is open. */
-const NOTIFY_SEEN="cvstudio.notified";
 const notifyOn=()=>!!prefs().notify;
 const notifyIv=()=>{ const v=prefs().notify_iv??"60,10"; return v==="off"?[]:String(v).split(",").map(Number).sort((a,b)=>b-a) };
 const notifyFu=()=>{ const v=prefs().notify_fu??"9"; return v==="off"?null:+v };
@@ -10711,11 +10778,11 @@ function notifyApi(){
     send:(title,body,onclick)=>{ const n=new Notification(title,{body,icon:"/static/brand-mark-256.png"});
       n.onclick=()=>{ window.focus(); if(onclick) onclick(); n.close() } }};
 }
-function notifySeen(){ try{ return JSON.parse(localStorage.getItem(NOTIFY_SEEN)||"{}") }catch(e){ return {} } }
+function notifySeen(){ return Object.assign({},prefs().notified||{}) }
 function notifyMark(k){
   const m=notifySeen(), cut=Date.now()-14*864e5;
   for(const x in m) if(m[x]<cut) delete m[x];
-  m[k]=Date.now(); try{ localStorage.setItem(NOTIFY_SEEN,JSON.stringify(m)) }catch(e){}
+  m[k]=Date.now(); setPref("notified",m);
 }
 async function notifySend(key,title,body,onclick){
   const A=notifyApi(); if(!A) return false;
@@ -13823,17 +13890,20 @@ function paintEffect(){
 /* =========================================================================
    Settings and updates
    ========================================================================= */
-/* Preferences are per-machine conveniences, so they live in localStorage
+/* Preferences are per-machine conveniences, so they live beside the app
    rather than in the workspace: a workspace copied to another machine should
-   carry documents, not window preferences. Reads are guarded because storage
-   throws outright in some privacy modes. */
+   carry documents, not window preferences. The server keeps them in a file
+   and hands them over with the page (see load_prefs); this browser's storage
+   keeps a copy for a page served without them. */
 const PREFS_KEY="cvstudio.prefs";
-function prefs(){
-  try{ return JSON.parse(localStorage.getItem(PREFS_KEY)||"{}") }catch(e){ return {} }
-}
+function prefs(){ return window.CVS_PREFS||(window.CVS_PREFS={}) }
 function setPref(k,v){
-  try{ const p=prefs(); p[k]=v; localStorage.setItem(PREFS_KEY,JSON.stringify(p)) }catch(e){}
+  const p=prefs(); p[k]=v;
+  try{ localStorage.setItem(PREFS_KEY,JSON.stringify(p)) }catch(e){}
+  post("/api/prefs",{set:{[k]:v}}).catch(()=>{});
 }
+if(window.CVS_PREFS_MOVE&&Object.keys(prefs()).length)
+  setTimeout(()=>post("/api/prefs",{replace:prefs()}).catch(()=>{}),0);
 /* "system" means take the attribute off and let prefers-color-scheme decide;
    anything else pins it. Everything downstream is a CSS variable, so nothing
    needs redrawing -- including the funnel, which is styled rather than filled. */
