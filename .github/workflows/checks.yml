@@ -1,13 +1,16 @@
 name: Checks
 
-# Every push and pull request, before anything is tagged: the static audit,
-# the scripts parsing, the Python checks, the MCP server spoken to over stdio,
-# and the browser flows against a running app. The release workflow builds;
-# this one says whether what it would build works.
+# Every push to main and every pull request, before anything is tagged: the
+# static audit, the scripts parsing, the Python checks, the MCP server spoken
+# to over stdio, and the browser flows against a running app. The release
+# workflow builds; this one says whether what it would build works.
+#
+# Pushes to other branches are left to their pull request: a commit pushed to
+# a working branch and to main at once ran twice, and a failure said so twice.
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
     tags-ignore: ["**"]
   pull_request:
   workflow_dispatch:
