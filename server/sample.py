@@ -215,6 +215,9 @@ COMPANIES = [
     ("Cabify", "Madrid", "es"), ("Glovo", "Barcelona", "es"), ("Idealista", "Madrid", "es"),
     ("Nubank", "São Paulo", "pt"), ("iFood", "São Paulo", "pt"), ("VTEX", "Rio de Janeiro", "pt"),
 ]
+ZONES = {"London": "Europe/London", "Madrid": "Europe/Madrid", "Barcelona": "Europe/Madrid",
+         "São Paulo": "America/Sao_Paulo", "Rio de Janeiro": "America/Sao_Paulo",
+         "Stockholm": "Europe/Stockholm", "Lisbon": "Europe/Lisbon"}
 TITLES = ["Platform Engineer", "Senior Backend Engineer", "Staff Engineer", "Site Reliability Engineer",
           "Infrastructure Engineer", "Backend Engineer (Go)", "DevOps Lead", "Senior Platform Engineer"]
 SOURCES = (["LinkedIn"] * 9 + ["Welcome to the Jungle"] * 6 + ["Indeed"] * 4 + ["Glassdoor"] * 2 +
@@ -340,6 +343,8 @@ def build(studio) -> dict:
         if status == "interviewing" and R.random() < .7:
             data["interview_at"] = _iso((now + dt.timedelta(days=R.randint(1, 9))).replace(
                 hour=R.choice([10, 11, 14, 16]), minute=0, second=0))
+            # The time as the invitation gave it, in the employer's zone.
+            data["interview_tz"] = ZONES.get(city)
         if status in ("offer", "accepted", "refused"):
             data["salary_offered"] = R.choice([68000, 72000, 78000, 85000])
         j = jobs.add_job(ws, data)
@@ -350,6 +355,29 @@ def build(studio) -> dict:
         con.commit()
         con.close()
         made.append({**j, "status": status, "lang": plang})
+
+    # Two interviews abroad, so the time zones show: London is an hour behind
+    # Paris, São Paulo four or five.
+    for company, title, city, days, hour, source in (
+            ("Monzo", "Site Reliability Engineer", "London", 2, 10, "Recruiter"),
+            ("Nubank", "Senior Platform Engineer", "São Paulo", 5, 14, "LinkedIn")):
+        sent = now - dt.timedelta(days=18)
+        iv = now - dt.timedelta(days=6)
+        j = jobs.add_job(ws, {
+            "company": company, "title": title, "location": city, "source": source,
+            "status": "pending", "score": 4, "language": "pt" if city == "São Paulo" else "en",
+            "description": POSTINGS["pt" if city == "São Paulo" else "sre"],
+            "interview_at": _iso((now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0)),
+            "interview_tz": ZONES[city],
+            "notes": "Second round: system design, 60 minutes, video call."})
+        hist = [{"status": "pending", "at": _iso(sent - dt.timedelta(days=1))},
+                {"status": "applied", "at": _iso(sent)}, {"status": "interviewing", "at": _iso(iv)}]
+        con = sqlite3.connect(jobs.db_path(ws))
+        con.execute("UPDATE jobs SET status='interviewing', status_history=?, created_at=?, updated_at=? "
+                    "WHERE id=?", (json.dumps(hist), hist[0]["at"], hist[-1]["at"], j["id"]))
+        con.commit()
+        con.close()
+        made.append({**j, "status": "interviewing", "lang": j["language"]})
 
     # Tailored CVs for the applications furthest along, and letters for some.
     order = {"offer": 0, "accepted": 1, "interviewing": 2, "refused": 3, "applied": 4}

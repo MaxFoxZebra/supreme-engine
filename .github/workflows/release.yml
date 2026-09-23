@@ -167,7 +167,7 @@ jobs:
           # These are the newest versions of each as of this pin. Raising them
           # is a deliberate edit, which is the difference worth having.
           pip install "rendercv[full]==2.8" "ruamel.yaml==0.19.1" "mcp==2.2.0" \
-            "pypdf==6.19.0" "pyinstaller==6.22.3"
+            "pypdf==6.19.0" "tzdata==2026.4" "pyinstaller==6.22.3"
           # rendercv_fonts, typst and mcp ship binaries and package data that
           # PyInstaller does not discover on its own.
           #
@@ -185,6 +185,7 @@ jobs:
             --collect-all ruamel.yaml \
             --collect-all mcp \
             --collect-all pydantic \
+            --collect-all tzdata \
             --hidden-import cv_render \
             --hidden-import cv_map \
             --hidden-import studio \

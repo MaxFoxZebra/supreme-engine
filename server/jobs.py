@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   notes            TEXT,
   followup_date    TEXT,
   interview_at     TEXT,
+  interview_tz     TEXT,
   contact_email    TEXT,
   last_contact_at  TEXT,
   salary_expected  INTEGER,
@@ -118,7 +119,7 @@ CREATE INDEX IF NOT EXISTS jobs_company ON jobs(company);
 
 FIELDS = [
     "title", "company", "location", "country", "description", "url", "source",
-    "score", "status", "notes", "followup_date", "interview_at",
+    "score", "status", "notes", "followup_date", "interview_at", "interview_tz",
     "contact_email", "last_contact_at", "salary_expected",
     "salary_offered", "salary_currency", "cv_path", "letter_path", "logo",
     "language",
@@ -180,7 +181,7 @@ def connect(workspace: Path) -> sqlite3.Connection:
     for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT"),
                       ("logo", "TEXT"), ("interview_at", "TEXT"),
                       ("contact_email", "TEXT"), ("last_contact_at", "TEXT"),
-                      ("language", "TEXT")):
+                      ("language", "TEXT"), ("interview_tz", "TEXT")):
         if col not in have:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
     con.commit()
@@ -240,6 +241,7 @@ def add_job(workspace: Path, data: dict) -> dict:
     }
     for f in FIELDS:
         job[f] = data.get(f)
+    job["interview_tz"] = valid_tz(job.get("interview_tz"))
     job["status"] = status
     job["salary_currency"] = data.get("salary_currency") or "EUR"
     # The language the posting is written in decides which base CV a
@@ -271,6 +273,8 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
     replacing them. That is what the MCP tools use, so a model can record why
     it changed something without being able to erase what the user typed.
     """
+    if data.get("interview_tz"):
+        valid_tz(data["interview_tz"])
     con = connect(workspace)
     try:
         # The history append below is a read-modify-write, and an AI client is
@@ -387,6 +391,39 @@ def _days_since(stamp: str | None) -> int | None:
     return None
 
 
+def valid_tz(name: str | None) -> str | None:
+    """An IANA zone name as given, or ValueError. Empty means the user's own."""
+    if not name:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(name)
+    except Exception:
+        raise ValueError(f"Unknown time zone: {name!r}. Use an IANA name such as "
+                         "Europe/London or America/Sao_Paulo.")
+    return name
+
+
+def interview_local(at: str | None, tz: str | None) -> str | None:
+    """An interview's moment in this machine's local time.
+
+    `interview_at` is the wall-clock time the invitation gave, in
+    `interview_tz` when there is one: 10:00 in London stays 10:00 in the file,
+    because that is what the email said and what a person re-reading it will
+    check against. Anything comparing it with now needs it here instead.
+    """
+    if not at or not tz:
+        return at
+    try:
+        import datetime as dt
+        from zoneinfo import ZoneInfo
+        wall = dt.datetime.fromisoformat(str(at)[:19])
+        return wall.replace(tzinfo=ZoneInfo(tz)).astimezone().replace(
+            tzinfo=None).isoformat(timespec="seconds")
+    except Exception:
+        return at
+
+
 def _applied_at(history: list[dict]) -> str | None:
     for event in history:
         if event.get("status") == "applied":
@@ -416,9 +453,10 @@ def alerts(workspace: Path) -> dict:
         if job.get("followup_date") and job["followup_date"] <= today:
             out["followup_due"].append(brief | {"followup_date": job["followup_date"]})
 
-        age = _days_since(job.get("interview_at"))
+        age = _days_since(interview_local(job.get("interview_at"), job.get("interview_tz")))
         if age is not None:
-            entry = brief | {"interview_at": job["interview_at"]}
+            entry = brief | {"interview_at": job["interview_at"],
+                             "interview_tz": job.get("interview_tz")}
             if -INTERVIEW_SOON_DAYS <= age <= 0:
                 out["interview_soon"].append(entry)
             elif age > 0 and job["status"] == "interviewing":

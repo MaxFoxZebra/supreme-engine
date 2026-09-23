@@ -17,6 +17,13 @@ tag, so a release is never published with nothing said about it.
   cover letters, and the base CV in French, Spanish and Brazilian Portuguese.
   A pill in the top bar says you are looking at it and takes you back. Your
   own workspace is never written to, and a restart always opens it.
+- **Interviews in their time zone and yours.** An application has an
+  Interview field: the time as the invitation gave it, and the zone it is in,
+  guessed from where the job is (London, São Paulo, New York…). Below it, the
+  time for you: "Fri 25 Sep, 11:00 your time · 10:00 in London". Reminders
+  use the real moment. AI clients can pass the zone with `interview_tz` when
+  an invitation gives the employer's time. Settings → Language & region sets
+  your own zone; it follows your computer by default.
 - **Flags beside languages.** France, Spain, Brazil for Portuguese and the US
   for English, drawn rather than emoji so they look the same on Windows, on
   the base CV's language tabs, the Documents filter, the application's

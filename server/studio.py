@@ -5189,6 +5189,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-fact>span{font-size:11.5px;font-weight:600;color:var(--t500)}
 .ap-fact select,.ap-fact input{width:100%;min-width:0;height:32px;border-radius:8px;font-size:13px}
 .ap-fact .statusctl{gap:6px}
+.ap-fact.wide{grid-column:1/-1}
+.ap-iv{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.ap-iv-say{font-size:12.5px;color:var(--t700)}
 .ap-src{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 10px;
   border:1px solid var(--bd-field);border-radius:8px;background:var(--field);color:var(--t900);
   font-size:13px;text-align:left;min-width:0}
@@ -5865,6 +5868,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     if(_p.appearance==="dark"||_p.appearance==="light")
       document.documentElement.dataset.theme=_p.appearance}catch(e){}
 </script>
+<script src="/static/i18n.js"></script>
 
 <!-- Marks for the AI clients. The Claude one is as published by Anthropic, and
      identifies that integration and nothing else: see THIRD-PARTY-NOTICES.md. -->
@@ -6271,6 +6275,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <nav class="set-rail" id="set-rail">
       <button data-s="workspace" aria-selected="true">Workspace</button>
       <button data-s="editor" aria-selected="false">Editor</button>
+      <button data-s="region" aria-selected="false">Language &amp; region</button>
       <button data-s="ai" aria-selected="false">AI clients</button>
       <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
@@ -6298,6 +6303,21 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="srow"><div><b>Applications</b><span>Exported as JSON or CSV so the
           database is never a lock-in.</span></div>
           <button class="obtn" id="s-exp">Export JSON</button></div>
+      </section>
+
+      <section class="sp" id="sp-region" hidden>
+        <h3>Language &amp; region</h3>
+        <p class="sp-lede">The language the app itself speaks, and the time zone it shows
+          times in. Neither changes your CVs or letters: each of those has its own
+          language.</p>
+        <div class="srow"><div><b>Interface language</b><span>Follows your computer unless
+          you choose one.</span></div>
+          <select id="s-uilang"><option value="">Match system</option>
+            <option value="en">English</option><option value="fr">Français</option>
+            <option value="es">Español</option><option value="pt">Português (Brasil)</option></select></div>
+        <div class="srow"><div><b>Time zone</b><span>Interviews somewhere else show in
+          your time, with theirs beside it.</span></div>
+          <select id="s-tz"></select></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>
@@ -6477,6 +6497,67 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const API_TOKEN=__API_TOKEN__;
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---- the interface's language ---------------------------------------------
+   English, French, Spanish or Brazilian Portuguese: the computer's language
+   unless Settings says otherwise. Two ways in. t("...") for text built in
+   code, with {name} holes for what changes. And a watcher that translates
+   the interface's text as it lands in the page, so a label written once in
+   markup needs no call at all. It never touches what is yours: CVs, letters,
+   postings, notes and anything you are typing (I18N_SKIP). */
+const UI_LANGS={en:"en-GB",fr:"fr-FR",es:"es-ES",pt:"pt-BR"};
+function uiLang(){
+  let p=null; try{ p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}").ui_lang }catch(e){}
+  if(p&&UI_LANGS[p]) return p;
+  const n=String(navigator.language||"en").slice(0,2).toLowerCase();
+  return UI_LANGS[n]?n:"en";
+}
+const UI_LANG=uiLang();
+const uiLocale=()=>UI_LANGS[UI_LANG];
+const I18N_D=(window.I18N||{})[UI_LANG]||null, I18N_P=(window.I18N_RX||{})[UI_LANG]||[];
+function t(s,v){
+  let r=(I18N_D&&I18N_D[s])||s;
+  if(v) r=r.replace(/\{(\w+)\}/g,(m,k)=>v[k]??m);
+  return r;
+}
+function trString(str){
+  if(!I18N_D) return null;
+  const key=str.replace(/\s+/g," ").trim();
+  if(!key||key.length>600) return null;
+  let out=I18N_D[key];
+  if(out==null) for(const [re,rep] of I18N_P){ if(re.test(key)){ out=key.replace(re,rep); break } }
+  if(out==null||out===key) return null;
+  const lead=str.match(/^\s*/)[0], trail=str.match(/\s*$/)[0];
+  return lead+out+trail;
+}
+const I18N_SKIP="[data-noi18n],[contenteditable],textarea,input,script,style,code,pre,.ap-post,"+
+  ".ap-notes,.lt-stage,.fj-who,.fn-src .sn,.co,.con,.sk-tip .who,#yaml,.yamlerr,.drift-list .then";
+const I18N_ATTRS=["placeholder","title","aria-label","data-ph"];
+function trNode(n){
+  if(n.nodeType===3){
+    const p=n.parentElement; if(!p||p.closest(I18N_SKIP)) return;
+    const r=trString(n.nodeValue); if(r!=null) n.nodeValue=r;
+  }else if(n.nodeType===1){
+    if(n.closest(I18N_SKIP)) return;
+    for(const a of I18N_ATTRS){ const v=n.getAttribute(a); if(v){ const r=trString(v); if(r!=null) n.setAttribute(a,r) } }
+    const w=document.createTreeWalker(n,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:x=>
+      (x.nodeType===1?x:x.parentElement).closest(I18N_SKIP)?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+    let x; while((x=w.nextNode())){
+      if(x.nodeType===3){ const r=trString(x.nodeValue); if(r!=null) x.nodeValue=r }
+      else for(const a of I18N_ATTRS){ const v=x.getAttribute(a); if(v){ const r=trString(v); if(r!=null) x.setAttribute(a,r) } }
+    }
+  }
+}
+if(I18N_D){
+  document.documentElement.lang=UI_LANG;
+  trNode(document.body);
+  new MutationObserver(ms=>{ for(const m of ms){
+    if(m.type==="childList") m.addedNodes.forEach(trNode);
+    else if(m.type==="characterData") trNode(m.target);
+    else if(m.type==="attributes") trNode(m.target);
+  } }).observe(document.body,{childList:true,subtree:true,characterData:true,
+    attributes:true,attributeFilter:I18N_ATTRS});
+}
 const tok=()=>API_TOKEN?"&token="+encodeURIComponent(API_TOKEN):"";
 
 /* One object holds everything the three screens share. Selection, filters and
@@ -6536,7 +6617,9 @@ const post=(u,body)=>api(u,{method:"POST",headers:{"Content-Type":"application/j
   body:JSON.stringify(body)});
 
 /* ---- small shared formatters ---- */
-const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS=Array.from({length:12},(_,i)=>{ try{ return new Intl.DateTimeFormat(uiLocale(),{month:"short"})
+  .format(new Date(2026,i,15)).replace(".","") }catch(e){ return ["Jan","Feb","Mar","Apr","May","Jun","Jul",
+  "Aug","Sep","Oct","Nov","Dec"][i] } });
 function shortDate(iso){
   if(!iso) return "";
   /* The tracker stores ISO strings; a document's age arrives as an mtime that
@@ -6546,6 +6629,88 @@ function shortDate(iso){
   return d.getDate()+" "+MONTHS[d.getMonth()]+
     (d.getFullYear()!==new Date().getFullYear()?" "+String(d.getFullYear()).slice(2):"");
 }
+/* ---- time zones -----------------------------------------------------------
+   An interview time is kept as the wall-clock time the invitation gave, in the
+   zone it gave it in (interview_tz), so the file says what the email said.
+   Showing it, or comparing it with now, goes through these. The zone data is
+   the browser's own, so nothing ships for it. */
+const machineTz=()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC" }catch(e){ return "UTC" } };
+const userTz=()=>prefs().tz||machineTz();
+function tzOffset(tz,date){
+  const p=new Intl.DateTimeFormat("en-US",{timeZone:tz,hourCycle:"h23",year:"numeric",month:"2-digit",
+    day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(date);
+  const g=t=>+p.find(x=>x.type===t).value;
+  return (Date.UTC(g("year"),g("month")-1,g("day"),g("hour")%24,g("minute"),g("second"))-date.getTime())/60000;
+}
+/* "2026-09-25T10:00" in a zone, as the moment it names. */
+function wallToInstant(wall,tz){
+  const [d,t="00:00"]=String(wall).split("T"), [Y,M,D]=d.split("-").map(Number);
+  const [h,m]=t.split(":").map(Number), guess=Date.UTC(Y,M-1,D,h||0,m||0);
+  const off=tzOffset(tz,new Date(guess)); let at=guess-off*60000;
+  const off2=tzOffset(tz,new Date(at)); if(off2!==off) at=guess-off2*60000;
+  return new Date(at);
+}
+function interviewMoment(j){
+  if(!j||!j.interview_at) return null;
+  return wallToInstant(String(j.interview_at).slice(0,16),j.interview_tz||machineTz());
+}
+const tzCity=tz=>String(tz||"").split("/").pop().replace(/_/g," ");
+function fmtWhen(date,tz,withDay=true){
+  const o={timeZone:tz,hour:"2-digit",minute:"2-digit"};
+  if(withDay) Object.assign(o,{weekday:"short",day:"numeric",month:"short"});
+  try{ return new Intl.DateTimeFormat(uiLocale(),o).format(date) }catch(e){ return date.toISOString().slice(0,16) }
+}
+/* "Thu 25 Sep, 11:00 your time · 10:00 in London", or just the one when the
+   two zones agree at that moment. */
+function interviewLine(j){
+  const at=interviewMoment(j); if(!at) return "";
+  const mine=userTz(), theirs=j.interview_tz;
+  const here=fmtWhen(at,mine);
+  if(!theirs||tzOffset(theirs,at)===tzOffset(mine,at)) return here;
+  return here+" "+t("your time")+" · "+fmtWhen(at,theirs,false)+" "+t("in")+" "+tzCity(theirs);
+}
+/* The zone an interview is probably in, from where the job is. Remote, or
+   anywhere not listed, is your own. */
+const TZ_GUESS=[
+  [/london|manchester|edinburgh|\buk\b|united kingdom|england|scotland/i,"Europe/London"],
+  [/dublin|ireland/i,"Europe/Dublin"],
+  [/paris|lyon|marseille|toulouse|bordeaux|lille|nantes|montpellier|france/i,"Europe/Paris"],
+  [/madrid|barcelona|valencia|sevilla|seville|spain|españa/i,"Europe/Madrid"],
+  [/lisbon|lisboa|porto|portugal/i,"Europe/Lisbon"],
+  [/berlin|munich|münchen|hamburg|frankfurt|germany|deutschland/i,"Europe/Berlin"],
+  [/amsterdam|rotterdam|netherlands/i,"Europe/Amsterdam"],
+  [/brussels|bruxelles|belgium/i,"Europe/Brussels"],
+  [/zurich|zürich|geneva|genève|switzerland/i,"Europe/Zurich"],
+  [/milan|milano|rome|roma|italy/i,"Europe/Rome"],
+  [/stockholm|sweden/i,"Europe/Stockholm"],[/copenhagen|denmark/i,"Europe/Copenhagen"],
+  [/oslo|norway/i,"Europe/Oslo"],[/helsinki|finland/i,"Europe/Helsinki"],
+  [/warsaw|poland/i,"Europe/Warsaw"],
+  [/são paulo|sao paulo|rio de janeiro|belo horizonte|brazil|brasil/i,"America/Sao_Paulo"],
+  [/new york|nyc|boston|miami|atlanta|washington|toronto|montreal|montréal/i,"America/New_York"],
+  [/chicago|austin|dallas|houston/i,"America/Chicago"],[/denver|boulder/i,"America/Denver"],
+  [/san francisco|\bsf\b|bay area|seattle|los angeles|palo alto|mountain view|vancouver|california/i,"America/Los_Angeles"],
+  [/mexico/i,"America/Mexico_City"],[/buenos aires|argentina/i,"America/Argentina/Buenos_Aires"],
+  [/singapore/i,"Asia/Singapore"],[/tokyo|japan/i,"Asia/Tokyo"],[/sydney|melbourne/i,"Australia/Sydney"],
+  [/dubai/i,"Asia/Dubai"],[/bangalore|bengaluru|india/i,"Asia/Kolkata"],
+];
+function guessTz(j){
+  const where=[j.location,j.country].filter(Boolean).join(" ");
+  const hit=TZ_GUESS.find(([re])=>re.test(where));
+  return hit?hit[1]:null;
+}
+const COMMON_TZ=["Europe/London","Europe/Dublin","Europe/Lisbon","Europe/Paris","Europe/Madrid",
+  "Europe/Berlin","Europe/Amsterdam","Europe/Zurich","Europe/Stockholm","America/New_York",
+  "America/Chicago","America/Denver","America/Los_Angeles","America/Sao_Paulo","America/Mexico_City",
+  "Asia/Dubai","Asia/Kolkata","Asia/Singapore","Asia/Tokyo","Australia/Sydney","UTC"];
+function allTz(){ try{ return Intl.supportedValuesOf("timeZone") }catch(e){ return COMMON_TZ } }
+function tzOptions(cur,first){
+  const top=[...new Set([first,...COMMON_TZ].filter(Boolean))];
+  const opt=z=>'<option value="'+esc(z)+'"'+(z===cur?" selected":"")+'>'+esc(tzCity(z))+
+    (z.includes("/")?' · '+esc(z.split("/")[0]):"")+'</option>';
+  return top.map(opt).join("")+'<option disabled>──────────</option>'+
+    allTz().filter(z=>!top.includes(z)).map(opt).join("");
+}
+
 const prettyStatus=s=>{
   const map={pending:"Draft", applied:"Awaiting reply", interviewing:"Interviewing",
     offer:"Offer", accepted:"Accepted", refused:"Declined", rejected:"Rejected",
@@ -10848,7 +11013,7 @@ function drawJobInspector(){
   /* One row of facts, the documents as pages, and the posting beside them,
      read as a posting. The fields set once when the application was made are
      folded away, with the delete under them. */
-  const fact=(label,ctl)=>'<div class="ap-fact"><span>'+label+'</span>'+ctl+'</div>';
+  const fact=(label,ctl)=>'<div class="ap-fact'+(label==="Interview"?" wide":"")+'"><span>'+t(label)+'</span>'+ctl+'</div>';
   const statusCtl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span>'+
     '<select data-j="status" aria-label="Status">'+S.statuses.map(s=>'<option value="'+s+'"'+
     (s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+'</option>').join("")+'</select></span>';
@@ -10866,7 +11031,8 @@ function drawJobInspector(){
     fact("Fit",fitCtl)+
     fact("Found on",'<button class="ap-src" id="ap-src" aria-haspopup="listbox">'+sourceMark(j)+
       '<span class="caret">▾</span></button>')+
-    fact("Language",langCtl)+'</div>';
+    fact("Language",langCtl)+
+    fact("Interview",interviewCtl(j))+'</div>';
 
   const cvName=j.cv_path?j.cv_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
   const ltName=j.letter_path?j.letter_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
@@ -10969,6 +11135,7 @@ function drawJobInspector(){
       saveJob(j.id,{[el.dataset.j]:v===""?null:v});
     };
   });
+  wireInterview(j);
   body.querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>{
     const n=+b.dataset.fit;
     saveJob(j.id,{score:j.score===n?null:n});
@@ -11005,6 +11172,31 @@ document.addEventListener("keydown",e=>{
   e.preventDefault();
   peekStep(e.key==="ArrowDown"?1:-1);
 });
+
+/* When and where the interview is: the time as the invitation gave it, the
+   zone it gave it in (guessed from where the job is), and what that is for
+   you. */
+function interviewCtl(j){
+  const zone=j.interview_tz||"", guess=guessTz(j);
+  const mine=userTz();
+  return '<div class="ap-iv"><input type="datetime-local" id="ap-iv-at" aria-label="'+t("Interview time")+
+    '" value="'+esc(String(j.interview_at||"").slice(0,16))+'">'+
+    '<select id="ap-iv-tz" aria-label="'+t("Time zone of the interview")+'">'+
+    '<option value=""'+(zone?"":" selected")+'>'+t("Your time")+' · '+esc(tzCity(mine))+'</option>'+
+    tzOptions(zone,guess&&guess!==mine?guess:null)+'</select></div>'+
+    (j.interview_at?'<small class="ap-iv-say">'+esc(interviewLine(j))+'</small>':'');
+}
+function wireInterview(j){
+  const at=$("#ap-iv-at"), tz=$("#ap-iv-tz");
+  if(!at) return;
+  at.onchange=()=>{
+    const patch={interview_at:at.value?at.value+":00":null};
+    /* A first time for a job somewhere else starts in that place's zone. */
+    if(at.value&&!j.interview_at&&!tz.value){ const g=guessTz(j); if(g&&g!==userTz()) patch.interview_tz=g }
+    saveJob(j.id,patch);
+  };
+  tz.onchange=()=>saveJob(j.id,{interview_tz:tz.value||null});
+}
 
 async function saveJob(id,patch){
   try{
@@ -11504,14 +11696,14 @@ function drawMomentum(){
     '</span><span>This week</span></div>';
   countUp(host,$("#fn-page").classList.contains("fx-in"));
 }
-const MONTHS_LONG=["January","February","March","April","May","June","July","August",
-  "September","October","November","December"];
+const MONTHS_LONG=Array.from({length:12},(_,i)=>{ try{ return new Intl.DateTimeFormat(uiLocale(),{month:"long"})
+  .format(new Date(2026,i,15)) }catch(e){ return String(i+1) } });
 
 function fnNext(j){
   const days=d=>Math.max(0,Math.round((Date.now()-d)/DAY));
   if(j.status==="interviewing"){
-    const at=j.interview_at?new Date(String(j.interview_at).slice(0,19)):null;
-    if(at&&at>new Date()) return "Interview "+shortDate(at);
+    const at=interviewMoment(j);
+    if(at&&at>new Date()) return t("Interview")+" "+fmtWhen(at,userTz());
     const d=fnEvent(j,"interviewing"); return d?"Interviewing since "+shortDate(d):"";
   }
   if(j.status==="offer"){ const d=fnEvent(j,"offer"); return d?"Offer since "+shortDate(d):"" }
@@ -12394,7 +12586,7 @@ document.addEventListener("keydown",e=>{
 function showSettingsPane(which){
   $$("#set-rail button").forEach(x=>
     x.setAttribute("aria-selected",String(x.dataset.s===which)));
-  ["workspace","editor","ai","api","updates","about"].forEach(k=>
+  ["workspace","editor","region","ai","api","updates","about"].forEach(k=>
     $("#sp-"+k).hidden = k!==which);
   if(which==="updates") checkUpdates(true);
   if(which==="ai") loadAI();
@@ -12418,6 +12610,14 @@ function fillSettings(){
     try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) }
   };
   $("#s-setup").onclick=()=>{ closeOverlays(); onboardingSheet() };
+  const ul=$("#s-uilang");
+  ul.value=pr.ui_lang||"";
+  ul.onchange=()=>{ setPref("ui_lang",ul.value||null); location.reload() };
+  const tzs=$("#s-tz");
+  tzs.innerHTML='<option value="">'+esc(t("Match system"))+' · '+esc(tzCity(machineTz()))+'</option>'+
+    tzOptions(pr.tz||"",null);
+  tzs.value=pr.tz||"";
+  tzs.onchange=()=>{ setPref("tz",tzs.value||null); location.reload() };
   const sb=$("#s-sample");
   sb.textContent=st.sample?"Back to my workspace":"Open sample data";
   sb.onclick=()=>setSample(!st.sample,sb);

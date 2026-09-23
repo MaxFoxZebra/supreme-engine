@@ -403,7 +403,7 @@ def _brief(job: dict) -> dict:
     question an app organised around applications is for.
     """
     keep = ("id", "title", "company", "status", "location", "url", "source",
-            "followup_date", "interview_at", "contact_email",
+            "followup_date", "interview_at", "interview_tz", "contact_email",
             "last_contact_at", "cv_path", "letter_path", "updated_at")
     return {k: job.get(k) for k in keep if job.get(k) is not None}
 
@@ -542,6 +542,7 @@ def set_job_status(job_id: str, status: str, append_note: str | None = None) -> 
 
 @tool
 def update_job_tracking(job_id: str, interview_at: str | None = None,
+                        interview_tz: str | None = None,
                         followup_date: str | None = None,
                         last_contact_at: str | None = None,
                         contact_email: str | None = None,
@@ -564,9 +565,13 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     anything. `letter_path` is the same for a cover letter, which is any
     document under letters/.
 
-    `interview_at` is "YYYY-MM-DDTHH:MM:SS" in the user's own local time, not
-    UTC, because that is what the rest of the store uses and what the reminder
-    compares against. Convert before writing.
+    `interview_at` is "YYYY-MM-DDTHH:MM:SS", the wall-clock time the
+    invitation gives, not UTC. When the invitation gives it in the employer's
+    time zone rather than the user's -- 10:00 in London for someone in Paris --
+    write that time as it is and pass `interview_tz` as the IANA name
+    ("Europe/London"). The app shows it in both zones and reminds at the right
+    moment. Leave `interview_tz` out when the time is already the user's own;
+    pass an empty string to clear a zone set before.
 
     Nothing outside this app knows about that time. No event is created in any
     calendar, so this record is the only thing that will remind the user. If an
@@ -578,7 +583,7 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     abandoned when it is not.
     """
     data: dict = {}
-    for field, value in (("interview_at", interview_at),
+    for field, value in (("interview_at", interview_at), ("interview_tz", interview_tz),
                          ("followup_date", followup_date),
                          ("last_contact_at", last_contact_at),
                          ("contact_email", contact_email)):
