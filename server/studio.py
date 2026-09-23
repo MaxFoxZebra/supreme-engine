@@ -5632,7 +5632,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-menu hr{border:0;border-top:1px solid var(--bd-inner);margin:4px 2px}
 .ap-menu .gl{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;
   background:var(--bar);color:var(--t700);font-size:11px;flex:none}
-.ap-docs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.ap-docs{display:grid;grid-template-columns:repeat(2,minmax(0,210px));gap:18px}
 .ap-doc{display:flex;flex-direction:column;gap:8px;min-width:0}
 .ap-doc .pg{aspect-ratio:210/297;border:1px solid var(--rule);border-radius:5px;background:#fff;
   overflow:hidden;cursor:pointer;display:grid;place-items:center;
@@ -5668,10 +5668,28 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .ap-chips span{height:24px;display:inline-flex;align-items:center;padding:0 10px;border-radius:12px;
   background:var(--bar);font-size:12px;color:var(--t800)}
-.ap-posthead{display:flex;align-items:baseline;gap:10px}
-.ap-posthead .alink{font-size:12px}
-.peek-grid textarea.posting-edit{min-height:320px;font-size:12.5px;line-height:1.6}
-@media(max-width:1180px){ .ap-docs{grid-template-columns:repeat(3,minmax(0,200px))} }
+.ap-pcard{height:100%;min-height:360px;display:flex;flex-direction:column;border:1px solid var(--rule);
+  border-radius:14px;background:var(--field);overflow:hidden}
+.ap-phead{flex:none;display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--bd-inner);
+  background:var(--row-alt)}
+.ap-phead .tx{display:flex;flex-direction:column;gap:1px;min-width:0}
+.ap-phead .tx b{font-size:14px;font-weight:600;color:var(--t900)}
+.ap-phead .tx span{font-size:12px;line-height:1.35;color:var(--t500);display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.ap-phead .tx{flex:1}
+.ap-phead .obtn{height:30px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border-radius:8px;
+  font-size:12.5px;font-weight:500;color:var(--t900);text-decoration:none;white-space:nowrap;flex:none}
+.ap-phead .obtn .board{width:16px;height:16px;border-radius:4px}
+.ap-phead .obtn .board svg{width:10px;height:10px}
+.ap-phead .obtn .ext{color:var(--t500)}
+.ap-pbody{flex:1;min-height:0;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.ap-pbody>.ap-post,.ap-pbody>.ap-chips{flex:none}
+.ap-plabel{font-size:13px;font-weight:600;color:var(--t900)}
+.ap-pfoot{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t600)}
+.ap-pfoot code{font-size:12px;padding:2px 6px;border-radius:5px;background:var(--bar);color:var(--t800)}
+.peek-grid textarea.posting-edit{flex:1;min-height:260px;font-size:12.5px;line-height:1.6;
+  border:1.5px dashed var(--bd-field);border-radius:10px;background:var(--row-alt);padding:12px 14px;resize:vertical}
+@media(max-width:1180px){ .ap-docs{grid-template-columns:repeat(2,minmax(0,200px))} }
 
 /* ---------- cover letters --------------------------------------------------
    The page is the editor: a sheet at the letter's real size, set in the CV's
@@ -5992,6 +6010,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sp-lede{color:var(--t600);font-size:12.5px;line-height:1.6;margin:0 0 16px;max-width:62ch}
 .sp-note{color:var(--t600);font-size:12px;line-height:1.6;margin:14px 0 0;max-width:62ch}
 .srow{display:flex;align-items:center;gap:28px;padding:14px 0;border-top:1px solid var(--rule)}
+.srow.nf-sub.off{opacity:.45;pointer-events:none}
 /* The time zone on a little world: the land in dots, the night where it is
    night now, your zone's band and your city pinned, the places you have an
    interview linked to it. Clicking picks the nearest city. */
@@ -6756,6 +6775,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       <button data-s="workspace" aria-selected="true">Workspace</button>
       <button data-s="editor" aria-selected="false">Editor</button>
       <button data-s="region" aria-selected="false">Language &amp; region</button>
+      <button data-s="notify" aria-selected="false">Notifications</button>
       <button data-s="ai" aria-selected="false">AI clients</button>
       <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
@@ -6783,6 +6803,34 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="srow"><div><b>Applications</b><span>Exported as JSON or CSV so the
           database is never a lock-in.</span></div>
           <button class="obtn" id="s-exp">Export JSON</button></div>
+      </section>
+
+      <section class="sp" id="sp-notify" hidden>
+        <h3>Notifications</h3>
+        <p class="sp-lede">Reminders from CV Studio, as your system's notifications: before an
+          interview, and on the morning a follow-up is due. They come while the app is open,
+          even in the background. Off until you turn them on.</p>
+        <div class="srow"><div><b>Notifications</b><span id="s-notify-state">Off.</span></div>
+          <label class="tgl"><input type="checkbox" id="s-notify"><i></i></label></div>
+        <div class="srow nf-sub"><div><b>Interviews</b><span>With the time in yours and in theirs.</span></div>
+          <select id="s-notify-iv">
+            <option value="off">Off</option>
+            <option value="10">10 minutes before</option>
+            <option value="60">1 hour before</option>
+            <option value="60,10">1 hour and 10 minutes before</option>
+            <option value="1440,60">The day before, and 1 hour before</option>
+          </select></div>
+        <div class="srow nf-sub"><div><b>Follow-ups</b><span>One notification for all the ones due that day,
+          and the ones already late.</span></div>
+          <select id="s-notify-fu">
+            <option value="off">Off</option>
+            <option value="8">At 08:00</option>
+            <option value="9">At 09:00</option>
+            <option value="10">At 10:00</option>
+            <option value="14">At 14:00</option>
+          </select></div>
+        <div class="srow nf-sub"><div><b>Try it</b><span>Sends one now, so you can see where they appear.</span></div>
+          <button class="obtn" id="s-notify-test">Send a test</button></div>
       </section>
 
       <section class="sp" id="sp-region" hidden>
@@ -10640,41 +10688,108 @@ async function loadAlerts(){
   notifyAlerts();
 }
 
-/* Nothing outside this app knows when an interview is. No event is written to
-   any calendar, by design, so this notification is the only thing that reaches
-   the user when the window is not in front of them. Hence the one place the
-   app speaks without being spoken to.
-
-   Once a day at most, and only ever one line. A notification per application
-   would be four notifications on a bad Monday, which is how people learn to
-   turn them off. */
-async function notifyAlerts(){
-  const a=S.alerts;
-  if(!a||!a.total) return;
+/* ---- Notifications ---------------------------------------------------- */
+/* Nothing outside this app knows when an interview is, so a reminder has to
+   come from here. Opt-in, from Settings > Notifications: before each
+   interview at the leads chosen there, and once a day for follow-ups, in one
+   notification rather than one per application. Each is sent once: what was
+   sent is remembered on this machine. They come while the app is open. */
+const NOTIFY_SEEN="cvstudio.notified";
+const notifyOn=()=>!!prefs().notify;
+const notifyIv=()=>{ const v=prefs().notify_iv??"60,10"; return v==="off"?[]:String(v).split(",").map(Number).sort((a,b)=>b-a) };
+const notifyFu=()=>{ const v=prefs().notify_fu??"9"; return v==="off"?null:+v };
+function notifyApi(){
   const N=window.__TAURI__&&window.__TAURI__.notification;
-  if(!N) return;                       /* a plain browser during development */
-  const key="cvstudio-notified", today=isoToday();
-  let seen=null;
-  try{ seen=localStorage.getItem(key) }catch(e){ return }
-  const stamp=today+":"+ATTENTION.map(([k])=>a.counts[k]).join(",");
-  if(seen===stamp) return;
-
-  try{
-    /* Asked for on the first alert that would actually be shown, not at boot.
-       A permission prompt before the app has anything to say is the kind of
-       thing people refuse on principle. */
-    let granted=await N.isPermissionGranted();
-    if(!granted) granted=(await N.requestPermission())==="granted";
-    if(!granted) return;
-    const parts=ATTENTION.filter(([k])=>a.counts[k])
-      .map(([k,label])=>a.counts[k]+" "+label.toLowerCase());
-    N.sendNotification({
-      title:a.total===1?"One application needs attention"
-                       :a.total+" applications need attention",
-      body:parts.join(", "),
-    });
-    localStorage.setItem(key,stamp);
-  }catch(e){}
+  if(N) return {
+    granted:()=>N.isPermissionGranted(),
+    ask:async()=>(await N.requestPermission())==="granted",
+    send:(title,body)=>N.sendNotification({title,body})};
+  if(!("Notification" in window)) return null;
+  return {
+    granted:async()=>Notification.permission==="granted",
+    ask:async()=>(await Notification.requestPermission())==="granted",
+    send:(title,body,onclick)=>{ const n=new Notification(title,{body,icon:"/static/brand-mark-256.png"});
+      n.onclick=()=>{ window.focus(); if(onclick) onclick(); n.close() } }};
+}
+function notifySeen(){ try{ return JSON.parse(localStorage.getItem(NOTIFY_SEEN)||"{}") }catch(e){ return {} } }
+function notifyMark(k){
+  const m=notifySeen(), cut=Date.now()-14*864e5;
+  for(const x in m) if(m[x]<cut) delete m[x];
+  m[k]=Date.now(); try{ localStorage.setItem(NOTIFY_SEEN,JSON.stringify(m)) }catch(e){}
+}
+async function notifySend(key,title,body,onclick){
+  const A=notifyApi(); if(!A) return false;
+  try{ if(!(await A.granted())) return false; A.send(title,body,onclick); if(key) notifyMark(key); return true }
+  catch(e){ return false }
+}
+const inWords=ms=>{ const m=Math.max(1,Math.round(ms/6e4));
+  if(m<60) return t(m===1?"in 1 minute":"in {n} minutes",{n:m});
+  const h=Math.round(m/60);
+  if(h<24) return t(h===1?"in 1 hour":"in {n} hours",{n:h});
+  return t("tomorrow") };
+async function notifyTick(){
+  if(!notifyOn()||!S.jready) return;
+  const now=Date.now(), seen=notifySeen();
+  /* Interviews: the largest lead whose moment has come and not been sent.
+     Opening the app half an hour before still gets one, saying so. */
+  const leads=notifyIv();
+  for(const j of S.jobs||[]){
+    const at=interviewMoment(j); if(!at||at<=now||!leads.length) continue;
+    const base="iv:"+j.id+":"+at.getTime()+":";
+    const due=leads.filter(L=>now>=at-L*6e4);
+    if(!due.length) continue;
+    const L=due[due.length-1];
+    if(seen[base+L]) continue;
+    const ok=await notifySend(base+L,t("Interview {when} · {co}",{when:inWords(at-now),co:j.company}),
+      j.title+" · "+interviewLine(j),()=>{ setView("jobs"); selectJob(j.id) });
+    if(ok) due.forEach(x=>notifyMark(base+x));
+  }
+  /* Follow-ups: once a day, from the hour chosen. */
+  const hr=notifyFu();
+  if(hr!=null&&new Date().getHours()>=hr){
+    const today=isoToday(), key="fu:"+today;
+    if(!seen[key]){
+      const list=(S.jobs||[]).filter(j=>j.followup_date&&!DEAD_ST.has(j.status)&&String(j.followup_date).slice(0,10)<=today);
+      if(list.length){
+        const late=list.filter(j=>String(j.followup_date).slice(0,10)<today).length;
+        const names=list.map(j=>j.company); const shown=names.length>4?names.slice(0,4).join(", ")+" +"+(names.length-4):names.join(", ");
+        await notifySend(key,list.length===1?t("Follow up with {co} today",{co:list[0].company})
+            :t("{n} follow-ups to send",{n:list.length}),
+          shown+(late?" · "+t(late===1?"1 is late":"{n} are late",{n:late}):""),
+          ()=>{ S.jfilter={kind:"alert",value:"followup_due"}; setView("jobs") });
+      }else notifyMark(key);
+    }
+  }
+}
+setInterval(notifyTick,30000);
+async function notifyAlerts(){ notifyTick() }
+function fillNotify(){
+  const on=$("#s-notify"), iv=$("#s-notify-iv"), fu=$("#s-notify-fu"), st=$("#s-notify-state"), A=notifyApi();
+  const pr=prefs();
+  on.checked=notifyOn(); iv.value=pr.notify_iv??"60,10"; fu.value=String(pr.notify_fu??"9");
+  $$("#sp-notify .nf-sub").forEach(r=>r.classList.toggle("off",!on.checked));
+  const say=async()=>{
+    if(!A){ st.textContent=t("This window cannot show notifications."); on.disabled=true; return }
+    const g=await A.granted().catch(()=>false);
+    st.textContent=!on.checked?t("Off. Turn them on to be reminded of interviews and follow-ups.")
+      :g?t("On, while CV Studio is open."):t("Blocked by your system. Allow CV Studio in your notification settings.");
+  };
+  say();
+  on.onchange=async()=>{
+    if(on.checked&&A){
+      let g=await A.granted().catch(()=>false);
+      if(!g) g=await A.ask().catch(()=>false);
+      if(!g){ on.checked=false; toast(t("Notifications are blocked for CV Studio in your system settings."),true) }
+    }
+    setPref("notify",on.checked);
+    fillNotify(); notifyTick();
+  };
+  iv.onchange=()=>{ setPref("notify_iv",iv.value); notifyTick() };
+  fu.onchange=()=>{ setPref("notify_fu",fu.value); notifyTick() };
+  $("#s-notify-test").onclick=async()=>{
+    const ok=await notifySend(null,t("CV Studio"),t("This is how a reminder will look."));
+    if(!ok) toast(t("Notifications are blocked for CV Studio in your system settings."),true);
+  };
 }
 
 function drawRail(){
@@ -11711,14 +11826,12 @@ function drawJobInspector(){
         '<button class="obtn" id="ap-write">Write one</button></div>'+
       '<div class="t"><b>Cover letter</b><span>In the look of the CV</span></div></div>';
   const jb=jobBoard(j), words=(String(j.description||"").match(/\S+/g)||[]).length;
-  const postCard='<div class="ap-doc"><div class="pg post"><span class="who">'+(jb?boardMark(jb):"")+
-      esc(jb?jb.label:(j.source||"The posting"))+'</span>'+
-      (j.url?'<span class="u">'+esc(j.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,70))+'</span>':
-        '<span class="u">No link saved</span>')+
-      '<span class="n">'+(words?words+" words saved below":"Not saved")+'</span></div>'+
-    '<div class="t"><b>The posting</b><span>'+(words?"Kept in case it comes down":"Save it while it’s up")+'</span></div>'+
-    (j.url?'<div class="a"><a class="obtn" href="'+esc(j.url)+'" target="_blank" rel="noreferrer" '+
-      'style="display:inline-flex;align-items:center;text-decoration:none">Open the posting</a></div>':"")+'</div>';
+  /* The posting is not a document you send, so it is not a tile beside
+     them: it is one card on the right, its link and its text together. */
+  /* A board with a website is named; a referral or a recruiter is not a
+     place, so the link says where it goes instead. */
+  let site=""; try{ site=new URL(j.url).hostname.replace(/^www\./,"") }catch(e){}
+  const web=jb&&jb.host?jb:null, who=web?web.label:site;
 
   const hist=(j.status_history||[]);
   const timeline=hist.length?'<div class="tl">'+hist.map(h=>
@@ -11727,18 +11840,35 @@ function drawJobInspector(){
     '<span class="when mono">'+esc(shortDate(h.at))+'</span></div></div>').join("")+'</div>'
     :'<p class="note muted">No history yet.</p>';
   const chips=postingChips(j);
-  const posting=j.description
-    ? (chips.length?'<div class="ap-chips">'+chips.map(c=>'<span>'+esc(c)+'</span>').join("")+'</div>':'')+
-      '<div class="ap-post" id="ap-post">'+postingHTML(j.description)+'</div>'
-    : '<p class="note muted">Not saved. Paste it in, or ask your AI client to save it when it adds '+
-      'the application: it is what a tailored CV and a cover letter are written against once the '+
-      'advert is gone.</p>';
+  const openLink=j.url
+    ? '<a class="obtn" href="'+esc(j.url)+'" target="_blank" rel="noreferrer" title="'+esc(j.url)+'">'+
+        (web?boardMark(web):'')+esc(who?t("Open on {site}",{site:who}):t("Open the posting"))+'<span class="ext">↗</span></a>'
+    : '<button class="obtn" id="ap-addlink">'+t("Add the link")+'</button>';
+  const pasteBox=(val,first)=>'<label class="ap-plabel" for="ap-paste">'+
+      t(first?"Paste it here while it is up":"The posting, as text")+'</label>'+
+    '<textarea class="posting-edit" id="ap-paste" placeholder="'+
+      esc(t("Paste the posting. Headings and lists come through: a short line ending in a colon, or lines starting with -."))+'">'+
+      esc(val||"")+'</textarea>'+
+    '<div class="ap-pfoot">'+(first?'<span>'+t("Or ask your AI client to save it:")+' <code>'+
+      esc(t("save the posting for {co}",{co:j.company}))+'</code></span>':'<span></span>')+
+      '<span class="grow"></span>'+(first?'':'<button class="obtn" id="ap-post-cancel">'+t("Cancel")+'</button>')+
+      '<button class="pbtn" id="ap-post-save">'+t(first?"Save the posting":"Save")+'</button></div>';
+  const posting='<article class="ap-pcard" aria-label="'+esc(t("The posting"))+'">'+
+    '<div class="ap-phead"><div class="tx"><b>'+t("The posting")+'</b><span>'+
+      esc(words?t("{n} words · kept here in case the advert comes down",{n:words})
+        :t("Not saved yet · adverts come down, and a tailored CV and a letter are written against it"))+
+      '</span></div>'+openLink+
+      (words?'<button class="obtn" id="ap-post-edit">'+t("Edit")+'</button>':'')+'</div>'+
+    '<div class="ap-pbody" id="ap-pbody">'+(words
+      ? (chips.length?'<div class="ap-chips">'+chips.map(c=>'<span>'+esc(c)+'</span>').join("")+'</div>':'')+
+        '<div class="ap-post" id="ap-post">'+postingHTML(j.description)+'</div>'
+      : pasteBox("",true))+'</div></article>';
 
   body.innerHTML=
     '<div class="peek-grid">'+
       '<div class="col">'+
         facts+
-        '<div class="block"><span class="blabel">Documents</span><div class="ap-docs">'+cvCard+ltCard+postCard+'</div></div>'+
+        '<div class="block"><span class="blabel">Documents</span><div class="ap-docs">'+cvCard+ltCard+'</div></div>'+
         (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
           'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
           esc(j.cv_path)+'"></div></div>':'')+
@@ -11753,9 +11883,7 @@ function drawJobInspector(){
       '<div class="col">'+
         '<div class="block"><span class="blabel">Notes</span>'+
           '<textarea data-j="notes" class="notes">'+esc(j.notes||"")+'</textarea></div>'+
-        '<div class="block grow"><div class="ap-posthead"><span class="blabel">The posting</span>'+
-          '<button class="alink" id="ap-post-edit">'+(j.description?"Edit":"Paste it")+'</button></div>'+
-          posting+'</div>'+
+        '<div class="block grow">'+posting+'</div>'+
       '</div>'+
     '</div>';
   body.querySelectorAll("[data-thumb]").forEach(el=>apThumb(el,el.dataset.thumb));
@@ -11770,16 +11898,19 @@ function drawJobInspector(){
   };
   const th=body.querySelector("[data-tailor-here]");
   if(th) th.onclick=()=>tailorFor(j.id);
-  $("#ap-post-edit").onclick=()=>{
-    const host=$("#ap-post-edit").closest(".block");
-    host.querySelectorAll(".ap-chips,.ap-post,.note").forEach(x=>x.remove());
-    const ta=document.createElement("textarea");
-    ta.className="posting-edit"; ta.value=j.description||"";
-    ta.placeholder="Paste the posting. Headings and lists come through: a short line ending in a colon, or lines starting with -.";
-    host.append(ta); ta.focus();
-    $("#ap-post-edit").textContent="Done";
-    $("#ap-post-edit").onclick=()=>saveJob(j.id,{description:ta.value.trim()||null});
+  const wirePaste=()=>{
+    const sv=$("#ap-post-save"), ta=$("#ap-paste");
+    if(sv) sv.onclick=()=>{ const v=ta.value.trim(); if(!v&&!j.description) return ta.focus();
+      saveJob(j.id,{description:v||null}) };
+    const cn=$("#ap-post-cancel"); if(cn) cn.onclick=()=>selectJob(j.id);
   };
+  wirePaste();
+  const ed=$("#ap-post-edit");
+  if(ed) ed.onclick=()=>{ ed.hidden=true; $("#ap-pbody").innerHTML=pasteBox(j.description,false);
+    wirePaste(); $("#ap-paste").focus() };
+  const al=$("#ap-addlink");
+  if(al) al.onclick=()=>{ const u=prompt(t("The link to the posting"),"https://");
+    if(u&&/^https?:\/\/\S+\.\S+/.test(u.trim())) saveJob(j.id,{url:u.trim()}) };
   const diff=$("#jdiff");
   if(diff) fillBaseDiff(diff,j.cv_path);
   const ab=$("#job-ats");
@@ -13740,7 +13871,7 @@ document.addEventListener("keydown",e=>{
 function showSettingsPane(which){
   $$("#set-rail button").forEach(x=>
     x.setAttribute("aria-selected",String(x.dataset.s===which)));
-  ["workspace","editor","region","ai","api","updates","about"].forEach(k=>
+  ["workspace","editor","region","notify","ai","api","updates","about"].forEach(k=>
     $("#sp-"+k).hidden = k!==which);
   if(which==="updates") checkUpdates(true);
   if(which==="ai") loadAI();
@@ -13753,6 +13884,7 @@ $$("[data-copy]").forEach(b=>b.onclick=async()=>{
 });
 
 function fillSettings(){
+  fillNotify();
   const st=S.state||{}, base=location.origin, pr=prefs();
   $("#s-ws").textContent=st.workspace||"";
   $("#s-count").textContent=(st.documents||[]).length+" documents";

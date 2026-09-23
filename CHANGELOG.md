@@ -8,6 +8,25 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Reminders, as system notifications (opt-in).** Settings › Notifications
+  turns them on. Before an interview (10 minutes, 1 hour, both, or the day
+  before and 1 hour before), with the time in yours and in theirs; and once a
+  day, at the hour you pick, one notification for the follow-ups due that day
+  and the ones already late. Each is sent once, and opening the app half an
+  hour before an interview still gets you the reminder. *Send a test* shows
+  where they appear. They come while the app is open, even in the background.
+  This replaces the old once-a-day "applications need attention"
+  notification, which was always on.
+- **The posting, in one place.** On an application, the posting is no longer
+  a tile among the documents pointing at the text beside it. It is one card:
+  its header says how long it is and holds *Open on LinkedIn ↗* (or the
+  site's name, for a referral or a recruiter's link) and *Edit*; the text is
+  below. Not saved yet, the card is the paste box, with *Save the posting*
+  and the sentence to ask your AI client instead. No link saved: *Add the
+  link*. Documents are now only what you send, the CV and the letter.
+
 ## 0.21.0
 
 - **Next up, on the home screen.** Above the applications list, a strip says
