@@ -2376,6 +2376,9 @@ def design_schema(theme: str) -> dict:
         fields = []
         for fname, fspec in (model.get("properties") or {}).items():
             fields += _describe(fspec, defs, [gname, fname], gname)
+        # Forced off at render time (cv_render.FORCED), so a switch for it
+        # would be a control that does nothing.
+        fields = [f for f in fields if f["path"] != ["page", "show_top_note"]]
         if fields:
             groups.append({"name": gname, "fields": fields})
     return {"groups": groups, "themes": available_themes()}

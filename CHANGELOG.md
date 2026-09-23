@@ -21,6 +21,11 @@ tag, so a release is never published with nothing said about it.
 - **The base CV card shows the base CV.** A snapshot of its first page, as
   actually rendered, sits in the card on Applications and on Documents, and
   clicking it opens the CV. It updates when you or a model change the file.
+- **No CV says "Last updated in…" any more.** RenderCV prints it at the top
+  of page one unless a file turns it off, and a design block rewritten by a
+  model dropped the setting, so it crept back. Every render now turns it off,
+  whatever the file says, and the switch is gone from Design. Your files are
+  not changed.
 - **The base CV says it is the base.** Open it and a **Base CV** chip sits
   where a tailored copy says what it came from, with how many CVs have been
   tailored from it; the document list tags it too.

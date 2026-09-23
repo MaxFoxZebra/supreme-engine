@@ -85,6 +85,16 @@ def find_rendercv_exe() -> str | None:
     return None
 
 
+# Settings no CV this app renders may turn on, whatever its YAML says.
+# RenderCV prints "Last updated in <month> <year>" at the top of page one by
+# default. It dates the document rather than the work, and a CV announcing it
+# was last touched four months ago answers a question nobody asked -- so it is
+# overridden on the command line rather than trusted to every file, since a
+# model rewriting a design block drops the setting and the default comes back.
+# The files are not touched: they still render the same anywhere else.
+FORCED = ["--design.page.show_top_note", "false"]
+
+
 # In-process rendering changes the working directory, argv and stdout, all of
 # which belong to the whole process, and the server answers requests on
 # threads. Two renders at once -- the base card catching up while the editor
@@ -108,7 +118,8 @@ def _render_in_process_locked(yaml_path: Path, out_dir: Path) -> tuple[bool, str
     buf = io.StringIO()
     try:
         os.chdir(yaml_path.parent)
-        sys.argv = ["rendercv", "render", str(yaml_path), "--output-folder", str(out_dir)]
+        sys.argv = ["rendercv", "render", str(yaml_path), "--output-folder", str(out_dir),
+                    *FORCED]
         try:
             with redirect_stdout(buf), redirect_stderr(buf):
                 entry_point()
@@ -135,7 +146,7 @@ def _render_subprocess(yaml_path: Path, out_dir: Path) -> tuple[bool, str]:
     # Without this, rendercv dies printing its success tick on a Windows console.
     env["PYTHONIOENCODING"] = "utf-8"
     proc = subprocess.run(
-        [exe, "render", str(yaml_path), "--output-folder", str(out_dir)],
+        [exe, "render", str(yaml_path), "--output-folder", str(out_dir), *FORCED],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         env=env, cwd=str(yaml_path.parent),
     )
