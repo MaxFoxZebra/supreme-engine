@@ -10,6 +10,25 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **The funnel, rebuilt.** It opens on five numbers across the top, sent,
+  heard back, interviewed, offers and accepted, counting up, with the rate
+  between each pair and the step that loses the most marked. The chart sits
+  on a dark stage in both themes, sweeps in column by column, and every stage
+  has a label that never covers a number. Small lights travel along the paths
+  to the stages still in play (awaiting a reply, still interviewing, deciding
+  on an offer), so what can still change is what moves; an accepted offer
+  glows. Hover a stage and its whole path lights up, with who is in it; click
+  it and the list beside the chart shows them. Changing the range moves the
+  chart from the old shape to the new one rather than redrawing it.
+- **Beside and under the chart:** applications sent each week, with the weeks
+  interviews happened; the applications still in play and what is next for
+  each; which sources turn into interviews, by board; how many days answers
+  take, each one a dot, with the ones that never came set apart; and up to
+  three plain readings of all that, each shown only when the numbers support
+  it. With reduced motion turned on, nothing moves.
+- **Median reply time no longer counts being ghosted as a reply.** Marking an
+  application ghosted is you giving up on an answer, and the day you did was
+  being counted as the day they answered.
 - **A third smaller.** The download is about 75 MB instead of 110 MB. The
   Chinese, Japanese and Korean fonts, two fifths of the fonts the app carried,
   are fetched the first time a CV needs one: when you add one of those

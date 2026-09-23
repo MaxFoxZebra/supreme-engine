@@ -333,7 +333,10 @@ def _reply_days(history: list[dict]) -> int | None:
     """Days between applying and the first thing that happened next.
 
     Only a real answer counts: a job still sitting at `applied` has not had a
-    reply yet, and folding those in as zero would flatter the median.
+    reply yet, and folding those in as zero would flatter the median. Nor does
+    being ghosted: marking one ghosted is you giving up on an answer, and
+    counting the day you did as the day they replied pulled the median towards
+    however long you usually wait before deciding that.
     """
     applied_at = None
     for event in history:
@@ -344,6 +347,8 @@ def _reply_days(history: list[dict]) -> int | None:
             applied_at = at
             continue
         if applied_at:
+            if str(event.get("status", "")).startswith("ghosted"):
+                return None
             try:
                 a = time.strptime(applied_at[:19], "%Y-%m-%dT%H:%M:%S")
                 b = time.strptime(at[:19], "%Y-%m-%dT%H:%M:%S")
