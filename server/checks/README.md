@@ -24,6 +24,7 @@ cd server
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
 | `i18nscan.js` | Every screen in English and French; lists text left untranslated. |
+| `i18nserver.py` | Every message the server can send (errors, render hints) has a translation. The catalogue is `i18n/catalogue.py`; `python i18n/build.py` writes `static/i18n.js` from it. |
 | `crop.py` | Crops and zooms a PNG using only the stdlib, so a screenshot can be read at a size where design decisions are visible. |
 
 ## audit.py

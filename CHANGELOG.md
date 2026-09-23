@@ -16,7 +16,9 @@ tag, so a release is never published with nothing said about it.
   page") back and forth. Fixed.
 - **Every screen in your language.** The last English left on the French,
   Spanish and Portuguese screens is translated: the assistant's status,
-  the letterhead note, the funnel, the application's documents and more.
+  the letterhead note, the funnel, the application's documents and more,
+  and the messages that say what went wrong: a failed import, a render
+  error's hint, a name already taken.
   Date fields now show dates the way your language writes them, whatever
   language the system itself is in.
 

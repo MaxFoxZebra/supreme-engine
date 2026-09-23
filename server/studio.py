@@ -7359,6 +7359,9 @@ function trString(str){
   const lead=str.match(/^\s*/)[0], trail=str.match(/\s*$/)[0];
   return lead+out+trail;
 }
+/* Text the server wrote (an error, a hint), put into a sentence of ours:
+   the watcher only knows a text node whole, so the part is translated here. */
+const tx=s=>{ s=String(s??""); const r=trString(s); return r==null?s:r };
 const I18N_SKIP="[data-noi18n],[contenteditable],textarea,input,script,style,code,pre,.ap-post,"+
   ".ap-notes,.lt-stage,.fj-who,.fn-src .sn,.co,.con,.sk-tip .who,#yaml,.yamlerr,.drift-list .then";
 const I18N_ATTRS=["placeholder","title","aria-label","data-ph"];
@@ -8105,8 +8108,8 @@ function fillAIPanel(){
     try{
       const r=await post("/api/ai/connect",{client:b.dataset.connect});
       await loadAI();
-      toast(r.action==="unchanged" ? "Already set up."
-        : (c?c.label:"Done")+" is connected. "+(r.restart||""));
+      toast(r.action==="unchanged" ? t("Already set up.")
+        : t("{c} is connected.",{c:c?c.label:"CV Studio"})+" "+tx(r.restart||""));
     }catch(e){ toast(e.message,true); await loadAI() }
   });
   /* Not a reveal: these files live outside the workspace, and /api/reveal is
@@ -8149,7 +8152,7 @@ function paintSkills(){
     try{
       const r=await post("/api/skills/package",{});
       await loadSkills();
-      toast(r.skills.length+" skills ready to upload in "+r.dir);
+      toast(t("{n} skill(s) ready to upload in {dir}",{n:r.skills.length,dir:r.dir}));
     }catch(e){ toast(e.message,true); await loadSkills() }
   };
   $("#s-skill-show").onclick=async()=>{
@@ -8516,7 +8519,7 @@ async function pulse(){
   }
   S.docMtime=now;
   await reopenInPlace();
-  toast(whoChanged(p)+" updated this file");
+  toast(t("{who} updated this file",{who:t(whoChanged(p))}));
 }
 /* Which client wrote the file that just moved underneath us. The tool call
    that did it carries its own name now, so this is no longer a guess hedged
@@ -10456,8 +10459,7 @@ function typeSheet(title,blurb,namePlaceholder,go){
       name=$("#ts-name").value.trim().toLowerCase()
         .replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
       if(!name) return toast("Give the section a name.",true);
-      if(taken.includes(name)) return toast("There is already a "+
-        sectionLabel(name)+" section.",true);
+      if(taken.includes(name)) return toast(t("There is already a {s} section.",{s:sectionLabel(name)}),true);
     }
     closeSheet();
     go(make,name);
@@ -10592,7 +10594,7 @@ async function save(ops){
        to the catch. Saying nothing would be worse: you press Add, the file is
        rewritten without it, and the form comes back looking untouched. */
     (r.missed||[]).filter(m=>m.op).forEach(m=>toast(
-      "Could not "+String(m.op.op||"do that").replace(/_/g," ")+": "+m.why,true));
+      t("Could not {op}: {why}",{op:String(m.op.op||"do that").replace(/_/g," "),why:tx(m.why)}),true));
     await doRender();
   }catch(e){ toast(e.message,true) }
   finally{ S.busy=false; $("#btn-render").disabled=false; paintStatus() }
@@ -11820,7 +11822,7 @@ function baseSheet(){
       const r=await post("/api/base",{path:path});
       S.state.base=r.base;
       closeSheet(); paintBase();
-      toast(baseLabel()+" is the base CV");
+      toast(t("{name} is the base CV",{name:baseLabel()}));
     }catch(e){ toast(e.message,true) }
   };
 }
@@ -11865,11 +11867,11 @@ async function tailorFor(id,force){
       /* The document exists either way, and an unlinked document is the
          recoverable half: the link chip in the editor attaches it. A job
          pointing at a file that was never written would not be. */
-      toast("Created "+name+", but linking it to "+j.company+" failed: "+
-            e.message+" Use the link chip in the editor.",true);
+      toast(t("Created {name}, but linking it to {co} failed: {err} Use the link chip in the editor.",
+            {name,co:j.company,err:tx(e.message)}),true);
     }
     openDoc(r.path);
-    toast("Tailored from "+docLabel(from.path));
+    toast(t("Tailored from {p}",{p:docLabel(from.path)}));
   }catch(e){
     toast(e.message,true);
   }finally{
@@ -12453,7 +12455,7 @@ function newJobSheet(seed){
         followup_date:v("nj-followup")||null, notes:v("nj-notes")||null,
         cv_path:$("#nj-cv").value||null, letter_path:$("#nj-letter").value||null});
       closeSheet(); await loadJobs(); S.funnel=null;
-      setView("jobs"); selectJob(j.id); toast("Added "+j.company);
+      setView("jobs"); selectJob(j.id); toast(t("Added {co}",{co:j.company}));
     }catch(e){ toast(e.message,true) }
   };
   $("#nj-company").focus();
@@ -12500,7 +12502,7 @@ function importSheet(imp){
       await post("/api/save",{path:r.path,patches:[{path:["cv"],value:imp.cv}]});
       closeSheet();
       const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
-      openDoc(r.path); toast("Imported "+imp.name);
+      openDoc(r.path); toast(t("Imported {name}",{name:imp.name}));
     }catch(e){ $("#imp-go").disabled=false; toast(e.message,true) }
   };
   $("#imp-name").select();
@@ -13669,12 +13671,12 @@ function newDocumentSheet(){
         theme:prefs().theme||null});
       if(kind==="cv"&&$("#nd-draft").checked&&company&&role){
         try{ await post("/api/jobs",{company,title:role,status:"pending",cv_path:r.path}) }
-        catch(e){ toast("Document created, but the application row failed: "+e.message,true) }
+        catch(e){ toast(t("Document created, but the application row failed: {err}",{err:tx(e.message)}),true) }
       }
       closeSheet();
       const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
       await loadJobs(true);
-      openDoc(r.path); toast("Created "+name);
+      openDoc(r.path); toast(t("Created {name}",{name}));
     }catch(e){ toast(e.message,true) }
   };
   $("#nd-company").focus();
@@ -13725,8 +13727,7 @@ $("#btn-design").onclick=async()=>{
   const fam=S.doc&&S.doc.family;
   if(fam&&fam.source&&fam.source!==S.path){
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
-    toast("Every language of this CV shares one design, so it is edited on "+
-      docLabel(fam.source)+".");
+    toast(t("Every language of this CV shares one design, so it is edited on {p}.",{p:docLabel(fam.source)}));
     await openDoc(fam.source);
   }
   openDesign();
@@ -13947,8 +13948,7 @@ async function removePhoto(){
     }
     paintPhotoChip();
     if(!$("#ovl-design").hidden){ paintAdvanced(); paintDesignNav() }
-    toast("Photo removed"+(r.cleared&&r.cleared.length?" from "+r.cleared.length+" CV"+
-      (r.cleared.length===1?"":"s"):""));
+    toast(r.cleared&&r.cleared.length?t("Photo removed from {n} CV(s)",{n:r.cleared.length}):t("Photo removed"));
   }catch(e){ toast(e.message,true) }
 }
 /* Drag to move, zoom to fill the square; 600 x 600 JPEG out. */

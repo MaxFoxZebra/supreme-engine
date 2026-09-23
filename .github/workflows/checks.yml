@@ -83,6 +83,12 @@ jobs:
       - name: Backups
         run: python checks/backuptest.py
 
+      - name: Translations built and complete
+        run: |
+          python i18n/build.py
+          git diff --exit-code -- static/i18n.js || { echo "static/i18n.js is stale: run python i18n/build.py"; exit 1; }
+          python checks/i18nserver.py
+
       - name: MCP over stdio
         run: |
           mkdir -p "$RUNNER_TEMP/mcp-ws"
