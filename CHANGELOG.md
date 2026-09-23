@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.18.0
 
 - **Sample data, to see the app in use.** Settings → Workspace → Open sample
   data switches to a separate folder, made fresh each time, with 64
@@ -17,6 +17,11 @@ tag, so a release is never published with nothing said about it.
   cover letters, and the base CV in French, Spanish and Brazilian Portuguese.
   A pill in the top bar says you are looking at it and takes you back. Your
   own workspace is never written to, and a restart always opens it.
+- **CV Studio in French, Spanish and Brazilian Portuguese.** The app speaks
+  your computer's language, or the one you pick in Settings → Language &
+  region. Screens, settings, the funnel's readings, messages and dialogs are
+  translated, and dates and month names follow. Your CVs, letters, postings
+  and notes are never touched: each document keeps its own language.
 - **Interviews in their time zone and yours.** An application has an
   Interview field: the time as the invitation gave it, and the zone it is in,
   guessed from where the job is (London, São Paulo, New York…). Below it, the

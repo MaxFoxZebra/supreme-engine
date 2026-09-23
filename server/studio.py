@@ -89,7 +89,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.17.0"
+VERSION = "0.18.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -6507,7 +6507,8 @@ const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
    postings, notes and anything you are typing (I18N_SKIP). */
 const UI_LANGS={en:"en-GB",fr:"fr-FR",es:"es-ES",pt:"pt-BR"};
 function uiLang(){
-  let p=null; try{ p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}").ui_lang }catch(e){}
+  let p=new URLSearchParams(location.search).get("lang");
+  if(!p) try{ p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}").ui_lang }catch(e){}
   if(p&&UI_LANGS[p]) return p;
   const n=String(navigator.language||"en").slice(0,2).toLowerCase();
   return UI_LANGS[n]?n:"en";
@@ -6549,6 +6550,11 @@ function trNode(n){
   }
 }
 if(I18N_D){
+  /* Native dialogs are outside the page, where the watcher cannot see. */
+  for(const k of ["confirm","prompt","alert"]){
+    const f=window[k].bind(window);
+    window[k]=(m,...a)=>f(m==null?m:(trString(String(m))??String(m)),...a);
+  }
   document.documentElement.lang=UI_LANG;
   trNode(document.body);
   new MutationObserver(ms=>{ for(const m of ms){
