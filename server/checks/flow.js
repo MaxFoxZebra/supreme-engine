@@ -31,8 +31,60 @@ async function main() {
     if (!ok) fails++;
   };
 
+  // --- its own fixture ---------------------------------------------------
+  // A two-page CV whose third job is Initech and whose publications land on
+  // page two, six applications, and one cover letter, all made through the
+  // app's own API so the check needs nothing prepared beforehand.
+  const bullets = n => Array.from({ length: n }, (_, k) =>
+    `          - Shipped improvement number ${k + 1} to the platform, measured and written up for the team`).join("\n");
+  const job = (co, pos, y) => `      - company: ${co}
+        position: ${pos}
+        start_date: ${y}-01
+        end_date: ${y + 2}-12
+        location: Paris, France
+        highlights:
+${bullets(9)}`;
+  const fixture = `cv:
+  name: Flow Check
+  location: Lyon, France
+  email: flow@example.com
+  sections:
+    summary:
+      - A CV long enough to need two pages, for the flow check.
+    experience:
+${job("Acme", "Platform Engineer", 2020)}
+${job("Globex", "Backend Engineer", 2017)}
+${job("Initech", "Software Engineer", 2014)}
+${job("Hooli", "Intern", 2012)}
+    publications:
+      - title: Boring deploys at scale
+        authors:
+          - Flow Check
+        date: 2019-05
+design:
+  theme: classic
+`;
+  let r = await evalJs(`(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    for (const [company, title, status] of [["Mistral AI","Applied ML Engineer","interviewing"],
+        ["Datadog","Senior Backend Engineer","applied"],["Doctolib","Staff Engineer","pending"],
+        ["Qonto","Engineering Manager","rejected"],["Alan","Full-stack Engineer","offer"],
+        ["Hugging Face","ML Infra Engineer","applied"]])
+      await post("/api/jobs", {company, title, status});
+    await post("/api/save", {path: "profile/hard.yaml", yaml: ${JSON.stringify(fixture)}});
+    await loadJobs(true);
+    await post("/api/letter/new", {job_id: S.jobs.find(j => j.company === "Qonto").id});
+    const st = await api("/api/state"); S.state = st; renderDocs(st.documents);
+    await loadJobs(true);
+    await openDoc("profile/hard.yaml");
+    for (let i = 0; i < 40 && !document.querySelector(".hit"); i++) await wait(250);
+    return {path: S.path, hits: document.querySelectorAll(".hit").length};
+  })()`);
+  check("the fixture opens in the editor", r && r.path === "profile/hard.yaml" && r.hits > 0,
+    r.err || r.error || `${r.path} · ${r.hits} blocks`);
+
   // --- clicking a block on the page moves the selection -------------------
-  let r = await evalJs(`(() => {
+  r = await evalJs(`(() => {
     const hits=[...document.querySelectorAll(".hit")];
     const target=hits.find(h=>h.dataset.k==="entry"&&h.dataset.name==="experience"&&h.dataset.i==="2");
     if(!target) return {err:"no experience[2] band"};
@@ -48,13 +100,15 @@ async function main() {
   check("exactly one band is marked selected", r && r.marked === 1, String(r.marked));
 
   // --- selecting elsewhere marks the page --------------------------------
-  r = await evalJs(`(() => {
+  r = await evalJs(`(async () => {
     select({kind:"entry",name:"publications",i:0});
-    return {page:S.page, marked:[...document.querySelectorAll(".hit.sel")].map(h=>h.title)};
+    for (let i = 0; i < 20 && !document.querySelector(".hit.sel"); i++)
+      await new Promise(r => setTimeout(r, 150));
+    return {page:S.page, marked:[...document.querySelectorAll(".hit.sel")].map(h=>h.dataset.name+" "+h.title)};
   })()`);
   check("selecting an entry on page 2 flips the page", r && r.page === 1, "page index " + r.page);
   check("that entry's band is marked on page 2",
-    r && r.marked.length === 1 && /Publications/.test(r.marked[0]), JSON.stringify(r.marked));
+    r && r.marked.length === 1 && /^publications/.test(r.marked[0]), JSON.stringify(r.marked));
 
   // --- the link sheet ----------------------------------------------------
   r = await evalJs(`(() => {
@@ -83,8 +137,9 @@ async function main() {
   // --- unlink ------------------------------------------------------------
   r = await evalJs(`(async () => {
     const linked=S.jobs.find(x=>x.cv_path==="profile/hard.yaml");
-    const b=document.querySelector("[data-unlink-job]");
-    if(!b) return {err:"no unlink button in the inspector"};
+    linkJobSheet();
+    const b=document.querySelector("#lj-unlink");
+    if(!b) return {err:"no Unlink in the link sheet"};
     b.click();
     await new Promise(r=>setTimeout(r,1500));
     const j=S.jobs.find(x=>x.id===(linked&&linked.id));

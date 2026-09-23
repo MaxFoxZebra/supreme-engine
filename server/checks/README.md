@@ -6,8 +6,9 @@ rule that never applies, an element the script addresses that no longer exists,
 a tool whose schema changed shape over the wire. These drive the real thing and
 measure what it actually produced.
 
-They are not unit tests and they need nothing installed. Run them against a
-server you have already started.
+They are not unit tests and they need nothing installed. The Python ones run on
+their own; `shot.js` and `flow.js` need a server you have already started.
+`.github/workflows/checks.yml` runs all of them on every push.
 
 ```bash
 cd server
@@ -16,7 +17,9 @@ cd server
 
 | | |
 |---|---|
+| `jscheck.py` | Every script in the served page parsed with `node --check`: a stray quote leaves a page that loads and then does nothing. |
 | `audit.py` | Static audit of the served interface. No browser needed. |
+| `prefstest.py`, `langtest.py`, `lettertest.py`, `importtest.py`, `phototest.py`, `maptest.py`, `sampletest.py` | One area each, end to end in a scratch folder: preferences, languages, cover letters, importing, the photo, the page map, sample data. |
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
@@ -52,11 +55,15 @@ routes `--mcp`.
 
 ```bash
 node checks/shot.js "http://127.0.0.1:8750/?token=t" ./shots \
-  '01-editor::localStorage.setItem("cvstudio.prefs",JSON.stringify({appearance:"dark"}));applyAppearance()' \
+  '01-editor::setPref("appearance","dark");applyAppearance()' \
   '02-jobs::document.querySelector("#nav button[data-view=jobs]").click()'
 
 node checks/flow.js "http://127.0.0.1:8750/?token=t"
 ```
+
+`flow.js` needs Chromium listening on port 9333 and an empty workspace behind
+the server: it makes its own fixture (a two-page CV, six applications and a
+cover letter) through the app's API.
 
 Each `shot.js` argument is `name::javascript`: the script runs in the page,
 then the frame is saved as `name.png`. `flow.js` exercises clicking a block on

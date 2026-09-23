@@ -1,0 +1,98 @@
+name: Checks
+
+# Every push and pull request, before anything is tagged: the static audit,
+# the scripts parsing, the Python checks, the MCP server spoken to over stdio,
+# and the browser flows against a running app. The release workflow builds;
+# this one says whether what it would build works.
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: server
+    env:
+      # Keep the app's data folder (fonts, preferences, sample data) inside
+      # the runner's scratch space.
+      XDG_DATA_HOME: ${{ runner.temp }}/data
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Install the server's dependencies (the release's pins)
+        run: |
+          python -m pip install --upgrade pip
+          pip install --only-binary=:all: cryptography
+          pip install "rendercv[full]==2.8" "ruamel.yaml==0.19.1" "mcp==2.2.0" \
+            "pypdf==6.19.0" "tzdata==2026.4"
+
+      - name: Scripts parse
+        run: python checks/jscheck.py
+
+      - name: Static audit of the interface
+        run: python checks/audit.py
+
+      - name: Preferences
+        run: python checks/prefstest.py
+
+      - name: Languages
+        run: python checks/langtest.py
+
+      - name: Cover letters
+        run: python checks/lettertest.py
+
+      - name: Importing a CV
+        run: python checks/importtest.py
+
+      - name: Photo
+        run: python checks/phototest.py
+
+      - name: The page map
+        run: python checks/maptest.py
+
+      - name: Sample data
+        run: python checks/sampletest.py
+
+      - name: MCP over stdio
+        run: |
+          mkdir -p "$RUNNER_TEMP/mcp-ws"
+          python checks/mcpclient.py python server_main.py --mcp --workspace "$RUNNER_TEMP/mcp-ws"
+
+      - name: Browser flows
+        run: |
+          mkdir -p "$RUNNER_TEMP/flow-ws"
+          python studio.py --port 8750 --token t --workspace "$RUNNER_TEMP/flow-ws" \
+            > "$RUNNER_TEMP/server.log" 2>&1 &
+          google-chrome --headless=new --disable-gpu --no-sandbox --hide-scrollbars \
+            --window-size=1440,960 --remote-debugging-port=9333 \
+            --user-data-dir="$RUNNER_TEMP/chrome" about:blank > /dev/null 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf "http://127.0.0.1:8750/api/state" -H "X-API-Key: t" > /dev/null \
+              && curl -sf http://127.0.0.1:9333/json/version > /dev/null && break
+            sleep 1
+          done
+          node checks/flow.js "http://127.0.0.1:8750/?token=t&lang=en"
+
+      - name: Server log, when something failed
+        if: failure()
+        run: cat "$RUNNER_TEMP/server.log" || true
