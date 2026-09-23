@@ -56,88 +56,109 @@ Nothing else is required. Python, RenderCV, Typst and the fonts are all bundled.
 ## Using it
 
 On first launch it creates a workspace at `~/Documents/CV Studio` with a starter
-CV, and walks you through a short setup: your name and contact details at the
-top of that CV, the theme it prints in, shown on your own rendered page as you
-choose, and an AI client to connect. Each step can be skipped, and **Settings →
-Workspace → Run setup again** brings it back.
+CV, and walks you through a short setup: import a CV you already have (a PDF or
+your LinkedIn export) or start blank, your name and contact details at the top,
+the theme it prints in, shown on your own rendered page as you choose, and an AI
+client to connect. Each step can be skipped, and **Settings → Workspace → Run
+setup again** brings it back. Under *Skip setup*, **Try it with sample data**
+opens the app on a made-up search of sixty-odd applications, with CVs, letters
+and translations, in a folder of its own: your workspace is never touched, and
+*Back to my workspace* in the title bar returns you to it.
 
-There are two screens, switched from the control at the top left, and an editor
-you reach by opening a document. It opens on Jobs, because the work is applying
-for jobs: a CV is something an application either has or has not got yet.
+![Applications, with Next up above the list](docs/screenshots/applications.png)
 
-**The editor** is not a third screen you pick. Opening a document from an
-application, or from the base, takes you to it, and `← Applications` takes you
-back — to the application that document was written for, if it has one. So does
-`Esc`. While you are in it the top bar carries the document's own actions
-(Design, Export, Render) and nothing else.
+There are four tabs across the top.
 
-Inside it, the left rail lists your documents and, under them, an outline of the
-open one. The rendered page is always on screen; the tabs choose what stands
-beside it.
+**Applications** is home, and it is `applications.db`. The list takes the
+middle: company and logo, role, where it was found, the documents written for
+it, status, when it was sent and when to follow up. Down the left, *Attention*
+gathers what needs you (an interview soon, a follow-up due, no reply for a
+fortnight), with the statuses and saved views under it. Above the list,
+**Next up** says what is coming: the next interview with a live countdown, in
+your time and theirs; the follow-ups that are late, with *Show them*; and this
+week in seven days. It is only there when something is, and when an interview is
+under three hours away it takes the whole strip, with what is ready for it.
+
+Click a row and the application opens beside the list, and `↑` `↓` walk through
+them without closing it. Its facts sit in one card: status, follow-up date, how
+good a fit it is, where you found it, the language the posting is in, and the
+interview, with the zone the invitation gave it in. Under them, the CV and cover
+letter written for it, as pages; opposite, your notes and **the posting**, saved
+as text with its headings and lists, because adverts come down and a tailored
+CV and a letter are written against it. Not saved yet, that card is where you
+paste it.
+
+**Documents** is the base CV and everything written from it. The **base CV** is
+the one every tailored copy starts from: an application with no CV offers one,
+and a click copies the base, names it after the company and role, attaches it
+and opens it. Every field you then change is marked as differing from the base.
+With **CVs in more than one language** turned on (Settings → Language & region),
+the base has a tab per language, each saying what it is missing since the
+source changed. Cover letters are Markdown with a short header, printed in the
+look of the CV they go with.
+
+![The editor, with the page and its outline](docs/screenshots/editor.png)
+
+**The editor** is not a tab you pick. Opening a document takes you to it, and
+`← Applications` (or `Esc`) takes you back to the application it was written
+for. The left rail lists your documents, the base CV first with its translations
+under it, and below them an outline of the open one. The rendered page is always
+on screen; the tabs choose what stands beside it.
 
 **Page** gives it the whole pane and you edit the document on the document:
 click any block and a card opens beside it with that entry's fields, the page
 stepping aside to make room the way a word processor makes room for a comment.
-Arrow keys walk the card from block to block.
-
-**Form** and **YAML** put the fields, or the source, on the left with the page
-on the right, and the page re-renders as you type. Put the caret in a field or
-on a line and the page highlights that entry and scrolls to it; click a block
-on the page and the left pane goes to it. Drag the divider to change the share,
-and it stays where you put it. Selecting an entry in one view selects it in all
-of them.
-
-The Form is also where the document grows: every section has an **Add** under
-it, every entry a **×**, and there is an **Add a section** at the end. A new
-entry copies the shape of its neighbours, because RenderCV types a section by
-what is in it and a section holds one kind of entry; a new section asks which
-kind once.
+Arrow keys walk the card from block to block. **Form** and **YAML** put the
+fields, or the source, beside the page, which re-renders as you type. Selecting
+an entry in one view selects it in all of them.
 
 | | |
 |---|---|
-| **Getting back** | `← Applications`, or `Esc`, returns from a document to the application it was written for, with its row selected — widening the filter if it had been hidden |
 | **Page / Form / YAML** | The page on its own, or the page beside every field at once, or beside the raw file with syntax highlighting |
-| **Base CV** | One document every tailored copy starts from, pinned above the applications. Stored in the workspace, so an AI client can read it |
-| **Tailor a CV** | An application with no CV offers one. A click copies the base, names it, links it and opens it |
 | **Add and remove** | Sections and entries, from the Form. Blank entries are built from RenderCV's own models, so a half-filled one still renders |
-| **Live** | Edits re-render behind you, so the page beside the form is the page you are making, not the one you started with |
-| **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet. `↑` `↓` walk to the next block, `Esc` closes |
+| **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
-| **ATS check** | The text an applicant tracking system actually gets out of the PDF, what in it will not parse (icon glyphs, bare usernames, unusual headings, entries out of order), with a one-click fix for the common ones, and which of the posting's keywords the CV uses. A count, not a score: there is no universal ATS score to compute |
+| **ATS check** | The text an applicant tracking system actually gets out of the PDF, what in it will not parse, with a one-click fix for the common ones, and which of the posting's keywords the CV uses. A count, not a score: there is no universal ATS score to compute |
+| **Design** | Theme, typeface, size and colours, a photo if you want one, and every other RenderCV option, with what each costs in pages. One design for all the languages of a CV |
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
-| **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
-| **Appearance** | Light or dark, or follow the system. In Settings. The rendered CV page stays white either way: it is a document, not a surface |
-| **AI clients** | Whether Claude, OpenAI, Hermes Agent and Mistral Vibe are wired up to this workspace, in the title bar, one mark and one dot each. Clicking sets them up, and shows what the model has been doing in here |
-| **Skills** | The job-search skills, packaged as uploads for the Claude Desktop app. Claude Code reads them off disk already |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
-| **What the model changed** | A mark beside every field it wrote, in the outline, the block editor, the bullet and the page margin, with what the line said before. A second mark for every field that no longer matches the CV this one was tailored from. Neither is in the YAML, so neither prints |
+| **What the model changed** | A mark beside every field it wrote, with what the line said before, and a second mark for every field that no longer matches the base. Neither is in the YAML, so neither prints |
 
-**Jobs** is home, and it is `applications.db`: filter by status down the left,
-six columns of what matters across the middle, and one application's details on
-the right: status, source, fit, its documents, its history and your notes. A
-filename in the Documents column opens that CV in the editor.
+**Funnel** is the whole search at a glance: sent, heard back, interviewed,
+offers and accepted, with the rate between each and the biggest drop marked.
+Under it, where every application went, drawn as flows, with the ones still in
+play moving; momentum week by week; the applications still in play; which
+sources lead to interviews; and how long employers take to answer. Clicking a
+stage lists those applications.
 
-Pinned above the list is your **base CV** — the one document every tailored copy
-starts from. An application that has no CV yet says so and offers to make one:
-one click copies the base, names it after the company and role, attaches it to
-the application and opens it. What it was copied from is recorded, so every
-field you then change is marked as differing from the base. Which document is
-the base lives in the workspace, not in this browser, so the models you have
-connected can see it too — `workspace_info` names it, and tailoring by hand is
-`create_cv(copy_from=…)`.
+![The funnel](docs/screenshots/funnel.png)
 
-**Funnel** shows where the applications went, cumulatively: how many reached an
-interview, how many converted, and where the rest dropped out. Rejections and
-ghostings are split by whether they happened before or after an interview,
-because those say very different things. Clicking a band opens Jobs filtered to
-it.
+**Calendar** opens on the next interview, with a countdown and a clock in your
+time and one in theirs, a month tinted by how busy each day was, and every live
+application as a lane across eight weeks. **Month** and **Week** are behind it;
+drag an interview or a follow-up to move it. **Export .ics** puts the interviews
+in the calendar you already use.
 
-Live preview is on by default: the preview re-renders as you type, without
-saving. Comments you write in the YAML survive edits made through the form.
+![The calendar](docs/screenshots/calendar.png)
 
-Live preview renders a scratch copy, so your file is only written when you
-actually save. While you are mid-edit and the YAML is momentarily invalid, the
-last good page stays on screen instead of flashing an error at every keystroke.
+**Settings** holds the rest:
+
+- **Language & region.** The app speaks English, French, Spanish and Brazilian
+  Portuguese, following your system unless you choose. Your time zone, on a
+  small map of the world: interviews somewhere else show in your time with
+  theirs beside it.
+- **Notifications.** Off until you turn them on. Before an interview (10
+  minutes, an hour, both, or the day before), and once a day at the hour you
+  pick for the follow-ups that are due. With them on, closing the window keeps
+  CV Studio in the tray so they still come, and it can open at login.
+- **Editor.** Live preview, the theme for new documents, the accent colour, and
+  light or dark. The rendered page stays white either way: it is a document,
+  not a surface.
+- **AI clients.** Whether Claude, OpenAI, Hermes Agent and Mistral Vibe are wired
+  up to this workspace, and a button to do it.
+
+Your settings are kept beside the app, not in the workspace, so a workspace
+copied to another machine carries your documents and not your window.
 
 ## Connect it to Claude Desktop
 
