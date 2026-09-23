@@ -8,6 +8,23 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **A setup on first launch.** Four short steps: what the app is and where
+  your files live, your name and contact details at the top of the base CV,
+  the theme and paper size it prints in, and an AI client to connect. Beside
+  the fields is your own page, rendered as you type and as you switch themes,
+  not a sample. Every step can be skipped, and closing it keeps what you
+  entered. It comes back on the next launch if the base CV is still the
+  placeholder, and **Settings → Workspace → Run setup again** brings it back
+  any time.
+- **The base CV card shows the base CV.** A snapshot of its first page, as
+  actually rendered, sits in the card on Applications and on Documents, and
+  clicking it opens the CV. It updates when you or a model change the file.
+- **Two renders at once no longer break each other.** Rendering changed the
+  working folder of the whole app, so a render that overlapped another could
+  fail with an error about a file that was really there.
+
 ## 0.14.0
 
 - **One workbench instead of two.** Only the title bar is dark now. The

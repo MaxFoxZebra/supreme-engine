@@ -1371,6 +1371,22 @@ def bootstrap(workspace: Path) -> bool:
     return created
 
 
+def starter_untouched() -> bool:
+    """Whether the base CV is still the placeholder the app wrote.
+
+    First run is one launch; setup is not. Quit halfway through it and the next
+    launch is no longer a first run, but the CV still says Your Name, and that
+    is the fact the welcome is really about.
+    """
+    base = base_cv()
+    if not base or base.get("missing"):
+        return False
+    try:
+        return safe_path(base["path"]).read_text(encoding="utf-8") == STARTER_CV
+    except OSError:
+        return False
+
+
 def safe_path(raw: str) -> Path:
     p = (WORKSPACE / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
     if not str(p).startswith(str(WORKSPACE.resolve())):
@@ -1924,6 +1940,25 @@ def render(path: Path) -> dict:
     return _shape(render_file(path, output_dir(path)), path)
 
 
+def thumb(path: Path) -> dict:
+    """The first page as it was last rendered, and whether that is still true.
+
+    Read off disk rather than rendered, because the base card asks on every
+    boot and a render is seconds of work. A page older than the YAML is still
+    returned -- it is the right shape while the new one is made -- but marked,
+    so the caller knows to render rather than show last week's CV as today's.
+    """
+    out = output_dir(path)
+    pdfs = sorted(out.glob("*.pdf"), key=lambda f: f.stat().st_mtime,
+                  reverse=True) if out.is_dir() else []
+    first = out / f"{pdfs[0].stem}_1.png" if pdfs else None
+    if not first or not first.is_file():
+        return {"png": None, "fresh": False}
+    made = first.stat().st_mtime
+    return {"png": f"/api/asset?path={rel(first)}&v={int(made * 1000)}",
+            "fresh": made >= path.stat().st_mtime}
+
+
 def preview(path: Path, text: str | None = None,
             patches: list[dict] | None = None) -> dict:
     """Render unsaved editor content without writing to the user's file.
@@ -2120,6 +2155,11 @@ def openapi_spec() -> dict:
             "/api/jobs/export": {"get": {"summary": "Export every job as JSON or CSV",
                 "parameters": [{"name": "format", "in": "query",
                                 "schema": {"type": "string", "enum": ["json", "csv"]}}],
+                "responses": ok}},
+            "/api/thumb": {"get": {"summary":
+                "A document's first page as last rendered, and whether it is current",
+                "parameters": [{"name": "path", "in": "query", "required": True,
+                                "schema": {"type": "string"}}],
                 "responses": ok}},
             "/api/ai": {"get": {"summary":
                 "Whether each AI client is wired up to this build and workspace",
@@ -2346,6 +2386,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "fonts": font_families(),
                     "workspace": str(WORKSPACE),
                     "first_run": FIRST_RUN,
+                    "starter": starter_untouched(),
                     "version": VERSION,
                     "platform": sys.platform,
                     "server_launch": server_launch(),
@@ -2413,6 +2454,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json({"clients": ai_clients()})
             if u.path == "/api/pulse":
                 return self._json(pulse())
+            if u.path == "/api/thumb":
+                return self._json(thumb(safe_path(q["path"][0])))
             if u.path == "/api/skills":
                 return self._json(skills_list())
             if u.path == "/api/asset":
@@ -3318,6 +3361,19 @@ body.dragging{cursor:col-resize;user-select:none}
 .baserow .bsub:empty{display:none}
 .baserow.gone .bn{text-decoration:line-through;color:var(--t500)}
 .baserow .obtn{flex:none}
+/* The top of the base's first page: the name, the headline and the first
+   section, which is what tells two CVs apart at a glance. The page stays white
+   in either appearance, as it does in the editor. */
+.bthumb{display:block;padding:0;border:1px solid var(--rule);border-radius:6px;
+  background:#fff;overflow:hidden;cursor:pointer;flex:none}
+.bthumb img{display:block;width:100%;height:100%;object-fit:cover;
+  object-position:top center}
+.bthumb.empty{display:grid;place-items:center;background:var(--bar)}
+.bthumb.empty span{font-size:11px;color:var(--t500)}
+.bthumb:hover{border-color:var(--bd-field)}
+.bthumb:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.baserow .bthumb{flex-basis:100%;height:118px;margin-bottom:8px}
+.bcard .bthumb{width:66px;height:86px}
 .baserow .grow{display:none}
 
 /* ------------------------------------------------------------- Documents -- */
@@ -3510,6 +3566,60 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sbtn.primary:hover:not(:disabled){background:var(--acc-hover);border-color:var(--acc-hover)}
 .sbtn.danger{border-color:transparent;color:var(--bad);background:none}
 .sbtn.danger:hover{background:var(--bad-bg)}
+
+/* ---------- setup ---------------------------------------------------------
+   The sheet, wider, with the page beside the fields that change it. */
+.sheet.ob{width:760px}
+#ob{display:flex;flex-direction:column;gap:18px}
+.ob-steps{display:flex;gap:6px;list-style:none;margin:0;padding:0;counter-reset:ob}
+.ob-steps li{flex:1;counter-increment:ob;font-size:11.5px;color:var(--t500);
+  padding-top:8px;border-top:2px solid var(--rule)}
+.ob-steps li::before{content:counter(ob) "  ";font-family:'IBM Plex Mono',ui-monospace,monospace}
+.ob-steps li.done{border-top-color:var(--t500);color:var(--t600)}
+.ob-steps li[aria-current]{border-top-color:var(--acc);color:var(--t900);font-weight:500}
+.ob-body{display:flex;gap:22px;min-height:0}
+.ob-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
+.ob-main .fg label em{font-style:normal;font-size:10.5px;color:var(--t500)}
+.ob-facts{margin:2px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+.ob-facts li{font-size:12.5px;line-height:1.5;color:var(--t600);padding-left:14px;
+  border-left:2px solid var(--rule)}
+.ob-facts b{color:var(--t900);font-weight:600}
+.linkish{border:0;background:none;padding:0;color:var(--acc-text);font-size:12.5px;
+  cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.ob-themes{display:flex;flex-wrap:wrap;gap:6px}
+.ob-themes button{font-size:12px;padding:4px 10px;border-radius:5px;
+  border:1px solid var(--bd-field);background:var(--field);color:var(--t700)}
+.ob-themes button:hover{background:var(--paper-hover)}
+.ob-themes button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);
+  color:var(--c800);font-weight:500}
+/* A real render at a fifth of its size: enough to see the shape, the weight of
+   the name and whether it spills, which is what the choice is about. */
+.ob-fig{margin:0;flex:none;width:236px;display:flex;flex-direction:column;gap:7px}
+.ob-shot{width:236px;aspect-ratio:210/297;background:#fff;border:1px solid var(--rule);
+  box-shadow:0 8px 20px -10px rgba(30,26,18,.35);overflow:hidden;display:grid;
+  place-items:center;transition:opacity .15s}
+.ob-shot.busy{opacity:.55}
+.ob-shot img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+.ob-shot span{font-size:11.5px;color:#6b675d;padding:12px;text-align:center}
+.ob-fig figcaption{font-size:11px;color:var(--t500);text-align:center;min-height:15px}
+.ob-ai{display:flex;flex-direction:column;gap:8px}
+.ob-client{display:flex;align-items:center;gap:12px;padding:10px 12px;
+  border:1px solid var(--bd-field);border-radius:8px;background:var(--field)}
+.ob-client .badge{width:32px;height:32px;border-radius:8px;display:grid;
+  place-items:center;background:var(--bar);flex:none}
+.ob-client[data-client=claude] .badge{background:rgba(217,119,87,.14);color:#D97757}
+.ob-client[data-client=hermes] .badge{background:#fff;color:#000;
+  box-shadow:inset 0 0 0 1px var(--bd-field)}
+.ob-client[data-client=hermes] .badge svg{width:24px;height:24px}
+.ob-client[data-client=mistral] .badge{background:rgba(250,80,15,.12)}
+.ob-client .nm{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--t900);
+  display:flex;flex-direction:column}
+.ob-client .nm small{font-size:11.5px;font-weight:400;color:var(--t500);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:720px){
+  .ob-body.two{flex-direction:column-reverse}
+  .ob-fig,.ob-shot{width:160px}
+}
 
 /* segmented control on paper */
 .seg.paper{background:var(--seg-track);width:fit-content}
@@ -4245,6 +4355,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="srow"><div><b>Applications</b><span>Exported as JSON or CSV so the
           database is never a lock-in.</span></div>
           <button class="obtn" id="s-exp">Export JSON</button></div>
+        <div class="srow"><div><b>Setup</b><span>Your name on the base CV, how it
+          prints, and an AI client. The steps from the first launch.</span></div>
+          <button class="obtn" id="s-setup">Run setup again</button></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>
@@ -4450,6 +4563,7 @@ const S={
   tailoring:new Set(),      /* applications whose CV is being copied right now */
   jfilter:{kind:"all", value:""}, jsel:null,
   funnel:null, since:"", fnode:null,
+  baseThumb:null,           /* {path, png, failed}: the base's first page */
   schema:null, schemaTheme:null,
 };
 const DZ={theme:null, family:null, page:null, size:null};
@@ -5187,6 +5301,8 @@ async function pulse(){
       S.state=st; renderDocs(st.documents); paintBase();
     }catch(e){}
   }
+  const bp=S.state&&S.state.base&&S.state.base.path;
+  if(bp&&bp!==S.path&&before.docs[bp]!==p.docs[bp]) baseThumb(true);
   if(!S.path) return;
   const now=p.docs[S.path];
   if(now===undefined||S.docMtime==null||now<=S.docMtime+1e-6) return;
@@ -5390,8 +5506,198 @@ async function boot(){
   pulse();
   setInterval(pulse,2500);
   paintStatus();
-  if(d.first_run) toast("Workspace created at "+d.workspace+
-    ". Connect Claude or ChatGPT to it from Settings");
+  if(shouldOnboard(d)) onboardingSheet();
+}
+
+/* =========================================================================
+   Setup
+   ========================================================================= */
+/* Four steps, each of which leaves something real behind: the name on the
+   base CV, the theme it prints in, a client that can write to it. Nothing here
+   is a tour of buttons -- the app is small enough to find its own way round --
+   and every step can be skipped, because the defaults already render.
+
+   It shows while the base is still the placeholder the app wrote, not only on
+   the launch that wrote it: quitting halfway is not the same as having set up.
+   Closing it counts as done, so it never nags; Settings brings it back. */
+const OB_FIELDS=[["name","Name","Your Name"],["headline","Headline","Your Role"],
+  ["location","Location","City, Country"],["email","Email","you@example.com"],
+  ["phone","Phone","+33-6-12-34-56-78"]];
+const OB={step:0, path:null, cv:{}, theme:null, size:null, png:null, busy:0, again:false,
+  t:null, err:null, pages:null};
+
+function shouldOnboard(d){
+  return !prefs().onboarded&&!!(d.first_run||d.starter)&&!!(d.base&&!d.base.missing);
+}
+async function onboardingSheet(){
+  const b=S.state&&S.state.base;
+  if(!b||b.missing) return openSettings("workspace");
+  OB.step=0; OB.path=b.path; OB.png=null; OB.cv={};
+  try{
+    const doc=await api("/api/doc?path="+encodeURIComponent(b.path));
+    const cv=(doc.data&&doc.data.cv)||{}, des=(doc.data&&doc.data.design)||{};
+    /* A placeholder is not an answer, so it goes in as a hint instead. */
+    OB_FIELDS.forEach(([k,,ph])=>{ const v=cv[k]==null?"":String(cv[k]);
+      OB.cv[k]=v===ph?"":v });
+    OB.theme=des.theme||"engineeringclassic";
+    OB.size=(des.page&&des.page.size)||"a4";
+  }catch(e){ return toast(e.message,true) }
+  $("#sheet").classList.add("ob");
+  openSheet('<div id="ob"></div>',()=>{
+    $("#sheet").classList.remove("ob"); clearTimeout(OB.t);
+    setPref("onboarded",true);
+    /* Finish later keeps what is on screen, the same as Next would have. */
+    if(OB.step===1||OB.step===2)
+      post("/api/save",{path:OB.path,patches:obPatches()})
+        .then(()=>{ S.baseThumb=null; paintBase() })
+        .catch(e=>toast(e.message,true));
+  });
+  obPaint();
+  obPreview();
+}
+/* The fields as patches. Blank means absent: RenderCV leaves a null out of the
+   header, where an empty string would print a stray separator. */
+function obPatches(){
+  return OB_FIELDS.map(([k])=>({path:["cv",k],value:OB.cv[k].trim()||(k==="name"?"Your Name":null)}))
+    .concat([{path:["design","theme"],value:OB.theme},
+             {path:["design","page","size"],value:OB.size}]);
+}
+/* The page itself, rendered from the scratch copy the editor previews into, so
+   nothing is written until Next. One at a time, because every preview shares
+   that scratch file: a burst of typing is one render, and whatever changed
+   while it ran is one more after it, not a second render racing the first. */
+function obPreview(){
+  clearTimeout(OB.t);
+  OB.t=setTimeout(async()=>{
+    if(OB.busy){ OB.again=true; return }
+    OB.busy=1; OB.again=false; obShot();
+    try{
+      const r=await post("/api/preview",{path:OB.path,patches:obPatches()});
+      OB.png=r.ok&&r.pngs.length?r.pngs[0]:null; OB.err=r.ok?null:(r.hint||"It did not render.");
+      OB.pages=r.ok?r.pages:null;
+    }catch(e){ OB.png=null; OB.err=e.message }
+    OB.busy=0;
+    if(OB.again) obPreview(); else obShot();
+  },350);
+}
+function obShot(){
+  const el=$("#ob-shot"); if(!el) return;
+  el.classList.toggle("busy",!!OB.busy);
+  el.innerHTML=OB.png
+    ? '<img alt="The first page of your CV" src="'+esc(OB.png+tok())+'">'
+    : '<span>'+esc(OB.busy?"Rendering…":OB.err||"")+'</span>';
+  const cap=$("#ob-cap");
+  if(cap) cap.textContent=OB.pages?OB.pages+" page"+(OB.pages===1?"":"s")+
+    " · "+themeLabel(OB.theme)+" · "+(OB.size==="a4"?"A4":"US Letter"):"";
+}
+const OB_STEPS=["Welcome","You","The page","AI"];
+function obPaint(){
+  const st=S.state||{}, i=OB.step, last=i===OB_STEPS.length-1;
+  const dots='<ol class="ob-steps">'+OB_STEPS.map((t,k)=>'<li'+
+    (k===i?' aria-current="step"':k<i?' class="done"':'')+'>'+t+'</li>').join("")+'</ol>';
+  let body="";
+  if(i===0) body=
+    '<h3 id="sheet-title">Welcome to CV Studio</h3>'+
+    '<p>A CV editor that shows you the page, and an application tracker beside it. '+
+    'An AI client can read and write both, if you connect one.</p>'+
+    '<ul class="ob-facts">'+
+      '<li><b>Your files, in a folder you own.</b> <span class="mono">'+
+        esc(shortPath(st.workspace))+'</span> <button class="linkish" id="ob-reveal">Open</button></li>'+
+      '<li><b>One base CV.</b> Every CV you tailor for an application starts as a copy of it, '+
+        'so it is worth two minutes now.</li>'+
+      '<li><b>Nothing leaves this machine.</b> No account, no telemetry. A model only sees '+
+        'what you connect it to.</li>'+
+    '</ul>';
+  if(i===1) body=
+    '<h3 id="sheet-title">The top of your CV</h3>'+
+    '<p>What prints above everything else. The rest of it you can write in the editor, '+
+    'or ask a model to write from what you already have.</p>'+
+    '<div class="fg w88">'+OB_FIELDS.map(([k,l,ph])=>'<label for="ob-'+k+'">'+l+
+      (k==="phone"?' <em>optional</em>':'')+'</label>'+
+      '<input id="ob-'+k+'" data-ob="'+k+'" autocomplete="off" placeholder="'+esc(ph)+
+      '" value="'+esc(OB.cv[k])+'">').join("")+'</div>';
+  if(i===2) body=
+    '<h3 id="sheet-title">How it prints</h3>'+
+    '<p>Every option is in Design later. This is your page, rendered, not a sample.</p>'+
+    '<div class="fg w88"><label>Theme</label><div class="ob-themes" id="ob-themes">'+
+      ((st.themes)||[]).map(t=>'<button data-t="'+esc(t)+'" aria-pressed="'+
+        String(t===OB.theme)+'">'+esc(themeLabel(t))+'</button>').join("")+'</div>'+
+    '<label>Paper</label><div class="seg paper acc" id="ob-size" role="tablist">'+
+      '<button role="tab" data-s="a4" aria-selected="'+String(OB.size==="a4")+'">A4</button>'+
+      '<button role="tab" data-s="us-letter" aria-selected="'+String(OB.size!=="a4")+
+        '">US Letter</button></div></div>';
+  if(i===3){
+    const cs=S.ai||[];
+    body=
+    '<h3 id="sheet-title">Connect an AI client</h3>'+
+    '<p>Optional. Connected, it can tailor a CV to a posting, look at the page it rendered, '+
+    'and keep the applications in step with your mail. It works on this folder and nothing else.</p>'+
+    '<div class="ob-ai">'+(cs.length?cs.map(c=>{
+      const live=c.state==="connected";
+      return '<div class="ob-client" data-client="'+c.id+'">'+
+        '<span class="badge"><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">'+
+          '<use href="#'+c.id+'-mark"/></svg></span>'+
+        '<span class="nm">'+esc(c.label)+'<small>'+esc(live?c.restart:c.state==="absent"
+          ?"Connect, then "+c.restart.replace(/^./,x=>x.toLowerCase()):aiSay(c))+'</small></span>'+
+        '<span class="pill" data-state="'+(live&&!c.last_seen?"unknown":c.state)+'"><i></i>'+
+          aiPill(c)+'</span>'+
+        (live?'':'<button class="obtn" data-ob-connect="'+c.id+'">Connect</button>')+
+      '</div>'}).join(""):'<p class="sp-note">Checking…</p>')+'</div>';
+  }
+  const shot=i===1||i===2;
+  $("#ob").innerHTML=dots+
+    '<div class="ob-body'+(shot?' two':'')+'"><div class="ob-main">'+body+'</div>'+
+    (shot?'<figure class="ob-fig"><div class="ob-shot" id="ob-shot"></div>'+
+      '<figcaption id="ob-cap"></figcaption></figure>':'')+'</div>'+
+    '<div class="foot">'+
+      '<button class="sbtn left" data-cancel>'+(i===0?"Skip setup":"Finish later")+'</button>'+
+      (i>0?'<button class="sbtn" id="ob-back">Back</button>':'')+
+      '<button class="sbtn primary" id="ob-next">'+(i===0?"Get started":last?"Open my CV":"Next")+'</button>'+
+    '</div>';
+  if(shot) obShot();
+
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  const rv=$("#ob-reveal");
+  if(rv) rv.onclick=async()=>{ try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) } };
+  $$("#ob [data-ob]").forEach(el=>el.oninput=()=>{ OB.cv[el.dataset.ob]=el.value; obPreview() });
+  $$("#ob-themes button").forEach(bt=>bt.onclick=()=>{
+    OB.theme=bt.dataset.t;
+    $$("#ob-themes button").forEach(x=>x.setAttribute("aria-pressed",String(x===bt)));
+    obPreview();
+  });
+  $$("#ob-size button").forEach(bt=>bt.onclick=()=>{
+    OB.size=bt.dataset.s;
+    $$("#ob-size button").forEach(x=>x.setAttribute("aria-selected",String(x===bt)));
+    obPreview();
+  });
+  $$("#ob [data-ob-connect]").forEach(bt=>bt.onclick=async()=>{
+    bt.disabled=true; bt.textContent="Connecting…";
+    try{ await post("/api/ai/connect",{client:bt.dataset.obConnect}) }
+    catch(e){ toast(e.message,true) }
+    await loadAI(); obPaint();
+  });
+  if(i===3&&!S.ai) loadAI().then(()=>{ if(OB.step===3&&!$("#sheet").hidden) obPaint() });
+  const back=$("#ob-back");
+  if(back) back.onclick=()=>{ OB.step--; obPaint() };
+  $("#ob-next").onclick=obNext;
+  const f=$("#ob input")||$("#ob-next"); if(f) f.focus();
+}
+async function obNext(){
+  const btn=$("#ob-next");
+  /* The page is written when you leave the step that changed it, so Back and
+     Finish later both keep what you did. */
+  if(OB.step===1||OB.step===2){
+    btn.disabled=true;
+    try{ await post("/api/save",{path:OB.path,patches:obPatches()}) }
+    catch(e){ btn.disabled=false; return toast(e.message,true) }
+    btn.disabled=false;
+  }
+  if(OB.step<OB_STEPS.length-1){ OB.step++; return obPaint() }
+  OB.step=-1;   /* saved already: closing must not write it again */
+  closeSheet();
+  try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
+  S.baseThumb=null; paintBase();
+  openDoc(OB.path);
 }
 
 /* =========================================================================
@@ -6346,6 +6652,11 @@ async function adoptRender(r){
   S.render=r; S.pdf=r.pdf; $("#btn-pdf").disabled=!r.pdf;
   const grew=S.pages[S.path]!==r.pages;
   S.pages[S.path]=r.pages;
+  const b=S.state&&S.state.base;
+  if(b&&b.path===S.path&&r.pngs.length){
+    S.baseThumb={path:S.path,png:r.pngs[0],failed:false};
+    mountBase($("#docbase"),"bcard"); mountBase($("#baserow"),"baserow");
+  }
   if(DZ.theme) S.themePages[DZ.theme]=r.pages;
   if(S.page>=r.pngs.length) S.page=Math.max(0,r.pngs.length-1);
   paintPage();
@@ -6878,7 +7189,13 @@ function baseHTML(b){
       '<button class="obtn" data-base-pick>Choose another\u2026</button>'+
       '<div class="grow"></div>';
   const pages=S.pages[b.path];
-  return '<span class="bl">Base CV</span>'+
+  const th=S.baseThumb&&S.baseThumb.path===b.path?S.baseThumb:null;
+  return '<button class="bthumb'+(th&&th.png?"":" empty")+'" data-base-open'+
+      ' aria-label="Open the base CV">'+
+      (th&&th.png?'<img alt="" src="'+esc(th.png+tok())+'">'
+        :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
+    '</button>'+
+    '<span class="bl">Base CV</span>'+
     '<span class="bn">'+esc(baseLabel())+'</span>'+
     '<span class="bsub">'+(pages?pages+" page"+(pages===1?"":"s"):"")+'</span>'+
     '<button class="obtn" data-base-open>Open</button>'+
@@ -6890,16 +7207,45 @@ function mountBase(el,cls){
   const b=S.state&&S.state.base;
   el.className=cls+(b&&b.missing?" gone":"");
   el.innerHTML=baseHTML(b);
-  const open=el.querySelector("[data-base-open]");
-  if(open) open.onclick=()=>{
+  el.querySelectorAll("[data-base-open]").forEach(open=>open.onclick=()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
     openDoc(b.path);
-  };
+  });
   el.querySelector("[data-base-pick]").onclick=baseSheet;
 }
 function paintBase(){
   mountBase($("#baserow"),"baserow");
   mountBase($("#docbase"),"bcard");
+  baseThumb(false);
+}
+
+/* The base as it actually prints, not a sketch of its theme: the sketches in
+   Design say what a theme looks like, and this card is about one document.
+   Whatever is on disk is shown at once; a page older than the YAML is shown
+   while a fresh one renders, then swapped, so the card never waits on Typst
+   and never settles on a page that is out of date. */
+let thumbBusy=null;
+async function baseThumb(force){
+  const b=S.state&&S.state.base;
+  if(!b||b.missing) return;
+  if(!force&&S.baseThumb&&S.baseThumb.path===b.path) return;
+  if(thumbBusy===b.path) return;
+  thumbBusy=b.path;
+  const put=(png,failed)=>{
+    S.baseThumb={path:b.path,png:png||(S.baseThumb&&S.baseThumb.path===b.path
+      ?S.baseThumb.png:null),failed:!!failed};
+    mountBase($("#baserow"),"baserow"); mountBase($("#docbase"),"bcard");
+  };
+  try{
+    const t=await api("/api/thumb?path="+encodeURIComponent(b.path));
+    put(t.png);
+    if(!t.fresh){
+      const r=await post("/api/render",{path:b.path});
+      if(r.ok){ S.pages[b.path]=r.pages; put(r.pngs[0]) }
+      else put(null,true);
+    }
+  }catch(e){ put(null,true) }
+  finally{ thumbBusy=null }
 }
 
 /* A document's age. "720h" is what ago() would say about a CV last touched in
@@ -8090,6 +8436,7 @@ function fillSettings(){
   $("#s-open").onclick=async()=>{
     try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) }
   };
+  $("#s-setup").onclick=()=>{ closeOverlays(); onboardingSheet() };
   $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
   /* Revealing is deliberate and one click; copying never needs it. */
   const key=$("#s-key");

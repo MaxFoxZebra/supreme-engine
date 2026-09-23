@@ -56,7 +56,10 @@ Nothing else is required. Python, RenderCV, Typst and the fonts are all bundled.
 ## Using it
 
 On first launch it creates a workspace at `~/Documents/CV Studio` with a starter
-CV, and opens it.
+CV, and walks you through a short setup: your name and contact details at the
+top of that CV, the theme it prints in, shown on your own rendered page as you
+choose, and an AI client to connect. Each step can be skipped, and **Settings →
+Workspace → Run setup again** brings it back.
 
 There are two screens, switched from the control at the top left, and an editor
 you reach by opening a document. It opens on Jobs, because the work is applying

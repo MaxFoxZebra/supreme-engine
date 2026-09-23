@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -85,8 +86,21 @@ def find_rendercv_exe() -> str | None:
     return None
 
 
+# In-process rendering changes the working directory, argv and stdout, all of
+# which belong to the whole process, and the server answers requests on
+# threads. Two renders at once -- the base card catching up while the editor
+# previews -- would each run in the other's folder and read the other's
+# output, and both fail. One at a time; they take well under a second.
+_IN_PROCESS = threading.Lock()
+
+
 def _render_in_process(yaml_path: Path, out_dir: Path) -> tuple[bool, str]:
     """Drive RenderCV's CLI entry point without spawning a process."""
+    with _IN_PROCESS:
+        return _render_in_process_locked(yaml_path, out_dir)
+
+
+def _render_in_process_locked(yaml_path: Path, out_dir: Path) -> tuple[bool, str]:
     entry_point = rendercv_cli()
     if entry_point is None:
         return False, "rendercv is installed but its CLI could not be found"
