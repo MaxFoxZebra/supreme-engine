@@ -8,6 +8,22 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.21.0
+
+- **Next up, on the home screen.** Above the applications list, a strip says
+  what is coming: the next interview with a live countdown, your time and
+  theirs, and Prepare and Add to calendar; the follow-ups that are late, with
+  their logos and how late the oldest is (*Show them* filters the list to
+  them); and this week in seven days, interviews as diamonds and follow-ups as
+  rings, each day opening the calendar's week. When an interview is less than
+  three hours away it takes the whole strip, with a checklist of what is ready.
+  With only follow-ups due it is one slim line, and with nothing to act on it
+  is not there at all. It shows on the full list, and steps aside while you
+  filter, search or have an application open.
+- **Search boxes and other placeholders are translated.** "Search
+  applications", the posting box and the letter's fields now follow the app's
+  language like the rest of the interface.
+
 ## 0.20.0
 
 - **A little world on the time zone setting.** Settings › Language & region

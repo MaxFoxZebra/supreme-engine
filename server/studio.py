@@ -89,7 +89,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.20.0"
+VERSION = "0.21.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -3886,6 +3886,78 @@ button:disabled{opacity:.4;cursor:default}
 
 /* A screen's own header: what it is, how many, and what you can do there. */
 .phead{flex:none;display:flex;align-items:center;gap:12px;padding:20px 24px 14px}
+/* ---- Next up, on the applications list ---- */
+.nu{flex:none;margin:0 24px 14px;display:grid;border:1px solid var(--rule);border-radius:14px;
+  background:var(--field);overflow:hidden;box-shadow:0 1px 2px rgba(27,26,23,.05),0 6px 18px rgba(27,26,23,.05);
+  animation:nu-rise .45s cubic-bezier(.2,.8,.2,1) both}
+.nu>div{display:flex;align-items:center;gap:16px;padding:14px 20px;min-width:0}
+.nu>div+div{border-left:1px solid var(--bd-inner)}
+.nu .nu-tx{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.nu .ey{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--acc-text)}
+.nu .ey i{width:7px;height:7px;border-radius:50%;background:var(--acc);flex:none;animation:nu-live 1.6s ease-in-out infinite}
+.nu .ey.late{color:var(--bad)}
+.nu .ey.late i{background:var(--bad);animation:nu-late 1.8s ease-out infinite}
+.nu .ey.due{color:var(--fn-wait)}
+.nu .ey.due i{background:var(--fn-wait);animation:none}
+.nu .who{font-size:15px;font-weight:600;color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nu .who span{font-weight:400;color:var(--t600)}
+.nu .sub{font-size:12.5px;color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nu .colog{width:44px;height:44px;border-radius:11px;font-size:14px}
+.nu .end{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none}
+.nu .cd{display:flex;align-items:baseline;gap:3px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--t900)}
+.nu .cd b{font-size:22px;font-weight:600}
+.nu .cd u{text-decoration:none;font-size:11.5px;color:var(--t500);margin-right:6px}
+.nu .cd b.s{color:var(--acc)}
+.nu .acts{display:flex;gap:8px}
+.nu .acts .obtn{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.nu .obtn.dark{background:var(--t900);color:var(--app);border-color:var(--t900)}
+.nu .stack{display:flex;flex:none}
+.nu .stack .colog{width:30px;height:30px;border-radius:8px;font-size:10px;box-shadow:0 0 0 2px var(--field)}
+.nu .stack .colog+.colog{margin-left:-8px}
+.nu-wk{flex-direction:column;align-items:stretch!important;gap:8px!important;background:var(--row-alt)}
+.nu-wk .hd{display:flex;align-items:baseline;justify-content:space-between;font-size:12.5px;font-weight:600;color:var(--t900)}
+.nu-wk .hd button{border:0;background:none;padding:0;font-size:12.5px;font-weight:500;color:var(--acc-text)}
+.nu-wk .hd button:hover{text-decoration:underline}
+.nu-wk .days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.nu-wk .days button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0 5px;border:0;
+  border-radius:7px;background:transparent;color:var(--t700);font-size:12.5px}
+.nu-wk .days button:hover{background:var(--paper-hover)}
+.nu-wk .days button.today{background:var(--field);box-shadow:0 0 0 1.5px var(--t900);color:var(--t900);font-weight:600}
+.nu-wk .days small{font-size:10px;color:var(--t500)}
+.nu-wk .days .mk{height:7px;display:flex;gap:3px;align-items:center}
+.nu-wk .days .mk .d{width:6px;height:6px;background:var(--acc);transform:rotate(45deg)}
+.nu-wk .days .mk .r{width:5px;height:5px;border-radius:50%;border:1.5px solid var(--fn-wait)}
+.nu-wk .days .mk .r.late{border-color:var(--bad)}
+/* An interview in under three hours takes the strip. */
+.nu.soon{border-color:color-mix(in srgb,var(--acc) 55%,var(--rule));
+  box-shadow:0 1px 2px rgba(27,26,23,.05),0 8px 24px color-mix(in srgb,var(--acc) 16%,transparent)}
+.nu.soon .ey i{animation:nu-soon 1.6s ease-out infinite}
+.nu .left{display:flex;flex-direction:column;align-items:center;padding:0 22px;border-left:1px solid var(--bd-inner);
+  border-right:1px solid var(--bd-inner);flex:none}
+.nu .left small{font-size:12px;color:var(--t500)}
+.nu .left b{font-size:26px;font-weight:700;color:var(--acc-text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.nu .ready{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--t700);flex:1;min-width:0}
+.nu .ready li{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nu .ready i{width:14px;height:14px;border-radius:50%;flex:none;display:grid;place-items:center;font-style:normal;
+  font-size:9px;font-weight:700;color:#fff;background:var(--good,#007a5e)}
+.nu .ready i.no{background:none;border:1.5px solid var(--bd-field)}
+.nu .pbtn{flex:none}
+.nu .nu-fu .who{font-size:14px;font-weight:500}
+.nu .ey{white-space:nowrap}
+.nu .lnk{border:0;background:none;padding:0;font-size:12.5px;font-weight:500;color:var(--acc-text)}
+.nu .lnk:hover{text-decoration:underline}
+.nu .cd b{font-size:20px}
+.nu.soon .nu-iv .nu-tx{flex:0 1 auto;max-width:38%}
+/* Only follow-ups: one slim line. */
+.nu.slim>div{padding:10px 18px}
+.nu.slim .who{font-size:14px}
+@keyframes nu-rise{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes nu-live{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes nu-late{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--bad) 45%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
+@keyframes nu-soon{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 50%,transparent)}50%{box-shadow:0 0 0 7px transparent}}
+@media (prefers-reduced-motion:reduce){.nu,.nu .ey i{animation:none!important}}
+@media (max-width:1240px){ .nu .nu-wk{display:none} .nu{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)!important} }
 .phead h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em;
   color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pcount{font-size:14px;color:var(--t500);font-variant-numeric:tabular-nums}
@@ -6492,6 +6564,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
             aria-label="Search applications"></label>
         <button class="pbtn" id="btn-newjob">New application&#8230;</button>
       </div>
+      <!-- What is next, above the list: the next interview, the follow-ups
+           that are late, and the week. Only there when something is. -->
+      <section class="nu" id="nextup" aria-label="Next up" hidden></section>
       <div class="tcard">
         <div class="thead"><span>Company</span><span>Role</span>
           <span>Documents</span><span>Status</span>
@@ -6954,11 +7029,18 @@ function trString(str){
 const I18N_SKIP="[data-noi18n],[contenteditable],textarea,input,script,style,code,pre,.ap-post,"+
   ".ap-notes,.lt-stage,.fj-who,.fn-src .sn,.co,.con,.sk-tip .who,#yaml,.yamlerr,.drift-list .then";
 const I18N_ATTRS=["placeholder","title","aria-label","data-ph"];
+const I18N_SKIP_FIELD="[data-noi18n],[contenteditable],#yaml,.ap-post,.ap-notes";
 function trNode(n){
   if(n.nodeType===3){
     const p=n.parentElement; if(!p||p.closest(I18N_SKIP)) return;
     const r=trString(n.nodeValue); if(r!=null) n.nodeValue=r;
   }else if(n.nodeType===1){
+    /* A field's own words (its placeholder, its label) are the app's, even
+       though what is typed in it never is. */
+    (n.matches("input,textarea")?[n]:[...n.querySelectorAll("input,textarea")]).forEach(f=>{
+      if(f.closest(I18N_SKIP_FIELD)) return;
+      for(const a of I18N_ATTRS){ const v=f.getAttribute(a); if(v){ const r=trString(v); if(r!=null) f.setAttribute(a,r) } }
+    });
     if(n.closest(I18N_SKIP)) return;
     for(const a of I18N_ATTRS){ const v=n.getAttribute(a); if(v){ const r=trString(v); if(r!=null) n.setAttribute(a,r) } }
     const w=document.createTreeWalker(n,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode:x=>
@@ -11308,6 +11390,7 @@ function filterTitle(){
 }
 function drawJobs(){
   drawRail();
+  drawNextUp();
   const rows=visibleJobs();
   $("#jtitle").textContent=filterTitle();
   $("#jcount").textContent=S.jready?String(rows.length):"";
@@ -12518,6 +12601,105 @@ const GLOBE='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke=
   'aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>';
 
 /* Every dated thing, in one list: {kind, day, job, at?, late?}. */
+/* ---- Next up, above the applications list ------------------------------ */
+/* The home screen's one look ahead: the next interview with a countdown, the
+   follow-ups that are late, and this week in seven days. It shows on the
+   whole list only, and only when one of those has something in it. */
+function drawNextUp(){
+  const el=$("#nextup"); if(!el) return;
+  clearInterval(S.nuTick);
+  const f=S.jfilter||{kind:"all"}, q=($("#jobq").value||"").trim();
+  if(!S.jready||f.kind!=="all"||q||S.jsel){ el.hidden=true; return }
+  const now=new Date(), today=todayKey(), ev=calEvents();
+  const next=ev.filter(e=>e.kind==="iv"&&e.at>now).sort((a,b)=>a.at-b.at)[0];
+  const fus=ev.filter(e=>e.kind==="fu"&&e.day<=today).sort((a,b)=>a.day.localeCompare(b.day));
+  const late=fus.filter(e=>e.late), dueToday=fus.filter(e=>!e.late);
+  if(!next&&!fus.length){ el.hidden=true; return }
+  const soon=next&&next.at-now<3*36e5;
+  const names=list=>{ const n=list.map(e=>e.job.company);
+    if(n.length>3) return n.slice(0,3).join(", ")+" +"+(n.length-3);
+    try{ return new Intl.ListFormat(uiLocale(),{type:"conjunction"}).format(n) }catch(e){ return n.join(", ") } };
+  const ivPart=j=>'<div class="nu-iv">'+companyMark(j)+'<div class="nu-tx">'+
+      '<span class="ey"><i></i>'+t(soon?"Interview today":"Next interview")+'</span>'+
+      '<span class="who">'+esc(j.company)+' <span>· '+esc(j.title)+'</span></span>'+
+      '<span class="sub">'+esc(interviewLine(j))+'</span></div>';
+  let html="", cols="";
+  if(soon){
+    const j=next.job, cvName=j.cv_path?j.cv_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
+    const words=(String(j.description||"").match(/\S+/g)||[]).length;
+    const li=(ok,yes,no)=>'<li><i class="'+(ok?"ok":"no")+'">'+(ok?"✓":"")+'</i>'+esc(ok?yes:no)+'</li>';
+    html=ivPart(j)+'<div class="left"><small>'+t("Starts in")+'</small><b id="nu-left"></b></div>'+
+      '<ul class="ready" aria-label="'+esc(t("Ready for it"))+'">'+
+        li(cvName,t("CV tailored")+(cvName?" · "+cvName:""),t("No tailored CV yet"))+
+        li(words,t("Posting saved"),t("Posting not saved"))+
+        li(j.notes,t("Notes written"),t("Notes for this round"))+'</ul>'+
+      '<button class="pbtn" data-nu-open="'+esc(j.id)+'">'+t("Prepare")+'</button></div>';
+    el.className="nu soon"; el.style.gridTemplateColumns="minmax(0,1fr)";
+  }else{
+    if(next){
+      const j=next.job;
+      html+=ivPart(j)+'<div class="end"><div class="cd" id="nu-cd"></div><div class="acts">'+
+        '<button class="obtn" data-nu-ics="'+esc(j.id)+'">'+t("Add to calendar")+'</button>'+
+        '<button class="obtn dark" data-nu-open="'+esc(j.id)+'">'+t("Prepare")+'</button></div></div></div>';
+      cols+="minmax(0,1.35fr) ";
+    }
+    if(fus.length){
+      const lead=late.length?late:dueToday, oldest=late.length?dayDiff(late[0].day,today):0;
+      const head=late.length?t(late.length===1?"1 follow-up overdue":"{n} follow-ups overdue",{n:late.length})
+        :t(dueToday.length===1?"1 follow-up due today":"{n} follow-ups due today",{n:dueToday.length});
+      const sub=late.length?(oldest===1?t("The oldest is 1 day late"):t("The oldest is {n} days late",{n:oldest}))
+        +(dueToday.length?" · "+t("{n} more due today",{n:dueToday.length}):"")
+        :(next?"":t("No interview booked"));
+      html+='<div class="nu-fu"><span class="stack">'+lead.slice(0,3).map(e=>companyMark(e.job)).join("")+'</span>'+
+        '<div class="nu-tx"><span class="ey '+(late.length?"late":"due")+'"><i></i>'+esc(head)+'</span>'+
+        '<span class="who" title="'+esc(lead.map(e=>e.job.company).join(", "))+'">'+esc(names(lead))+'</span>'+
+        '<span class="sub">'+(sub?esc(sub)+' · ':'')+'<button class="lnk" data-nu-show>'+t("Show them")+' →</button></span></div></div>';
+      cols+="minmax(0,1fr) ";
+    }
+    if(next){
+      const mon=monday(today);
+      const days=Array.from({length:7},(_,i)=>{
+        const k=addDays(mon,i), iv=ev.some(e=>e.kind==="iv"&&e.day===k),
+          fu=ev.filter(e=>e.kind==="fu"&&e.day===k), lt=fu.some(e=>e.late);
+        const tip=[iv?t("Interview")+" · "+ev.filter(e=>e.kind==="iv"&&e.day===k).map(e=>e.job.company).join(", "):"",
+          fu.length?t("Follow up")+" · "+fu.map(e=>e.job.company).join(", "):""].filter(Boolean).join("\n");
+        return '<button data-nu-day="'+k+'"'+(k===today?' class="today"':'')+' title="'+esc(tip||fmtKey(k,{weekday:"long",day:"numeric",month:"long"}))+'">'+
+          '<small>'+esc(fmtKey(k,{weekday:"short"}))+'</small>'+Number(k.slice(8))+
+          '<span class="mk">'+(iv?'<span class="d"></span>':'')+(fu.length?'<span class="r'+(lt?" late":"")+'"></span>':'')+'</span></button>';
+      }).join("");
+      html+='<div class="nu-wk"><div class="hd">'+t("This week")+'<button data-nu-cal>'+t("Open calendar")+' →</button></div>'+
+        '<div class="days">'+days+'</div></div>';
+      cols+="300px";
+    }
+    el.className="nu"+(next?"":" slim");
+    el.style.gridTemplateColumns=cols.trim();
+  }
+  const wasHidden=el.hidden;
+  el.innerHTML=html; el.hidden=false;
+  el.style.animation=wasHidden?"":"none";
+  $$("#nextup [data-nu-open]").forEach(b=>b.onclick=()=>selectJob(b.dataset.nuOpen));
+  $$("#nextup [data-nu-ics]").forEach(b=>b.onclick=()=>window.open("/api/calendar.ics?id="+encodeURIComponent(b.dataset.nuIcs)+tok()));
+  const sh=$("#nextup [data-nu-show]"); if(sh) sh.onclick=()=>{ S.jfilter={kind:"alert",value:"followup_due"}; S.fnode=null; drawJobs() };
+  const cal=$("#nextup [data-nu-cal]"); if(cal) cal.onclick=()=>{ S.calView="overview"; setView("cal") };
+  $$("#nextup [data-nu-day]").forEach(b=>b.onclick=()=>{ S.calView="week"; S.calAnchor=b.dataset.nuDay; setView("cal") });
+  if(next){
+    const p=n=>String(n).padStart(2,"0");
+    /* Units short enough to sit beside the digits; French counts days in "j". */
+    const U={d:UI_LANG==="fr"?"j":"d", m:UI_LANG==="en"?"m":"min"};
+    const tick=()=>{
+      const cd=$("#nu-cd"), lf=$("#nu-left");
+      if(!cd&&!lf){ clearInterval(S.nuTick); return }
+      const left=Math.max(0,next.at-new Date());
+      const d=Math.floor(left/864e5), h=Math.floor(left/36e5)%24, m=Math.floor(left/6e4)%60, s=Math.floor(left/1e3)%60;
+      if(cd) cd.innerHTML=(d?'<b>'+d+'</b><u>'+U.d+'</u>':'')+'<b>'+p(h)+'</b><u>h</u><b>'+p(m)+'</b><u>'+
+        U.m+'</u><b class="s">'+p(s)+'</b><u>s</u>';
+      if(lf) lf.textContent=(h?h+" h ":"")+m+" min";
+      if(left<=0) drawNextUp();
+    };
+    tick(); S.nuTick=setInterval(tick,1000);
+  }
+}
+
 function calEvents(){
   const out=[], today=todayKey();
   (S.jobs||[]).forEach(j=>{
