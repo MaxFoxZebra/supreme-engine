@@ -14,6 +14,12 @@ tag, so a release is never published with nothing said about it.
   0.20.0 and 0.21.0, opening a CV with the app in one of those languages
   could lock the window: the translator kept rewriting a page count ("1
   page") back and forth. Fixed.
+- **Quick with hundreds of applications.** With 500 in the list, the
+  calendar opened in over 200 ms and opening, closing or searching took
+  100 to 220; all of it now takes under 70. Dates are formatted by
+  formatters made once instead of thousands of times, choosing an
+  application no longer rebuilds the whole table, and rows off screen are
+  laid out only when you scroll to them.
 - **Easier to read, and to use without a mouse.** Coloured text (the
   calendar's chips, overdue follow-ups, offers, the funnel's tooltip, the
   Next up seconds) now meets the WCAG AA contrast bar in light and dark

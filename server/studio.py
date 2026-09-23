@@ -2059,14 +2059,14 @@ def in_sample() -> bool:
     return WORKSPACE.resolve() == sample.folder().resolve()
 
 
-def open_sample() -> dict:
+def open_sample(applications: int = 64) -> dict:
     """Rebuild the sample folder and switch the app to it."""
     global WORKSPACE, REAL_WORKSPACE
     if not in_sample():
         REAL_WORKSPACE = WORKSPACE
     WORKSPACE = sample.folder()
     try:
-        return sample.build(sys.modules[__name__])
+        return sample.build(sys.modules[__name__], applications)
     except Exception:
         WORKSPACE = REAL_WORKSPACE or WORKSPACE
         raise
@@ -3246,8 +3246,9 @@ def openapi_spec() -> dict:
                 "requestBody": body({"name": {"type": "string"}}), "responses": ok}},
             "/api/sample": {"post": {"summary":
                 "Switch to freshly made sample data (on: true) or back to your own "
-                "workspace (on: false). Your workspace is never written to",
-                "requestBody": body({"on": {"type": "boolean"}}),
+                "workspace (on: false). Your workspace is never written to. "
+                "applications sets how many to make (default 64, up to 2000)",
+                "requestBody": body({"on": {"type": "boolean"}, "applications": {"type": "integer"}}),
                 "responses": ok}},
             "/api/prefs": {"post": {"summary":
                 "Save the interface's preferences (theme, language, time zone, notifications) "
@@ -3915,7 +3916,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # Sample data lives in its own folder; switching never writes
                 # to the workspace you came from.
                 if payload.get("on"):
-                    return self._json({"ok": True, **open_sample()})
+                    try:
+                        n = int(payload.get("applications") or 64)
+                    except (TypeError, ValueError):
+                        n = 64
+                    return self._json({"ok": True, **open_sample(n)})
                 close_sample()
                 return self._json({"ok": True})
             if u.path == "/api/base":
@@ -5044,6 +5049,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .trow{height:50px;font-size:13.5px;border-bottom:1px solid var(--bd-inner);width:100%;
   text-align:left;color:var(--t900)}
 .trow:hover{background:var(--row-hover)}
+/* Five hundred rows are laid out only as they scroll into view. */
+#jobrows .trow{content-visibility:auto;contain-intrinsic-size:auto 50px}
+.peeking #jobrows .trow{contain-intrinsic-size:auto 58px}
 .trow .role{display:flex;gap:8px;align-items:baseline;min-width:0}
 .trow .role b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trow .role i{font-style:normal;font-size:12px;color:var(--t500);flex:none}
@@ -7432,7 +7440,7 @@ function dfxPaint(inp){
   const sp=inp.nextElementSibling; if(!sp||!sp.classList.contains("dfx-v")) return;
   const v=DFX_VALUE.get.call(inp); let txt="";
   if(v){ const d=inp.type==="date"?new Date(v+"T12:00:00"):new Date(v);
-    if(!isNaN(d)) try{ txt=new Intl.DateTimeFormat(uiLocale(),DFX_FMT[inp.type]).format(d) }catch(e){} }
+    if(!isNaN(d)) try{ txt=DTF(uiLocale(),DFX_FMT[inp.type]).format(d) }catch(e){} }
   sp.textContent=txt||t("No date"); sp.classList.toggle("dfx-none",!txt);
 }
 function dfxWrap(inp){
@@ -7534,10 +7542,26 @@ function shortDate(iso){
    zone it gave it in (interview_tz), so the file says what the email said.
    Showing it, or comparing it with now, goes through these. The zone data is
    the browser's own, so nothing ships for it. */
-const machineTz=()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC" }catch(e){ return "UTC" } };
+/* A formatter is slow to make and quick to use, and the calendar formats
+   thousands of dates a draw: each kind is made once. */
+function DTF(loc,o){
+  const c=DTF.c||(DTF.c=new Map()), k=loc+"|"+JSON.stringify(o);
+  let f=c.get(k); if(!f){ f=new Intl.DateTimeFormat(loc,o); c.set(k,f) }
+  return f;
+}
+/* Asked often; looked up once a minute, which still follows a laptop that
+   has crossed a border. */
+const machineTz=()=>{
+  const now=Date.now();
+  if(!machineTz.at||now-machineTz.at>60000){
+    try{ machineTz.v=Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC" }catch(e){ machineTz.v="UTC" }
+    machineTz.at=now;
+  }
+  return machineTz.v;
+};
 const userTz=()=>prefs().tz||machineTz();
 function tzOffset(tz,date){
-  const p=new Intl.DateTimeFormat("en-US",{timeZone:tz,hourCycle:"h23",year:"numeric",month:"2-digit",
+  const p=DTF("en-US",{timeZone:tz,hourCycle:"h23",year:"numeric",month:"2-digit",
     day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(date);
   const g=t=>+p.find(x=>x.type===t).value;
   return (Date.UTC(g("year"),g("month")-1,g("day"),g("hour")%24,g("minute"),g("second"))-date.getTime())/60000;
@@ -7559,7 +7583,7 @@ const tzCity=tz=>{ const k=String(tz||"").split("/").pop(); return TZ_NAMES[k]||
 function fmtWhen(date,tz,withDay=true){
   const o={timeZone:tz,hour:"2-digit",minute:"2-digit"};
   if(withDay) Object.assign(o,{weekday:"short",day:"numeric",month:"short"});
-  try{ return new Intl.DateTimeFormat(uiLocale(),o).format(date) }catch(e){ return date.toISOString().slice(0,16) }
+  try{ return DTF(uiLocale(),o).format(date) }catch(e){ return date.toISOString().slice(0,16) }
 }
 /* "Thu 25 Sep, 11:00 your time · 10:00 in London", or just the one when the
    two zones agree at that moment. */
@@ -7643,7 +7667,7 @@ function drawTzMap(sel){
   const arc=(a,b)=>{ const x1=WX(a[0]),y1=WY(a[1]),x2=WX(b[0]),y2=WY(b[1]);
     const mx=(x1+x2)/2, my=(y1+y2)/2-Math.hypot(x2-x1,y2-y1)*.28;
     return '<path class="arc" d="M'+x1+' '+y1+'Q'+mx+' '+my+' '+x2+' '+y2+'"/>' };
-  const hm=z=>new Intl.DateTimeFormat(uiLocale(),{timeZone:z,hour:"2-digit",minute:"2-digit"}).format(now);
+  const hm=z=>DTF(uiLocale(),{timeZone:z,hour:"2-digit",minute:"2-digit"}).format(now);
   host.innerHTML='<svg viewBox="0 0 '+WW+' '+WH+'" role="img">'+
     '<rect class="band" x="'+bx+'" y="0" width="'+bw+'" height="'+WH+'"/>'+
     '<line class="band-edge" x1="'+bx+'" x2="'+bx+'" y1="0" y2="'+WH+'"/>'+
@@ -7702,8 +7726,16 @@ function utcLabel(z){
 }
 function tzOptions(cur,first){
   const top=[...new Set([first,...COMMON_TZ].filter(Boolean))];
-  const opt=z=>'<option value="'+esc(z)+'"'+(z===cur?" selected":"")+'>'+esc(tzCity(z))+
-    (utcLabel(z)?' · '+utcLabel(z):"")+'</option>';
+  /* Four hundred zones, each with its offset: made once an hour (offsets
+     move only at a clock change), not every time an application opens. */
+  const hour=Math.floor(Date.now()/36e5);
+  if(!tzOptions.c||tzOptions.c.hour!==hour) tzOptions.c={hour,m:new Map()};
+  const m=tzOptions.c.m;
+  const opt=z=>{
+    let h=m.get(z);
+    if(h==null){ h='<option value="'+esc(z)+'">'+esc(tzCity(z))+(utcLabel(z)?' · '+utcLabel(z):"")+'</option>'; m.set(z,h) }
+    return z===cur?h.replace('">','" selected>'):h;
+  };
   return top.map(opt).join("")+'<option disabled>──────────</option>'+
     allTz().filter(z=>!top.includes(z)).map(opt).join("");
 }
@@ -11160,7 +11192,7 @@ async function fillBackups(){
     catch(e){ toast(e.message,true); now.disabled=false } };
   list.onclick=()=>{
     const kb=n=>n>1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
-    const when=a=>new Intl.DateTimeFormat(uiLocale(),{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(a*1000));
+    const when=a=>DTF(uiLocale(),{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(a*1000));
     openSheet('<div><h3>'+t("Restore a backup")+'</h3><p>'+t("Its files are put back into the workspace. What is there now is backed up first, so this can be undone the same way.")+'</p></div>'+
       '<div class="bk-list">'+r.backups.map(b=>'<div class="bk-row"><span><b>'+esc(when(b.at))+'</b>'+
         '<small>'+esc(kb(b.size))+(/before-restore/.test(b.name)?' · '+t("before a restore"):/manual/.test(b.name)?' · '+t("made by hand"):'')+'</small></span>'+
@@ -12024,9 +12056,22 @@ function selectJob(id){
   if(j&&!visibleJobs().some(x=>x.id===id)){
     S.jfilter={kind:"all",value:""}; $("#jobq").value="";
   }
-  drawJobs();
+  /* The row is already there: move the highlight, not the whole table. */
+  if(!moveSel()) drawJobs();
   const row=$("#jobrows .trow.sel");
   if(row) row.scrollIntoView({block:"nearest"});
+}
+/* Selection touches one class on two rows and the panels around the table;
+   rebuilding five hundred rows for it is what made opening one slow. False
+   when the row is not drawn, and the table has to be. */
+function moveSel(){
+  const host=$("#jobrows");
+  const want=S.jsel?host.querySelector('.trow[data-id="'+CSS.escape(S.jsel)+'"]'):null;
+  if(S.jsel&&!want) return false;
+  host.querySelectorAll(".trow.sel").forEach(r=>{ if(r!==want) r.classList.remove("sel") });
+  if(want) want.classList.add("sel");
+  drawNextUp(); drawJobInspector(); paintStatus();
+  return true;
 }
 
 const JOB_GRID=[
@@ -12062,8 +12107,7 @@ function closePeek(){
   S.jsel=null;
   $("#jpeek").hidden=true;
   $("#v-jobs").classList.remove("peeking");
-  drawJobs();
-  paintStatus();
+  moveSel();
 }
 
 
@@ -13144,14 +13188,14 @@ const DEAD_ST=new Set(["accepted","refused","rejected","ghosted","rejected_inter
 const LIVE_ST=new Set(["applied","interviewing","offer"]);
 /* A moment as its day where you are, "2026-09-25". */
 function dayIn(date,tz){
-  const p=new Intl.DateTimeFormat("en-CA",{timeZone:tz||userTz(),year:"numeric",month:"2-digit",day:"2-digit"})
+  const p=DTF("en-CA",{timeZone:tz||userTz(),year:"numeric",month:"2-digit",day:"2-digit"})
     .formatToParts(date);
   const g=k=>p.find(x=>x.type===k).value;
   return g("year")+"-"+g("month")+"-"+g("day");
 }
 /* The wall-clock time a moment shows in a zone, "2026-09-25T10:00". */
 function wallIn(date,tz){
-  const p=new Intl.DateTimeFormat("en-CA",{timeZone:tz,hourCycle:"h23",year:"numeric",month:"2-digit",day:"2-digit",
+  const p=DTF("en-CA",{timeZone:tz,hourCycle:"h23",year:"numeric",month:"2-digit",day:"2-digit",
     hour:"2-digit",minute:"2-digit"}).formatToParts(date);
   const g=k=>p.find(x=>x.type===k).value;
   return g("year")+"-"+g("month")+"-"+g("day")+"T"+g("hour")+":"+g("minute");
@@ -13162,7 +13206,7 @@ const keyDate=k=>{ const [y,m,d]=k.split("-").map(Number); return new Date(Date.
 const addDays=(k,n)=>{ const d=keyDate(k); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10) };
 const dayDiff=(a,b)=>Math.round((keyDate(b)-keyDate(a))/DAY);
 const monday=k=>{ const w=(keyDate(k).getUTCDay()+6)%7; return addDays(k,-w) };
-const fmtKey=(k,o)=>{ try{ return new Intl.DateTimeFormat(uiLocale(),Object.assign({timeZone:"UTC"},o)).format(keyDate(k)) }
+const fmtKey=(k,o)=>{ try{ return DTF(uiLocale(),Object.assign({timeZone:"UTC"},o)).format(keyDate(k)) }
   catch(e){ return k } };
 const otherTz=j=>{ const at=interviewMoment(j); return j.interview_tz&&at&&tzOffset(j.interview_tz,at)!==tzOffset(userTz(),at) };
 const GLOBE='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '+

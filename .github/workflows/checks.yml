@@ -115,6 +115,9 @@ jobs:
       - name: Accessibility (contrast, keyboard, names)
         run: node checks/a11yscan.js "http://127.0.0.1:8750/?token=t"
 
+      - name: Quick with 500 applications
+        run: node checks/scaletest.js "http://127.0.0.1:8750/?token=t"
+
       - name: Server log, when something failed
         if: failure()
         run: cat "$RUNNER_TEMP/server.log" || true

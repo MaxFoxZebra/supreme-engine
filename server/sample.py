@@ -240,9 +240,11 @@ def _iso(d: dt.datetime) -> str:
     return d.isoformat(timespec="seconds")
 
 
-def build(studio) -> dict:
+def build(studio, applications: int = 64) -> dict:
     """Rebuild the sample folder and fill it. `studio` is the studio module,
-    whose WORKSPACE must already point at folder()."""
+    whose WORKSPACE must already point at folder(). `applications` is how
+    many to make at random, beside the two interviews abroad: more shows how
+    the app holds up with a long search behind it."""
     ws = folder()
     assert studio.WORKSPACE.resolve() == ws.resolve()
     if ws.exists():
@@ -301,7 +303,7 @@ def build(studio) -> dict:
 
     jobs = studio.jobstore
     made = []
-    for i in range(64):
+    for i in range(max(1, min(int(applications), 2000))):
         company, city, lang = R.choice(COMPANIES)
         title = R.choice(TITLES)
         source = R.choice(SOURCES)
