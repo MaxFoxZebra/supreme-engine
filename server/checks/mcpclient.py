@@ -97,7 +97,7 @@ if __name__ == "__main__":
                  "create_cv", "render_cv", "ats_check", "design_options",
                  "workspace_info", "add_language", "translation_status",
                  "mark_translation_current", "create_letter", "write_letter"}
-    applications = {"list_jobs", "read_job", "find_job", "job_alerts",
+    applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job",
                     "set_company_logo"}
     check("every tool is advertised", set(tools) == documents | applications,
@@ -326,6 +326,10 @@ if __name__ == "__main__":
     check("read_job returns the posting text in full",
           "stored for tailoring" in text(r))
 
+    r = call("calendar", {"days_ahead": 30, "ics": True})
+    cal = json.loads(text(r))
+    check("calendar lists what is ahead, with an iCalendar file",
+          "interviews" in cal and "BEGIN:VCALENDAR" in (cal.get("ics") or ""), str(cal)[:200])
     r = call("job_alerts", {})
     check("job_alerts answers with a readable summary",
           "summary" in json.loads(text(r)))

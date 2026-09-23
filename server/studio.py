@@ -3103,6 +3103,9 @@ def openapi_spec() -> dict:
                 "Applications needing attention: interviews due, follow-ups "
                 "due, interviews with no outcome, and silence since applying",
                 "responses": ok}},
+            "/api/calendar.ics": {"get": {"summary":
+                "Interviews and follow-ups as an iCalendar file; ?id= for one application",
+                "responses": ok}},
             "/api/jobs/export": {"get": {"summary": "Export every job as JSON or CSV",
                 "parameters": [{"name": "format", "in": "query",
                                 "schema": {"type": "string", "enum": ["json", "csv"]}}],
@@ -3423,6 +3426,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json(jobstore.alerts(WORKSPACE))
+            if u.path == "/api/calendar.ics":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                body = jobstore.ics(WORKSPACE, q.get("id", [None])[0]).encode("utf-8")
+                return self._send(200, body, "text/calendar; charset=utf-8")
             if u.path == "/api/jobs/export":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -4949,6 +4957,218 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .b-live{stroke:var(--fn-positive)} .b-draft{stroke:var(--fn-neutral)}
 .b-waiting{stroke:var(--fn-wait)} .b-closed{stroke:var(--fn-closed)}
 
+/* ---------- calendar ----------------------------------------------------- */
+.cal-page{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--app);overflow-y:auto}
+.cal-bar .obtn{height:34px;padding:0 13px;font-size:13px}
+.cal-nav{display:flex;align-items:center;gap:6px}
+.cal-nav b{min-width:170px;text-align:center;font-size:15px;font-weight:600;color:var(--t900)}
+.cal-nav .cal-arrow{width:34px;padding:0;font-size:17px}
+#cal-body{display:flex;flex-direction:column;gap:20px;padding:0 24px 28px;flex:1;min-height:0}
+.cal-card{background:var(--field);border:1px solid var(--rule);border-radius:16px;min-width:0}
+.cal-card h2{margin:0;font-size:14px;font-weight:600;color:var(--t900)}
+.cal-ch{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.cal-ch span{font-size:12.5px;color:var(--t500)}
+.cal-top{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px}
+@media (max-width:1180px){.cal-top{grid-template-columns:minmax(0,1fr)}}
+
+/* Next up: the next interview, counting down. */
+.cal-hero{position:relative;overflow:hidden;border-radius:18px;padding:22px 26px;color:var(--t900);
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;
+  background:radial-gradient(520px 260px at 88% 10%,color-mix(in srgb,var(--acc) 38%,transparent),transparent 70%),
+    linear-gradient(135deg,color-mix(in srgb,var(--acc) 5%,var(--field)) 0%,color-mix(in srgb,var(--acc) 18%,var(--field)) 100%);
+  border:1px solid color-mix(in srgb,var(--acc) 30%,var(--rule));box-shadow:0 20px 50px -30px color-mix(in srgb,var(--acc) 70%,transparent)}
+.cal-hero::after{content:"";position:absolute;right:-60px;bottom:-80px;width:260px;height:260px;border-radius:50%;
+  border:1px dashed color-mix(in srgb,var(--acc) 40%,transparent);animation:cv-sweep 60s linear infinite;pointer-events:none}
+.cal-hero>*{position:relative;z-index:1}
+.cal-next{display:flex;align-items:center;gap:10px}
+.cal-next .tag{height:24px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:12px;
+  background:var(--t900);color:var(--app);font-size:11.5px;font-weight:700;letter-spacing:.02em}
+.cal-next .tag i{width:7px;height:7px;border-radius:50%;background:var(--acc);animation:cv-now 1.6s ease-in-out infinite}
+.cal-next span{font-size:13px;color:var(--acc-text)}
+.cal-who{display:flex;align-items:center;gap:14px;margin-top:14px}
+.cal-who .colog{width:52px;height:52px;border-radius:12px;font-size:16px}
+.cal-who b{display:block;font-size:26px;letter-spacing:-.02em}
+.cal-who span{font-size:14px;color:var(--t600)}
+.cal-cd{display:flex;align-items:flex-end;gap:18px;margin-top:16px;flex-wrap:wrap}
+.cal-cd .n{font-size:44px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
+.cal-cd .u{font-size:11.5px;color:var(--acc-text);font-weight:600;margin-top:4px;text-transform:uppercase}
+.cal-cd .s .n{color:var(--acc)}
+.cal-cd .when{padding-bottom:6px;font-size:13.5px;color:var(--t800);line-height:1.45}
+.cal-checks{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.cal-check{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--t800)}
+.cal-check i{width:18px;height:18px;border-radius:50%;flex:none;display:grid;place-items:center;font-style:normal;
+  font-size:11px;font-weight:700}
+.cal-check i.ok{background:var(--fn-won);color:#fff}
+.cal-check i.no{box-shadow:inset 0 0 0 1.5px var(--bd-field)}
+.cal-acts{display:flex;gap:8px;margin-top:16px}
+.cal-acts .dark{background:var(--t900);color:var(--app);border-color:var(--t900);font-weight:600}
+.cal-clocks{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px}
+.cal-clocks .row{display:flex;gap:22px}
+.cal-clock{display:flex;flex-direction:column;align-items:center;gap:6px}
+.cal-clock b{font-size:15px}.cal-clock span{font-size:11.5px;color:var(--t500);margin-top:-4px}
+.cal-clock svg .face{fill:var(--field);stroke:color-mix(in srgb,var(--acc) 30%,var(--rule))}
+.cal-clock svg .tk{stroke:var(--t400)}.cal-clock svg .tk.big{stroke:var(--t900)}
+.cal-clock svg .hh{stroke:var(--t900)}.cal-clock svg .mh{stroke:var(--acc)}.cal-clock svg .pin{fill:var(--t900)}
+.cal-hand{transform-origin:50px 50px;transform-box:view-box;transform:rotate(var(--a))}
+.cal-in .cal-hand{animation:cv-hand 1.4s cubic-bezier(.2,.8,.2,1) both}
+.cal-clocks small{font-size:12px;color:var(--acc-text);text-align:center}
+.cal-empty{display:flex;flex-direction:column;gap:6px;justify-content:center}
+.cal-empty b{font-size:20px}.cal-empty p{margin:0;color:var(--t600);font-size:13.5px;max-width:520px;line-height:1.5}
+
+/* The month, as how busy each day was. */
+.cal-mini{padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.cal-mgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cal-mgrid .dw{font-size:10.5px;font-weight:600;color:var(--t500);text-align:center}
+.cal-md{position:relative;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:600;color:var(--t900);background:var(--bd-inner);cursor:pointer}
+.cal-md.out{background:transparent;color:var(--t400);cursor:default}
+.cal-md.l1{background:color-mix(in srgb,var(--acc) 22%,var(--field))}
+.cal-md.l2{background:color-mix(in srgb,var(--acc) 45%,var(--field))}
+.cal-md.l3{background:color-mix(in srgb,var(--acc) 75%,var(--field))}
+.cal-md.today{box-shadow:0 0 0 2px var(--t900)}
+.cal-md i{position:absolute;right:4px;top:4px;width:7px;height:7px;border-radius:2px;background:var(--t900);transform:rotate(45deg)}
+.cal-legend{display:flex;align-items:center;gap:14px;font-size:11.5px;color:var(--t500)}
+.cal-legend .ramp{display:flex;gap:2px}.cal-legend .ramp i{width:10px;height:10px;border-radius:3px}
+.cal-legend .dia{width:7px;height:7px;border-radius:2px;background:var(--t900);transform:rotate(45deg)}
+
+/* Journeys: each application from sent to now, and what is ahead. */
+.cal-jr{padding:18px 24px 16px}
+.jr-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--t600);margin-left:auto}
+.jr-legend span{display:flex;align-items:center;gap:6px}
+.jr-legend .bar{width:18px;height:8px;border-radius:4px}
+.jr-axis{position:relative;height:24px;margin:16px 0 0 var(--jr-lx)}
+.jr-tick{position:absolute;top:0;font-size:11px;color:var(--t500);white-space:nowrap}
+.jr-body{position:relative}
+.jr-bg{position:absolute;top:0;bottom:0;left:var(--jr-lx);right:0;pointer-events:none}
+.jr-wkend{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--t900) 3%,transparent)}
+.jr-now{position:absolute;top:-30px;bottom:-4px;width:2px;background:var(--acc);animation:cv-now 2.2s ease-in-out infinite;z-index:2}
+.jr-now::before{content:attr(data-label);position:absolute;top:-2px;left:50%;transform:translateX(-50%);height:20px;
+  display:flex;align-items:center;padding:0 8px;border-radius:10px;background:var(--acc);color:#1b1a17;font-size:11px;font-weight:700}
+.jr-now::after{content:"";position:absolute;inset:0 -8px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--acc) 16%,transparent),transparent)}
+.jr-lane{position:relative;height:38px;border-top:1px solid var(--bd-inner);cursor:pointer}
+.jr-lane:hover{background:var(--row-hover)}
+.jr-lane.closed{opacity:.5}
+.jr-who{position:absolute;left:0;top:5px;width:calc(var(--jr-lx) - 16px);display:flex;align-items:center;gap:10px;min-width:0}
+.jr-who .colog{width:26px;height:26px;border-radius:7px;font-size:10px;flex:none}
+.jr-who b{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr-who small{display:block;font-size:11px;color:var(--t500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr-track{position:absolute;left:var(--jr-lx);right:0;top:0;bottom:0}
+.jr-seg{position:absolute;top:13px;height:12px;border-radius:6px}
+.jr-seg.wait{background:linear-gradient(90deg,color-mix(in srgb,var(--fn-wait) 18%,transparent),color-mix(in srgb,var(--fn-wait) 45%,transparent));border:1px solid color-mix(in srgb,var(--fn-wait) 35%,transparent)}
+.jr-seg.live{background:linear-gradient(90deg,color-mix(in srgb,var(--fn-positive) 20%,transparent),color-mix(in srgb,var(--fn-positive) 60%,transparent));border:1px solid color-mix(in srgb,var(--fn-positive) 35%,transparent)}
+.jr-seg.offer{background:linear-gradient(90deg,color-mix(in srgb,var(--fn-offer) 20%,transparent),color-mix(in srgb,var(--fn-offer) 60%,transparent));border:1px solid color-mix(in srgb,var(--fn-offer) 35%,transparent)}
+.jr-dash{position:absolute;top:18px;height:2px;background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--acc) 55%,transparent) 0 6px,transparent 6px 12px);animation:cv-dash 1.2s linear infinite}
+.jr-iv{position:absolute;top:10px;width:18px;height:18px;margin-left:-9px;border-radius:4px;transform:rotate(45deg);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 80%,#fff),var(--fn-positive));animation:cv-glow 2.4s ease-in-out infinite}
+.jr-ring{position:absolute;top:12px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--field);box-shadow:inset 0 0 0 2.5px var(--fn-wait)}
+.jr-ring.late{box-shadow:inset 0 0 0 2.5px var(--fn-lost);animation:cv-late 1.8s ease-out infinite}
+.jr-dot{position:absolute;top:13px;width:12px;height:12px;margin-left:-6px;border-radius:50%}
+.jr-dot.of{background:var(--fn-offer);box-shadow:0 0 0 3px color-mix(in srgb,var(--fn-offer) 22%,transparent)}
+.jr-dot.rp{background:var(--fn-positive);box-shadow:0 0 0 3px color-mix(in srgb,var(--fn-positive) 22%,transparent)}
+.jr-x{position:absolute;top:10px;margin-left:-5px;font-size:16px;line-height:16px;color:var(--fn-lost);font-weight:700}
+.jr-lab{position:absolute;top:9px;height:20px;display:flex;align-items:center;padding:0 8px;border-radius:10px;font-size:11.5px;
+  white-space:nowrap;background:color-mix(in srgb,var(--fn-wait) 12%,var(--field));color:var(--fn-wait);z-index:1}
+.jr-lab.iv{background:var(--t900);color:var(--app);font-weight:600;box-shadow:0 6px 16px -6px rgba(0,0,0,.4)}
+.jr-lab.late{background:color-mix(in srgb,var(--fn-lost) 12%,var(--field));color:var(--fn-lost);font-weight:600}
+.jr-lab.x{background:transparent;color:var(--fn-lost)}
+.jr-more{padding:10px 0 0 var(--jr-lx);font-size:12.5px;color:var(--t500)}
+.cal-in .jr-seg{animation:cv-grow .8s cubic-bezier(.3,.7,.2,1) both}
+.cal-in .jr-iv{animation:cv-pop .6s both,cv-glow 2.4s ease-in-out 2.4s infinite}
+.cal-in .jr-ring,.cal-in .jr-dot{animation:cv-popr .5s both}
+.cal-in .jr-ring.late{animation:cv-popr .5s both,cv-late 1.8s ease-out 2.2s infinite}
+.cal-in .jr-lab,.cal-in .cal-r{animation:fx-rise .6s cubic-bezier(.2,.8,.2,1) both}
+.cal-in .cal-md{animation:cv-popr .4s both}
+
+/* Month */
+.cal-month{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;flex:1;min-height:560px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:hidden;padding:0}
+.cal-grid .dw{padding:8px 10px;font-size:11.5px;font-weight:600;color:var(--t500);border-bottom:1px solid var(--rule)}
+.cal-cell{display:flex;flex-direction:column;gap:4px;min-width:0;padding:7px 7px 6px;border-right:1px solid var(--bd-inner);
+  border-bottom:1px solid var(--bd-inner);background:var(--field)}
+.cal-cell.out,.cal-cell.wkend{background:color-mix(in srgb,var(--t900) 2%,var(--field))}
+.cal-cell.today{background:color-mix(in srgb,var(--acc) 6%,var(--field));box-shadow:inset 0 0 0 1.5px var(--acc)}
+.cal-cell.drop{box-shadow:inset 0 0 0 2px var(--fn-wait);background:color-mix(in srgb,var(--fn-wait) 8%,var(--field))}
+.cal-cell .d{height:24px;display:flex;align-items:center;font-size:12.5px;font-weight:600;color:var(--t700)}
+.cal-cell.out .d{color:var(--t400)}
+.cal-cell.today .d span{width:24px;height:24px;border-radius:12px;background:var(--acc);color:#1b1a17;display:grid;place-items:center;font-weight:700}
+.cal-cell .act{margin-top:auto;display:flex;gap:8px;font-size:11px;color:var(--t500)}
+.cal-cell .act span{display:flex;align-items:center;gap:4px}
+.cal-cell .act i{width:6px;height:6px;border-radius:50%}
+.cal-chip{display:flex;align-items:center;gap:5px;height:22px;padding:0 7px;border-radius:6px;font-size:11.5px;white-space:nowrap;
+  overflow:hidden;cursor:pointer;min-width:0;text-align:left;width:100%}
+.cal-chip span{overflow:hidden;text-overflow:ellipsis}
+.cal-chip.iv{background:color-mix(in srgb,var(--fn-positive) 18%,var(--field));color:var(--acc-text);font-weight:600}
+.cal-chip.iv .pt{width:6px;height:6px;flex:none;border-radius:50%;background:var(--fn-positive)}
+.cal-chip.iv .gl{margin-left:auto;display:flex;color:var(--fn-positive)}
+.cal-chip.fu{border:1px dashed color-mix(in srgb,var(--fn-wait) 45%,transparent);color:var(--fn-wait);background:var(--field)}
+.cal-chip.fu.late{border:1px solid color-mix(in srgb,var(--fn-lost) 40%,transparent);color:var(--fn-lost);
+  background:color-mix(in srgb,var(--fn-lost) 7%,var(--field))}
+.cal-chip.of{background:color-mix(in srgb,var(--fn-offer) 18%,var(--field));color:var(--fn-offer);font-weight:600}
+.cal-chip.rp{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fn-positive) 40%,transparent);color:var(--acc-text)}
+.cal-chip[draggable=true]{cursor:grab}
+.cal-side{display:flex;flex-direction:column;overflow:hidden}
+.cal-side .cal-ch{padding:16px 18px 10px}
+.cal-late{margin:0 12px 8px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--fn-lost) 9%,var(--field));
+  color:var(--fn-lost);font-size:12.5px;line-height:1.45}
+.cal-item{display:flex;gap:12px;padding:11px 18px;border-top:1px solid var(--bd-inner);text-align:left;width:100%}
+.cal-item:hover{background:var(--row-hover)}
+.cal-item .bar{width:3px;flex:none;border-radius:2px}
+.cal-item .tx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cal-item .tx small{font-size:12px;color:var(--t500)}
+.cal-item .tx b{font-size:13.5px;font-weight:600}
+.cal-item .tx span{font-size:12px;color:var(--t700)}
+.cal-item .tx em{font-style:normal;display:flex;align-items:center;gap:5px;margin-top:3px;font-size:11.5px;color:var(--fn-positive)}
+.cal-none{padding:14px 18px;font-size:13px;color:var(--t500)}
+
+/* Week */
+.cal-week{position:relative;display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:560px}
+.cal-wh{display:grid;grid-template-columns:64px repeat(7,minmax(0,1fr));border-bottom:1px solid var(--rule)}
+.cal-wh>div{padding:10px 10px 8px;border-left:1px solid var(--bd-inner)}
+.cal-wh>div:first-child{border-left:0}
+.cal-wh small{display:block;font-size:11.5px;font-weight:600;color:var(--t500)}
+.cal-wh b{font-size:20px;font-weight:600;letter-spacing:-.02em}
+.cal-wh .today b{color:var(--acc-text)}
+.cal-wa{display:grid;grid-template-columns:64px repeat(7,minmax(0,1fr));border-bottom:1px solid var(--rule);
+  background:color-mix(in srgb,var(--t900) 2%,var(--field))}
+.cal-wa>div{display:flex;flex-direction:column;gap:4px;padding:6px;border-left:1px solid var(--bd-inner);min-height:30px;min-width:0}
+.cal-wa>div:first-child{border-left:0;font-size:11px;color:var(--t500);text-align:right;padding:8px 8px 0 0}
+.cal-wg{display:grid;grid-template-columns:64px minmax(0,1fr);overflow-y:auto}
+.cal-hr{height:56px;border-top:1px solid var(--bd-inner);font-size:11px;color:var(--t500);padding:2px 8px 0 0;text-align:right;box-sizing:border-box}
+.cal-wcols{position:relative}
+.cal-wcols .ln{height:56px;border-top:1px solid var(--bd-inner);box-sizing:border-box}
+.cal-wcols .col{position:absolute;top:0;bottom:0;border-left:1px solid var(--bd-inner)}
+.cal-blk{position:absolute;border-radius:8px;padding:4px 8px;line-height:1.25;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;overflow:hidden;
+  background:color-mix(in srgb,var(--fn-positive) 18%,var(--field));border-left:3px solid var(--fn-positive);text-align:left;cursor:pointer}
+.cal-blk b{font-size:12px;color:var(--acc-text)}.cal-blk span{font-size:11.5px;color:var(--acc-text)}
+.cal-blk em{font-style:normal;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--fn-positive)}
+.cal-blk.on{box-shadow:0 0 0 2px var(--t900),0 10px 24px -8px rgba(0,0,0,.35)}
+.cal-nowline{position:absolute;height:2px;background:var(--fn-lost);z-index:2}
+.cal-nowline::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--fn-lost)}
+.cal-pop{position:absolute;width:320px;display:flex;flex-direction:column;gap:10px;padding:16px 18px;border-radius:14px;
+  background:var(--field);box-shadow:0 0 0 1px var(--rule),0 24px 48px -16px rgba(0,0,0,.35);z-index:5}
+.cal-pop .hd{display:flex;align-items:center;gap:10px}
+.cal-pop .hd .colog{width:34px;height:34px;border-radius:8px}
+.cal-pop .hd b{display:block;font-size:14px}.cal-pop .hd span{font-size:12px;color:var(--t500)}
+.cal-pop .tz{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cal-pop .tz div{padding:9px 10px;border-radius:9px;background:color-mix(in srgb,var(--acc) 7%,var(--field))}
+.cal-pop .tz small{display:block;font-size:11px;color:var(--t500)}.cal-pop .tz b{font-size:15px}
+.cal-pop p{margin:0;font-size:12.5px;line-height:1.5;color:var(--t800)}
+.cal-pop .a{display:flex;gap:8px}.cal-pop .a .pbtn{flex:1}
+.cal-pop .x{position:absolute;right:8px;top:8px;width:28px;height:28px;border-radius:7px;color:var(--t600)}
+
+@keyframes cv-grow{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes cv-pop{0%{opacity:0;transform:scale(.3) rotate(45deg)}70%{opacity:1;transform:scale(1.25) rotate(45deg)}100%{opacity:1;transform:scale(1) rotate(45deg)}}
+@keyframes cv-popr{0%{opacity:0;transform:scale(.3)}70%{opacity:1;transform:scale(1.2)}100%{opacity:1;transform:scale(1)}}
+@keyframes cv-glow{0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent),0 0 14px color-mix(in srgb,var(--acc) 45%,transparent)}
+  50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--acc) 10%,transparent),0 0 24px color-mix(in srgb,var(--acc) 70%,transparent)}}
+@keyframes cv-late{0%,100%{box-shadow:inset 0 0 0 2.5px var(--fn-lost),0 0 0 0 color-mix(in srgb,var(--fn-lost) 45%,transparent)}
+  50%{box-shadow:inset 0 0 0 2.5px var(--fn-lost),0 0 0 6px transparent}}
+@keyframes cv-now{0%,100%{opacity:.55}50%{opacity:1}}
+@keyframes cv-dash{to{background-position:24px 0}}
+@keyframes cv-hand{from{transform:rotate(0deg)}to{transform:rotate(var(--a))}}
+@keyframes cv-sweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.cal-page *{animation:none!important}}
+
 /* ---------- sheets and overlays ------------------------------------------ */
 /* Above the full-screen overlays too: a sheet opened from Design or Settings
    has to land on top of them. */
@@ -5997,6 +6217,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
     <button role="tab" data-view="jobs" aria-selected="true">Applications</button>
     <button role="tab" data-view="docs" aria-selected="false">Documents</button>
     <button role="tab" data-view="funnel" aria-selected="false">Funnel</button>
+    <button role="tab" data-view="cal" aria-selected="false">Calendar</button>
   </div>
   <div class="grow"></div>
   <!-- Only what is true on every screen lives up here -- the AI clients and
@@ -6256,6 +6477,25 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       <aside class="lt-panel" id="lt-panel" aria-label="This letter"></aside>
     </div>
   </section>
+  <section class="view" id="v-cal" hidden>
+    <div class="cal-page" id="cal-page">
+      <div class="phead cal-bar"><div class="fn-head"><h1>Calendar</h1><span id="cal-sub"></span></div>
+        <div class="grow"></div>
+        <div class="cal-nav" id="cal-nav" hidden>
+          <button class="obtn cal-arrow" data-step="-1" aria-label="Previous">&#8249;</button>
+          <b id="cal-title"></b>
+          <button class="obtn cal-arrow" data-step="1" aria-label="Next">&#8250;</button>
+          <button class="obtn" id="cal-today">Today</button>
+        </div>
+        <div class="seg light" id="cal-views" role="tablist" aria-label="View">
+          <button role="tab" data-cv="overview" aria-selected="true">Overview</button>
+          <button role="tab" data-cv="month" aria-selected="false">Month</button>
+          <button role="tab" data-cv="week" aria-selected="false">Week</button>
+        </div>
+        <button class="obtn" id="cal-ics" title="A file your calendar app imports">Export .ics</button></div>
+      <div id="cal-body"></div>
+    </div>
+  </section>
   <section class="view" id="v-funnel" hidden>
     <div class="fn-page" id="fn-page">
       <div class="phead fn-bar"><div class="fn-head"><h1>Funnel</h1><span id="fn-sub"></span></div>
@@ -6478,6 +6718,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
             <p>Reads applications, and works out which one a message is about</p></div>
           <div class="tool"><span class="n">job_alerts</span>
             <p>The same list as Attention in the Applications view, read out loud</p></div>
+          <div class="tool"><span class="n">calendar</span>
+            <p>Interviews and follow-ups ahead, and an .ics file, so it can put them in your calendar</p></div>
           <div class="tool"><span class="n">add_job</span>
             <p>Adds one from a posting you paste, and refuses likely duplicates</p></div>
           <div class="tool"><span class="n">set_company_logo</span>
@@ -6742,7 +6984,8 @@ function interviewMoment(j){
   if(!j||!j.interview_at) return null;
   return wallToInstant(String(j.interview_at).slice(0,16),j.interview_tz||machineTz());
 }
-const tzCity=tz=>String(tz||"").split("/").pop().replace(/_/g," ");
+const TZ_NAMES={Sao_Paulo:"São Paulo",Bogota:"Bogotá",Mexico_City:"Mexico City",Zurich:"Zürich"};
+const tzCity=tz=>{ const k=String(tz||"").split("/").pop(); return TZ_NAMES[k]||k.replace(/_/g," ") };
 function fmtWhen(date,tz,withDay=true){
   const o={timeZone:tz,hour:"2-digit",minute:"2-digit"};
   if(withDay) Object.assign(o,{weekday:"short",day:"numeric",month:"short"});
@@ -6973,7 +7216,8 @@ const isoToday=()=>new Date().toISOString().slice(0,10);
 function setView(v){
   S.view=v;
   const doc=v==="cvs";
-  ["cvs","jobs","docs","funnel","letter"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
+  ["cvs","jobs","docs","funnel","cal","letter"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
+  if(v!=="cal") clearInterval(S.calTick);
   if(doc) paintBackLabel();
   else if(v==="letter") ltBackLabel();
   else $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
@@ -6983,6 +7227,7 @@ function setView(v){
      opened the list. Draw what is known now, fill in the rest when it lands. */
   if(v==="docs"){ S.driftBy=null; drawDocuments(); if(!S.jready) loadJobs(true) }
   if(v==="funnel") loadFunnel();
+  if(v==="cal") openCalendar();
   paintStatus();
 }
 /* Out of the editor, to the application the open document was written for.
@@ -12015,6 +12260,400 @@ window.addEventListener("resize",()=>{
     clearTimeout(sizeTimer); sizeTimer=setTimeout(()=>drawSankey("still",false),140);
   }
 });
+
+/* =========================================================================
+   Calendar
+
+   Interviews, follow-ups and what happened, by date. Nothing here is new data:
+   the interview time and its zone, the follow-up date, and the status history
+   the funnel is drawn from. Days are days where you are (userTz).
+   ========================================================================= */
+S.calView="overview"; S.calAnchor=null; S.calTick=null; S.calPop=null;
+const DEAD_ST=new Set(["accepted","refused","rejected","ghosted","rejected_interviewing","ghosted_interviewing"]);
+const LIVE_ST=new Set(["applied","interviewing","offer"]);
+/* A moment as its day where you are, "2026-09-25". */
+function dayIn(date,tz){
+  const p=new Intl.DateTimeFormat("en-CA",{timeZone:tz||userTz(),year:"numeric",month:"2-digit",day:"2-digit"})
+    .formatToParts(date);
+  const g=k=>p.find(x=>x.type===k).value;
+  return g("year")+"-"+g("month")+"-"+g("day");
+}
+/* The wall-clock time a moment shows in a zone, "2026-09-25T10:00". */
+function wallIn(date,tz){
+  const p=new Intl.DateTimeFormat("en-CA",{timeZone:tz,hourCycle:"h23",year:"numeric",month:"2-digit",day:"2-digit",
+    hour:"2-digit",minute:"2-digit"}).formatToParts(date);
+  const g=k=>p.find(x=>x.type===k).value;
+  return g("year")+"-"+g("month")+"-"+g("day")+"T"+g("hour")+":"+g("minute");
+}
+const hmIn=(date,tz)=>wallIn(date,tz).slice(11);
+const todayKey=()=>dayIn(new Date());
+const keyDate=k=>{ const [y,m,d]=k.split("-").map(Number); return new Date(Date.UTC(y,m-1,d,12)) };
+const addDays=(k,n)=>{ const d=keyDate(k); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10) };
+const dayDiff=(a,b)=>Math.round((keyDate(b)-keyDate(a))/DAY);
+const monday=k=>{ const w=(keyDate(k).getUTCDay()+6)%7; return addDays(k,-w) };
+const fmtKey=(k,o)=>{ try{ return new Intl.DateTimeFormat(uiLocale(),Object.assign({timeZone:"UTC"},o)).format(keyDate(k)) }
+  catch(e){ return k } };
+const otherTz=j=>{ const at=interviewMoment(j); return j.interview_tz&&at&&tzOffset(j.interview_tz,at)!==tzOffset(userTz(),at) };
+const GLOBE='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '+
+  'aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>';
+
+/* Every dated thing, in one list: {kind, day, job, at?, late?}. */
+function calEvents(){
+  const out=[], today=todayKey();
+  (S.jobs||[]).forEach(j=>{
+    const at=interviewMoment(j);
+    if(at) out.push({kind:"iv",day:dayIn(at),at,job:j});
+    if(j.followup_date&&!DEAD_ST.has(j.status)){
+      const d=String(j.followup_date).slice(0,10);
+      out.push({kind:"fu",day:d,job:j,late:d<today});
+    }
+    let seenIv=false;
+    (j.status_history||[]).forEach((h,i)=>{
+      if(!h.at) return;
+      const d=dayIn(new Date(String(h.at).slice(0,19)));
+      const st=h.status;
+      if(st==="applied") out.push({kind:"sent",day:d,job:j});
+      else if(st==="interviewing"&&!seenIv){ seenIv=true; out.push({kind:"rp",day:d,job:j}) }
+      else if(st==="offer") out.push({kind:"of",day:d,job:j});
+      else if(DEAD_ST.has(st)&&st!=="accepted") out.push({kind:"closed",day:d,job:j});
+      else if(st==="accepted") out.push({kind:"of",day:d,job:j});
+    });
+  });
+  return out;
+}
+
+function openCalendar(){
+  if(!S.calAnchor) S.calAnchor=todayKey();
+  const go=()=>{ drawCalendar(true) };
+  if(!S.jready) loadJobs(true).then(go); else go();
+}
+function drawCalendar(animate){
+  const page=$("#cal-page"), v=S.calView;
+  $$("#cal-views button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.cv===v)));
+  $("#cal-nav").hidden=v==="overview";
+  const ev=calEvents(), today=todayKey();
+  const wkEnd=addDays(monday(today),6);
+  const ivs=ev.filter(e=>e.kind==="iv"&&e.day>=today&&e.day<=wkEnd).length;
+  const late=ev.filter(e=>e.kind==="fu"&&e.late).length;
+  $("#cal-sub").textContent=[ivs?t(ivs===1?"1 interview this week":"{n} interviews this week",{n:ivs}):"",
+    late?t(late===1?"1 follow-up overdue":"{n} follow-ups overdue",{n:late}):""].filter(Boolean).join(" · ");
+  clearInterval(S.calTick);
+  if(animate&&!reduceMotion()){ page.classList.remove("cal-in"); void page.offsetWidth; page.classList.add("cal-in");
+    setTimeout(()=>page.classList.remove("cal-in"),3200) }
+  if(v==="overview") drawCalOverview(ev);
+  else if(v==="month") drawCalMonth(ev);
+  else drawCalWeek(ev);
+}
+$$("#cal-views button").forEach(b=>b.onclick=()=>{ S.calView=b.dataset.cv; S.calPop=null; drawCalendar(true) });
+$$("#cal-nav [data-step]").forEach(b=>b.onclick=()=>{
+  const n=+b.dataset.step;
+  if(S.calView==="week") S.calAnchor=addDays(S.calAnchor,7*n);
+  else{ const d=keyDate(S.calAnchor); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth()+n); S.calAnchor=d.toISOString().slice(0,10) }
+  S.calPop=null; drawCalendar(false);
+});
+$("#cal-today").onclick=()=>{ S.calAnchor=todayKey(); S.calPop=null; drawCalendar(false) };
+$("#cal-ics").onclick=()=>window.open("/api/calendar.ics"+tok());
+const openJob=id=>{ S.jfilter={kind:"all",value:""}; setView("jobs"); selectJob(id) };
+
+/* ---- overview ------------------------------------------------------------ */
+function clockSVG(date,tz,label,delay){
+  const [h,m]=hmIn(date,tz).split(":").map(Number);
+  const ha=((h%12)+m/60)*30, ma=m*6;
+  const ticks=Array.from({length:12},(_,k)=>'<line class="tk'+(k%3?"":" big")+'" x1="50" y1="8" x2="50" y2="'+
+    (k%3?11:14)+'" stroke-width="'+(k%3?1.2:2)+'" transform="rotate('+k*30+' 50 50)"/>').join("");
+  return '<div class="cal-clock"><svg width="92" height="92" viewBox="0 0 100 100" aria-hidden="true">'+
+    '<circle class="face" cx="50" cy="50" r="46" stroke-width="2"/>'+ticks+
+    '<line class="cal-hand hh" x1="50" y1="50" x2="50" y2="27" stroke-width="4" stroke-linecap="round" style="--a:'+ha+
+      'deg;animation-delay:'+delay+'s"/>'+
+    '<line class="cal-hand mh" x1="50" y1="50" x2="50" y2="15" stroke-width="2.5" stroke-linecap="round" style="--a:'+ma+
+      'deg;animation-delay:'+(delay+.1)+'s"/><circle class="pin" cx="50" cy="50" r="3.5"/></svg>'+
+    '<b>'+hmIn(date,tz)+'</b><span>'+esc(label)+'</span></div>';
+}
+function drawCalOverview(ev){
+  const now=new Date(), today=todayKey();
+  const next=ev.filter(e=>e.kind==="iv"&&e.at>now).sort((a,b)=>a.at-b.at)[0];
+  let hero;
+  if(next){
+    const j=next.job, mine=userTz(), theirs=j.interview_tz, two=otherTz(j);
+    const words=(String(j.description||"").match(/\S+/g)||[]).length;
+    const diffH=two?Math.round((tzOffset(mine,next.at)-tzOffset(theirs,next.at))/60):0;
+    const cvName=j.cv_path?j.cv_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
+    hero='<section class="cal-hero cal-r"><div>'+
+      '<div class="cal-next"><span class="tag"><i></i>'+t("NEXT UP")+'</span><span>'+t("Interview")+'</span></div>'+
+      '<div class="cal-who">'+companyMark(j)+'<div><b>'+esc(j.company)+'</b><span>'+esc(j.title)+
+        (j.location?' · '+esc(j.location):'')+'</span></div></div>'+
+      '<div class="cal-cd" id="cal-cd"></div>'+
+      '<div class="cal-checks">'+
+        '<span class="cal-check"><i class="'+(cvName?"ok":"no")+'">'+(cvName?"✓":"")+'</i>'+
+          (cvName?t("CV tailored")+' · '+esc(cvName):t("No tailored CV yet"))+'</span>'+
+        '<span class="cal-check"><i class="'+(words?"ok":"no")+'">'+(words?"✓":"")+'</i>'+
+          (words?t("Posting saved"):t("Posting not saved"))+'</span>'+
+        '<span class="cal-check"><i class="'+(j.notes?"ok":"no")+'">'+(j.notes?"✓":"")+'</i>'+
+          (j.notes?t("Notes written"):t("Notes for this round"))+'</span></div>'+
+      '<div class="cal-acts"><button class="obtn dark" data-open-job="'+esc(j.id)+'">'+t("Prepare")+'</button>'+
+        '<button class="obtn" data-ics="'+esc(j.id)+'">'+t("Add to my calendar")+'</button></div></div>'+
+      '<div class="cal-clocks"><div class="row">'+clockSVG(next.at,mine,t("Your time")+" · "+tzCity(mine),.5)+
+        (two?clockSVG(next.at,theirs,t("In {city}",{city:tzCity(theirs)}),.7):'')+'</div>'+
+        (two?'<small>'+esc(diffH>0?t("{city} is {n} h behind you",{city:tzCity(theirs),n:diffH})
+          :t("{city} is {n} h ahead of you",{city:tzCity(theirs),n:-diffH}))+'</small>':'')+'</div></section>';
+  }else{
+    const fu=ev.filter(e=>e.kind==="fu"&&!e.late).sort((a,b)=>a.day.localeCompare(b.day))[0];
+    hero='<section class="cal-hero cal-r"><div class="cal-empty"><div class="cal-next"><span class="tag"><i></i>'+
+      t("NEXT UP")+'</span></div><b>'+t("No interview scheduled")+'</b><p>'+
+      (fu?esc(t("Next: follow up with {co}, {day}.",{co:fu.job.company,day:fmtKey(fu.day,{weekday:"long",day:"numeric",month:"long"})}))
+        :t("When an application gets an interview time, it counts down here, in your time and theirs."))+
+      '</p></div><div></div></section>';
+  }
+  $("#cal-body").innerHTML='<div class="cal-top">'+hero+calMini(ev)+'</div>'+calJourneys(ev);
+  wireCal();
+  if(next){
+    const tick=()=>{
+      const el=$("#cal-cd"); if(!el){ clearInterval(S.calTick); return }
+      const left=Math.max(0,next.at-new Date());
+      const p=n=>String(n).padStart(2,"0");
+      const d=Math.floor(left/864e5), h=Math.floor(left/36e5)%24, m=Math.floor(left/6e4)%60, s=Math.floor(left/1e3)%60;
+      el.innerHTML=(d?'<div><div class="n">'+d+'</div><div class="u">'+t(d===1?"day":"days")+'</div></div>':'')+
+        '<div><div class="n">'+p(h)+'</div><div class="u">'+t("hours")+'</div></div>'+
+        '<div><div class="n">'+p(m)+'</div><div class="u">'+t("min")+'</div></div>'+
+        '<div class="s"><div class="n">'+p(s)+'</div><div class="u">'+t("sec")+'</div></div>'+
+        '<div class="when"><b>'+esc(fmtKey(next.day,{weekday:"long",day:"numeric",month:"long"}))+'</b><br>'+
+        esc(hmIn(next.at,userTz()))+' '+t("your time")+'</div>';
+    };
+    tick(); S.calTick=setInterval(tick,1000);
+  }
+}
+function calMini(ev){
+  const today=todayKey(), first=today.slice(0,8)+"01", start=monday(first);
+  const month=first.slice(0,7);
+  const busy={}, iv=new Set();
+  ev.forEach(e=>{ busy[e.day]=(busy[e.day]||0)+1; if(e.kind==="iv") iv.add(e.day) });
+  let cells="";
+  for(let i=0;i<42;i++){
+    const k=addDays(start,i); if(i>=35&&k.slice(0,7)!==month) break;
+    const inm=k.slice(0,7)===month, n=busy[k]||0, lv=!inm?"":n>=4?" l3":n>=2?" l2":n?" l1":"";
+    cells+='<button class="cal-md'+(inm?"":" out")+lv+(k===today?" today":"")+'" data-day="'+k+'" style="animation-delay:'+
+      (.4+i*.018).toFixed(3)+'s"'+(inm?'':' tabindex="-1"')+' aria-label="'+esc(fmtKey(k,{day:"numeric",month:"long"}))+
+      (iv.has(k)?', '+t("Interview"):'')+'">'+Number(k.slice(8))+(inm&&iv.has(k)?'<i></i>':'')+'</button>';
+  }
+  const dows=Array.from({length:7},(_,i)=>'<span class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"narrow"}))+'</span>').join("");
+  const acc=["var(--bd-inner)","color-mix(in srgb,var(--acc) 22%,var(--field))","color-mix(in srgb,var(--acc) 45%,var(--field))",
+    "color-mix(in srgb,var(--acc) 75%,var(--field))"];
+  return '<section class="cal-card cal-mini cal-r" style="animation-delay:.1s"><div class="cal-ch"><h2>'+
+    esc(fmtKey(first,{month:"long"}))+'</h2><span>'+t("how busy each day was")+'</span></div>'+
+    '<div class="cal-mgrid">'+dows+cells+'</div><div class="cal-legend"><span style="display:flex;align-items:center;gap:4px">'+
+    t("Quiet")+'<span class="ramp">'+acc.map(c=>'<i style="background:'+c+'"></i>').join("")+'</span>'+t("Busy")+
+    '</span><span style="display:flex;align-items:center;gap:6px"><i class="dia"></i>'+t("Interview")+'</span></div></section>';
+}
+/* Every live application as a lane across eight weeks, three of them ahead: how long it has been
+   waiting, when it moved to interviews or an offer, and what is ahead. */
+function calJourneys(ev){
+  const today=todayKey(), start=addDays(monday(today),-35), days=56, end=addDays(start,days-1);
+  const pct=k=>Math.max(0,Math.min(100,(dayDiff(start,k)+.5)/days*100));
+  /* Labels near the right edge go to the left of their mark, so none runs
+     off the card. */
+  const labAt=(p,gap)=>p>80?"right:calc("+(100-p)+"% + "+gap+"px)":"left:calc("+p+"% + "+gap+"px)";
+  const recent=j=>{ const h=(j.status_history||[]).slice(-1)[0]; return h&&dayIn(new Date(String(h.at).slice(0,19)))>=start };
+  const rank=j=>{ const at=interviewMoment(j); if(at&&at>new Date()) return 0;
+    return {offer:1,interviewing:2,applied:3}[j.status]||4 };
+  const jobs=(S.jobs||[]).filter(j=>LIVE_ST.has(j.status)||(DEAD_ST.has(j.status)&&recent(j)))
+    .sort((a,b)=>rank(a)-rank(b)||(interviewMoment(a)||0)-(interviewMoment(b)||0)||
+      String(b.updated_at).localeCompare(String(a.updated_at)));
+  const shown=jobs.slice(0,14);
+  let ticks="";
+  for(let w=0;w<=8;w++){ const k=addDays(start,7*w); if(Math.abs(dayDiff(k,today))<4||dayDiff(start,k)>=days) continue;
+    ticks+='<span class="jr-tick" style="left:'+pct(k)+'%">'+esc(fmtKey(k,{day:"numeric",month:"short"}))+'</span>' }
+  let wk=""; for(let i=5;i<days;i+=7) wk+='<span class="jr-wkend" style="left:'+(i/days*100)+'%;width:'+(2/days*100)+'%"></span>';
+  const lanes=shown.map((j,i)=>{
+    const h=(j.status_history||[]).filter(x=>x.at).map(x=>({st:x.status,day:dayIn(new Date(String(x.at).slice(0,19)))}));
+    const stage=st=>st==="applied"?"wait":st==="interviewing"?"live":(st==="offer"||st==="accepted")?"offer":null;
+    let segs="", marks="";
+    h.forEach((x,n)=>{
+      const sg=stage(x.st); if(!sg) return;
+      const to=n+1<h.length?h[n+1].day:(LIVE_ST.has(j.status)?today:x.day);
+      if(to<start||x.day>end) return;
+      const a=pct(x.day<start?start:x.day), b=pct(to>end?end:to)+(to===today?.5/days*100:0);
+      segs+='<span class="jr-seg '+sg+'" style="left:'+a+'%;width:'+Math.max(.6,b-a)+'%;animation-delay:'+
+        (.5+i*.06+n*.1).toFixed(2)+'s"></span>';
+    });
+    const first=h.find(x=>x.st==="interviewing"); if(first&&first.day>=start) marks+='<span class="jr-dot rp" style="left:'+pct(first.day)+'%"></span>';
+    const of=h.find(x=>x.st==="offer"); if(of&&of.day>=start) marks+='<span class="jr-dot of" style="left:'+pct(of.day)+'%"></span>';
+    const aheadKeys=[];
+    const at=interviewMoment(j);
+    if(at&&at>new Date()&&dayIn(at)<=end){
+      const k=dayIn(at); aheadKeys.push(k);
+      const lab=fmtKey(k,{weekday:"short"})+" "+hmIn(at,userTz())+(otherTz(j)?" · "+hmIn(at,j.interview_tz)+" "+tzCity(j.interview_tz):"");
+      marks+='<span class="jr-iv" style="left:'+pct(k)+'%;animation-delay:'+(1.5+i*.07).toFixed(2)+'s"></span>'+
+        '<span class="jr-lab iv" style="'+labAt(pct(k),14)+';animation-delay:'+(1.7+i*.07).toFixed(2)+'s">'+esc(lab)+'</span>';
+    }
+    if(j.followup_date&&!DEAD_ST.has(j.status)){
+      const k=String(j.followup_date).slice(0,10), late=k<today;
+      if(k>=start&&k<=end&&!aheadKeys.length){
+        if(!late) aheadKeys.push(k);
+        marks+='<span class="jr-ring'+(late?" late":"")+'" style="left:'+pct(k)+'%;animation-delay:'+(1.5+i*.07).toFixed(2)+'s"></span>'+
+          '<span class="jr-lab'+(late?" late":"")+'" style="'+labAt(pct(k),12)+';animation-delay:'+(1.7+i*.07).toFixed(2)+'s">'+
+          esc(late?t("Follow-up overdue"):k===addDays(today,1)?t("Follow up tomorrow"):t("Follow up")+" · "+fmtKey(k,{day:"numeric",month:"short"}))+'</span>';
+      }
+    }
+    const closed=DEAD_ST.has(j.status)&&j.status!=="accepted";
+    if(closed){ const k=h.slice(-1)[0].day; marks+='<span class="jr-x" style="left:'+pct(k)+'%">×</span>'+
+      '<span class="jr-lab x" style="left:calc('+pct(k)+'% + 10px)">'+esc(prettyStatus(j.status))+'</span>' }
+    if(aheadKeys.length&&!closed){ const far=aheadKeys.sort().slice(-1)[0];
+      segs+='<span class="jr-dash" style="left:'+(pct(today)+.5/days*100)+'%;width:'+Math.max(0,pct(far)-pct(today)-.5/days*100)+'%"></span>' }
+    return '<div class="jr-lane'+(closed?" closed":"")+' cal-r" data-open-job="'+esc(j.id)+'" style="animation-delay:'+(.3+i*.05).toFixed(2)+
+      's"><div class="jr-who">'+companyMark(j)+'<span style="min-width:0"><b>'+esc(j.company)+'</b><small>'+esc(j.title)+
+      (j.location?' · '+esc(j.location):'')+'</small></span></div><div class="jr-track">'+segs+marks+'</div></div>';
+  }).join("");
+  return '<section class="cal-card cal-jr cal-r" style="--jr-lx:236px;animation-delay:.2s"><div class="cal-ch" style="align-items:center">'+
+    '<h2 style="font-size:15px">'+t("Journeys")+'</h2><span>'+t("each application from sent to where it is now, and what is ahead")+'</span>'+
+    '<div class="jr-legend"><span><i class="bar" style="background:color-mix(in srgb,var(--fn-wait) 40%,transparent)"></i>'+t("Waiting")+'</span>'+
+    '<span><i class="bar" style="background:color-mix(in srgb,var(--fn-positive) 55%,transparent)"></i>'+t("Interviewing")+'</span>'+
+    '<span><i class="bar" style="background:color-mix(in srgb,var(--fn-offer) 55%,transparent)"></i>'+t("Offer")+'</span>'+
+    '<span><i style="width:9px;height:9px;border-radius:2px;background:var(--fn-positive);transform:rotate(45deg)"></i>'+t("Interview")+'</span>'+
+    '<span><i style="width:10px;height:10px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--fn-wait)"></i>'+t("Follow-up")+'</span></div></div>'+
+    (shown.length?'<div class="jr-axis">'+ticks+'</div><div class="jr-body"><div class="jr-bg">'+wk+
+      '<span class="jr-now" data-label="'+esc(t("Today"))+'" style="left:'+pct(today)+'%"></span></div>'+lanes+'</div>'+
+      (jobs.length>shown.length?'<div class="jr-more">'+esc(t("{n} more in Applications",{n:jobs.length-shown.length}))+'</div>':'')
+      :'<p class="cal-none">'+t("Nothing in play in these seven weeks.")+'</p>')+'</section>';
+}
+
+/* ---- month --------------------------------------------------------------- */
+function calChip(e){
+  const j=e.job, co=esc(j.company);
+  const drag=(e.kind==="iv"||e.kind==="fu")?' draggable="true" data-drag="'+e.kind+':'+esc(j.id)+'"':'';
+  if(e.kind==="iv") return '<button class="cal-chip iv" data-open-job="'+esc(j.id)+'"'+drag+' title="'+esc(interviewLine(j))+
+    '"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
+  if(e.kind==="fu") return '<button class="cal-chip fu'+(e.late?" late":"")+'" data-open-job="'+esc(j.id)+'"'+drag+'><span>'+
+    esc(e.late?t("Overdue"):t("Follow up"))+' · '+co+'</span></button>';
+  if(e.kind==="of") return '<button class="cal-chip of" data-open-job="'+esc(j.id)+'"><span>'+t("Offer")+' · '+co+'</span></button>';
+  if(e.kind==="rp") return '<button class="cal-chip rp" data-open-job="'+esc(j.id)+'"><span>↗ '+co+' · '+t("interviews")+'</span></button>';
+  return "";
+}
+function drawCalMonth(ev){
+  const today=todayKey(), first=S.calAnchor.slice(0,8)+"01", month=first.slice(0,7), start=monday(first);
+  $("#cal-title").textContent=fmtKey(first,{month:"long",year:"numeric"});
+  const by={}; ev.forEach(e=>(by[e.day]=by[e.day]||[]).push(e));
+  const order={iv:0,fu:1,of:2,rp:3};
+  let cells="";
+  const weeks=dayDiff(start,addDays(first.slice(0,7)+"-28",4))>=35?6:5;
+  for(let i=0;i<weeks*7;i++){
+    const k=addDays(start,i), list=(by[k]||[]), inm=k.slice(0,7)===month;
+    const chips=list.filter(e=>order[e.kind]!=null).sort((a,b)=>order[a.kind]-order[b.kind]||(a.at||0)-(b.at||0));
+    const sent=list.filter(e=>e.kind==="sent").length, closed=list.filter(e=>e.kind==="closed").length;
+    const dnum=Number(k.slice(8));
+    cells+='<div class="cal-cell'+(inm?"":" out")+(((i%7)>=5)?" wkend":"")+(k===today?" today":"")+'" data-drop="'+k+'">'+
+      '<div class="d"><span>'+dnum+(dnum===1?" "+esc(fmtKey(k,{month:"short"})):"")+'</span></div>'+
+      chips.slice(0,3).map(calChip).join("")+(chips.length>3?'<small style="font-size:11px;color:var(--t500)">+'+(chips.length-3)+'</small>':'')+
+      ((sent||closed)?'<div class="act">'+(sent?'<span><i style="background:var(--fn-wait)"></i>'+esc(t("{n} sent",{n:sent}))+'</span>':'')+
+        (closed?'<span><i style="background:var(--bd-field)"></i>'+esc(t("{n} closed",{n:closed}))+'</span>':'')+'</div>':'')+'</div>';
+  }
+  const dows=Array.from({length:7},(_,i)=>'<div class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"short"}))+'</div>').join("");
+  $("#cal-body").innerHTML='<div class="cal-month"><section class="cal-card cal-grid cal-r" style="grid-template-rows:auto repeat('+
+    weeks+',minmax(112px,1fr))">'+dows+cells+'</section>'+calComing(ev)+'</div>';
+  wireCal(); wireDrag();
+}
+function calComing(ev){
+  const today=todayKey(), end=addDays(today,7), now=new Date();
+  const late=ev.filter(e=>e.kind==="fu"&&e.late).sort((a,b)=>a.day.localeCompare(b.day));
+  const up=ev.filter(e=>(e.kind==="iv"&&e.at>=now&&e.day<=end)||(e.kind==="fu"&&!e.late&&e.day<=end)||
+      (e.kind==="rp"&&e.day===today)||(e.kind==="of"&&e.day===today))
+    .sort((a,b)=>a.day.localeCompare(b.day)||(a.at||0)-(b.at||0));
+  const col={iv:"var(--fn-positive)",fu:"var(--fn-wait)",rp:"var(--fn-offer)",of:"var(--fn-offer)"};
+  const when=e=>(e.day===today?t("Today")+" · ":"")+fmtKey(e.day,{weekday:"short",day:"numeric"})+
+    (e.kind==="iv"?" · "+hmIn(e.at,userTz())+(otherTz(e.job)?" "+t("your time"):""):"");
+  const what=e=>e.kind==="iv"?t("Interview")+" · "+e.job.company:e.kind==="fu"?t("Follow up with {co}",{co:e.job.company})
+    :e.kind==="rp"?t("{co} moved to interviews",{co:e.job.company}):t("Offer")+" · "+e.job.company;
+  return '<section class="cal-card cal-side cal-r" style="animation-delay:.1s"><div class="cal-ch"><h2>'+t("Coming up")+
+    '</h2><span>'+t("next 7 days")+'</span></div>'+
+    (late.length?'<div class="cal-late"><b>'+esc(t(late.length===1?"1 follow-up overdue":"{n} follow-ups overdue",{n:late.length}))+'</b> · '+
+      late.slice(0,4).map(e=>esc(e.job.company)+" ("+esc(fmtKey(e.day,{day:"numeric",month:"short"}))+")").join(", ")+'</div>':'')+
+    (up.length?up.map(e=>'<button class="cal-item" data-open-job="'+esc(e.job.id)+'"><span class="bar" style="background:'+col[e.kind]+'"></span>'+
+      '<span class="tx"><small>'+esc(when(e))+'</small><b>'+esc(what(e))+'</b><span>'+esc(e.job.title)+'</span>'+
+      (e.kind==="iv"&&otherTz(e.job)?'<em>'+GLOBE+esc(hmIn(e.at,e.job.interview_tz)+" "+t("in")+" "+tzCity(e.job.interview_tz))+'</em>':'')+
+      '</span></button>').join(""):'<p class="cal-none">'+t("Nothing in the next seven days.")+'</p>')+'</section>';
+}
+/* Drag an interview or a follow-up to another day. An interview keeps its
+   hour where you are, and is written back in the zone it was given in. */
+function wireDrag(){
+  let what=null;
+  $$("#cal-body [data-drag]").forEach(el=>el.ondragstart=e=>{ what=el.dataset.drag; e.dataTransfer.setData("text/plain",what);
+    e.dataTransfer.effectAllowed="move" });
+  $$("#cal-body [data-drop]").forEach(c=>{
+    c.ondragover=e=>{ if(what){ e.preventDefault(); c.classList.add("drop") } };
+    c.ondragleave=()=>c.classList.remove("drop");
+    c.ondrop=async e=>{
+      e.preventDefault(); c.classList.remove("drop");
+      const [kind,id]=(what||"").split(":"); what=null;
+      const j=(S.jobs||[]).find(x=>x.id===id), day=c.dataset.drop; if(!j) return;
+      if(kind==="fu") await saveJob(id,{followup_date:day});
+      else{
+        const at=interviewMoment(j), hm=hmIn(at,userTz());
+        const moved=wallToInstant(day+"T"+hm,userTz());
+        await saveJob(id,{interview_at:wallIn(moved,j.interview_tz||machineTz())+":00"});
+      }
+      toast(t("Moved to {day}",{day:fmtKey(day,{weekday:"long",day:"numeric",month:"long"})}));
+      drawCalendar(false);
+    };
+  });
+}
+
+/* ---- week ---------------------------------------------------------------- */
+function drawCalWeek(ev){
+  const today=todayKey(), start=monday(S.calAnchor), end=addDays(start,6);
+  $("#cal-title").textContent=fmtKey(start,{day:"numeric",month:"short"})+" – "+fmtKey(end,{day:"numeric",month:"short",year:"numeric"});
+  const days=Array.from({length:7},(_,i)=>addDays(start,i));
+  const ivs=ev.filter(e=>e.kind==="iv"&&e.day>=start&&e.day<=end);
+  const fus=ev.filter(e=>e.kind==="fu"&&e.day>=start&&e.day<=end);
+  const hrs=ivs.map(e=>+hmIn(e.at,userTz()).slice(0,2));
+  const h0=Math.min(9,...hrs), h1=Math.max(19,...hrs.map(h=>h+1)), HH=56;
+  S.calH0=h0;
+  const head='<div class="cal-wh"><div></div>'+days.map(k=>'<div'+(k===today?' class="today"':'')+'><small>'+
+    esc(fmtKey(k,{weekday:"short"}))+'</small><b>'+Number(k.slice(8))+'</b></div>').join("")+'</div>';
+  const allday='<div class="cal-wa"><div>'+t("Follow-ups")+'</div>'+days.map(k=>'<div data-drop="'+k+'">'+
+    fus.filter(e=>e.day===k).map(calChip).join("")+'</div>').join("")+'</div>';
+  const hours=Array.from({length:h1-h0},(_,i)=>h0+i);
+  const blocks=ivs.map(e=>{
+    const [h,m]=hmIn(e.at,userTz()).split(":").map(Number), col=days.indexOf(e.day);
+    const top=(h-h0+m/60)*HH+2;
+    return '<button class="cal-blk'+(S.calPop===e.job.id?" on":"")+'" data-pop="'+esc(e.job.id)+'" style="left:calc('+col+
+      ' * (100% / 7) + 4px);width:calc(100% / 7 - 8px);top:'+top+'px;height:'+(HH-4)+'px"><b>'+hmIn(e.at,userTz())+' '+
+      esc(e.job.company)+'</b><span>'+esc(e.job.title)+'</span>'+(otherTz(e.job)?'<em>'+GLOBE+esc(hmIn(e.at,e.job.interview_tz)+
+      " "+t("in")+" "+tzCity(e.job.interview_tz))+'</em>':'')+'</button>';
+  }).join("");
+  let nowl="";
+  const ni=days.indexOf(today);
+  if(ni>=0){ const [h,m]=hmIn(new Date(),userTz()).split(":").map(Number);
+    if(h>=h0&&h<h1) nowl='<span class="cal-nowline" style="left:calc('+ni+' * (100% / 7));width:calc(100% / 7);top:'+((h-h0+m/60)*HH)+'px"></span>' }
+  const grid='<div class="cal-wg"><div>'+hours.map(h=>'<div class="cal-hr">'+String(h).padStart(2,"0")+':00</div>').join("")+
+    '</div><div class="cal-wcols">'+hours.map(()=>'<div class="ln"></div>').join("")+
+    days.map((_,i)=>'<span class="col" style="left:calc('+i+' * (100% / 7))"></span>').join("")+blocks+nowl+'</div></div>';
+  $("#cal-body").innerHTML='<section class="cal-card cal-week cal-r">'+head+allday+grid+calPopHTML(ivs)+'</section>';
+  wireCal(); wireDrag();
+  $$("#cal-body [data-pop]").forEach(b=>b.onclick=()=>{ S.calPop=S.calPop===b.dataset.pop?null:b.dataset.pop; drawCalWeek(calEvents()) });
+  const x=$("#cal-pop-x"); if(x) x.onclick=()=>{ S.calPop=null; drawCalWeek(calEvents()) };
+}
+function calPopHTML(ivs){
+  const e=ivs.find(x=>x.job.id===S.calPop); if(!e) return "";
+  const j=e.job, two=otherTz(j);
+  const col=((dayDiff(monday(e.day),e.day))+7)%7, [h,m]=hmIn(e.at,userTz()).split(":").map(Number);
+  const top=Math.max(8,Math.min(360,110+(h-S.calH0+m/60)*56-40));
+  const side=col>=4?"right:calc("+(7-col)+" * ((100% - 64px) / 7) + 12px)":"left:calc(64px + "+(col+1)+" * ((100% - 64px) / 7) + 12px)";
+  return '<div class="cal-pop" style="'+side+';top:'+top+'px" role="dialog" aria-label="'+esc(t("Interview")+" · "+j.company)+'">'+
+    '<button class="x" id="cal-pop-x" aria-label="'+esc(t("Close"))+'">✕</button>'+
+    '<div class="hd">'+companyMark(j)+'<div><b>'+esc(t("Interview")+" · "+j.company)+'</b><span>'+esc(j.title)+
+      (j.location?" · "+esc(j.location):"")+'</span></div></div>'+
+    '<div class="tz"><div><small>'+t("Your time")+'</small><b>'+esc(fmtKey(e.day,{weekday:"short",day:"numeric"})+" · "+hmIn(e.at,userTz()))+'</b></div>'+
+      (two?'<div><small>'+esc(t("In {city}",{city:tzCity(j.interview_tz)}))+'</small><b>'+esc(hmIn(e.at,j.interview_tz))+'</b></div>'
+        :'<div><small>'+t("Status")+'</small><b>'+esc(prettyStatus(j.status))+'</b></div>')+'</div>'+
+    (j.notes?'<p>'+esc(String(j.notes).slice(0,220))+'</p>':'')+
+    '<div class="a"><button class="pbtn" data-open-job="'+esc(j.id)+'">'+t("Open application")+'</button>'+
+      '<button class="obtn" data-ics="'+esc(j.id)+'">'+t("Add to my calendar")+'</button></div></div>';
+}
+function wireCal(){
+  $$("#cal-body [data-open-job]").forEach(el=>el.onclick=ev=>{ if(ev.target.closest("[data-pop]")) return; openJob(el.dataset.openJob) });
+  $$("#cal-body [data-ics]").forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); window.open("/api/calendar.ics?id="+encodeURIComponent(el.dataset.ics)+tok()) });
+  $$("#cal-body .cal-md[data-day]").forEach(el=>el.onclick=()=>{ if(el.classList.contains("out")) return;
+    S.calView="month"; S.calAnchor=el.dataset.day; drawCalendar(false) });
+}
 
 /* =========================================================================
    New document

@@ -509,6 +509,56 @@ def job_alerts() -> dict:
 
 
 @tool
+def calendar(days_ahead: int = 14, ics: bool = False) -> dict:
+    """The user's calendar in CV Studio: interviews and follow-ups ahead.
+
+    Each interview has its wall-clock time as the invitation gave it and its
+    zone (`interview_tz`, empty when it is the user's own), and `utc`, the
+    moment itself: use that when creating an event in a calendar you are
+    connected to, so it lands at the right hour wherever the user is.
+    Follow-ups are dates, and `overdue` ones are listed too.
+
+    With `ics=True` the answer also carries `ics`, the same events as an
+    iCalendar file, for a client that can import one. This app writes to no
+    calendar itself: putting these in the user's calendar is yours to do,
+    with their say-so.
+    """
+    import datetime as dt
+    days_ahead = max(1, min(int(days_ahead or 14), 90))
+    now = dt.datetime.now().astimezone()
+    horizon = now + dt.timedelta(days=days_ahead)
+    today = now.date().isoformat()
+    interviews, followups = [], []
+    for job in studio.jobstore.list_jobs(_ws()):
+        brief = {"job_id": job["id"], "company": job["company"], "title": job["title"],
+                 "status": job["status"]}
+        if job.get("interview_at"):
+            local = studio.jobstore.interview_local(job["interview_at"], job.get("interview_tz"))
+            try:
+                at = dt.datetime.fromisoformat(str(local)[:19]).astimezone()
+            except ValueError:
+                at = None
+            if at and now - dt.timedelta(hours=2) <= at <= horizon:
+                interviews.append(brief | {
+                    "interview_at": job["interview_at"], "interview_tz": job.get("interview_tz"),
+                    "local": at.isoformat(timespec="minutes"),
+                    "utc": at.astimezone(dt.timezone.utc).isoformat(timespec="minutes")})
+        if job.get("followup_date") and job["status"] not in studio.jobstore.TERMINAL:
+            day = str(job["followup_date"])[:10]
+            if day <= horizon.date().isoformat():
+                followups.append(brief | {"date": day, "overdue": day < today})
+    interviews.sort(key=lambda e: e["utc"])
+    followups.sort(key=lambda e: e["date"])
+    out = {"days_ahead": days_ahead, "interviews": interviews, "followups": followups,
+           "summary": (f"{len(interviews)} interview(s) and {len(followups)} follow-up(s) in the next "
+                       f"{days_ahead} days" + (f", {sum(f['overdue'] for f in followups)} overdue"
+                                               if any(f["overdue"] for f in followups) else ""))}
+    if ics:
+        out["ics"] = studio.jobstore.ics(_ws())
+    return out
+
+
+@tool
 def set_job_status(job_id: str, status: str, append_note: str | None = None) -> dict:
     """Move one application to a new status. Confirm with the user first.
 

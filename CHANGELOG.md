@@ -10,6 +10,28 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **A Calendar tab.** Its overview opens on your next interview: who and
+  which role, a live countdown to the second, two clocks (your time and
+  theirs, with how far apart they are), what is ready for it (tailored CV,
+  saved posting, notes), and buttons to prepare or add it to your calendar.
+  Beside it, the month tinted by how busy each day was, with interview days
+  marked. Below, **Journeys**: every application still in play as a lane
+  across eight weeks, blue while you wait, ochre once interviewing, green at
+  an offer, with a Today line; ahead of it, interviews glow with both times
+  and follow-ups sit as rings, red and pulsing when overdue.
+- **Month and Week views.** Month shows interviews, follow-ups, replies and
+  offers on their days, with a quiet count of what was sent and closed, and
+  Coming up for the next seven days, overdue first. Drag an interview or a
+  follow-up to another day to move it. Week puts interviews at your hour,
+  the other zone's time inside, and opens a card with both times and your
+  notes.
+- **Export .ics** puts interviews (at the right moment, whatever the zone)
+  and follow-ups into any calendar app; "Add to my calendar" does one. The
+  app itself still makes no network calls.
+- **AI clients get `calendar`**: interviews and follow-ups ahead, each
+  interview with its moment in UTC, and the .ics on request, so a client with
+  a calendar connector can put them in your calendar.
+
 - **Languages are opt-in.** Settings → Language & region → CVs in more than
   one language. Off, the app never mentions languages: no tabs, flags,
   filters or language questions when you tailor. In their place, one setting

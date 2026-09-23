@@ -538,6 +538,59 @@ def funnel(workspace: Path, since: str | None = None) -> dict:
     }
 
 
+def ics(workspace: Path, job_id: str | None = None) -> str:
+    """Interviews and follow-ups as an iCalendar file, for any calendar app.
+
+    Interviews carry their moment in UTC, worked out from the zone the
+    invitation gave, so a calendar anywhere puts them at the right hour.
+    Follow-ups are all-day. Nothing is sent anywhere: this is a file the
+    person imports, or opens for a single interview.
+    """
+    import datetime as dt
+
+    def esc(v: str) -> str:
+        return (str(v or "").replace("\\", "\\\\").replace(";", "\\;")
+                .replace(",", "\\,").replace("\n", "\\n"))
+
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//CV Studio//Calendar//EN",
+           "CALSCALE:GREGORIAN", "X-WR-CALNAME:CV Studio"]
+    for job in list_jobs(workspace):
+        if job_id and job["id"] != job_id:
+            continue
+        what = f"{job['company']} · {job['title']}"
+        where = job.get("location") or ""
+        if job.get("interview_at"):
+            try:
+                wall = dt.datetime.fromisoformat(str(job["interview_at"])[:19])
+                if job.get("interview_tz"):
+                    from zoneinfo import ZoneInfo
+                    at = wall.replace(tzinfo=ZoneInfo(job["interview_tz"]))
+                else:
+                    at = wall.astimezone()
+                start = at.astimezone(dt.timezone.utc)
+                out += ["BEGIN:VEVENT", f"UID:{job['id']}-interview@cv-studio",
+                        f"DTSTAMP:{stamp}", f"DTSTART:{start.strftime('%Y%m%dT%H%M%SZ')}",
+                        f"DTEND:{(start + dt.timedelta(hours=1)).strftime('%Y%m%dT%H%M%SZ')}",
+                        f"SUMMARY:{esc('Interview · ' + job['company'])}",
+                        f"DESCRIPTION:{esc(what + (chr(10) + job['notes'] if job.get('notes') else ''))}",
+                        f"LOCATION:{esc(where)}", "END:VEVENT"]
+            except (ValueError, KeyError, Exception):
+                pass
+        if job.get("followup_date") and job["status"] not in TERMINAL:
+            try:
+                day = dt.date.fromisoformat(str(job["followup_date"])[:10])
+                out += ["BEGIN:VEVENT", f"UID:{job['id']}-followup@cv-studio",
+                        f"DTSTAMP:{stamp}", f"DTSTART;VALUE=DATE:{day.strftime('%Y%m%d')}",
+                        f"DTEND;VALUE=DATE:{(day + dt.timedelta(days=1)).strftime('%Y%m%d')}",
+                        f"SUMMARY:{esc('Follow up · ' + job['company'])}",
+                        f"DESCRIPTION:{esc(what)}", "END:VEVENT"]
+            except ValueError:
+                pass
+    out.append("END:VCALENDAR")
+    return "\r\n".join(out) + "\r\n"
+
+
 def export(workspace: Path, fmt: str = "json") -> str:
     """Everything back out as text, so the database is never a lock-in."""
     rows = list_jobs(workspace)
