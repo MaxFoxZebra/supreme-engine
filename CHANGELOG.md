@@ -8,6 +8,33 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **A CV in more than one language.** On Documents, **+ Add a language** on
+  the base CV makes a copy in any of the 22 languages RenderCV prints, saved
+  beside it (`my-cv.fr.yaml`) and linked to it. The copy already has its
+  dates, month names and common section titles in the new language (a French
+  one says "aujourd'hui" rather than "présent"), and your name, contact
+  details, links, company names and design are left as they are. The text
+  stays in the original language until you, or your AI client, translate it:
+  the app shows the sentence to ask your client, ready to copy. Nothing in
+  the app starts an AI client; you ask it, in Claude Desktop, ChatGPT,
+  Hermes or Mistral Vibe.
+- **Translations say what they are missing.** When the English CV changes,
+  its French version shows what changed and not yet carried over, English
+  then and now beside the French, in the editor and on its tab on Documents.
+  **Mark as done** once it is up to date. Nothing is overwritten for you.
+- **One design for every language.** A theme, margin or font change on the
+  source reaches its translations, so they print alike. **Design** on a
+  translation opens the source's.
+- **Applications have a language**, read from the posting when it is added
+  and changeable on the application. **Tailor a CV** copies the base CV in
+  that language, and offers to add the language first when there is none.
+- **Switch languages in the editor** from the bar at the top, and filter
+  Documents by language once there is more than one.
+- AI clients get `add_language`, `translation_status` and
+  `mark_translation_current`, and `add_job` takes the posting's language.
+
 ## 0.15.0
 
 - **Design is a screen, and it keeps the page in view.** It opens under the

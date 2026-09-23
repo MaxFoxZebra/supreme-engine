@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   cv_path          TEXT,
   letter_path      TEXT,
   logo             TEXT,
+  language         TEXT,
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL
 );
@@ -120,6 +121,7 @@ FIELDS = [
     "score", "status", "notes", "followup_date", "interview_at",
     "contact_email", "last_contact_at", "salary_expected",
     "salary_offered", "salary_currency", "cv_path", "letter_path", "logo",
+    "language",
 ]
 
 # How the three alert rules are tuned. Here rather than buried in alerts() so
@@ -177,7 +179,8 @@ def connect(workspace: Path) -> sqlite3.Connection:
     have = {r["name"] for r in con.execute("PRAGMA table_info(jobs)")}
     for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT"),
                       ("logo", "TEXT"), ("interview_at", "TEXT"),
-                      ("contact_email", "TEXT"), ("last_contact_at", "TEXT")):
+                      ("contact_email", "TEXT"), ("last_contact_at", "TEXT"),
+                      ("language", "TEXT")):
         if col not in have:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
     con.commit()
@@ -239,6 +242,16 @@ def add_job(workspace: Path, data: dict) -> dict:
         job[f] = data.get(f)
     job["status"] = status
     job["salary_currency"] = data.get("salary_currency") or "EUR"
+    # The language the posting is written in decides which base CV a
+    # tailored copy starts from, so it is read off the posting when nobody
+    # said. A wrong guess is one click to correct on the application.
+    if not job.get("language"):
+        try:
+            import languages
+            job["language"] = languages.detect(
+                " ".join(str(data.get(k) or "") for k in ("title", "description")))
+        except Exception:
+            job["language"] = None
 
     cols = ", ".join(job)
     con = connect(workspace)

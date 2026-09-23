@@ -95,7 +95,8 @@ if __name__ == "__main__":
     tools = {t["name"]: t for t in r["result"]["tools"]}
     documents = {"list_cvs", "read_cv", "write_cv", "edit_cv_fields",
                  "create_cv", "render_cv", "ats_check", "design_options",
-                 "workspace_info"}
+                 "workspace_info", "add_language", "translation_status",
+                 "mark_translation_current"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts",
                     "set_job_status", "update_job_tracking", "add_job",
                     "set_company_logo"}

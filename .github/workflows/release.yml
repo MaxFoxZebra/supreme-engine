@@ -191,6 +191,7 @@ jobs:
             --hidden-import mcp_server \
             --hidden-import ats \
             --hidden-import importer \
+            --hidden-import languages \
             --paths . \
             server_main.py
 

@@ -65,6 +65,7 @@ except ImportError:  # clicking the page is a bonus, not a requirement
 
 import ats  # noqa: E402
 import importer  # noqa: E402
+import languages  # noqa: E402
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -1239,6 +1240,195 @@ def base_diff(path: Path) -> dict:
     return out
 
 
+# --------------------------------------------------------------------------
+# Languages
+#
+# A CV's language is RenderCV's `locale.language`. A translation is a second
+# document, saved beside its source as <stem>.<code>.yaml and linked to it in
+# the sidecar with a copy of what the source said when it was translated. That
+# copy is what lets the translation say what it is missing when the source
+# moves on: the source now against the source then, never a guess about the
+# translated text itself. CV Studio writes the scaffold -- the locale, the
+# section titles, everything untouched that should stay untouched -- and the
+# prose is translated by the user or by their AI client, through MCP.
+# --------------------------------------------------------------------------
+
+
+def translation_link(path: Path) -> dict | None:
+    """What this document is a translation of, as recorded, or None."""
+    t = ((_edits_read()["docs"].get(rel(path)) or {}).get("translation")) or None
+    return t if t and t.get("of") else None
+
+
+def translations_of(path: Path) -> list[dict]:
+    """Every translation of this document, as [{path, lang}]."""
+    me = rel(path)
+    out = []
+    for p, doc in _edits_read()["docs"].items():
+        t = doc.get("translation") or {}
+        if t.get("of") == me and safe_path(p).exists():
+            out.append({"path": p, "lang": t.get("lang")})
+    return sorted(out, key=lambda t: t["path"])
+
+
+def language_family(path: Path) -> dict:
+    """This document, its source if it is a translation, and the source's other
+    translations: the set a language switch moves between."""
+    link = translation_link(path)
+    root = safe_path(link["of"]) if link else path
+    members = [{"path": rel(root), "lang": _doc_lang(root), "source": True}]
+    members += [{**t, "source": False} for t in translations_of(root)]
+    return {"source": rel(root), "members": members if len(members) > 1 or link
+            else members}
+
+
+def _doc_lang(path: Path) -> str:
+    try:
+        return languages.file_language(path.read_text(encoding="utf-8"))
+    except OSError:
+        return "en"
+
+
+def add_language(path: Path, code: str) -> dict:
+    """Write the translation scaffold of `path` in language `code`.
+
+    The copy is the source with its locale set, its section titles translated
+    where CV Studio knows them, and nothing else changed: names, contact
+    details, links, dates, company names and the design stay exactly as they
+    are. The text is left in the source language for the user, or their AI
+    client, to translate. Returns what was written and what is left to do.
+    """
+    if code not in languages.LANGS:
+        raise ValueError(f"CV Studio cannot print a CV in {code!r}.")
+    link = translation_link(path)
+    if link:  # translate from the source, not from another translation
+        path = safe_path(link["of"])
+    src_lang = _doc_lang(path)
+    if code == src_lang:
+        raise ValueError(f"{rel(path)} is already in {languages.LANGS[code][2]}.")
+    for t in translations_of(path):
+        if t["lang"] == code:
+            raise ValueError(f"{rel(path)} already has a {languages.LANGS[code][2]} "
+                             f"version: {t['path']}.")
+    stem = re.sub(r"\.[a-z]{2}$", "", path.stem)
+    dest = path.with_name(f"{stem}.{code}{path.suffix}")
+    if dest.exists():
+        raise ValueError(f"{rel(dest)} already exists.")
+    data = yaml_rt.load(path.read_text(encoding="utf-8"))
+    cv = data.get("cv") or {}
+    renamed, kept = {}, []
+    secs = cv.get("sections")
+    if isinstance(secs, dict):
+        fresh = CommentedMap()
+        for key, val in secs.items():
+            title = languages.section_title(str(key), code)
+            if title and title != key:
+                renamed[str(key)] = title
+                fresh[title] = val
+            else:
+                if not title:
+                    kept.append(str(key))
+                fresh[key] = val
+        cv["sections"] = fresh
+    loc = CommentedMap()
+    loc["language"] = languages.LANGS[code][0]
+    if code in languages.PRESENT:
+        loc["present"] = languages.PRESENT[code]
+    data["locale"] = loc
+    import io
+    buf = io.StringIO()
+    yaml_rt.dump(data, buf)
+    dest.write_text(buf.getvalue(), encoding="utf-8")
+    source_cv = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))).get("cv")
+    record = _edits_read()
+    record["docs"].setdefault(rel(dest), {})["translation"] = {
+        "of": rel(path), "lang": code, "from_lang": src_lang, "at": time.time(),
+        "keys": renamed, "synced": source_cv, "synced_at": time.time()}
+    _edits_write(record)
+    return {"path": rel(dest), "of": rel(path), "lang": code, "from_lang": src_lang,
+            "sections_titled": renamed, "sections_to_title": kept}
+
+
+def _map_to_translation(path_: list, keys: dict) -> list:
+    """A field's path in the source, as the same field's path in a
+    translation whose section keys were renamed."""
+    if len(path_) > 2 and path_[:2] == ["cv", "sections"]:
+        return path_[:2] + [keys.get(str(path_[2]), path_[2])] + path_[3:]
+    return path_
+
+
+def translation_drift(path: Path) -> dict | None:
+    """What the source changed since this translation was last brought up to
+    date, field by field, with what the translation says there now."""
+    link = translation_link(path)
+    if not link:
+        return None
+    out = {"of": link["of"], "lang": link.get("lang"), "from_lang": link.get("from_lang"),
+           "synced_at": link.get("synced_at"), "missing": False, "changes": []}
+    try:
+        src = to_plain(yaml_rt.load(safe_path(link["of"]).read_text(encoding="utf-8"))) or {}
+        mine = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))) or {}
+    except (OSError, ValueError):
+        out["missing"] = True
+        return out
+    except Exception:
+        return out
+    then = {"cv": link.get("synced")}
+    keys = link.get("keys") or {}
+    for f in changed_fields(then.get("cv"), src.get("cv"), ["cv"]):
+        before, after = get_at(then, f), get_at(src, f)
+        here = _map_to_translation(f, keys)
+        out["changes"].append({
+            "key": field_key(here), "source_key": field_key(f),
+            "where": _where_changed(f, src, then),
+            "kind": "added" if before is None else "removed" if after is None
+                    else "changed",
+            "before": _brief(before), "after": _brief(after),
+            "translation": _brief(get_at(mine, here))})
+    return out
+
+
+def mark_translation_current(path: Path) -> dict:
+    """Say this translation now covers everything its source says."""
+    link = translation_link(path)
+    if not link:
+        raise ValueError(f"{rel(path)} is not a translation.")
+    src = to_plain(yaml_rt.load(safe_path(link["of"]).read_text(encoding="utf-8"))) or {}
+    record = _edits_read()
+    t = record["docs"].setdefault(rel(path), {}).setdefault("translation", link)
+    t["synced"] = src.get("cv")
+    t["synced_at"] = time.time()
+    _edits_write(record)
+    return {"ok": True, "path": rel(path), "of": link["of"]}
+
+
+def sync_design(path: Path) -> list[str]:
+    """Give every translation of `path` the same design block, so the versions
+    of one CV print alike. The locale is not design and is left alone."""
+    touched = []
+    trans = translations_of(path)
+    if not trans:
+        return touched
+    import copy
+    import io
+    src = yaml_rt.load(path.read_text(encoding="utf-8"))
+    design = src.get("design")
+    for t in trans:
+        tp = safe_path(t["path"])
+        try:
+            data = yaml_rt.load(tp.read_text(encoding="utf-8"))
+            if to_plain(data.get("design")) == to_plain(design):
+                continue
+            data["design"] = copy.deepcopy(design)
+            buf = io.StringIO()
+            yaml_rt.dump(data, buf)
+            tp.write_text(buf.getvalue(), encoding="utf-8")
+            touched.append(t["path"])
+        except Exception:
+            continue
+    return touched
+
+
 def edits_stamp() -> float | None:
     """When the provenance file last changed, so the poll can spot a new mark."""
     try:
@@ -1728,9 +1918,16 @@ def list_documents() -> list[dict]:
         if not is_cv_yaml(f):
             continue
         path = rel(f)
+        try:
+            lang = languages.file_language(f.read_text(encoding="utf-8"))
+        except OSError:
+            lang = "en"
         out.append({"path": path, "label": label, "group": group,
                     "mtime": f.stat().st_mtime, "ai": last_ai(path),
-                    "base": (docs.get(path, {}).get("base") or {}).get("path")})
+                    "base": (docs.get(path, {}).get("base") or {}).get("path"),
+                    "lang": lang,
+                    "translation_of": (docs.get(path, {}).get("translation")
+                                       or {}).get("of")})
     return out
 
 
@@ -1827,6 +2024,8 @@ def write_doc(path: Path, text: str, tool: str = "write") -> dict:
         after = to_plain(yaml_rt.load(text))
     except Exception:
         return {"changed": []}
+    if (before or {}).get("design") != (after or {}).get("design"):
+        sync_design(path)
     return {"changed": record_edits(path, before, after, tool)}
 
 
@@ -1846,7 +2045,11 @@ def load_doc(path: Path) -> dict:
             "lines": line_map(data, text) if data else {},
             # Who last wrote each field, and how it differs from the CV it was
             # tailored from. Never written back into the file.
-            "prov": provenance(path, plain)}
+            "prov": provenance(path, plain),
+            # Which language this is in, the other languages of the same CV,
+            # and what its source changed since it was translated.
+            "family": language_family(path),
+            "drift": translation_drift(path)}
 
 
 def line_map(doc, text: str) -> dict:
@@ -2020,6 +2223,8 @@ def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
     yaml_rt.dump(data, buf)
     path.write_text(buf.getvalue(), encoding="utf-8")
     after = to_plain(data)
+    if (before or {}).get("design") != (after or {}).get("design"):
+        sync_design(path)
     return {"applied": applied, "missed": missed,
             "changed": record_edits(path, before, after, tool)}
 
@@ -2474,6 +2679,16 @@ def openapi_spec() -> dict:
                                      "yaml": {"type": "string"},
                                      "patches": {"type": "array", "items": {}}}),
                 "responses": ok}},
+            "/api/language/add": {"post": {"summary":
+                "Write a translation scaffold of a CV in another language",
+                "requestBody": body({"path": {"type": "string"},
+                                     "language": {"type": "string",
+                                                  "description": "code, e.g. fr"}}),
+                "responses": ok}},
+            "/api/language/done": {"post": {"summary":
+                "Mark a translation as covering everything its source says",
+                "requestBody": body({"path": {"type": "string"}}),
+                "responses": ok}},
             "/api/import": {"post": {"summary":
                 "Read a CV from a PDF or a LinkedIn data archive, without writing anything",
                 "requestBody": body({"name": {"type": "string"},
@@ -2761,6 +2976,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/state":
                 return self._json({
                     "documents": list_documents(), "base": base_cv(),
+                    "languages": languages.catalogue(),
                     "themes": available_themes(),
                     "page_sizes": PAGE_SIZES,
                     "fonts": font_families(),
@@ -2797,6 +3013,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 jobs_out = jobstore.list_jobs(
                     WORKSPACE, q.get("status", [None])[0], q.get("q", [None])[0],
                     q.get("node", [None])[0])
+                # An application from before languages were recorded gets a
+                # guess from its posting, offered rather than stored.
+                for j in jobs_out:
+                    if not j.get("language"):
+                        j["language_guess"] = languages.detect(
+                            f"{j.get('title') or ''} {j.get('description') or ''}")
                 # A stored logo is a filename; the interface needs a URL it
                 # can put in an <img>, and None when the file has gone.
                 for j in jobs_out:
@@ -2895,6 +3117,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(preview(safe_path(payload["path"]),
                                           payload.get("yaml"),
                                           payload.get("patches")))
+            if u.path == "/api/language/add":
+                try:
+                    return self._json({"ok": True, **add_language(
+                        safe_path(payload["path"]), str(payload.get("language") or ""))})
+                except ValueError as exc:
+                    return self._json({"ok": False, "error": str(exc)})
+            if u.path == "/api/language/done":
+                return self._json(mark_translation_current(safe_path(payload["path"])))
             if u.path == "/api/import":
                 # The file arrives as base64 in the JSON body, read here and
                 # never stored: the caller previews the result and writes it
@@ -3835,8 +4065,31 @@ body.dragging{cursor:col-resize;user-select:none}
 /* The base as a sheet of paper you can read, beside what it is and what came
    of it: the page is the point of a CV, so the card shows the whole of page
    one rather than a strip of it. */
-.bhero{display:flex;gap:28px;padding:22px;background:var(--field);border:1px solid var(--rule);
-  border-radius:14px}
+.bhero{display:flex;flex-direction:column;background:var(--field);border:1px solid var(--rule);
+  border-radius:14px;overflow:hidden}
+.bmain{display:flex;gap:28px;padding:22px}
+/* One tab per language of the base CV. Only there once a second language is,
+   apart from the way to add one. */
+.btabs{display:flex;align-items:center;gap:4px;padding:7px 9px;background:var(--bar);
+  border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.btabs button{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;border:0;
+  border-radius:8px;background:transparent;color:var(--t700);font-size:13px}
+.btabs button:hover{background:var(--paper-hover)}
+.btabs button[aria-selected=true]{background:var(--field);color:var(--t900);font-weight:600;
+  box-shadow:0 1px 2px rgba(27,26,23,.12)}
+.btabs .src{font-size:11.5px;font-weight:400;color:var(--t500)}
+.btabs .behind{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;
+  color:var(--acc-text)}
+.btabs .behind i{width:7px;height:7px;border-radius:50%;background:var(--acc)}
+.btabs .add{border:1px dashed var(--bd-field);color:var(--t600)}
+/* A language, as its code: EN, FR. Dark when it is the one you are on. */
+.lchip{display:inline-flex;align-items:center;height:19px;padding:0 6px;border-radius:5px;
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;font-weight:600;
+  letter-spacing:.04em;background:var(--bar);color:var(--t700);flex:none}
+.lchip.on{background:var(--c800);color:var(--cw)}
+:root[data-theme=dark] .lchip.on{background:var(--cw);color:var(--c800)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .lchip.on{
+  background:var(--cw);color:var(--c800)}}
 .bhero .bthumb{width:196px;aspect-ratio:210/297;height:auto;border-radius:3px;
   box-shadow:0 10px 28px -12px rgba(30,26,18,.45),0 1px 2px rgba(30,26,18,.12)}
 .bhero .bthumb img{object-fit:contain}
@@ -3853,7 +4106,7 @@ body.dragging{cursor:col-resize;user-select:none}
 .bstats span{font-size:12px;color:var(--t500)}
 .bhero .bacts{margin-top:auto;padding-top:18px;display:flex;gap:8px;flex-wrap:wrap}
 .bhero.gone .bn{text-decoration:line-through;color:var(--t500)}
-.bhero.none{align-items:center}
+.bhero.none .bmain{align-items:center}
 /* The other documents, as pages. */
 .dsec{margin-top:34px}
 .dsec h2{margin:0;font-size:15px;font-weight:600;color:var(--t900);display:flex;
@@ -3872,6 +4125,7 @@ body.dragging{cursor:col-resize;user-select:none}
   border-color:var(--bd-field)}
 .dcard:focus-visible{outline:none}
 .dcard:focus-visible .pg{outline:2px solid var(--acc);outline-offset:3px}
+.dcard .langs{position:absolute;left:8px;bottom:8px;display:flex;gap:4px}
 .dcard .tag{position:absolute;right:8px;bottom:8px;font-size:10.5px;font-weight:600;
   padding:2px 8px;border-radius:9px;background:var(--c800);color:var(--cw)}
 .dcard .meta{display:flex;flex-direction:column;align-items:stretch;gap:3px;padding:0 2px;
@@ -3881,6 +4135,47 @@ body.dragging{cursor:col-resize;user-select:none}
 .dcard .meta span{font-size:12px;color:var(--t600);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;display:flex;align-items:center;justify-content:flex-start;gap:6px}
 .dcard .meta em{font-style:normal;color:var(--t500)}
+.dfilter{display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--seg-track)}
+.dfilter button{height:28px;padding:0 11px;border:0;border-radius:7px;background:transparent;
+  color:var(--t700);font-size:12.5px}
+.dfilter button[aria-pressed=true]{background:var(--seg-on);color:var(--t900);font-weight:600;
+  box-shadow:0 1px 2px rgba(27,26,23,.1)}
+/* The language switch in the editor's bar, between the versions of one CV. */
+.langsw{display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--seg-track);
+  margin-left:6px}
+.langsw button{display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;border:0;
+  border-radius:7px;background:transparent;color:var(--t700);font-size:12.5px}
+.langsw button[aria-current=true]{background:var(--seg-on);color:var(--t900);font-weight:600;
+  box-shadow:0 1px 2px rgba(27,26,23,.1)}
+/* Add a language, and what to say to your AI client afterwards. */
+.al-list{display:flex;flex-direction:column;gap:5px;max-height:300px;overflow-y:auto;padding:1px}
+.al-list button{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:8px;
+  border:1px solid var(--bd-inner);background:var(--row-alt);text-align:left;color:var(--t900);
+  font-size:13px}
+.al-list button:hover{border-color:var(--bd-field)}
+.al-list button[aria-checked=true]{border:2px solid var(--acc);padding:7px 10px;background:var(--field)}
+.al-list em{font-style:normal;color:var(--t500);font-size:12px}
+.al-does{margin:0;padding:11px 13px;list-style:none;border-radius:9px;background:var(--field);
+  border:1px solid var(--bd-inner);display:flex;flex-direction:column;gap:6px;font-size:12.5px;
+  line-height:1.45;color:var(--t800)}
+.al-does li{display:flex;gap:8px}
+.al-does li::before{content:"\2713";color:var(--fn-won);font-weight:700;flex:none}
+.say-box{display:flex;flex-direction:column;gap:8px;padding:12px 13px;border-radius:9px;
+  background:var(--field);border:1px solid var(--bd-inner)}
+.say-box b{font-size:12.5px;font-weight:600;color:var(--t900)}
+.say-box .say{font-size:13px;line-height:1.5;color:var(--t900);padding:9px 11px;border-radius:7px;
+  background:var(--app);border:1px solid var(--bd-inner);user-select:all}
+.say-box .row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--t500)}
+.say-box .row .grow{flex:1}
+.drift-list{margin:0;padding:0;list-style:none;max-height:320px;overflow-y:auto;
+  border:1px solid var(--rule);border-radius:9px;background:var(--field)}
+.drift-list li{display:flex;flex-direction:column;gap:4px;padding:10px 12px;font-size:12.5px;
+  line-height:1.45}
+.drift-list li+li{border-top:1px solid var(--bd-inner)}
+.drift-list .w{font-size:11.5px;font-weight:600;color:var(--t500)}
+.drift-list .l{display:flex;gap:8px}
+.drift-list .l .lchip{margin-top:1px}
+.drift-list .then{color:var(--t500);text-decoration:line-through}
 .dempty{padding:26px 20px;border:1.5px dashed var(--rule-strong);border-radius:12px;
   font-size:13px;line-height:1.5;color:var(--t500);text-align:center}
 @media (max-width:720px){
@@ -4914,6 +5209,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <button class="crumb" id="back">Applications</button>
         <span class="crumb-sep" aria-hidden="true">/</span>
         <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
+        <div class="langsw" id="langsw" role="group" aria-label="Language" hidden></div>
         <div class="grow"></div>
         <span class="acts" id="act-doc">
           <button class="obtn" id="btn-ats" title="What an applicant tracking system reads from this CV">ATS check</button>
@@ -4921,6 +5217,14 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button class="obtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
           <button class="pbtn" id="btn-render">Render</button>
         </span>
+      </div>
+      <!-- A translation whose source moved on since it was translated. -->
+      <div class="extbar" id="driftbar" hidden>
+        <span id="driftbar-msg"></span>
+        <div class="grow"></div>
+        <button class="obtn" id="drift-show">What changed</button>
+        <button class="obtn" id="drift-done"
+          title="The translation now says everything the source says">Mark as done</button>
       </div>
       <div class="extbar" id="extbar" hidden>
         <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"
@@ -5071,6 +5375,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="phead">
           <h1>Documents</h1><span class="pcount" id="dcount"></span>
           <div class="grow"></div>
+          <div class="dfilter" id="dfilter" role="group" aria-label="Language" hidden></div>
           <button class="obtn" id="btn-importdoc" title="A PDF of a CV, or your LinkedIn profile or data archive">Import&#8230;</button>
           <input type="file" id="importdoc-file" accept=".pdf,.zip,application/pdf,application/zip" hidden>
           <button class="pbtn" id="btn-newdoc">New document&#8230;</button>
@@ -5381,6 +5686,9 @@ const S={
   page:0, zoom:1, zoomAuto:true, fill:null,
   sel:null, openSection:null,
   docThumbs:{},             /* each document's first page, for Documents */
+  baseLang:null,            /* which language of the base CV Documents shows */
+  docLang:null,             /* the Documents language filter, null for all */
+  driftBy:null,             /* how far behind each translation of the base is */
   ai:null,                  /* which AI clients are wired up to us */
   prov:null,                /* who wrote each field, and what differs from the base */
   pulse:null,               /* last workspace poll: file stamps and AI activity */
@@ -5614,7 +5922,7 @@ function setView(v){
   /* Which application a document was written for is a fact about the jobs, so
      this screen needs them too -- and you can land on it without ever having
      opened the list. Draw what is known now, fill in the rest when it lands. */
-  if(v==="docs"){ drawDocuments(); if(!S.jready) loadJobs(true) }
+  if(v==="docs"){ S.driftBy=null; drawDocuments(); if(!S.jready) loadJobs(true) }
   if(v==="funnel") loadFunnel();
   paintStatus();
 }
@@ -7186,7 +7494,7 @@ async function openDoc(path){
     const dz=(doc.data&&doc.data.design)||{};
     DZ.theme=dz.theme||null;
     setYamlError(doc.parse_error);
-    paintTitle(); paintLink();
+    paintTitle(); paintLink(); paintLang();
     buildOutline();
     selectDefault();
     buildForm();
@@ -7899,7 +8207,7 @@ async function save(ops){
                               : {path:S.path,patches:collectPatches()};
     if(ops&&ops.length) body.ops=ops;
     const r=await post("/api/save",body);
-    S.doc=r; S.data=r.data?JSON.parse(JSON.stringify(r.data)):null;
+    S.doc=r; S.data=r.data?JSON.parse(JSON.stringify(r.data)):null; paintLang();
     /* Our own write, so take its timestamp: the poll must not read it back as
        somebody else having changed the file. */
     S.docMtime=r.mtime; hideExternalChange();
@@ -8508,54 +8816,84 @@ function baseHTML(b){
 }
 /* The same base, on Documents, at the size of a page you can read. */
 function baseHeroHTML(b){
-  if(!b||b.missing) return '<div class="bbody"><span class="bl">Base CV</span>'+
+  if(!b||b.missing) return '<div class="bmain"><div class="bbody"><span class="bl">Base CV</span>'+
     (b?'<h2 class="bn">'+esc(baseLabel())+'</h2><span class="bmeta">is no longer in the '+
       'workspace</span>':'<h2 class="bn">Not chosen yet</h2>')+
     '<p class="bwhy">Every CV you tailor for an application starts as a copy of the base.</p>'+
     '<div class="bacts"><button class="pbtn" data-base-pick>'+(b?"Choose another":"Choose")+
-      '&#8230;</button></div></div>';
-  const pages=S.pages[b.path];
-  const th=S.baseThumb&&S.baseThumb.path===b.path?S.baseThumb:null;
+      '&#8230;</button></div></div></div>';
+  const fam=baseFamily();
+  let m=fam.find(x=>x.lang===S.baseLang)||fam[0];
   const docs=(S.state&&S.state.documents)||[];
-  const me=docs.find(d=>d.path===b.path);
-  const kids=docs.filter(d=>d.base===b.path);
+  const me=docs.find(d=>d.path===m.path);
+  const pages=S.pages[m.path];
+  const th=m.source?(S.baseThumb&&S.baseThumb.path===b.path?S.baseThumb:null):S.docThumbs[m.path];
+  const kids=docs.filter(d=>d.base===m.path);
   const used=new Set((S.jobs||[]).map(j=>j.cv_path).filter(Boolean));
   const sent=kids.filter(d=>used.has(d.path)).length;
-  return '<button class="bthumb'+(th&&th.png?"":" empty")+'" data-base-open'+
+  const L=langOf(m.lang), src=langOf(fam[0].lang);
+  const behind=p=>{ const d=S.driftBy&&S.driftBy[p]; return d&&d.changes&&d.changes.length };
+  const tabs='<div class="btabs" role="tablist" aria-label="Base CV language">'+fam.map(x=>
+      '<button role="tab" data-blang="'+esc(x.lang)+'" aria-selected="'+String(x===m)+'">'+
+        lchip(x.lang,x===m)+esc(langOf(x.lang).native)+
+        (x.source&&fam.length>1?'<span class="src">source</span>':'')+
+        (behind(x.path)?'<span class="behind"><i></i>'+behind(x.path)+' behind</span>':'')+
+      '</button>').join("")+
+    '<button class="add" data-blang-add>+ Add a language</button></div>';
+  const why=m.source
+    ? (fam.length>1?'Every CV you tailor in '+esc(L.english)+' starts as a copy of this one. '+
+        'Its translations say what they are missing when it changes.'
+       :'Every CV you tailor for an application starts as a copy of this one, and shows '+
+        'what it changed from it. Improving the base improves every CV you tailor from now on.')
+    : 'The '+esc(L.english)+' translation of <b>'+esc(docLabel(fam[0].path))+'</b>. CVs for '+
+      'postings in '+esc(L.english)+' start from it. Its design follows the '+esc(src.english)+' one.';
+  return tabs+'<div class="bmain"><button class="bthumb'+(th&&th.png?"":" empty")+'" data-base-open'+
       ' aria-label="Open the base CV">'+
       (th&&th.png?'<img alt="Page one of the base CV" src="'+esc(th.png+tok())+'">'
-        :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
+        :'<span>'+(th&&th.failed?"Doesn’t render":"Rendering…")+'</span>')+
     '</button>'+
-    '<div class="bbody"><span class="bl">Base CV</span>'+
-      '<h2 class="bn">'+esc(baseLabel())+'</h2>'+
+    '<div class="bbody"><span class="bl">Base CV'+(fam.length>1?' · '+esc(L.native):'')+'</span>'+
+      '<h2 class="bn">'+esc(m.source?baseLabel():docLabel(m.path))+'</h2>'+
       '<span class="bmeta">'+[pages?pages+" page"+(pages===1?"":"s"):"",
-        me&&me.mtime?"updated "+mtimeLabel(me.mtime):""].filter(Boolean).join(" \u00b7 ")+
+        me&&me.mtime?"updated "+mtimeLabel(me.mtime):""].filter(Boolean).join(" · ")+
       '</span>'+
-      '<p class="bwhy">Every CV you tailor for an application starts as a copy of this one, '+
-        'and shows what it changed from it. Improving the base improves every CV you '+
-        'tailor from now on.</p>'+
+      '<p class="bwhy">'+why+'</p>'+
       '<div class="bstats"><div><b>'+kids.length+'</b><span>tailored from it</span></div>'+
-        '<div><b>'+sent+'</b><span>attached to applications</span></div></div>'+
+        '<div><b>'+sent+'</b><span>attached to applications</span></div>'+
+        (!m.source&&behind(m.path)?'<div><b>'+behind(m.path)+'</b><span>changes in '+
+          esc(src.english)+' to carry over</span></div>':'')+'</div>'+
       '<div class="bacts"><button class="pbtn" data-base-open>Open</button>'+
+        (!m.source&&behind(m.path)?'<button class="obtn" data-base-drift>What changed</button>':'')+
         '<button class="obtn" data-base-design>Design</button>'+
-        '<button class="obtn" data-base-pick>Change base&#8230;</button></div>'+
-    '</div>';
+        (m.source?'<button class="obtn" data-base-pick>Change base&#8230;</button>':'')+'</div>'+
+    '</div></div>';
 }
+
 function mountBase(el,cls){
   if(!el) return;
   const b=S.state&&S.state.base;
   el.className=cls+(b&&b.missing?" gone":"")+(cls==="bhero"&&!b?" none":"");
   el.innerHTML=cls==="bhero"?baseHeroHTML(b):baseHTML(b);
+  /* On Documents the card shows whichever language tab is picked. */
+  const shown=cls==="bhero"&&b&&!b.missing
+    ?((baseFamily().find(x=>x.lang===S.baseLang)||{}).path||b.path):b&&b.path;
   el.querySelectorAll("[data-base-open]").forEach(open=>open.onclick=()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
-    openDoc(b.path);
+    openDoc(shown);
   });
   const design=el.querySelector("[data-base-design]");
   if(design) design.onclick=async()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
     await openDoc(b.path); openDesign();
   };
-  el.querySelector("[data-base-pick]").onclick=baseSheet;
+  const pick=el.querySelector("[data-base-pick]"); if(pick) pick.onclick=baseSheet;
+  el.querySelectorAll("[data-blang]").forEach(t=>t.onclick=()=>{
+    S.baseLang=t.dataset.blang; mountBase(el,cls);
+  });
+  const add=el.querySelector("[data-blang-add]");
+  if(add) add.onclick=()=>addLanguageSheet(b.path);
+  const dr=el.querySelector("[data-base-drift]");
+  if(dr) dr.onclick=()=>driftSheet(shown,S.driftBy[shown]);
 }
 function paintBase(){
   mountBase($("#baserow"),"baserow");
@@ -8606,6 +8944,182 @@ function mtimeLabel(t){
   return same(d,y)?"yesterday":shortDate(d);
 }
 
+/* ---- languages ------------------------------------------------------------
+   A CV's language is RenderCV's locale; a translation is its own document,
+   linked to the one it was translated from. CV Studio writes the part with
+   one right answer -- dates, month names, section titles -- and the prose is
+   translated by you or by your AI client. Nothing here asks a client to do
+   anything: a client acts when you ask it to, so the app says what to ask. */
+const langOf=c=>((S.state&&S.state.languages)||[]).find(l=>l.code===c)||
+  {code:c||"en",native:String(c||"en").toUpperCase(),english:String(c||"en").toUpperCase()};
+const lchip=(c,on)=>'<span class="lchip'+(on?' on':'')+'">'+esc(String(c||"en").toUpperCase())+'</span>';
+/* The base CV and its translations: the set the Documents tabs move between. */
+function baseFamily(){
+  const b=S.state&&S.state.base; if(!b||b.missing) return [];
+  const docs=(S.state&&S.state.documents)||[], me=docs.find(d=>d.path===b.path);
+  return [{path:b.path,lang:(me&&me.lang)||"en",source:true}].concat(docs
+    .filter(d=>d.translation_of===b.path)
+    .map(d=>({path:d.path,lang:d.lang,source:false})));
+}
+const baseIn=lang=>baseFamily().find(m=>m.lang===lang)||null;
+/* Which AI clients could do the translating, in words, for the prompts. */
+function clientsSay(){
+  const on=(S.ai||[]).filter(c=>c.state==="connected").map(c=>c.label);
+  return on.length?on.join(" or "):null;
+}
+function copyText(text,btn){
+  const done=()=>{ if(btn){ const t=btn.textContent; btn.textContent="Copied";
+    setTimeout(()=>btn.textContent=t,1400) } };
+  try{ navigator.clipboard.writeText(text).then(done,()=>toast("Select the text and copy it",true)) }
+  catch(e){ toast("Select the text and copy it",true) }
+}
+/* What to say to a client, ready to copy, with who could hear it. */
+function sayBox(title,text){
+  const who=clientsSay();
+  return '<div class="say-box"><b>'+title+'</b><div class="say" id="say-text">'+esc(text)+'</div>'+
+    '<div class="row"><span class="grow">'+(who?"Paste it into "+esc(who)+
+      ". It works through CV Studio, so you can watch it land here."
+      :"No AI client is connected yet. Settings → AI clients sets one up.")+'</span>'+
+    (who?'':'<button class="obtn" id="say-setup">AI clients</button>')+
+    '<button class="obtn" id="say-copy">Copy</button></div></div>';
+}
+function wireSay(text){
+  const c=$("#say-copy"); if(c) c.onclick=()=>copyText(text,c);
+  const st=$("#say-setup"); if(st) st.onclick=()=>{ closeSheet(); openSettings("ai") };
+}
+
+function addLanguageSheet(src){
+  const have=new Set(((S.state&&S.state.documents)||[])
+    .filter(d=>d.path===src||d.translation_of===src).map(d=>d.lang));
+  const from=langOf((((S.state&&S.state.documents)||[]).find(d=>d.path===src)||{}).lang);
+  const all=((S.state&&S.state.languages)||[]).filter(l=>!have.has(l.code));
+  let pick=(all.find(l=>l.code==="fr")||all[0]||{}).code;
+  openSheet(
+    '<div><h3 id="sheet-title">Add a language to '+esc(docLabel(src))+'</h3>'+
+      '<p>A copy in another language, saved beside it and linked to it. CVs you tailor '+
+      'for a posting in that language start from it.</p></div>'+
+    '<div class="fg w88"><label for="al-q">Language</label>'+
+      '<input id="al-q" autocomplete="off" placeholder="Search '+all.length+' languages"></div>'+
+    '<div class="al-list" id="al-list" role="radiogroup" aria-label="Language"></div>'+
+    '<ul class="al-does">'+
+      '<li><span>Dates, month names and “present” print in the new language.</span></li>'+
+      '<li><span>Common section titles are translated: Experience, Education, Skills and the like.</span></li>'+
+      '<li><span>Your name, contact details, links, company names and dates stay exactly as they are, '+
+        'and the design follows '+esc(from.english)+'.</span></li>'+
+    '</ul>'+
+    '<p>Your text stays in '+esc(from.english)+' until you, or your AI client, translate it.</p>'+
+    '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
+      '<button class="sbtn primary" id="al-go">Add</button></div>');
+  const paint=()=>{
+    const q=$("#al-q").value.trim().toLowerCase();
+    const list=all.filter(l=>!q||(l.native+" "+l.english+" "+l.code).toLowerCase().includes(q));
+    $("#al-list").innerHTML=list.map(l=>'<button role="radio" data-l="'+l.code+'" aria-checked="'+
+      String(l.code===pick)+'">'+lchip(l.code,l.code===pick)+'<span><b>'+esc(l.native)+'</b> '+
+      (l.english!==l.native?'<em>'+esc(l.english)+'</em>':'')+'</span></button>').join("")||
+      '<p class="note muted">No language by that name.</p>';
+    $$("#al-list [data-l]").forEach(b=>b.onclick=()=>{ pick=b.dataset.l; paint() });
+    $("#al-go").textContent="Add "+(pick?langOf(pick).english:"");
+    $("#al-go").disabled=!pick;
+  };
+  $("#al-q").oninput=paint; paint();
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#al-go").onclick=async()=>{
+    $("#al-go").disabled=true;
+    try{
+      const r=await post("/api/language/add",{path:src,language:pick});
+      if(!r.ok){ $("#al-go").disabled=false; return toast(r.error,true) }
+      const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
+      S.baseLang=r.lang;
+      if(S.view==="docs") drawDocuments();
+      translateNextSheet(r);
+    }catch(e){ $("#al-go").disabled=false; toast(e.message,true) }
+  };
+}
+/* After the copy is written: what is done, and what to ask a client for. */
+function translateNextSheet(r){
+  const to=langOf(r.lang), from=langOf(r.from_lang);
+  const titled=Object.keys(r.sections_titled||{}).length, left=r.sections_to_title||[];
+  const text="In CV Studio, translate "+r.path+" into "+to.english+". It is the "+
+    to.english+" copy of "+r.of+".";
+  openSheet(
+    '<div><h3 id="sheet-title">'+esc(to.english)+' copy made</h3><p>'+
+      'Dates and month names are in '+esc(to.english)+(titled?', and '+titled+' section title'+
+      (titled===1?' is':'s are')+' translated':'')+'. The rest of the text is still in '+
+      esc(from.english)+'.'+(left.length?' Still to title: '+left.map(esc).join(", ")+'.':'')+
+    '</p></div>'+
+    sayBox("To have your AI client translate it, ask it:",text)+
+    '<p>Or open it and translate it yourself, field by field.</p>'+
+    '<div class="foot"><button class="sbtn" data-cancel>Close</button>'+
+      '<button class="sbtn primary" id="tn-open">Open the '+esc(to.english)+' CV</button></div>');
+  wireSay(text);
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#tn-open").onclick=()=>{ closeSheet(); openDoc(r.path) };
+}
+/* What the source changed since this translation last caught up. */
+function driftSheet(path,drift){
+  const to=langOf(drift.lang), from=langOf(drift.from_lang||"en");
+  const text="In CV Studio, bring "+path+" up to date with "+drift.of+
+    ": translate what changed into "+to.english+".";
+  openSheet(
+    '<div><h3 id="sheet-title">What '+esc(docLabel(drift.of))+' changed</h3><p>'+
+      'Since this '+esc(to.english)+' version was last brought up to date. Nothing '+
+      'here has been changed for you.</p></div>'+
+    '<ul class="drift-list">'+drift.changes.map(c=>'<li><span class="w">'+esc(c.where)+'</span>'+
+      (c.kind!=="added"&&c.before?'<span class="l">'+lchip(from.code)+'<span class="then">'+
+        esc(c.before)+'</span></span>':'')+
+      (c.kind!=="removed"?'<span class="l">'+lchip(from.code,true)+'<span>'+esc(c.after||"")+
+        '</span></span>':'<span class="l">'+lchip(from.code,true)+'<span class="muted">removed</span></span>')+
+      (c.translation?'<span class="l">'+lchip(to.code)+'<span>'+esc(c.translation)+
+        '</span></span>':'')+'</li>').join("")+'</ul>'+
+    sayBox("To have your AI client carry these over, ask it:",text)+
+    '<div class="foot"><button class="sbtn left" data-cancel>Close</button>'+
+      '<button class="sbtn primary" id="ds-done">Mark as done</button></div>');
+  wireSay(text);
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#ds-done").onclick=()=>{ closeSheet(); markTranslationDone(path) };
+}
+async function markTranslationDone(path){
+  try{
+    await post("/api/language/done",{path});
+    if(S.path===path){ const d=await api("/api/doc?path="+encodeURIComponent(path));
+      S.doc.drift=d.drift; paintLang() }
+    S.driftBy=null;
+    if(S.view==="docs") drawDocuments();
+    toast("Marked as up to date");
+  }catch(e){ toast(e.message,true) }
+}
+/* The editor's bar: which language this is, the others to switch to, and
+   what it is missing from its source. */
+function paintLang(){
+  const sw=$("#langsw"), bar=$("#driftbar");
+  const fam=S.doc&&S.doc.family, members=(fam&&fam.members)||[];
+  if(members.length<2){ sw.hidden=true }
+  else{
+    sw.hidden=false;
+    sw.innerHTML=members.map(m=>'<button data-lp="'+esc(m.path)+'"'+
+      (m.path===S.path?' aria-current="true"':'')+' title="'+esc(m.path)+
+      (m.source?" · the source":" · translated from "+docLabel(fam.source))+'">'+
+      lchip(m.lang,m.path===S.path)+esc(langOf(m.lang).native)+'</button>').join("");
+    $$("#langsw [data-lp]").forEach(b=>b.onclick=()=>{
+      if(b.dataset.lp===S.path) return;
+      if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+      openDoc(b.dataset.lp);
+    });
+  }
+  const dr=S.doc&&S.doc.drift;
+  if(!dr||(!dr.missing&&!dr.changes.length)){ bar.hidden=true; return }
+  bar.hidden=false;
+  const from=langOf(dr.from_lang||"en"), n=dr.changes.length;
+  $("#driftbar-msg").innerHTML=dr.missing
+    ? 'The '+esc(from.english)+' CV this was translated from, <b>'+esc(dr.of)+'</b>, is missing.'
+    : '<b>'+esc(docLabel(dr.of))+' changed since this was translated.</b> '+n+' thing'+
+      (n===1?'':'s')+' in it '+(n===1?'is':'are')+' not in this '+esc(langOf(dr.lang).english)+
+      ' version yet.';
+  $("#drift-show").hidden=!!dr.missing; $("#drift-done").hidden=!!dr.missing;
+  $("#drift-show").onclick=()=>driftSheet(S.path,dr);
+  $("#drift-done").onclick=()=>markTranslationDone(S.path);
+}
+
 /* Two lanes, and the second is the reason this screen exists. A CV written for
    an application is reachable from that application's row; one written for
    nothing was reachable from nowhere, because the only list of documents lived
@@ -8621,11 +9135,26 @@ function drawDocuments(){
     if(j.cv_path) owner[j.cv_path]=j;
     if(j.letter_path) owner[j.letter_path]=j;
   }
+  /* The base's translations live in its tabs, not in the lanes. */
+  const family=new Set(baseFamily().map(m=>m.path));
+  const langs=[...new Set(docs.map(d=>d.lang||"en"))];
+  const filt=$("#dfilter");
+  if(langs.length<2){ filt.hidden=true; S.docLang=null }
+  else{
+    filt.hidden=false;
+    filt.innerHTML=[null,...langs].map(c=>'<button data-dl="'+(c||"")+'" aria-pressed="'+
+      String((S.docLang||null)===c)+'">'+(c?esc(langOf(c).native):"All languages")+
+      '</button>').join("");
+    $$("#dfilter [data-dl]").forEach(b=>b.onclick=()=>{ S.docLang=b.dataset.dl||null;
+      drawDocuments() });
+  }
   const attached=[], loose=[];
   for(const d of docs){
-    if(d.path===basePath) continue;
+    if(family.has(d.path)) continue;
+    if(S.docLang&&(d.lang||"en")!==S.docLang) continue;
     (owner[d.path]?attached:loose).push(d);
   }
+  baseDrift();
   const recent=(a,b)=>(b.mtime||0)-(a.mtime||0);
   attached.sort(recent); loose.sort(recent);
 
@@ -8639,6 +9168,7 @@ function drawDocuments(){
     return '<button class="dcard" data-open="'+esc(d.path)+'" title="'+esc(d.path)+'">'+
       '<span class="pg">'+(th&&th.png?'<img alt="" loading="lazy" src="'+esc(th.png+tok())+'">'
         :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
+        (langs.length>1?'<span class="langs">'+lchip(d.lang,true)+'</span>':'')+
         (letter?'<span class="tag">Letter</span>':'')+'</span>'+
       '<span class="meta"><b>'+esc(d.label)+'</b><span>'+about+'</span>'+
         '<em>'+esc(mtimeLabel(d.mtime))+(S.pages[d.path]?" \u00b7 "+S.pages[d.path]+
@@ -8698,11 +9228,25 @@ async function docThumbs(){
     }catch(e){ return }
   }
 }
+/* How far behind each translation of the base is, for its tab. Fetched once
+   per visit to Documents: a translation only falls behind when its source is
+   saved, and the tabs are not worth a request per save. */
+async function baseDrift(){
+  if(S.driftBy) return;
+  S.driftBy={};
+  for(const m of baseFamily().filter(x=>!x.source)){
+    try{ const d=await api("/api/doc?path="+encodeURIComponent(m.path)); S.driftBy[m.path]=d.drift }
+    catch(e){}
+  }
+  if(S.view==="docs") mountBase($("#docbase"),"bhero");
+}
 function docPaintThumb(path){
+  if(baseFamily().some(m=>m.path===path&&!m.source)) mountBase($("#docbase"),"bhero");
   const b=$('#doclanes .dcard[data-open="'+CSS.escape(path)+'"] .pg'); if(!b) return;
-  const th=S.docThumbs[path], tag=b.querySelector(".tag");
+  const th=S.docThumbs[path], tag=b.querySelector(".tag"), lg=b.querySelector(".langs");
   b.innerHTML=th&&th.png?'<img alt="" src="'+esc(th.png+tok())+'">'
     :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>';
+  if(lg) b.append(lg);
   if(tag) b.append(tag);
   const em=b.parentElement.querySelector(".meta em"), d=((S.state&&S.state.documents)||[])
     .find(x=>x.path===path);
@@ -8751,7 +9295,7 @@ function uniqueDocName(stem){
   for(let n=2;n<50;n++) if(!taken(stem+"-"+n)) return stem+"-"+n;
   return stem+"-"+Date.now();
 }
-async function tailorFor(id){
+async function tailorFor(id,force){
   const j=(S.jobs||[]).find(x=>x.id===id);
   if(!j||S.tailoring.has(id)) return;
   const b=S.state&&S.state.base;
@@ -8760,12 +9304,17 @@ async function tailorFor(id){
            :"Choose a base CV first \u2014 the tailored copy starts from it.",true);
     return baseSheet();
   }
+  /* In the posting's language, from the base CV in that language. Without
+     one, ask: translating the base now makes it for every later posting. */
+  const lang=j.language||j.language_guess;
+  const fam=baseFamily(), from=(lang&&baseIn(lang))||fam[0];
+  if(lang&&!baseIn(lang)&&!force) return tailorLangSheet(j,lang);
   const name=uniqueDocName(derivedName(j.title,j.company));
   S.tailoring.add(id); drawJobs();
   try{
     /* /api/new already records what it was copied from, so the new document's
        vs-base marks work with nothing extra done here. */
-    const r=await post("/api/new",{name:name,kind:"cv",from:b.path});
+    const r=await post("/api/new",{name:name,kind:"cv",from:from.path});
     const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
     try{
       await post("/api/jobs/update",{id:j.id,cv_path:r.path});
@@ -8778,13 +9327,37 @@ async function tailorFor(id){
             e.message+" Use the link chip in the editor.",true);
     }
     openDoc(r.path);
-    toast("Tailored from "+baseLabel());
+    toast("Tailored from "+docLabel(from.path));
   }catch(e){
     toast(e.message,true);
   }finally{
     S.tailoring.delete(id);
     if(S.view==="jobs") drawJobs();
   }
+}
+
+function tailorLangSheet(j,lang){
+  const to=langOf(lang), src=langOf((baseFamily()[0]||{}).lang);
+  openSheet(
+    '<div><h3 id="sheet-title">This posting is in '+esc(to.english)+'</h3><p>Your base CV has no '+
+      esc(to.english)+' version, so a CV tailored now would start in '+esc(src.english)+'.</p></div>'+
+    '<p>Adding '+esc(to.english)+' to the base CV makes a copy with the dates and section '+
+      'titles already in '+esc(to.english)+', for this application and every later one. '+
+      'Your AI client, or you, then translate the text.</p>'+
+    '<div class="foot"><button class="sbtn left" data-cancel>Cancel</button>'+
+      '<button class="sbtn" id="tl-anyway">Tailor in '+esc(src.english)+'</button>'+
+      '<button class="sbtn primary" id="tl-add">Add '+esc(to.english)+' to the base CV</button></div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#tl-anyway").onclick=()=>{ closeSheet(); tailorFor(j.id,true) };
+  $("#tl-add").onclick=async()=>{
+    $("#tl-add").disabled=true;
+    try{
+      const r=await post("/api/language/add",{path:baseFamily()[0].path,language:lang});
+      if(!r.ok){ $("#tl-add").disabled=false; return toast(r.error,true) }
+      const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
+      translateNextSheet(r);
+    }catch(e){ $("#tl-add").disabled=false; toast(e.message,true) }
+  };
 }
 
 /* What the list is showing, in words, for the header above it. */
@@ -8893,6 +9466,7 @@ function selectJob(id){
 const JOB_GRID=[
   ["status","Status","status"],["followup_date","Follow-up","date"],
   ["score","Fit","fit"],["source","Source","text"],
+  ["language","Language","lang"],
 ];
 /* Everything you set once when the application is created and rarely touch
    again. Company and Role are here rather than at the top because the peek's
@@ -8947,6 +9521,15 @@ function drawJobInspector(){
     if(kind==="status") ctl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span><select data-j="status">'+S.statuses.map(s=>
       '<option value="'+s+'"'+(s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+
       '</option>').join("")+'</select></span>';
+    else if(kind==="lang"){
+      /* Stored once said; until then a guess from the posting, offered. */
+      const guess=j.language_guess, cur=j.language||"";
+      ctl='<select data-j="language">'+
+        '<option value=""'+(cur?"":" selected")+'>'+(guess?"Looks like "+
+          esc(langOf(guess).native):"Not set")+'</option>'+
+        ((S.state&&S.state.languages)||[]).map(l=>'<option value="'+l.code+'"'+
+          (l.code===cur?" selected":"")+'>'+esc(l.native)+'</option>').join("")+'</select>';
+    }
     else if(kind==="fit") ctl='<div class="fit" role="group" aria-label="Fit">'+
       [1,2,3,4,5].map(n=>'<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+
       ' title="'+n+' of 5" aria-label="'+n+' of 5"></button>').join("")+
@@ -9580,7 +10163,18 @@ const themeLabel=t=>t.replace(/^engineeringclassic$/,"Engineering")
   .replace(/^engineeringresumes$/,"Engineering résumés")
   .replace(/^(.)/,c=>c.toUpperCase());
 
-$("#btn-design").onclick=()=>openDesign();
+/* One design for every language of a CV, kept on the source: a design edited
+   on a translation would be overwritten the next time the source changed. */
+$("#btn-design").onclick=async()=>{
+  const fam=S.doc&&S.doc.family;
+  if(fam&&fam.source&&fam.source!==S.path){
+    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    toast("Every language of this CV shares one design, so it is edited on "+
+      docLabel(fam.source)+".");
+    await openDoc(fam.source);
+  }
+  openDesign();
+};
 /* What each group is for, in a line. RenderCV's own group names are kept as
    the titles; anything it adds later just goes without a line. */
 const DZ_GROUPS={

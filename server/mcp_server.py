@@ -54,7 +54,17 @@ mcp = MCPServer(
         "status from silence: absence of a message is not a message.\n\n"
         "When you add an application, pass company_website: the company's own "
         "domain, found from the posting or its careers page, not the job "
-        "board's. Its logo is fetched from there and shown on the row."
+        "board's. Its logo is fetched from there and shown on the row.\n\n"
+        "CVs can exist in several languages. A translation is its own file, "
+        "linked to the CV it was translated from. To translate, call "
+        "add_language: it writes the copy with dates, month names and section "
+        "titles already in the new language. Then translate the remaining "
+        "text with edit_cv_fields, and leave names, contact details, links, "
+        "company names and dates as they are. When the source CV changes, "
+        "translation_status lists what the translation is missing; carry each "
+        "change over, then call mark_translation_current. To tailor for a "
+        "posting, copy the base CV in the posting's language (list_cvs says "
+        "each CV's `lang`; read_job says the application's `language`)."
     ),
 )
 
@@ -572,6 +582,7 @@ def add_job(company: str, title: str, status: str = "pending",
             source: str | None = None, description: str | None = None,
             contact_email: str | None = None,
             company_website: str | None = None,
+            language: str | None = None,
             confirmed_new: bool = False) -> dict:
     """Add an application. Call find_job first.
 
@@ -589,6 +600,9 @@ def add_job(company: str, title: str, status: str = "pending",
     Put the full text of the posting in `description`. It costs nothing to
     store and it is what you will write against when they later ask you to
     tailor a CV for this job, by which time the page is usually gone.
+
+    `language` is the language the posting is written in, as a code such as
+    "fr". Left out, it is read from the description.
     """
     if not confirmed_new:
         existing = _candidates(company, title)
@@ -602,6 +616,7 @@ def add_job(company: str, title: str, status: str = "pending",
         "company": company, "title": title, "status": status, "url": url,
         "location": location, "source": source, "description": description,
         "contact_email": contact_email,
+        "language": studio.languages.code_of(language) if language else None,
         # A company already has a logo if any earlier application to it did.
         "logo": studio.stored_logo(company),
     })
@@ -653,6 +668,57 @@ def ats_check(path: str, job_id: str | None = None) -> dict:
             "found": [t["term"] for t in kw["found"]],
             "missing": [t["term"] for t in kw["missing"]]},
     }
+
+
+@tool
+def add_language(path: str, language: str) -> dict:
+    """Start a translation of a CV into another language.
+
+    Writes <name>.<code>.yaml beside `path` and links it to it. The copy
+    already prints dates, month names and "present" in `language` (a code such
+    as "fr", or a RenderCV name such as "french"), and its common section
+    titles are translated. Everything else is still in the source language:
+    translate it with edit_cv_fields, field by field. Leave names, email,
+    phone, links, company names, dates and the design exactly as they are;
+    the design follows the source's automatically.
+
+    Section titles listed in `sections_to_title` are ones CV Studio could not
+    translate. RenderCV prints a section's key as its title, so rename those
+    keys by rewriting the file with write_cv, keeping the entries as they are.
+
+    Then render_cv the result and look at it.
+    """
+    code = studio.languages.code_of(language)
+    if code == "en" and str(language).strip().lower() not in ("en", "english"):
+        raise ValueError(f"CV Studio cannot print a CV in {language!r}. It can in: "
+                         + ", ".join(v[2] for v in studio.languages.LANGS.values()))
+    return studio.add_language(studio.safe_path(path), code)
+
+
+@tool
+def translation_status(path: str) -> dict:
+    """What a translated CV is missing from the CV it was translated from.
+
+    Lists every field the source changed since the translation was last
+    brought up to date: where it is, what the source said then and says now,
+    `key` (the same field's path in the translation, for edit_cv_fields) and
+    what the translation says there now. Empty `changes` means it is current.
+    """
+    drift = studio.translation_drift(studio.safe_path(path))
+    if drift is None:
+        raise ValueError(f"{path} is not a translation. list_cvs shows each CV's "
+                         "`translation_of`.")
+    return drift
+
+
+@tool
+def mark_translation_current(path: str) -> dict:
+    """Record that a translation now says everything its source says.
+
+    Call it after carrying over every change translation_status listed, and
+    only then: from here on, only later changes to the source are listed.
+    """
+    return studio.mark_translation_current(studio.safe_path(path))
 
 
 @tool
