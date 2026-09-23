@@ -63,6 +63,8 @@ try:
 except ImportError:  # clicking the page is a bonus, not a requirement
     cv_map = None
 
+import ats  # noqa: E402
+
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
 SAFE_ASSET = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -1169,6 +1171,73 @@ def provenance(path: Path, data: dict | None) -> dict:
     return out
 
 
+def _where_changed(path: list, mine: dict, theirs: dict) -> str:
+    """Where a changed field is, in the words the outline uses."""
+    if path[:2] != ["cv", "sections"]:
+        return "Header \u00b7 " + " \u203a ".join(str(k) for k in path[1:])
+    bits = [str(path[2]).replace("_", " ").capitalize()] if len(path) > 2 else []
+    if len(path) > 3:
+        i = int(path[3])
+        entry = get_at(mine, path[:4])
+        if entry is None:
+            entry = get_at(theirs, path[:4])
+        if isinstance(entry, dict):
+            bits.append(entry_title(entry, i))
+    rest = path[4:]
+    if rest:
+        key = str(rest[0])
+        if len(rest) > 1 and key == "highlights":
+            bits.append(f"bullet {int(rest[1]) + 1}")
+        else:
+            bits.append(key.replace("_", " "))
+    return " \u203a ".join(bits)
+
+
+def _brief(v) -> str | None:
+    if v is None:
+        return None
+    if isinstance(v, dict):
+        return entry_title(v, 0)
+    if isinstance(v, list):
+        return f"{len(v)} item{'' if len(v) == 1 else 's'}"
+    text = " ".join(str(v).split())
+    return text if len(text) <= 160 else text[:157] + "\u2026"
+
+
+def base_diff(path: Path) -> dict:
+    """What a tailored CV changed from the one it was copied from, line by line.
+
+    Against the copy's own recorded base rather than today's base CV: a CV
+    written for one job should keep saying what it changed from what it was
+    made from, even after another document becomes the base.
+    """
+    doc = (_edits_read()["docs"].get(rel(path)) or {})
+    base_path = (doc.get("base") or {}).get("path")
+    out = {"base": base_path, "missing": False, "changes": [], "design": []}
+    if not base_path:
+        return out
+    try:
+        mine = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))) or {}
+        theirs = to_plain(yaml_rt.load(
+            safe_path(base_path).read_text(encoding="utf-8"))) or {}
+    except (OSError, ValueError):
+        out["missing"] = True
+        return out
+    except Exception:
+        # Unparseable mid-edit: say nothing rather than something wrong.
+        return out
+    for f in changed_fields(theirs.get("cv"), mine.get("cv"), ["cv"]):
+        before, after = get_at(theirs, f), get_at(mine, f)
+        out["changes"].append({
+            "key": field_key(f), "where": _where_changed(f, mine, theirs),
+            "kind": "added" if before is None else "removed" if after is None
+                    else "changed",
+            "before": _brief(before), "after": _brief(after)})
+    out["design"] = sorted({str(f[1]) for f in changed_fields(
+        theirs.get("design"), mine.get("design"), ["design"]) if len(f) > 1})
+    return out
+
+
 def edits_stamp() -> float | None:
     """When the provenance file last changed, so the poll can spot a new mark."""
     try:
@@ -1372,6 +1441,22 @@ def bootstrap(workspace: Path) -> bool:
     return created
 
 
+def starter_untouched() -> bool:
+    """Whether the base CV is still the placeholder the app wrote.
+
+    First run is one launch; setup is not. Quit halfway through it and the next
+    launch is no longer a first run, but the CV still says Your Name, and that
+    is the fact the welcome is really about.
+    """
+    base = base_cv()
+    if not base or base.get("missing"):
+        return False
+    try:
+        return safe_path(base["path"]).read_text(encoding="utf-8") == STARTER_CV
+    except OSError:
+        return False
+
+
 def safe_path(raw: str) -> Path:
     p = (WORKSPACE / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
     if not str(p).startswith(str(WORKSPACE.resolve())):
@@ -1399,9 +1484,10 @@ def is_cv_yaml(p: Path) -> bool:
 # --------------------------------------------------------------------------
 # Company logos
 #
-# Local files only. The app makes no network calls, and pointing an <img> at a
-# remote logo would quietly break that: every render would tell someone else's
-# server which companies you are applying to.
+# Local files only, as far as the interface is concerned. Pointing an <img> at
+# a remote logo would tell someone else's server which companies you are
+# applying to, every time the table drew. A logo is fetched once, by the MCP
+# server when a model asks, from the company's own site (fetch_logo below).
 #
 # So a logo is a file in the workspace, and a job names it. A company with no
 # logo gets a monogram instead, which is most of them and has to look
@@ -1409,11 +1495,11 @@ def is_cv_yaml(p: Path) -> bool:
 # --------------------------------------------------------------------------
 
 LOGO_DIR = "assets/logos"
-LOGO_TYPES = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"}
+LOGO_TYPES = {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".ico"}
 
 
 def logo_dir() -> Path:
-    return WORKSPACE / "assets" / "logos"
+    return WORKSPACE / LOGO_DIR
 
 
 def list_logos() -> list[str]:
@@ -1448,12 +1534,148 @@ def save_logo(company: str, source: str) -> dict:
         raise ValueError(
             f"{src.suffix or 'That'} is not an image type this can show. "
             f"Use one of: {', '.join(sorted(LOGO_TYPES))}")
-    safe = "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
-    dest = logo_dir() / f"{safe}{src.suffix.lower()}"
+    return _store_logo(company, src.read_bytes(), src.suffix.lower())
+
+
+def _logo_stem(company: str) -> str:
+    return "".join(c for c in company.lower() if c.isalnum() or c in "-_") or "logo"
+
+
+def _store_logo(company: str, data: bytes, ext: str) -> dict:
+    dest = logo_dir() / f"{_logo_stem(company)}{ext}"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, dest)
+    dest.write_bytes(data)
     return {"ok": True, "logo": dest.name, "path": rel(dest),
             "kb": round(dest.stat().st_size / 1024, 1)}
+
+
+def stored_logo(company: str) -> str | None:
+    """A logo already saved for this company, by the name save_logo gives it."""
+    stem = _logo_stem(company)
+    for name in list_logos():
+        if Path(name).stem == stem:
+            return name
+    return None
+
+
+# Fetching one. This is the only network request anything in CV Studio makes,
+# and it is shaped so that it tells nobody anything new: it goes to the
+# company's own website, which the model was given, and to wherever that page
+# says its icon lives (often the company's own CDN) -- no logo service, no
+# search engine, nothing that would learn the list of places you are applying
+# to. The app's interface never calls it; only the MCP server
+# does, when a model asks.
+LOGO_MAX = 512 * 1024
+PAGE_MAX = 1536 * 1024
+UA = "Mozilla/5.0 (compatible; CV Studio logo fetch)"
+
+
+def _site(website: str) -> str:
+    raw = (website or "").strip()
+    if not raw:
+        raise ValueError("No website given.")
+    u = urlparse(raw if "://" in raw else "https://" + raw)
+    host = (u.hostname or "").lower()
+    if u.scheme not in ("http", "https") or "." not in host:
+        raise ValueError(f"{website!r} is not a website.")
+    return f"{u.scheme}://{host}{f':{u.port}' if u.port else ''}/"
+
+
+def _fetch(url: str, limit: int) -> bytes:
+    import urllib.request
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError("not http")
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
+    with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310 -- scheme checked
+        body = r.read(limit + 1)
+    if len(body) > limit:
+        raise ValueError("too large")
+    return body
+
+
+def _image_ext(data: bytes) -> str | None:
+    """What an image is, from its bytes. A server's Content-Type is a guess."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    if data[:4] == b"\x00\x00\x01\x00":
+        return ".ico"
+    head = data[:2048].lstrip().lower()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head):
+        # Drawn in an <img>, where a script cannot run, but also reachable as
+        # a page in its own right. Refuse anything that could do something.
+        low = data.lower()
+        if re.search(rb"<script|<foreignobject|\son[a-z]+\s*=|javascript:", low):
+            return None
+        return ".svg"
+    return None
+
+
+def _icon_links(html: str, root: str) -> list[tuple[int, str]]:
+    """Every icon the page declares, scored so the best logo comes first."""
+    from html.parser import HTMLParser
+    from urllib.parse import urljoin
+    found: list[tuple[int, str]] = []
+
+    class P(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag != "link":
+                return
+            a = {k: (v or "") for k, v in attrs}
+            rel_ = a.get("rel", "").lower()
+            href = a.get("href")
+            if not href or "icon" not in rel_ or "mask" in rel_:
+                return
+            sizes = [int(x) for x in re.findall(r"(\d+)x\d+", a.get("sizes", ""))]
+            if href.lower().split("?")[0].endswith(".svg") or "svg" in a.get("type", ""):
+                score = 1000
+            elif "apple-touch-icon" in rel_:
+                score = max(sizes or [180])
+            else:
+                score = max(sizes or [32])
+            found.append((score, urljoin(root, href)))
+
+    try:
+        P().feed(html)
+    except Exception:
+        pass
+    return found
+
+
+def fetch_logo(company: str, website: str) -> dict:
+    """Find the company's icon on its own website and store it as its logo."""
+    root = _site(website)
+    tried: list[str] = []
+    candidates: list[tuple[int, str]] = []
+    try:
+        page = _fetch(root, PAGE_MAX).decode("utf-8", errors="replace")
+        candidates += _icon_links(page, root)
+    except Exception as exc:
+        tried.append(f"{root} ({type(exc).__name__})")
+    candidates += [(150, root + "apple-touch-icon.png"), (16, root + "favicon.ico")]
+    seen: set[str] = set()
+    for _, url in sorted(candidates, key=lambda c: -c[0]):
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            data = _fetch(url, LOGO_MAX)
+        except Exception as exc:
+            tried.append(f"{url} ({type(exc).__name__})")
+            continue
+        ext = _image_ext(data)
+        if ext:
+            saved = _store_logo(company, data, ext)
+            saved["from"] = url
+            return saved
+        tried.append(f"{url} (not an image)")
+    raise ValueError(f"No usable logo on {urlparse(root).hostname}. Tried: " +
+                     "; ".join(tried[:6]))
 
 
 def document_files() -> list[tuple[Path, str, str]]:
@@ -1643,12 +1865,6 @@ def line_map(doc, text: str) -> dict:
         return {}
     total = len(text.splitlines())
     out: dict[str, list[int]] = {}
-
-    def starts_of(node) -> list[int]:
-        try:
-            return [node.lc.key(k)[0] for k in node]
-        except Exception:
-            return []
 
     sections = cv.get("sections") if hasattr(cv, "get") else None
     # The header is everything in `cv` before the sections block begins.
@@ -1934,6 +2150,121 @@ def render(path: Path) -> dict:
     return _shape(render_file(path, output_dir(path)), path)
 
 
+def last_pdf(path: Path) -> Path | None:
+    """The newest PDF in this document's output folder, whatever its age."""
+    out = output_dir(path)
+    pdfs = sorted(out.glob("*.pdf"), key=lambda f: f.stat().st_mtime,
+                  reverse=True) if out.is_dir() else []
+    return pdfs[0] if pdfs else None
+
+
+def current_pdf(path: Path) -> tuple[Path | None, dict | None]:
+    """The PDF for this document as it now stands, rendering it if the one on
+    disk is older than the YAML. Returns (pdf, None) or (None, failed render)."""
+    pdf = last_pdf(path)
+    if pdf and pdf.stat().st_mtime >= path.stat().st_mtime:
+        return pdf, None
+    r = render(path)
+    if not r.get("ok"):
+        return None, r
+    return WORKSPACE / r["pdf"], None
+
+
+def job_for(path: Path, job_id: str | None = None) -> dict | None:
+    """The application to check a CV against: the one named, else the one this
+    CV is attached to."""
+    if jobstore is None:
+        return None
+    jobs = jobstore.list_jobs(WORKSPACE)
+    if job_id:
+        return next((j for j in jobs if j["id"] == job_id), None)
+    return next((j for j in jobs if j.get("cv_path") == rel(path)), None)
+
+
+def ats_report(path: Path, job_id: str | None = None,
+               posting: str | None = None) -> dict:
+    """What an ATS reads from this CV's PDF, and how it meets a posting.
+
+    The posting is the one pasted, else the named application's, else the
+    application this CV is attached to. No posting is not an error: the
+    parsing checks stand on their own.
+    """
+    pdf, failed = current_pdf(path)
+    if pdf is None:
+        return {"ok": False, "error": (failed or {}).get("hint") or
+                "The CV did not render, so there is no PDF to read."}
+    try:
+        pages = ats.pdf_text(pdf)
+    except Exception as exc:
+        return {"ok": False, "error": f"Could not read the PDF: {exc}"}
+    data = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))) or {}
+    text = "\n".join(pages)
+    out = {"ok": True, "pdf": rel(pdf), "pages": len(pages),
+           "words": len(text.split()), "text": text[:8000],
+           "checks": ats.parse_checks(pages, data), "against": None,
+           "keywords": None}
+    # An empty posting is a choice ("check it against nothing"), not an
+    # absence, so only None falls back to the attached application.
+    job = None if posting is not None else job_for(path, job_id)
+    source = posting.strip() if posting is not None else (job or {}).get("description")
+    if job:
+        out["against"] = {"job_id": job["id"], "company": job.get("company"),
+                          "title": job.get("title"),
+                          "has_posting": bool(job.get("description"))}
+    elif source:
+        out["against"] = {"pasted": True, "has_posting": True}
+    if source:
+        terms = ats.keywords(source, (job or {}).get("company"))
+        out["keywords"] = ats.match(terms, text)
+    return out
+
+
+# The two parsing problems RenderCV's own design options solve, keyed by the
+# id parse_checks gives them.
+ATS_FIXES = {
+    "icons": (["design", "header", "connections", "show_icons"], False),
+    "urls": (["design", "header", "connections",
+              "display_urls_instead_of_usernames"], True),
+}
+
+
+def ats_fix(path: Path, fix: str) -> dict:
+    if fix not in ATS_FIXES:
+        raise ValueError(f"Unknown fix: {fix}")
+    keys, value = ATS_FIXES[fix]
+    from ruamel.yaml.comments import CommentedMap
+    doc = yaml_rt.load(path.read_text(encoding="utf-8"))
+    node = doc
+    for k in keys[:-1]:
+        # apply_patches will not create a missing branch, and the starter CV
+        # has no design.header at all, so this builds it.
+        if not isinstance(node.get(k), dict):
+            node[k] = CommentedMap()
+        node = node[k]
+    node[keys[-1]] = value
+    import io
+    buf = io.StringIO()
+    yaml_rt.dump(doc, buf)
+    return write_doc(path, buf.getvalue(), "save")
+
+
+def thumb(path: Path) -> dict:
+    """The first page as it was last rendered, and whether that is still true.
+
+    Read off disk rather than rendered, because the base card asks on every
+    boot and a render is seconds of work. A page older than the YAML is still
+    returned -- it is the right shape while the new one is made -- but marked,
+    so the caller knows to render rather than show last week's CV as today's.
+    """
+    pdf = last_pdf(path)
+    first = pdf.with_name(f"{pdf.stem}_1.png") if pdf else None
+    if not first or not first.is_file():
+        return {"png": None, "fresh": False}
+    made = first.stat().st_mtime
+    return {"png": f"/api/asset?path={rel(first)}&v={int(made * 1000)}",
+            "fresh": made >= path.stat().st_mtime}
+
+
 def preview(path: Path, text: str | None = None,
             patches: list[dict] | None = None) -> dict:
     """Render unsaved editor content without writing to the user's file.
@@ -2093,6 +2424,9 @@ def design_schema(theme: str) -> dict:
         fields = []
         for fname, fspec in (model.get("properties") or {}).items():
             fields += _describe(fspec, defs, [gname, fname], gname)
+        # Forced off at render time (cv_render.FORCED), so a switch for it
+        # would be a control that does nothing.
+        fields = [f for f in fields if f["path"] != ["page", "show_top_note"]]
         if fields:
             groups.append({"name": gname, "fields": fields})
     return {"groups": groups, "themes": available_themes()}
@@ -2174,6 +2508,32 @@ def openapi_spec() -> dict:
             "/api/jobs/export": {"get": {"summary": "Export every job as JSON or CSV",
                 "parameters": [{"name": "format", "in": "query",
                                 "schema": {"type": "string", "enum": ["json", "csv"]}}],
+                "responses": ok}},
+            "/api/basediff": {"get": {"summary":
+                "What a tailored CV changed from the document it was copied from",
+                "parameters": [{"name": "path", "in": "query", "required": True,
+                                "schema": {"type": "string"}}],
+                "responses": ok}},
+            "/api/ats": {"post": {"summary":
+                "What an ATS reads from a CV's PDF, and which of a posting's keywords it uses",
+                "requestBody": body({"path": {"type": "string"},
+                                     "job_id": {"type": "string"},
+                                     "posting": {"type": "string"}}),
+                "responses": ok}},
+            "/api/ats/fix": {"post": {"summary":
+                "Apply one of the design changes an ATS check offers, then check again",
+                "requestBody": body({"path": {"type": "string"},
+                                     "fix": {"type": "string",
+                                             "enum": ["icons", "urls"]}}),
+                "responses": ok}},
+            "/api/open": {"post": {"summary":
+                "Open a web link in the system browser",
+                "requestBody": body({"url": {"type": "string"}}),
+                "responses": ok}},
+            "/api/thumb": {"get": {"summary":
+                "A document's first page as last rendered, and whether it is current",
+                "parameters": [{"name": "path", "in": "query", "required": True,
+                                "schema": {"type": "string"}}],
                 "responses": ok}},
             "/api/ai": {"get": {"summary":
                 "Whether each AI client is wired up to this build and workspace",
@@ -2400,6 +2760,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "fonts": font_families(),
                     "workspace": str(WORKSPACE),
                     "first_run": FIRST_RUN,
+                    "starter": starter_untouched(),
                     "version": VERSION,
                     "platform": sys.platform,
                     "server_launch": server_launch(),
@@ -2467,6 +2828,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json({"clients": ai_clients()})
             if u.path == "/api/pulse":
                 return self._json(pulse())
+            if u.path == "/api/basediff":
+                return self._json(base_diff(safe_path(q["path"][0])))
+            if u.path == "/api/thumb":
+                return self._json(thumb(safe_path(q["path"][0])))
             if u.path == "/api/skills":
                 return self._json(skills_list())
             if u.path == "/api/asset":
@@ -2531,12 +2896,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/jobs":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
+                if not payload.get("logo") and payload.get("company"):
+                    payload["logo"] = stored_logo(payload["company"])
                 return self._json(jobstore.add_job(WORKSPACE, payload))
             if u.path == "/api/jobs/update":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
                 return self._json(jobstore.update_job(
                     WORKSPACE, payload.pop("id", ""), payload))
+            if u.path == "/api/ats":
+                return self._json(ats_report(safe_path(payload["path"]),
+                                             payload.get("job_id"),
+                                             payload.get("posting")))
+            if u.path == "/api/ats/fix":
+                p = safe_path(payload["path"])
+                ats_fix(p, payload.get("fix", ""))
+                return self._json({"ok": True, **ats_report(p, payload.get("job_id"),
+                                                             payload.get("posting"))})
+            if u.path == "/api/open":
+                # A link out of the app. The desktop webview drops target=_blank
+                # on the floor, so the page asks for it here and the system
+                # browser opens it. Web links only: this is not a way to launch
+                # whatever a stored URL happens to name.
+                link = str(payload.get("url") or "")
+                if urlparse(link).scheme not in ("http", "https"):
+                    return self._json({"error": "Only web links can be opened."}, 400)
+                webbrowser.open(link)
+                return self._json({"ok": True})
             if u.path == "/api/reveal":
                 target = WORKSPACE
                 sub_ = payload.get("path")
@@ -3115,7 +3501,7 @@ body.dragging{cursor:col-resize;user-select:none}
 .fg.wide>label{padding-top:6px}
 /* background-COLOR, not the shorthand: the shorthand resets background-image
    and silently strips the chevron off every select. */
-.inp,.fg input,.fg select,.fg textarea{background-color:var(--field);
+.fg input,.fg select,.fg textarea{background-color:var(--field);
   border:1px solid var(--bd-field);
   border-radius:4px;padding:5px 8px;font-size:12.5px;color:var(--t900);width:100%;min-width:0}
 .fg textarea{font:12.5px/1.5 inherit;resize:vertical;min-height:56px}
@@ -3175,6 +3561,12 @@ body.dragging{cursor:col-resize;user-select:none}
 /* A document-level fact, so it sits with the other one rather than being
    redrawn inside every block's editor. */
 .linkchip .dot{width:6px;height:6px}
+/* "Base" is a role the document plays, so it reads as a tag rather than as
+   another sentence in the chip. Neutral: the accent is spoken for. */
+.btag{font-size:10.5px;font-weight:600;color:var(--t800);background:var(--bar);
+  border-radius:4px;padding:1px 6px;line-height:1.5;flex:none;
+  box-shadow:inset 0 0 0 1px var(--bd-field)}
+.row .btag{font-weight:500;padding:0 5px;margin-left:2px}
 
 /* ---------- the application peek ----------------------------------------
    Sized to the record rather than to a habit: wide enough for two columns of
@@ -3279,7 +3671,34 @@ body.dragging{cursor:col-resize;user-select:none}
 .drow select{border:0;background:none;font-size:12.5px;color:var(--t900);flex:1;min-width:0;
   padding:0;cursor:pointer}
 .drow select.empty{color:var(--t400)}
-.alink{font-size:12px;color:var(--acc-text);flex:none}
+.alink{font-size:12px;color:var(--acc-text);flex:none;cursor:pointer}
+/* A job board's mark: small, square, in its own colours, because it is
+   identifying somebody else's product. Lettered tiles stay neutral. */
+.board{width:16px;height:16px;border-radius:4px;flex:none;display:inline-grid;
+  place-items:center;vertical-align:middle}
+.board svg{width:10px;height:10px;display:block}
+.board.lettered{background:var(--bar);color:var(--t700);font-size:8px;font-weight:600;
+  box-shadow:inset 0 0 0 1px var(--bd-field)}
+.trow .role .via{flex:none;display:inline-flex;align-self:center}
+.posting-row{justify-content:flex-start}
+.posting-row>span:not(.board){flex:1;min-width:0;text-align:left}
+.posting-row .alink{white-space:nowrap}
+.posting-row>span i{font-style:normal;font-size:11.5px;margin-left:4px}
+/* What the CV changed from its base, under the CV it describes. */
+.bdiff{font-size:12px;color:var(--t700);line-height:1.45}
+.bd-head{margin:0;display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
+.bd-head b{color:var(--t900);font-weight:600}
+.bd-design{font-size:11.5px;color:var(--t500)}
+.bd-list{list-style:none;margin:7px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.bd-list li{display:flex;flex-direction:column;gap:2px;padding-left:9px;
+  border-left:2px solid var(--rule)}
+.bd-where{font-size:11.5px;color:var(--t500)}
+.bd-kind{font-style:normal;font-size:10.5px;color:var(--t600);background:var(--bar);
+  border-radius:3px;padding:0 4px;margin-left:4px}
+.bdiff del{color:var(--t500);text-decoration:line-through;text-decoration-color:var(--t400)}
+.bdiff ins{text-decoration:none;color:var(--t900)}
+.bd-more{margin-top:7px}
+.bd-more summary{cursor:pointer;font-size:11.5px;color:var(--acc-text)}
 .alink:hover{text-decoration:underline}
 .muted{color:var(--t400)}
 
@@ -3348,7 +3767,6 @@ body.dragging{cursor:col-resize;user-select:none}
 #status{height:24px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
   background:var(--panel);border-top:1px solid var(--rule);font-size:11px;
   color:var(--t500);user-select:none}
-#status .sep::before{content:"\00b7"}
 /* a decision you just took about someone else's edit, not routine chatter */
 #st-right.said{color:var(--acc-text);font-weight:500}
 /* the MCP boundary having just stopped something */
@@ -3375,6 +3793,19 @@ body.dragging{cursor:col-resize;user-select:none}
 .baserow .bsub:empty{display:none}
 .baserow.gone .bn{text-decoration:line-through;color:var(--t500)}
 .baserow .obtn{flex:none}
+/* The top of the base's first page: the name, the headline and the first
+   section, which is what tells two CVs apart at a glance. The page stays white
+   in either appearance, as it does in the editor. */
+.bthumb{display:block;padding:0;border:1px solid var(--rule);border-radius:6px;
+  background:#fff;overflow:hidden;cursor:pointer;flex:none}
+.bthumb img{display:block;width:100%;height:100%;object-fit:cover;
+  object-position:top center}
+.bthumb.empty{display:grid;place-items:center;background:var(--bar)}
+.bthumb.empty span{font-size:11px;color:var(--t500)}
+.bthumb:hover{border-color:var(--bd-field)}
+.bthumb:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.baserow .bthumb{flex-basis:100%;height:118px;margin-bottom:8px}
+.bcard .bthumb{width:66px;height:86px}
 .baserow .grow{display:none}
 
 /* ------------------------------------------------------------- Documents -- */
@@ -3395,12 +3826,14 @@ body.dragging{cursor:col-resize;user-select:none}
   color:var(--t900);display:flex;align-items:baseline;gap:8px}
 .dlane h4 .n{color:var(--t500);font-weight:400;font-size:13px}
 .dlane .why{padding:3px 12px 9px;font-size:13px;color:var(--t600);max-width:66ch}
-.drow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 84px;
+/* Scoped to the lanes: the application panel's document rows share the class
+   name, and an unscoped grid here turned them into three columns too. */
+.dlane .drow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 84px;
   align-items:center;gap:10px;width:100%;height:36px;padding:0 12px;
   text-align:left;border:0;border-bottom:1px solid var(--bd-inner);
   background:transparent;color:var(--t900);font-size:12.5px;cursor:pointer;
   font-family:inherit}
-.drow:hover{background:var(--row-hover)}
+.dlane .drow:hover{background:var(--row-hover)}
 .drow .dn{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   display:flex;align-items:center;gap:7px}
 .drow .dfor{color:var(--t600);overflow:hidden;text-overflow:ellipsis;
@@ -3537,7 +3970,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 
 /* ---------- sheets and overlays ------------------------------------------ */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:39}
-.sheet{position:fixed;left:50%;top:46px;transform:translateX(-50%);width:620px;
+.sheet{position:fixed;left:50%;top:52px;transform:translateX(-50%);width:620px;
   max-width:calc(100% - 40px);max-height:calc(100% - 66px);overflow-y:auto;
   background:var(--app);border-radius:0 0 9px 9px;box-shadow:0 22px 48px rgba(0,0,0,.45);
   padding:22px 24px;display:flex;flex-direction:column;gap:16px;z-index:40}
@@ -3567,6 +4000,112 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sbtn.primary:hover:not(:disabled){background:var(--acc-hover);border-color:var(--acc-hover)}
 .sbtn.danger{border-color:transparent;color:var(--bad);background:none}
 .sbtn.danger:hover{background:var(--bad-bg)}
+
+/* ---------- setup ---------------------------------------------------------
+   The sheet, wider, with the page beside the fields that change it. */
+.sheet.ob{width:760px}
+#ob{display:flex;flex-direction:column;gap:18px}
+.ob-steps{display:flex;gap:6px;list-style:none;margin:0;padding:0;counter-reset:ob}
+.ob-steps li{flex:1;counter-increment:ob;font-size:11.5px;color:var(--t500);
+  padding-top:8px;border-top:2px solid var(--rule)}
+.ob-steps li::before{content:counter(ob) "  ";font-family:'IBM Plex Mono',ui-monospace,monospace}
+.ob-steps li.done{border-top-color:var(--t500);color:var(--t600)}
+.ob-steps li[aria-current]{border-top-color:var(--acc);color:var(--t900);font-weight:500}
+.ob-body{display:flex;gap:22px;min-height:0}
+.ob-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
+.ob-main .fg label em{font-style:normal;font-size:10.5px;color:var(--t500)}
+.ob-facts{margin:2px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+.ob-facts li{font-size:12.5px;line-height:1.5;color:var(--t600);padding-left:14px;
+  border-left:2px solid var(--rule)}
+.ob-facts b{color:var(--t900);font-weight:600}
+.linkish{border:0;background:none;padding:0;color:var(--acc-text);font-size:12.5px;
+  cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.ob-themes{display:flex;flex-wrap:wrap;gap:6px}
+.ob-themes button{font-size:12px;padding:4px 10px;border-radius:5px;
+  border:1px solid var(--bd-field);background:var(--field);color:var(--t700)}
+.ob-themes button:hover{background:var(--paper-hover)}
+.ob-themes button[aria-pressed=true]{background:var(--acc);border-color:var(--acc);
+  color:var(--c800);font-weight:500}
+/* A real render at a fifth of its size: enough to see the shape, the weight of
+   the name and whether it spills, which is what the choice is about. */
+.ob-fig{margin:0;flex:none;width:236px;display:flex;flex-direction:column;gap:7px}
+.ob-shot{width:236px;aspect-ratio:210/297;background:#fff;border:1px solid var(--rule);
+  box-shadow:0 8px 20px -10px rgba(30,26,18,.35);overflow:hidden;display:grid;
+  place-items:center;transition:opacity .15s}
+.ob-shot.busy{opacity:.55}
+.ob-shot img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+.ob-shot span{font-size:11.5px;color:#6b675d;padding:12px;text-align:center}
+.ob-fig figcaption{font-size:11px;color:var(--t500);text-align:center;min-height:15px}
+.ob-ai{display:flex;flex-direction:column;gap:8px}
+.ob-client{display:flex;align-items:center;gap:12px;padding:10px 12px;
+  border:1px solid var(--bd-field);border-radius:8px;background:var(--field)}
+.ob-client .badge{width:32px;height:32px;border-radius:8px;display:grid;
+  place-items:center;background:var(--bar);flex:none}
+.ob-client[data-client=hermes] .badge svg{width:24px;height:24px}
+.ob-client .nm{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--t900);
+  display:flex;flex-direction:column}
+.ob-client .nm small{font-size:11.5px;font-weight:400;color:var(--t500);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:720px){
+  .ob-body.two{flex-direction:column-reverse}
+  .ob-fig,.ob-shot{width:160px}
+}
+
+/* ---------- ATS check ------------------------------------------------------ */
+.sheet.ats{width:980px}
+.ats-top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between}
+.ats-vs{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t600);
+  flex:none;margin-top:2px}
+.ats-vs select{max-width:280px;font-size:12.5px;padding:5px 8px;border-radius:5px;
+  border:1px solid var(--bd-field);background:var(--field);color:var(--t900)}
+.ats-paste{width:100%;min-height:110px;resize:vertical;font:12.5px/1.5 inherit;padding:9px 10px;
+  border:1px solid var(--bd-field);border-radius:6px;background:var(--field);color:var(--t900)}
+.ats-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:22px;
+  min-height:0;transition:opacity .15s}
+.ats-body.busy{opacity:.55}
+.ats-body>.sp-note,.ats-body>.note{grid-column:1/-1}
+.ats-main{display:flex;flex-direction:column;gap:20px;min-width:0}
+.ats-sec{display:flex;flex-direction:column;gap:8px}
+.ats-sec .blabel em,.ats-read .blabel em{font-style:normal;font-weight:400;color:var(--t500);
+  font-size:12px;margin-left:8px}
+.ats-sec .sp-note{margin:4px 0 0}
+.ats-score{display:flex;align-items:baseline;gap:8px}
+.ats-score b{font-size:26px;font-weight:500;color:var(--t900);line-height:1}
+.ats-score span{font-size:12.5px;color:var(--t600)}
+/* The live metric, so the one place in the sheet the accent goes. */
+.meter{height:5px;border-radius:3px;background:var(--rule);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--acc);border-radius:3px}
+.kwlabel{font-size:11.5px;color:var(--t500);margin-top:4px}
+.kws{display:flex;flex-wrap:wrap;gap:5px}
+.kw{font-size:12px;padding:2px 8px;border-radius:10px;border:1px dashed var(--t400);
+  color:var(--t800)}
+.kw.on{border:1px solid transparent;background:var(--bar);color:var(--t700)}
+.kw i{font-style:normal;color:var(--fn-won);margin-right:4px;font-size:11px}
+.checks{list-style:none;margin:0;padding:0;border:1px solid var(--bd-field);border-radius:9px;
+  background:var(--field);overflow:hidden}
+.checks li{display:flex;gap:10px;align-items:flex-start;padding:9px 11px}
+.checks li+li{border-top:1px solid var(--bd-inner)}
+.checks li>i{flex:none;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;
+  font-style:normal;font-size:10.5px;font-weight:700;margin-top:1px}
+.checks li.ok>i{background:color-mix(in srgb,var(--fn-won) 18%,transparent);color:var(--fn-won)}
+.checks li.warn>i{background:var(--bar);color:var(--t800);box-shadow:inset 0 0 0 1px var(--t400)}
+.checks li.bad>i{background:var(--bad-bg);color:var(--bad)}
+.checks li>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.checks b{font-size:12.5px;font-weight:600;color:var(--t900)}
+.checks span{font-size:12px;color:var(--t600);line-height:1.45}
+.checks li.ok span{color:var(--t500)}
+.checks .obtn{flex:none;align-self:center}
+.ats-read{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ats-read pre{margin:0;padding:12px 13px;max-height:520px;overflow:auto;white-space:pre-wrap;
+  word-break:break-word;font-size:11.5px;line-height:1.55;color:var(--t800);
+  background:var(--field);border:1px solid var(--bd-field);border-radius:9px}
+.ats-read .pua{font-style:normal;color:var(--bad);background:var(--bad-bg);border-radius:2px;
+  padding:0 1px}
+.ats-link{margin-top:-6px}
+@media (max-width:900px){
+  .ats-body{grid-template-columns:1fr}
+  .ats-top{flex-direction:column}
+}
 
 /* segmented control on paper */
 .seg.paper{background:var(--seg-track);width:fit-content}
@@ -3739,7 +4278,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   background:var(--field)}
 .client .badge{grid-column:1;grid-row:1/3;align-self:center;width:38px;height:38px;
   border-radius:9px;display:grid;place-items:center;background:var(--bar)}
-.client[data-client=claude] .badge{background:rgba(217,119,87,.14);color:#D97757}
+.client[data-client=claude] .badge,.ob-client[data-client=claude] .badge{
+  background:rgba(217,119,87,.14);color:#D97757}
 .client[data-client=openai] .badge{color:var(--t900)}
 /* Nous publish this one as an avatar -- a figure on a tile -- rather than as a
    glyph that takes the colour around it, so it is drawn that way: black on
@@ -3747,10 +4287,12 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
    currentColor like the other three it inverts on a dark background, and an
    inverted illustration is not the mark. It also needs the extra size: at the
    19px the rest are drawn at, its detail closes up into a blot. */
-.client[data-client=hermes] .badge{background:#fff;color:#000;
+.client[data-client=hermes] .badge,.ob-client[data-client=hermes] .badge{
+  background:#fff;color:#000;
   box-shadow:inset 0 0 0 1px var(--bd-field)}   /* white on white needs an edge */
 .client[data-client=hermes] .badge svg{width:28px;height:28px}
-.client[data-client=mistral] .badge{background:rgba(250,80,15,.12)}
+.client[data-client=mistral] .badge,.ob-client[data-client=mistral] .badge{
+  background:rgba(250,80,15,.12)}
 .client .who{grid-column:2;grid-row:1;display:flex;align-items:center;gap:9px;
   min-width:0;flex-wrap:wrap}
 .client .who b{font-size:13.5px;font-weight:600;color:var(--t900)}
@@ -4008,6 +4550,18 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
 <!-- Marks for the AI clients. The Claude one is as published by Anthropic, and
      identifies that integration and nothing else: see THIRD-PARTY-NOTICES.md. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <!-- Job boards, for where a posting was found. Simple Icons (CC0), except
+       LinkedIn, which asked Simple Icons to remove it; that one is Font
+       Awesome's (CC BY 4.0). See THIRD-PARTY-NOTICES.md. -->
+  <symbol id="board-linkedin" viewBox="0 0 448 512"><path fill="currentColor" d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z"/></symbol>
+  <symbol id="board-indeed" viewBox="0 0 24 24"><path fill="currentColor" d="M11.566 21.5633v-8.762c.2553.0231.5009.0346.758.0346 1.2225 0 2.3739-.3206 3.3506-.8928v9.6182c0 .8219-.1957 1.4287-.5757 1.8338-.378.4033-.8808.6049-1.491.6049-.6007 0-1.0766-.2016-1.468-.6183-.3781-.4032-.5739-1.01-.5739-1.8184zM11.589.5659c2.5447-.8929 5.4424-.8449 7.6186.987.405.3687.8673.8334 1.0515 1.3806.2207.6913-.7695-.073-.9057-.167-.71-.4532-1.4182-.8334-2.2127-1.0946C12.8614.3873 8.8122 2.709 6.2945 6.315c-1.0516 1.5939-1.7367 3.2721-2.299 5.1174-.0614.2017-.1094.4647-.2207.6413-.1113.2036-.048-.5453-.048-.5702.0845-.7623.2438-1.4997.4414-2.237C5.3292 5.3375 7.897 2.0655 11.5891.5658zm4.9281 7.0587c0 1.6686-1.353 3.0224-3.0205 3.0224-1.6677 0-3.0186-1.3538-3.0186-3.0224 0-1.6687 1.351-3.0224 3.0186-3.0224 1.6676 0 3.0205 1.3518 3.0205 3.0224Z"/></symbol>
+  <symbol id="board-glassdoor" viewBox="0 0 24 24"><path fill="currentColor" d="M14.1093.0006c-.0749-.0074-.1348.0522-.1348.127v3.451c0 .0673.0537.1194.121.127 2.619.172 4.6092.9501 4.6092 3.6814H13.086a.1343.1343 0 0 0-.1348.1347v8.9644c0 .0748.06.1347.1348.1347h10.0034c.0748 0 .1347-.0599.1347-.1347V7.342c0-2.2374-.7996-4.0558-2.4159-5.3279C19.3191.8469 17.0874.1428 14.1093.0006ZM.9107 7.387a.1342.1342 0 0 0-.1347.1347v8.9566c0 .0748.06.1347.1347.1347h5.6189c0 2.7313-1.9902 3.5094-4.6091 3.6815-.0674.0075-.1192.0596-.1192.127v3.451c0 .0747.06.1343.1348.1269 2.9781-.1422 5.2078-.8463 6.6969-2.0136 1.6163-1.272 2.4159-3.0905 2.4159-5.3278V7.5217a.1343.1343 0 0 0-.1348-.1347z"/></symbol>
+  <symbol id="board-greenhouse" viewBox="0 0 24 24"><path fill="currentColor" d="M16.279 7.13c0 1.16-.49 2.185-1.293 2.987-.891.891-2.184 1.114-2.184 1.872 0 1.025 1.65.713 3.231 2.295 1.048 1.047 1.694 2.43 1.694 4.034C17.727 21.482 15.187 24 12 24c-3.187 0-5.727-2.518-5.727-5.68 0-1.607.646-2.989 1.694-4.036 1.582-1.582 3.23-1.27 3.23-2.295 0-.758-1.292-.98-2.183-1.872-.802-.802-1.293-1.827-1.293-3.03 0-2.318 1.895-4.19 4.212-4.19.446 0 .847.067 1.181.067.602 0 .914-.268.914-.691 0-.245-.112-.557-.112-.891 0-.758.647-1.382 1.427-1.382s1.404.646 1.404 1.426c0 .825-.647 1.204-1.137 1.382-.401.134-.713.312-.713.713 0 .758 1.382 1.493 1.382 3.61zm-.446 11.19c0-2.206-1.627-3.99-3.833-3.99-2.206 0-3.833 1.784-3.833 3.99 0 2.184 1.627 3.989 3.833 3.989 2.206 0 3.833-1.808 3.833-3.99zM14.518 7.086c0-1.404-1.136-2.562-2.518-2.562S9.482 5.682 9.482 7.086 10.618 9.65 12 9.65s2.518-1.159 2.518-2.563z"/></symbol>
+  <symbol id="board-wellfound" viewBox="0 0 24 24"><path fill="currentColor" d="M23.998 8.128c.063-1.379-1.612-2.376-2.795-1.664-1.23.598-1.322 2.52-.156 3.234 1.2.862 2.995-.09 2.951-1.57zm0 7.748c.063-1.38-1.612-2.377-2.795-1.665-1.23.598-1.322 2.52-.156 3.234 1.2.863 2.995-.09 2.951-1.57zm-20.5 1.762L0 6.364h3.257l2.066 8.106 2.245-8.106h3.267l2.244 8.106 2.065-8.106h3.257l-3.54 11.274H11.39c-.73-2.713-1.46-5.426-2.188-8.14l-2.233 8.14H3.5z"/></symbol>
+  <symbol id="board-welcometothejungle" viewBox="0 0 24 24"><path fill="currentColor" d="M22.62 3.783c-1.115-1.811-4.355-2.604-6.713-.265-.132.135-.306.548.218 1.104 1.097 1.149 6.819 7.046 4.702 12.196-1.028 2.504-3.953 2.073-5.052-2.076a23.184 23.184 0 0 1-.473-9.367s.105-.394-.065-.52c-.117-.087-.305-.05-.547.33-.06.096-.048.076-.106.178l-.003.002c-1.622 2.688-3.272 5.874-4.049 7.07.38-1.803-.101-4.283-.85-6.359l-.142-.375c-.692-1.776-1.524-2.974-1.776-3.245-.03-.033-.105-.094-.353-.094H.398c-.49 0-.448.412-.293.561 1.862 2.178 7.289 10.343 4.773 18.355-.194.619.11.944.612.305 2.206-2.81 4.942-7.598 6.925-11.187-.437 1.245-.822 2.63-1.028 4.083-.435 3.064.487 5.37 1.162 6.58.345.619.803.998 1.988.824 6.045-.885 8.06-6.117 8.805-8.77 1.357-4.839.363-7.568-.722-9.33"/></symbol>
+  <symbol id="board-xing" viewBox="0 0 24 24"><path fill="currentColor" d="M18.188 0c-.517 0-.741.325-.927.66 0 0-7.455 13.224-7.702 13.657.015.024 4.919 9.023 4.919 9.023.17.308.436.66.967.66h3.454c.211 0 .375-.078.463-.22.089-.151.089-.346-.009-.536l-4.879-8.916c-.004-.006-.004-.016 0-.022L22.139.756c.095-.191.097-.387.006-.535C22.056.078 21.894 0 21.686 0h-3.498zM3.648 4.74c-.211 0-.385.074-.473.216-.09.149-.078.339.02.531l2.34 4.05c.004.01.004.016 0 .021L1.86 16.051c-.099.188-.093.381 0 .529.085.142.239.234.45.234h3.461c.518 0 .766-.348.945-.667l3.734-6.609-2.378-4.155c-.172-.315-.434-.659-.962-.659H3.648v.016z"/></symbol>
+  <symbol id="board-monster" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0V24H5.42V12.39L12 18.19L18.58 12.39V24H24V0L12 11.23L0 0Z"/></symbol>
+  <symbol id="board-ycombinator" viewBox="0 0 24 24"><path fill="currentColor" d="M0 24V0h24v24H0zM6.951 5.896l4.112 7.708v5.064h1.583v-4.972l4.148-7.799h-1.749l-2.457 4.875c-.372.745-.688 1.434-.688 1.434s-.297-.708-.651-1.434L8.831 5.896h-1.88z"/></symbol>
   <symbol id="claude-mark" viewBox="0 0 24 24"><path fill="currentColor"
     fill-rule="nonzero" d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"/></symbol>
 
@@ -4102,6 +4656,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
         <div class="grow"></div>
         <span class="acts" id="act-doc">
+          <button class="obtn" id="btn-ats" title="What an applicant tracking system reads from this CV">ATS check</button>
           <button class="obtn" id="btn-design" title="Theme, typeface and page size">Design</button>
           <button class="obtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
           <button class="pbtn" id="btn-render">Render</button>
@@ -4126,6 +4681,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button role="tab" data-tab="yaml" aria-selected="false"
             title="The source on the left, the page on the right">YAML</button>
         </div>
+        <button class="prov" id="basechip" hidden></button>
         <button class="prov" id="provchip" hidden></button>
         <button class="prov linkchip" id="linkchip" hidden></button>
         <span class="nomap" id="nomap" hidden></span>
@@ -4364,6 +4920,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="srow"><div><b>Applications</b><span>Exported as JSON or CSV so the
           database is never a lock-in.</span></div>
           <button class="obtn" id="s-exp">Export JSON</button></div>
+        <div class="srow"><div><b>Setup</b><span>Your name on the base CV, how it
+          prints, and an AI client. The steps from the first launch.</span></div>
+          <button class="obtn" id="s-setup">Run setup again</button></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>
@@ -4421,6 +4980,8 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
             <p>Reads the YAML, lists what is in the workspace</p></div>
           <div class="tool"><span class="n">write_cv</span>
             <p>Replaces a whole file. Blunt, and it drops comments</p></div>
+          <div class="tool"><span class="n">ats_check</span>
+            <p>Reads the PDF the way an ATS does, and which of the posting's keywords it uses</p></div>
           <div class="tool"><span class="n">design_options</span>
             <p>Themes, typefaces and page sizes it may choose from</p></div>
           <div class="tool"><span class="n">workspace_info</span>
@@ -4569,6 +5130,7 @@ const S={
   tailoring:new Set(),      /* applications whose CV is being copied right now */
   jfilter:{kind:"all", value:""}, jsel:null,
   funnel:null, since:"", fnode:null,
+  baseThumb:null,           /* {path, png, failed}: the base's first page */
   schema:null, schemaTheme:null,
 };
 const DZ={theme:null, section:"theme"};
@@ -4630,9 +5192,6 @@ const STATUS_TONE={
   rejected_interviewing:"lost", ghosted_interviewing:"lost",
 };
 const statusTone=st=>STATUS_TONE[st]||"draft";
-/* Which statuses still have somewhere to go -- used for the saved filters. */
-const LIVE_STATUS=new Set(Object.keys(STATUS_TONE).filter(
-  k=>STATUS_TONE[k]==="live"||STATUS_TONE[k]==="waiting"));
 const DEAD_STATUS=new Set(Object.keys(STATUS_TONE).filter(
   k=>["lost","closed","draft"].includes(STATUS_TONE[k])));
 
@@ -4668,12 +5227,104 @@ function companyMark(j){
     '">'+esc(initials(j.company))+'</span>';
 }
 
-const money=j=>{
-  const v=j.salary_offered||j.salary_expected;
-  if(!v) return null;
-  const sym={EUR:"€",GBP:"£",USD:"$"}[j.salary_currency]||"";
-  return sym+Number(v).toLocaleString("en-GB")+(sym?"":" "+(j.salary_currency||""));
-};
+/* Where a posting was found. The source is what someone said -- "LinkedIn",
+   "via a recruiter on Indeed" -- so it wins over the link, which for a board
+   that forwards to the company's own careers page names the wrong place.
+   Boards that publish no mark anyone may use get their initials on a neutral
+   tile, like a company with no logo, rather than a drawing of their logo. */
+const BOARDS=[
+  {id:"linkedin",label:"LinkedIn",bg:"#0A66C2",fg:"#fff",
+   host:/(^|\.)linkedin\.com$/,word:/linked\s?in/i},
+  {id:"indeed",label:"Indeed",bg:"#003A9B",fg:"#fff",host:/(^|\.)indeed\./,word:/indeed/i},
+  {id:"glassdoor",label:"Glassdoor",bg:"#00A162",fg:"#fff",
+   host:/(^|\.)glassdoor\./,word:/glassdoor/i},
+  {id:"greenhouse",label:"Greenhouse",bg:"#24A47F",fg:"#fff",
+   host:/(^|\.)greenhouse\.io$/,word:/greenhouse/i},
+  {id:"wellfound",label:"Wellfound",bg:"#000",fg:"#fff",
+   host:/(^|\.)(wellfound\.com|angel\.co)$/,word:/wellfound|angel\.?list/i},
+  {id:"welcometothejungle",label:"Welcome to the Jungle",bg:"#FFCD00",fg:"#000",
+   host:/(^|\.)welcometothejungle\.com$/,word:/welcome to the jungle|\bwttj\b/i},
+  {id:"xing",label:"XING",bg:"#006567",fg:"#fff",host:/(^|\.)xing\.com$/,word:/\bxing\b/i},
+  {id:"monster",label:"Monster",bg:"#6D4C9F",fg:"#fff",host:/(^|\.)monster\./,
+   word:/\bmonster\b/i},
+  {id:"ycombinator",label:"Work at a Startup",bg:"#F0652F",fg:"#fff",
+   host:/(^|\.)(workatastartup|ycombinator)\.com$/,word:/y\s?combinator|work at a startup/i},
+  {id:"lever",label:"Lever",letters:"Lv",host:/(^|\.)lever\.co$/,word:/\blever\b/i},
+  {id:"workday",label:"Workday",letters:"Wd",
+   host:/(^|\.)(myworkdayjobs|workday)\.com$/,word:/workday/i},
+  {id:"ashby",label:"Ashby",letters:"As",host:/(^|\.)ashbyhq\.com$/,word:/\bashby/i},
+  {id:"smartrecruiters",label:"SmartRecruiters",letters:"SR",
+   host:/(^|\.)smartrecruiters\.com$/,word:/smart\s?recruiters/i},
+  {id:"francetravail",label:"France Travail",letters:"FT",
+   host:/(^|\.)(francetravail|pole-emploi)\.fr$/,word:/france travail|p[o\u00f4]le.emploi/i},
+  {id:"apec",label:"Apec",letters:"Ap",host:/(^|\.)apec\.fr$/,word:/\bapec\b/i},
+  {id:"hellowork",label:"HelloWork",letters:"HW",host:/(^|\.)hellowork\.com$/,
+   word:/hello\s?work/i},
+  {id:"jobteaser",label:"JobTeaser",letters:"JT",host:/(^|\.)jobteaser\.com$/,
+   word:/job\s?teaser/i},
+];
+function jobBoard(j){
+  const said=String(j.source||"");
+  if(said){ const b=BOARDS.find(b=>b.word.test(said)); if(b) return b }
+  let host="";
+  try{ host=new URL(j.url).hostname.toLowerCase() }catch(e){}
+  return host?BOARDS.find(b=>b.host.test(host))||null:null;
+}
+function boardMark(b){
+  if(b.letters) return '<span class="board lettered mono" aria-hidden="true">'+
+    esc(b.letters)+'</span>';
+  return '<span class="board" aria-hidden="true" style="background:'+b.bg+';color:'+b.fg+
+    '"><svg viewBox="0 0 24 24"><use href="#board-'+b.id+'"/></svg></span>';
+}
+
+/* What the tailored CV changed from the one it was copied from. The editor
+   has been marking these field by field since lineage was recorded; this is
+   the same list said once, on the application, where the question "what did
+   I send them" gets asked. */
+const DIFF_SHOWN=4;
+async function fillBaseDiff(el,path){
+  let d;
+  try{ d=await api("/api/basediff?path="+encodeURIComponent(path)) }
+  catch(e){ return }
+  if(!el.isConnected||el.dataset.path!==path) return;
+  const box=el.closest(".block")||el;
+  const base=d.base?d.base.split("/").pop().replace(/\.ya?ml$/,""):null;
+  if(!base) return;
+  box.hidden=false;
+  if(d.missing){
+    el.innerHTML='<p class="bd-head">Copied from <b>'+esc(base)+'</b>, which is no longer '+
+      'in the workspace, so there is nothing to compare it with.</p>';
+    return;
+  }
+  const n=d.changes.length;
+  const item=c=>'<li><span class="bd-where">'+esc(c.where)+
+      (c.kind==="changed"?"":' <em class="bd-kind '+c.kind+'">'+c.kind+'</em>')+'</span>'+
+    (c.before&&c.kind!=="added"?'<del>'+esc(c.before)+'</del>':'')+
+    (c.after&&c.kind!=="removed"?'<ins>'+esc(c.after)+'</ins>':'')+'</li>';
+  el.innerHTML=
+    '<p class="bd-head">'+(n
+      ?'<b>'+n+' change'+(n===1?"":"s")+'</b> from <b>'+esc(base)+'</b>'
+      :'Same as <b>'+esc(base)+'</b> so far. Nothing has been tailored yet.')+
+    (d.design.length?'<span class="bd-design">Design: '+esc(d.design.join(", "))+'</span>':'')+
+    '</p>'+
+    (n?'<ul class="bd-list">'+d.changes.slice(0,DIFF_SHOWN).map(item).join("")+'</ul>':'')+
+    (n>DIFF_SHOWN?'<details class="bd-more"><summary>'+(n-DIFF_SHOWN)+' more</summary>'+
+      '<ul class="bd-list">'+d.changes.slice(DIFF_SHOWN).map(item).join("")+'</ul></details>':'');
+}
+
+/* Links out of the app. The desktop webview ignores target=_blank -- the
+   click simply went nowhere -- so outside a browser tab the server opens the
+   link in the system browser instead. In a browser tab the default works and
+   is left alone. */
+document.addEventListener("click",e=>{
+  const a=e.target.closest&&e.target.closest('a[target="_blank"]');
+  if(!a||!window.__TAURI__) return;
+  const href=a.href||"";
+  if(!/^https?:/i.test(href)) return;
+  e.preventDefault();
+  post("/api/open",{url:href}).catch(err=>toast(err.message,true));
+});
+
 const appliedAt=j=>{
   const h=j.status_history||[];
   for(const e of h) if(e.status==="applied") return e.at;
@@ -5113,6 +5764,27 @@ function setProv(prov){
   paintProv();
 }
 
+/* The base says so. A tailored copy has always said what it came from; the
+   document it came from said nothing, so the one CV every other one is copied
+   from looked like any other file while you edited it. */
+const isBase=p=>!!(p&&S.state&&S.state.base&&S.state.base.path===p);
+function paintBaseChip(){
+  const chip=$("#basechip");
+  if(!chip) return;
+  if(!isBase(S.path)){ chip.hidden=true; return }
+  const n=((S.state&&S.state.documents)||[]).filter(d=>d.base===S.path).length;
+  chip.innerHTML='<span class="btag">Base CV</span>'+
+    '<span>'+(n?'<b>'+n+'</b> tailored from it':'every tailored CV starts as a copy of it')+
+    '</span>';
+  chip.title="Changes here reach the next CV you tailor, not the ones already "+
+    "copied. Click to see every document.";
+  chip.hidden=false;
+  chip.onclick=()=>{
+    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    setView("docs");
+  };
+}
+
 /* The chip: the whole document's answer, on every tab. */
 /* One chip for the whole document, beside the provenance one, rather than a
    card repeated inside every block's editor. */
@@ -5122,6 +5794,7 @@ function paintLink(){
      is only knowable once the document and the applications have both landed
      -- which is here, not in setView. */
   paintBackLabel();
+  paintBaseChip();
   if(!S.path||!S.jready){ chip.hidden=true; return }
   if(!j){
     chip.innerHTML='<span>Link to an application</span>';
@@ -5268,7 +5941,6 @@ $("#pane-page").addEventListener("scroll",()=>{
    it is not the only writer. Polling one stat per document is cheap, and it is
    the difference between picking up the model's work and silently saving over
    it. */
-let pulseTimer=null;
 async function pulse(){
   if(document.hidden) return;
   let p;
@@ -5306,6 +5978,8 @@ async function pulse(){
       S.state=st; renderDocs(st.documents); paintBase();
     }catch(e){}
   }
+  const bp=S.state&&S.state.base&&S.state.base.path;
+  if(bp&&bp!==S.path&&before.docs[bp]!==p.docs[bp]) baseThumb(true);
   if(!S.path) return;
   const now=p.docs[S.path];
   if(now===undefined||S.docMtime==null||now<=S.docMtime+1e-6) return;
@@ -5509,8 +6183,322 @@ async function boot(){
   pulse();
   setInterval(pulse,2500);
   paintStatus();
-  if(d.first_run) toast("Workspace created at "+d.workspace+
-    ". Connect Claude or ChatGPT to it from Settings");
+  if(shouldOnboard(d)) onboardingSheet();
+}
+
+/* =========================================================================
+   ATS check
+   ========================================================================= */
+/* What an applicant tracking system reads out of the PDF, beside the page it
+   came from. The parsing checks read the real file; the keywords are a count
+   of what the posting asks for and whether the CV says it, and are labelled
+   as a heuristic because they are one. */
+const ATS={path:null, job:null, paste:"", busy:false};
+function atsJobs(){
+  return (S.jobs||[]).filter(j=>j.description);
+}
+async function atsSheet(path,jobId){
+  if(!path) return;
+  if(!S.jready){ try{ await loadJobs(true) }catch(e){} }
+  ATS.path=path; ATS.paste="";
+  const linked=(S.jobs||[]).find(j=>j.cv_path===path);
+  ATS.job=jobId||(linked&&linked.description?linked.id:"")||"";
+  const withPosting=atsJobs();
+  const name=path.split("/").pop().replace(/\.ya?ml$/,"");
+  $("#sheet").classList.add("ats");
+  openSheet(
+    '<div class="ats-top"><div><h3 id="sheet-title">ATS check</h3>'+
+      '<p>What an applicant tracking system reads from <b>'+esc(name)+'</b>’s PDF, '+
+      'and which of a posting’s keywords it uses.</p></div>'+
+      '<label class="ats-vs">Against <select id="ats-job">'+
+        '<option value="">No posting</option>'+
+        withPosting.map(j=>'<option value="'+esc(j.id)+'"'+(j.id===ATS.job?" selected":"")+'>'+
+          esc(j.company)+' · '+esc(j.title)+'</option>').join("")+
+        '<option value="__paste">Paste a posting…</option>'+
+      '</select></label></div>'+
+    '<textarea id="ats-paste" class="ats-paste" hidden placeholder="Paste the job posting here"></textarea>'+
+    '<div class="ats-body" id="ats-body"><p class="sp-note">Reading the PDF…</p></div>'+
+    '<div class="foot"><button class="sbtn" data-cancel>Close</button>'+
+      '<button class="sbtn" id="ats-run">Check again</button></div>',
+    ()=>$("#sheet").classList.remove("ats"));
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $("#ats-job").onchange=e=>{
+    const v=e.target.value, pasting=v==="__paste";
+    $("#ats-paste").hidden=!pasting;
+    if(pasting){ $("#ats-paste").focus(); return }
+    ATS.job=v; ATS.paste=""; atsRun();
+  };
+  let t=null;
+  $("#ats-paste").oninput=e=>{ clearTimeout(t); ATS.paste=e.target.value;
+    t=setTimeout(()=>{ if(ATS.paste.trim().length>80) atsRun() },600) };
+  $("#ats-run").onclick=()=>atsRun();
+  atsRun();
+}
+async function atsRun(fix){
+  if(ATS.busy) return;
+  ATS.busy=true;
+  const body=$("#ats-body"); if(!body){ ATS.busy=false; return }
+  body.classList.add("busy");
+  $("#ats-run").disabled=true;
+  const req={path:ATS.path};
+  if(ATS.paste.trim()) req.posting=ATS.paste;
+  else if(ATS.job) req.job_id=ATS.job;
+  /* "No posting" has to say so, or the server falls back to the application
+     the CV is attached to. */
+  else req.posting="";
+  try{
+    const r=await post(fix?"/api/ats/fix":"/api/ats",fix?Object.assign({fix},req):req);
+    if($("#ats-body")) atsPaint(r);
+    if(fix){
+      toast("Changed the design. Check again to see it");
+      if(S.path===ATS.path&&!S.dirty) openDoc(ATS.path);
+      S.baseThumb=null; paintBase();
+    }
+  }catch(e){ if($("#ats-body")) body.innerHTML='<p class="note">'+esc(e.message)+'</p>' }
+  ATS.busy=false;
+  if($("#ats-body")){ body.classList.remove("busy"); $("#ats-run").disabled=false }
+}
+/* Private-use characters are what icon fonts extract as. Shown as a box, the
+   way a parser that keeps them would print them, so the finding above can be
+   seen in the text below. */
+const atsReadable=t=>esc(t).replace(/[-]/g,'<i class="pua" title="An icon, read as an unreadable character">□</i>');
+function atsPaint(r){
+  const body=$("#ats-body");
+  if(!r.ok){ body.innerHTML='<p class="note">'+esc(r.error||"The check could not run.")+'</p>'; return }
+  const kw=r.keywords, vs=r.against;
+  let match;
+  if(kw&&kw.total){
+    const chip=(t,on)=>'<span class="kw'+(on?" on":"")+'">'+(on?'<i>✓</i>':'')+esc(t.term)+'</span>';
+    match='<section class="ats-sec"><span class="blabel">Keywords from the posting</span>'+
+      '<div class="ats-score"><b class="mono">'+kw.found.length+'</b><span>of '+kw.total+
+        ' used in this CV'+(vs&&vs.company?' · '+esc(vs.company):'')+'</span></div>'+
+      '<div class="meter"><i style="width:'+(kw.rate||0)+'%"></i></div>'+
+      (kw.missing.length?'<div class="kwlabel">Not in the CV</div><div class="kws">'+
+        kw.missing.map(t=>chip(t,false)).join("")+'</div>':'')+
+      (kw.found.length?'<div class="kwlabel">In the CV</div><div class="kws">'+
+        kw.found.map(t=>chip(t,true)).join("")+'</div>':'')+
+      '<p class="sp-note">Picked out of the posting by how often, and where, it asks for '+
+      'them: a prompt, not a verdict. Worth working in only where they are true of you, '+
+      'in the words the posting uses.</p></section>';
+  }else if(vs&&vs.company&&!vs.has_posting){
+    match='<section class="ats-sec"><span class="blabel">Keywords from the posting</span>'+
+      '<p class="note">'+esc(vs.company)+' has no saved posting. Paste one, or add it to the '+
+      'application, to see which of its keywords this CV uses.</p></section>';
+  }else{
+    match='<section class="ats-sec"><span class="blabel">Keywords from the posting</span>'+
+      '<p class="note">Choose an application with a saved posting, or paste one, to see '+
+      'which of its keywords this CV uses.</p></section>';
+  }
+  const icon={ok:"✓",warn:"!",bad:"×"};
+  const problems=r.checks.filter(c=>c.level!=="ok").length;
+  const checks='<section class="ats-sec"><span class="blabel">How it parses'+
+      '<em>'+(problems?problems+" to look at":"nothing to fix")+'</em></span>'+
+    '<ul class="checks">'+r.checks.map(c=>'<li class="'+c.level+'"><i>'+icon[c.level]+'</i>'+
+      '<div><b>'+esc(c.title)+'</b><span>'+esc(c.detail)+'</span></div>'+
+      (c.fix?'<button class="obtn" data-fix="'+c.fix+'"'+
+        (S.path===ATS.path&&S.dirty?' disabled title="Save your changes first"':'')+'>Fix</button>':'')+
+      '</li>').join("")+'</ul></section>';
+  body.innerHTML='<div class="ats-main">'+match+checks+'</div>'+
+    '<div class="ats-read"><span class="blabel">What it reads<em>'+r.pages+' page'+
+      (r.pages===1?"":"s")+' · '+r.words+' words</em></span>'+
+      '<pre class="mono">'+atsReadable(r.text)+'</pre></div>';
+  $$("#ats-body [data-fix]").forEach(b=>b.onclick=()=>{ b.disabled=true; atsRun(b.dataset.fix) });
+}
+$("#btn-ats").onclick=()=>{
+  if(!S.path) return;
+  if(S.dirty) toast("Checking the saved file. Save to include your edits");
+  atsSheet(S.path);
+};
+
+/* =========================================================================
+   Setup
+   ========================================================================= */
+/* Four steps, each of which leaves something real behind: the name on the
+   base CV, the theme it prints in, a client that can write to it. Nothing here
+   is a tour of buttons -- the app is small enough to find its own way round --
+   and every step can be skipped, because the defaults already render.
+
+   It shows while the base is still the placeholder the app wrote, not only on
+   the launch that wrote it: quitting halfway is not the same as having set up.
+   Closing it counts as done, so it never nags; Settings brings it back. */
+const OB_FIELDS=[["name","Name","Your Name"],["headline","Headline","Your Role"],
+  ["location","Location","City, Country"],["email","Email","you@example.com"],
+  ["phone","Phone","+33-6-12-34-56-78"]];
+const OB={step:0, path:null, cv:{}, theme:null, size:null, png:null, busy:0, again:false,
+  t:null, err:null, pages:null};
+
+function shouldOnboard(d){
+  return !prefs().onboarded&&!!(d.first_run||d.starter)&&!!(d.base&&!d.base.missing);
+}
+async function onboardingSheet(){
+  const b=S.state&&S.state.base;
+  if(!b||b.missing) return openSettings("workspace");
+  OB.step=0; OB.path=b.path; OB.png=null; OB.cv={};
+  try{
+    const doc=await api("/api/doc?path="+encodeURIComponent(b.path));
+    const cv=(doc.data&&doc.data.cv)||{}, des=(doc.data&&doc.data.design)||{};
+    /* A placeholder is not an answer, so it goes in as a hint instead. */
+    OB_FIELDS.forEach(([k,,ph])=>{ const v=cv[k]==null?"":String(cv[k]);
+      OB.cv[k]=v===ph?"":v });
+    OB.theme=des.theme||"engineeringclassic";
+    OB.size=(des.page&&des.page.size)||"a4";
+  }catch(e){ return toast(e.message,true) }
+  $("#sheet").classList.add("ob");
+  openSheet('<div id="ob"></div>',()=>{
+    $("#sheet").classList.remove("ob"); clearTimeout(OB.t);
+    setPref("onboarded",true);
+    /* Finish later keeps what is on screen, the same as Next would have. */
+    if(OB.step===1||OB.step===2)
+      post("/api/save",{path:OB.path,patches:obPatches()})
+        .then(()=>{ S.baseThumb=null; paintBase() })
+        .catch(e=>toast(e.message,true));
+  });
+  obPaint();
+  obPreview();
+}
+/* The fields as patches. Blank means absent: RenderCV leaves a null out of the
+   header, where an empty string would print a stray separator. */
+function obPatches(){
+  return OB_FIELDS.map(([k])=>({path:["cv",k],value:OB.cv[k].trim()||(k==="name"?"Your Name":null)}))
+    .concat([{path:["design","theme"],value:OB.theme},
+             {path:["design","page","size"],value:OB.size}]);
+}
+/* The page itself, rendered from the scratch copy the editor previews into, so
+   nothing is written until Next. One at a time, because every preview shares
+   that scratch file: a burst of typing is one render, and whatever changed
+   while it ran is one more after it, not a second render racing the first. */
+function obPreview(){
+  clearTimeout(OB.t);
+  OB.t=setTimeout(async()=>{
+    if(OB.busy){ OB.again=true; return }
+    OB.busy=1; OB.again=false; obShot();
+    try{
+      const r=await post("/api/preview",{path:OB.path,patches:obPatches()});
+      OB.png=r.ok&&r.pngs.length?r.pngs[0]:null; OB.err=r.ok?null:(r.hint||"It did not render.");
+      OB.pages=r.ok?r.pages:null;
+    }catch(e){ OB.png=null; OB.err=e.message }
+    OB.busy=0;
+    if(OB.again) obPreview(); else obShot();
+  },350);
+}
+function obShot(){
+  const el=$("#ob-shot"); if(!el) return;
+  el.classList.toggle("busy",!!OB.busy);
+  el.innerHTML=OB.png
+    ? '<img alt="The first page of your CV" src="'+esc(OB.png+tok())+'">'
+    : '<span>'+esc(OB.busy?"Rendering…":OB.err||"")+'</span>';
+  const cap=$("#ob-cap");
+  if(cap) cap.textContent=OB.pages?OB.pages+" page"+(OB.pages===1?"":"s")+
+    " · "+themeLabel(OB.theme)+" · "+(OB.size==="a4"?"A4":"US Letter"):"";
+}
+const OB_STEPS=["Welcome","You","The page","AI"];
+function obPaint(){
+  const st=S.state||{}, i=OB.step, last=i===OB_STEPS.length-1;
+  const dots='<ol class="ob-steps">'+OB_STEPS.map((t,k)=>'<li'+
+    (k===i?' aria-current="step"':k<i?' class="done"':'')+'>'+t+'</li>').join("")+'</ol>';
+  let body="";
+  if(i===0) body=
+    '<h3 id="sheet-title">Welcome to CV Studio</h3>'+
+    '<p>A CV editor that shows you the page, and an application tracker beside it. '+
+    'An AI client can read and write both, if you connect one.</p>'+
+    '<ul class="ob-facts">'+
+      '<li><b>Your files, in a folder you own.</b> <span class="mono">'+
+        esc(shortPath(st.workspace))+'</span> <button class="linkish" id="ob-reveal">Open</button></li>'+
+      '<li><b>One base CV.</b> Every CV you tailor for an application starts as a copy of it, '+
+        'so it is worth two minutes now.</li>'+
+      '<li><b>Nothing leaves this machine.</b> No account, no telemetry. A model only sees '+
+        'what you connect it to.</li>'+
+    '</ul>';
+  if(i===1) body=
+    '<h3 id="sheet-title">The top of your CV</h3>'+
+    '<p>What prints above everything else. The rest of it you can write in the editor, '+
+    'or ask a model to write from what you already have.</p>'+
+    '<div class="fg w88">'+OB_FIELDS.map(([k,l,ph])=>'<label for="ob-'+k+'">'+l+
+      (k==="phone"?' <em>optional</em>':'')+'</label>'+
+      '<input id="ob-'+k+'" data-ob="'+k+'" autocomplete="off" placeholder="'+esc(ph)+
+      '" value="'+esc(OB.cv[k])+'">').join("")+'</div>';
+  if(i===2) body=
+    '<h3 id="sheet-title">How it prints</h3>'+
+    '<p>Every option is in Design later. This is your page, rendered, not a sample.</p>'+
+    '<div class="fg w88"><label>Theme</label><div class="ob-themes" id="ob-themes">'+
+      ((st.themes)||[]).map(t=>'<button data-t="'+esc(t)+'" aria-pressed="'+
+        String(t===OB.theme)+'">'+esc(themeLabel(t))+'</button>').join("")+'</div>'+
+    '<label>Paper</label><div class="seg paper acc" id="ob-size" role="tablist">'+
+      '<button role="tab" data-s="a4" aria-selected="'+String(OB.size==="a4")+'">A4</button>'+
+      '<button role="tab" data-s="us-letter" aria-selected="'+String(OB.size!=="a4")+
+        '">US Letter</button></div></div>';
+  if(i===3){
+    const cs=S.ai||[];
+    body=
+    '<h3 id="sheet-title">Connect an AI client</h3>'+
+    '<p>Optional. Connected, it can tailor a CV to a posting, look at the page it rendered, '+
+    'and keep the applications in step with your mail. It works on this folder and nothing else.</p>'+
+    '<div class="ob-ai">'+(cs.length?cs.map(c=>{
+      const live=c.state==="connected";
+      return '<div class="ob-client" data-client="'+c.id+'">'+
+        '<span class="badge"><svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">'+
+          '<use href="#'+c.id+'-mark"/></svg></span>'+
+        '<span class="nm">'+esc(c.label)+'<small>'+esc(live?c.restart:c.state==="absent"
+          ?"Connect, then "+c.restart.replace(/^./,x=>x.toLowerCase()):aiSay(c))+'</small></span>'+
+        '<span class="pill" data-state="'+(live&&!c.last_seen?"unknown":c.state)+'"><i></i>'+
+          aiPill(c)+'</span>'+
+        (live?'':'<button class="obtn" data-ob-connect="'+c.id+'">Connect</button>')+
+      '</div>'}).join(""):'<p class="sp-note">Checking…</p>')+'</div>';
+  }
+  const shot=i===1||i===2;
+  $("#ob").innerHTML=dots+
+    '<div class="ob-body'+(shot?' two':'')+'"><div class="ob-main">'+body+'</div>'+
+    (shot?'<figure class="ob-fig"><div class="ob-shot" id="ob-shot"></div>'+
+      '<figcaption id="ob-cap"></figcaption></figure>':'')+'</div>'+
+    '<div class="foot">'+
+      '<button class="sbtn left" data-cancel>'+(i===0?"Skip setup":"Finish later")+'</button>'+
+      (i>0?'<button class="sbtn" id="ob-back">Back</button>':'')+
+      '<button class="sbtn primary" id="ob-next">'+(i===0?"Get started":last?"Open my CV":"Next")+'</button>'+
+    '</div>';
+  if(shot) obShot();
+
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  const rv=$("#ob-reveal");
+  if(rv) rv.onclick=async()=>{ try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) } };
+  $$("#ob [data-ob]").forEach(el=>el.oninput=()=>{ OB.cv[el.dataset.ob]=el.value; obPreview() });
+  $$("#ob-themes button").forEach(bt=>bt.onclick=()=>{
+    OB.theme=bt.dataset.t;
+    $$("#ob-themes button").forEach(x=>x.setAttribute("aria-pressed",String(x===bt)));
+    obPreview();
+  });
+  $$("#ob-size button").forEach(bt=>bt.onclick=()=>{
+    OB.size=bt.dataset.s;
+    $$("#ob-size button").forEach(x=>x.setAttribute("aria-selected",String(x===bt)));
+    obPreview();
+  });
+  $$("#ob [data-ob-connect]").forEach(bt=>bt.onclick=async()=>{
+    bt.disabled=true; bt.textContent="Connecting…";
+    try{ await post("/api/ai/connect",{client:bt.dataset.obConnect}) }
+    catch(e){ toast(e.message,true) }
+    await loadAI(); obPaint();
+  });
+  if(i===3&&!S.ai) loadAI().then(()=>{ if(OB.step===3&&!$("#sheet").hidden) obPaint() });
+  const back=$("#ob-back");
+  if(back) back.onclick=()=>{ OB.step--; obPaint() };
+  $("#ob-next").onclick=obNext;
+  const f=$("#ob input")||$("#ob-next"); if(f) f.focus();
+}
+async function obNext(){
+  const btn=$("#ob-next");
+  /* The page is written when you leave the step that changed it, so Back and
+     Finish later both keep what you did. */
+  if(OB.step===1||OB.step===2){
+    btn.disabled=true;
+    try{ await post("/api/save",{path:OB.path,patches:obPatches()}) }
+    catch(e){ btn.disabled=false; return toast(e.message,true) }
+    btn.disabled=false;
+  }
+  if(OB.step<OB_STEPS.length-1){ OB.step++; return obPaint() }
+  OB.step=-1;   /* saved already: closing must not write it again */
+  closeSheet();
+  try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
+  S.baseThumb=null; paintBase();
+  openDoc(OB.path);
 }
 
 /* =========================================================================
@@ -5649,6 +6637,8 @@ function renderDocs(docs){
           (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
           '<span class="mark"></span>'+
           '<span class="lbl">'+esc(d.label)+'</span>'+
+          (isBase(d.path)?'<span class="btag" title="The base CV: every tailored CV '+
+            'starts as a copy of it">base</span>':'')+
           markHTML(d.ai,null,true)+
           (job?'<span class="tie" title="Linked to '+
             esc(job.title+" · "+job.company)+'"></span>':"")+
@@ -6463,6 +7453,11 @@ async function adoptRender(r){
   S.render=r; S.pdf=r.pdf; $("#btn-pdf").disabled=!r.pdf;
   const grew=S.pages[S.path]!==r.pages;
   S.pages[S.path]=r.pages;
+  const b=S.state&&S.state.base;
+  if(b&&b.path===S.path&&r.pngs.length){
+    S.baseThumb={path:S.path,png:r.pngs[0],failed:false};
+    mountBase($("#docbase"),"bcard"); mountBase($("#baserow"),"baserow");
+  }
   if(DZ.theme) S.themePages[DZ.theme]=r.pages;
   if(S.page>=r.pngs.length) S.page=Math.max(0,r.pngs.length-1);
   paintPage();
@@ -6995,7 +7990,13 @@ function baseHTML(b){
       '<button class="obtn" data-base-pick>Choose another\u2026</button>'+
       '<div class="grow"></div>';
   const pages=S.pages[b.path];
-  return '<span class="bl">Base CV</span>'+
+  const th=S.baseThumb&&S.baseThumb.path===b.path?S.baseThumb:null;
+  return '<button class="bthumb'+(th&&th.png?"":" empty")+'" data-base-open'+
+      ' aria-label="Open the base CV">'+
+      (th&&th.png?'<img alt="" src="'+esc(th.png+tok())+'">'
+        :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
+    '</button>'+
+    '<span class="bl">Base CV</span>'+
     '<span class="bn">'+esc(baseLabel())+'</span>'+
     '<span class="bsub">'+(pages?pages+" page"+(pages===1?"":"s"):"")+'</span>'+
     '<button class="obtn" data-base-open>Open</button>'+
@@ -7008,11 +8009,10 @@ function mountBase(el,cls){
   const b=S.state&&S.state.base;
   el.className=cls+(b&&b.missing?" gone":"");
   el.innerHTML=baseHTML(b);
-  const open=el.querySelector("[data-base-open]");
-  if(open) open.onclick=()=>{
+  el.querySelectorAll("[data-base-open]").forEach(open=>open.onclick=()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
     openDoc(b.path);
-  };
+  });
   const design=el.querySelector("[data-base-design]");
   if(design) design.onclick=async()=>{
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
@@ -7023,6 +8023,37 @@ function mountBase(el,cls){
 function paintBase(){
   mountBase($("#baserow"),"baserow");
   mountBase($("#docbase"),"bcard");
+  paintBaseChip();
+  baseThumb(false);
+}
+
+/* The base as it actually prints, not a sketch of its theme: the sketches in
+   Design say what a theme looks like, and this card is about one document.
+   Whatever is on disk is shown at once; a page older than the YAML is shown
+   while a fresh one renders, then swapped, so the card never waits on Typst
+   and never settles on a page that is out of date. */
+let thumbBusy=null;
+async function baseThumb(force){
+  const b=S.state&&S.state.base;
+  if(!b||b.missing) return;
+  if(!force&&S.baseThumb&&S.baseThumb.path===b.path) return;
+  if(thumbBusy===b.path) return;
+  thumbBusy=b.path;
+  const put=(png,failed)=>{
+    S.baseThumb={path:b.path,png:png||(S.baseThumb&&S.baseThumb.path===b.path
+      ?S.baseThumb.png:null),failed:!!failed};
+    mountBase($("#baserow"),"baserow"); mountBase($("#docbase"),"bcard");
+  };
+  try{
+    const t=await api("/api/thumb?path="+encodeURIComponent(b.path));
+    put(t.png);
+    if(!t.fresh){
+      const r=await post("/api/render",{path:b.path});
+      if(r.ok){ S.pages[b.path]=r.pages; put(r.pngs[0]) }
+      else put(null,true);
+    }
+  }catch(e){ put(null,true) }
+  finally{ thumbBusy=null }
 }
 
 /* A document's age. "720h" is what ago() would say about a CV last touched in
@@ -7196,13 +8227,16 @@ function drawJobs(){
        offer to make one would be standing on top of a document that exists. */
     const docs=cv?esc(cv)+(letter?" +letter":""):(letter?esc(letter):null);
     const openable=cv?j.cv_path:j.letter_path;
-    const sal=money(j), ap=appliedAt(j);
+    const ap=appliedAt(j);
     const due=j.followup_date&&j.followup_date<=isoToday();
+    const jb=jobBoard(j);
     return '<button class="trow'+(DEAD_STATUS.has(j.status)?" dead":"")+
       (S.jsel===j.id?" sel":"")+'" data-id="'+esc(j.id)+'">'+
       '<span class="co">'+companyMark(j)+'<span class="con">'+
         esc(j.company)+'</span></span>'+
-      '<span class="role"><b>'+esc(j.title)+'</b></span>'+
+      '<span class="role"><b>'+esc(j.title)+'</b>'+
+        (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
+      '</span>'+
       '<span>'+(docs?'<span class="docs mono" data-open="'+esc(openable)+'">'+docs+'</span>'
                :S.tailoring.has(j.id)
                  ?'<span class="docs busy">Tailoring\u2026</span>'
@@ -7362,9 +8396,14 @@ function drawJobInspector(){
       '<p class="note muted">Not saved. Paste it in when you add an application, '+
       'or ask a model to -- it is what a tailored CV gets written against once '+
       'the advert is gone.</p></div>';
-  const posting=j.url?'<div class="drow"><span class="muted">'+
-    esc(j.url.replace(/^https?:\/\//,"").slice(0,40))+'</span>'+
-    '<a class="alink" href="'+esc(j.url)+'" target="_blank" rel="noreferrer">Open</a></div>':"";
+  const jb=jobBoard(j);
+  const posting=j.url||jb?'<div class="drow posting-row">'+
+    (jb?boardMark(jb):'')+
+    '<span class="'+(jb?"":"muted")+'">'+(jb?esc(jb.label)+
+      (j.url?' <i class="muted">'+esc(j.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,34))+'</i>':'')
+      :esc(j.url.replace(/^https?:\/\//,"").slice(0,40)))+'</span>'+
+    (j.url?'<a class="alink" href="'+esc(j.url)+'" target="_blank" rel="noreferrer">'+
+      'Open the posting</a>':'')+'</div>':"";
 
   const hist=(j.status_history||[]);
   const timeline=hist.length?'<div class="tl">'+hist.map(h=>
@@ -7390,6 +8429,12 @@ function drawJobInspector(){
         '<div class="block"><span class="blabel">Documents</span><div class="card">'+
           docRow("CV","cv_path","My CVs")+docRow("Cover letter","letter_path","Cover letters")+
           posting+'</div></div>'+
+        (j.cv_path?'<div class="block ats-link"><button class="alink" id="job-ats">'+
+          'Check this CV the way an ATS reads it'+(j.description?' against the posting':'')+
+          '</button></div>':'')+
+        (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
+          'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
+          esc(j.cv_path)+'"></div></div>':'')+
         '<details class="fold"><summary>Company, role and the rest</summary>'+
           '<div class="fg2" style="margin-top:11px">'+more+'</div></details>'+
         '<div class="block ruled foot-del"><button class="sbtn danger" id="job-del">'+
@@ -7403,6 +8448,10 @@ function drawJobInspector(){
       '</div>'+
     '</div>';
 
+  const diff=$("#jdiff");
+  if(diff) fillBaseDiff(diff,j.cv_path);
+  const ab=$("#job-ats");
+  if(ab) ab.onclick=()=>atsSheet(j.cv_path,j.description?j.id:"");
   body.querySelectorAll("[data-j]").forEach(el=>{
     el.onchange=()=>{
       let v=el.value;
@@ -8285,6 +9334,7 @@ function fillSettings(){
   $("#s-open").onclick=async()=>{
     try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) }
   };
+  $("#s-setup").onclick=()=>{ closeOverlays(); onboardingSheet() };
   $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
   /* Revealing is deliberate and one click; copying never needs it. */
   const key=$("#s-key");

@@ -94,7 +94,8 @@ if __name__ == "__main__":
     r = c.send("tools/list")
     tools = {t["name"]: t for t in r["result"]["tools"]}
     documents = {"list_cvs", "read_cv", "write_cv", "edit_cv_fields",
-                 "create_cv", "render_cv", "design_options", "workspace_info"}
+                 "create_cv", "render_cv", "ats_check", "design_options",
+                 "workspace_info"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts",
                     "set_job_status", "update_job_tracking", "add_job",
                     "set_company_logo"}
@@ -191,6 +192,16 @@ if __name__ == "__main__":
           if marked else "no record")
     check("nothing about any of it reached the YAML",
           "claude" not in text.lower() and "cvstudio" not in text.lower())
+
+    # The PDF an ATS receives, read back. The starter header draws its
+    # contact details with icon glyphs, which extract as private-use
+    # characters, so a working check has something to say about it.
+    r = call("ats_check", {"path": doc})
+    body = r["result"]["content"][0]["text"] if "result" in r else ""
+    check("ats_check reads the rendered PDF",
+          '"words"' in body and '"problems"' in body, body[:60])
+    check("and finds the icon glyphs in the starter header",
+          "unreadable characters" in body)
 
     r = call("design_options", {})
     check("design_options lists themes",

@@ -56,7 +56,10 @@ Nothing else is required. Python, RenderCV, Typst and the fonts are all bundled.
 ## Using it
 
 On first launch it creates a workspace at `~/Documents/CV Studio` with a starter
-CV, and opens it.
+CV, and walks you through a short setup: your name and contact details at the
+top of that CV, the theme it prints in, shown on your own rendered page as you
+choose, and an AI client to connect. Each step can be skipped, and **Settings →
+Workspace → Run setup again** brings it back.
 
 There are two screens, switched from the control at the top left, and an editor
 you reach by opening a document. It opens on Jobs, because the work is applying
@@ -100,6 +103,7 @@ kind once.
 | **Live** | Edits re-render behind you, so the page beside the form is the page you are making, not the one you started with |
 | **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet. `↑` `↓` walk to the next block, `Esc` closes |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
+| **ATS check** | The text an applicant tracking system actually gets out of the PDF, what in it will not parse (icon glyphs, bare usernames, unusual headings, entries out of order), with a one-click fix for the common ones, and which of the posting's keywords the CV uses. A count, not a score: there is no universal ATS score to compute |
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **Design** | Theme, typeface, body size and page size, with every other RenderCV option under them, and what each costs in pages |
 | **Appearance** | Light or dark, or follow the system. In Settings. The rendered CV page stays white either way: it is a document, not a surface |
@@ -144,7 +148,9 @@ actually look at the result rather than guessing from the source.
 It can also keep the tracker up to date. Given a mail or calendar connector of
 its own, it reads the replies, works out which application each belongs to, and
 moves the status once you have agreed. CV Studio itself never touches a Google
-account and makes no network calls; everything arrives through the client. It
+account; everything arrives through the client. The one request it ever makes
+is for a company's logo, from that company's own website, when a model adding
+an application passes it the site. It
 cannot delete an application, rename one, or overwrite your notes, because no
 tool takes those arguments.
 

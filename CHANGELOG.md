@@ -8,6 +8,68 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Design is a screen, and it keeps the page in view.** It opens under the
+  title bar with the groups RenderCV defines down the side (Theme, Page,
+  Colors, Typography, Header, Section titles, Sections, Entries, Links,
+  Templates), every setting of the chosen group in the middle, and your pages
+  on the right as they re-render. A dot marks each setting your CV changes
+  from the theme's default, with a Reset beside it. From the base CV card,
+  **Design** opens the base CV's, which every tailored copy starts from.
+- **The theme tiles are your CV.** Each one is your document rendered in that
+  theme, with its page count, instead of a sketch of the theme.
+- **Every design setting takes effect.** A setting in a group your file had
+  never written, such as the header's alignment on a starter CV, used to be
+  dropped without a word. Only what you change is written now, and template
+  text keeps its line breaks.
+- **A setup on first launch.** Four short steps: what the app is and where
+  your files live, your name and contact details at the top of the base CV,
+  the theme and paper size it prints in, and an AI client to connect. Beside
+  the fields is your own page, rendered as you type and as you switch themes,
+  not a sample. Every step can be skipped, and closing it keeps what you
+  entered. It comes back on the next launch if the base CV is still the
+  placeholder, and **Settings → Workspace → Run setup again** brings it back
+  any time.
+- **The base CV card shows the base CV.** A snapshot of its first page, as
+  actually rendered, sits in the card on Applications and on Documents, and
+  clicking it opens the CV. It updates when you or a model change the file.
+- **No CV says "Last updated in…" any more.** RenderCV prints it at the top
+  of page one unless a file turns it off, and a design block rewritten by a
+  model dropped the setting, so it crept back. Every render now turns it off,
+  whatever the file says, and the switch is gone from Design. Your files are
+  not changed.
+- **The base CV says it is the base.** Open it and a **Base CV** chip sits
+  where a tailored copy says what it came from, with how many CVs have been
+  tailored from it; the document list tags it too.
+- **ATS check.** Reads the CV's PDF the way an applicant tracking system
+  does and shows you the text it gets, beside what went wrong: contact icons
+  that extract as junk characters, a LinkedIn shown as a bare username,
+  headings a parser will not recognise, entries missing or out of order in
+  the text layer, roles without dates. The two commonest problems have a
+  one-click fix. Against an application's saved posting, or one you paste,
+  it lists the keywords the posting asks for and which ones the CV uses. From
+  the editor's **ATS check** button, or from an application. Claude can run
+  it too, with `ats_check`.
+- **Applications Claude adds come with the company's logo.** Given the
+  company's website, `add_job` fetches its icon from that site and shows it on
+  the row; a second role at the same company reuses it. The request goes to
+  the company's own site and nowhere else, and a logo that cannot be found
+  never stops the application being added. `set_company_logo` takes a website
+  as well as an image on disk.
+- **Where each posting was found.** LinkedIn, Indeed, Glassdoor, Greenhouse,
+  Welcome to the Jungle and the rest show their mark beside the role, worked
+  out from the source or the link. Boards with no published mark get their
+  initials.
+- **What a tailored CV changed from the base, on the application.** Under the
+  documents, every field that differs from the CV it was copied from, what it
+  said before and what it says now, and whether the design changed.
+- **Open the posting opens it.** The desktop app ignored links that open a new
+  window, so the link to a posting did nothing. It now opens in your browser.
+- **Two renders at once no longer break each other.** Rendering changed the
+  working folder of the whole app, so a render that overlapped another could
+  fail with an error about a file that was really there.
+
 ## 0.14.0
 
 - **One workbench instead of two.** Only the title bar is dark now. The

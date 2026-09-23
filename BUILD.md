@@ -154,7 +154,7 @@ be built first, because the Tauri bundle config lists it as a resource.
 ```bash
 cd server
 pip install "rendercv[full]==2.8" "ruamel.yaml==0.19.1" "mcp==2.2.0" \
-  "pyinstaller==6.22.3"
+  "pypdf==6.19.0" "pyinstaller==6.22.3"
 
 # rendercv_fonts, typst and mcp ship binaries and package data PyInstaller does
 # not discover on its own. server/static holds the vendored d3 modules and the
@@ -175,6 +175,7 @@ PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
   --hidden-import cv_map \
   --hidden-import studio \
   --hidden-import mcp_server \
+  --hidden-import ats \
   --paths . \
   server_main.py
 

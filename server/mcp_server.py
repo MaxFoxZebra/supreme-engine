@@ -51,7 +51,10 @@ mcp = MCPServer(
         "the funnel is drawn from, and this app has no undo.\n"
         "3. An automated acknowledgement is not a status change. Record it "
         "with last_contact_at and leave the status alone. Never set a ghosted "
-        "status from silence: absence of a message is not a message."
+        "status from silence: absence of a message is not a message.\n\n"
+        "When you add an application, pass company_website: the company's own "
+        "domain, found from the posting or its careers page, not the job "
+        "board's. Its logo is fetched from there and shown on the row."
     ),
 )
 
@@ -275,19 +278,28 @@ def render_cv(path: str, page: int = 1) -> list:
 
 
 @tool
-def set_company_logo(company: str, image_path: str) -> str:
+def set_company_logo(company: str, website: str | None = None,
+                     image_path: str | None = None) -> str:
     """Give a company a logo, and use it on every application to that company.
 
-    `image_path` is a file on this machine (png, jpg, svg, webp or gif). It is
-    copied into the workspace, so the workspace stays self-contained and the app
-    never has to fetch anything over the network to draw it.
+    Pass `website`, the company's own site (stripe.com, not the job board the
+    posting was on), and its icon is fetched from there. That request goes to
+    the company and nowhere else: there is no logo service in between that
+    would learn where the user is applying.
 
-    There is no logo lookup here on purpose: this app makes no network calls. If
-    you have downloaded or been given an image, point this at it. If you have
-    not, leave it alone -- a company with no logo shows its initials, which is a
-    deliberate look rather than a gap.
+    Or pass `image_path`, an image already on this machine (png, jpg, svg,
+    webp, gif or ico). Either way it is copied into the workspace, so the app
+    itself never fetches anything to draw it.
+
+    If neither works, leave it: a company with no logo shows its initials,
+    which is a deliberate look rather than a gap.
     """
-    saved = studio.save_logo(company, image_path)
+    if image_path:
+        saved = studio.save_logo(company, image_path)
+    elif website:
+        saved = studio.fetch_logo(company, website)
+    else:
+        raise ValueError("Pass the company's website, or an image_path.")
     n = studio.jobstore.set_company_logo(_ws(), company, saved["logo"])
     if not n:
         return (f"Saved {saved['logo']} ({saved['kb']} KB), but no application "
@@ -559,8 +571,15 @@ def add_job(company: str, title: str, status: str = "pending",
             url: str | None = None, location: str | None = None,
             source: str | None = None, description: str | None = None,
             contact_email: str | None = None,
+            company_website: str | None = None,
             confirmed_new: bool = False) -> dict:
     """Add an application. Call find_job first.
+
+    Pass `company_website` -- the company's own domain, such as stripe.com,
+    never the job board's -- and its logo is fetched and shown on the row. If
+    you do not know it, leave it out rather than guess; set_company_logo can
+    add it later. A logo that cannot be found never stops the application
+    being added: the result's `logo` field says what happened.
 
     Refuses if anything at that company already exists, and lists what it
     found. Pass confirmed_new=True only once the user has said it really is a
@@ -579,11 +598,61 @@ def add_job(company: str, title: str, status: str = "pending",
                 f"{company} already has: {listed}. If this is genuinely a "
                 f"different application, ask the user, then call again with "
                 f"confirmed_new=True.")
-    return studio.jobstore.add_job(_ws(), {
+    job = studio.jobstore.add_job(_ws(), {
         "company": company, "title": title, "status": status, "url": url,
         "location": location, "source": source, "description": description,
         "contact_email": contact_email,
+        # A company already has a logo if any earlier application to it did.
+        "logo": studio.stored_logo(company),
     })
+    if job.get("logo"):
+        job["logo_note"] = f"Reused the logo already saved for {company}."
+    elif company_website:
+        try:
+            saved = studio.fetch_logo(company, company_website)
+            studio.jobstore.set_company_logo(_ws(), company, saved["logo"])
+            job["logo"] = saved["logo"]
+            job["logo_note"] = f"Fetched from {saved['from']}."
+        except Exception as exc:  # the application matters, the logo does not
+            job["logo_note"] = (f"No logo: {exc}. It shows the company's "
+                                f"initials instead.")
+    else:
+        job["logo_note"] = ("No logo. Call set_company_logo with the company's "
+                            "website to add one.")
+    return job
+
+
+@tool
+def ats_check(path: str, job_id: str | None = None) -> dict:
+    """Read a CV's rendered PDF the way an applicant tracking system does.
+
+    Renders first if the PDF is older than the YAML. Returns the parsing
+    problems found (icons that extract as junk characters, a profile shown as
+    a bare username, non-standard headings, entries missing or out of order in
+    the text layer) and, against the posting of `job_id` or of the application
+    this CV is attached to, which of the posting's keywords the CV uses.
+
+    Use it after tailoring. A missing keyword is worth working in only where
+    it is true of the user: never add a skill they have not claimed. The
+    keyword list is picked out of the posting by a heuristic, so read it as a
+    prompt, not a checklist. `design.header.connections.show_icons: false` and
+    `display_urls_instead_of_usernames: true` fix the two commonest parsing
+    problems.
+    """
+    r = studio.ats_report(studio.safe_path(path), job_id)
+    if not r.get("ok"):
+        raise ValueError(r.get("error") or "The check could not run.")
+    kw = r.get("keywords")
+    return {
+        "pages": r["pages"], "words": r["words"],
+        "problems": [{"title": c["title"], "detail": c["detail"]}
+                     for c in r["checks"] if c["level"] != "ok"],
+        "against": r.get("against"),
+        "keywords": None if not kw else {
+            "used": f"{len(kw['found'])} of {kw['total']}",
+            "found": [t["term"] for t in kw["found"]],
+            "missing": [t["term"] for t in kw["missing"]]},
+    }
 
 
 @tool
