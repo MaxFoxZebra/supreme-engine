@@ -5178,15 +5178,16 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <p class="sp-lede">Everything lives in one folder you own. CVs and letters are
           plain YAML; applications are a single SQLite file. Copy the folder and you
           have copied everything.</p>
+        <div class="srow"><div><b>Setup</b><span>The welcome and the steps from the
+          first launch: import a CV from a PDF or LinkedIn, your name at the top of the
+          base CV, how it prints, and an AI client.</span></div>
+          <button class="obtn" id="s-setup">Run setup again</button></div>
         <div class="srow"><div><b>Folder</b><span id="s-ws" class="mono"></span></div>
           <button class="obtn" id="s-open">Open folder</button></div>
         <div class="srow"><div><b>Documents</b><span id="s-count"></span></div></div>
         <div class="srow"><div><b>Applications</b><span>Exported as JSON or CSV so the
           database is never a lock-in.</span></div>
           <button class="obtn" id="s-exp">Export JSON</button></div>
-        <div class="srow"><div><b>Setup</b><span>Your name on the base CV, how it
-          prints, and an AI client. The steps from the first launch.</span></div>
-          <button class="obtn" id="s-setup">Run setup again</button></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>
