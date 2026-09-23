@@ -3501,6 +3501,12 @@ body.dragging{cursor:col-resize;user-select:none}
 /* A document-level fact, so it sits with the other one rather than being
    redrawn inside every block's editor. */
 .linkchip .dot{width:6px;height:6px}
+/* "Base" is a role the document plays, so it reads as a tag rather than as
+   another sentence in the chip. Neutral: the accent is spoken for. */
+.btag{font-size:10.5px;font-weight:600;color:var(--t800);background:var(--bar);
+  border-radius:4px;padding:1px 6px;line-height:1.5;flex:none;
+  box-shadow:inset 0 0 0 1px var(--bd-field)}
+.row .btag{font-weight:500;padding:0 5px;margin-left:2px}
 
 /* ---------- the application peek ----------------------------------------
    Sized to the record rather than to a habit: wide enough for two columns of
@@ -4570,6 +4576,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
           <button role="tab" data-tab="yaml" aria-selected="false"
             title="The source on the left, the page on the right">YAML</button>
         </div>
+        <button class="prov" id="basechip" hidden></button>
         <button class="prov" id="provchip" hidden></button>
         <button class="prov linkchip" id="linkchip" hidden></button>
         <span class="nomap" id="nomap" hidden></span>
@@ -5635,6 +5642,27 @@ function setProv(prov){
   paintProv();
 }
 
+/* The base says so. A tailored copy has always said what it came from; the
+   document it came from said nothing, so the one CV every other one is copied
+   from looked like any other file while you edited it. */
+const isBase=p=>!!(p&&S.state&&S.state.base&&S.state.base.path===p);
+function paintBaseChip(){
+  const chip=$("#basechip");
+  if(!chip) return;
+  if(!isBase(S.path)){ chip.hidden=true; return }
+  const n=((S.state&&S.state.documents)||[]).filter(d=>d.base===S.path).length;
+  chip.innerHTML='<span class="btag">Base CV</span>'+
+    '<span>'+(n?'<b>'+n+'</b> tailored from it':'every tailored CV starts as a copy of it')+
+    '</span>';
+  chip.title="Changes here reach the next CV you tailor, not the ones already "+
+    "copied. Click to see every document.";
+  chip.hidden=false;
+  chip.onclick=()=>{
+    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    setView("docs");
+  };
+}
+
 /* The chip: the whole document's answer, on every tab. */
 /* One chip for the whole document, beside the provenance one, rather than a
    card repeated inside every block's editor. */
@@ -5644,6 +5672,7 @@ function paintLink(){
      is only knowable once the document and the applications have both landed
      -- which is here, not in setView. */
   paintBackLabel();
+  paintBaseChip();
   if(!S.path||!S.jready){ chip.hidden=true; return }
   if(!j){
     chip.innerHTML='<span>Link to an application</span>';
@@ -6486,6 +6515,8 @@ function renderDocs(docs){
           (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
           '<span class="mark"></span>'+
           '<span class="lbl">'+esc(d.label)+'</span>'+
+          (isBase(d.path)?'<span class="btag" title="The base CV: every tailored CV '+
+            'starts as a copy of it">base</span>':'')+
           markHTML(d.ai,null,true)+
           (job?'<span class="tie" title="Linked to '+
             esc(job.title+" · "+job.company)+'"></span>':"")+
@@ -7866,6 +7897,7 @@ function mountBase(el,cls){
 function paintBase(){
   mountBase($("#baserow"),"baserow");
   mountBase($("#docbase"),"bcard");
+  paintBaseChip();
   baseThumb(false);
 }
 

@@ -21,6 +21,9 @@ tag, so a release is never published with nothing said about it.
 - **The base CV card shows the base CV.** A snapshot of its first page, as
   actually rendered, sits in the card on Applications and on Documents, and
   clicking it opens the CV. It updates when you or a model change the file.
+- **The base CV says it is the base.** Open it and a **Base CV** chip sits
+  where a tailored copy says what it came from, with how many CVs have been
+  tailored from it; the document list tags it too.
 - **ATS check.** Reads the CV's PDF the way an applicant tracking system
   does and shows you the text it gets, beside what went wrong: contact icons
   that extract as junk characters, a LinkedIn shown as a bare username,
