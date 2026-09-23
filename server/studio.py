@@ -37,7 +37,7 @@ import time
 import zipfile
 import webbrowser
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 try:
     from ruamel.yaml import YAML
@@ -66,6 +66,7 @@ except ImportError:  # clicking the page is a bonus, not a requirement
 import ats  # noqa: E402
 import importer  # noqa: E402
 import languages  # noqa: E402
+import letters  # noqa: E402
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -1489,6 +1490,184 @@ def remove_photo() -> dict:
     return {"ok": True, "cleared": cleared}
 
 
+# --------------------------------------------------------------------------
+# Cover letters
+#
+# A letter is a Markdown file under letters/, laid out by letters.py with
+# Typst in the look of the CV it names. Everything here is the workspace side:
+# which CV that is, where the render goes, the application it belongs to, and
+# turning the letters written before as RenderCV documents into files of the
+# new kind, once, keeping the old file beside the new one.
+# --------------------------------------------------------------------------
+
+def is_letter(p: Path) -> bool:
+    return p.suffix == letters.EXT
+
+
+_DEFAULTS: dict = {}
+
+
+def design_defaults(theme: str) -> dict:
+    """A theme's own value for every design setting, keyed "colors.name"."""
+    if theme not in _DEFAULTS:
+        out = {}
+        for g in design_schema(theme).get("groups", []):
+            for f in g["fields"]:
+                out[".".join(map(str, f["path"]))] = f.get("default")
+        _DEFAULTS[theme] = out
+    return _DEFAULTS[theme]
+
+
+def letter_cv(meta: dict) -> Path | None:
+    """The CV a letter looks like: the one it names, else the base CV."""
+    for cand in (meta.get("looks_like"), (base_cv() or {}).get("path")):
+        if cand:
+            try:
+                f = safe_path(str(cand))
+                if f.exists():
+                    return f
+            except (PermissionError, ValueError):
+                continue
+    return None
+
+
+def letter_head(meta: dict) -> dict:
+    cvp = letter_cv(meta)
+    data = {}
+    if cvp:
+        try:
+            data = to_plain(yaml_rt.load(cvp.read_text(encoding="utf-8"))) or {}
+        except Exception:
+            data = {}
+    theme = str(((data.get("design") or {}).get("theme")) or "classic")
+    head = letters.letterhead(data, design_defaults(theme))
+    head["cv"] = rel(cvp) if cvp else None
+    return head
+
+
+def load_letter(path: Path) -> dict:
+    text = path.read_text(encoding="utf-8")
+    meta, body = letters.parse(text)
+    head = letter_head(meta)
+    return {"letter": True, "path": rel(path), "text": text, "meta": meta,
+            "body": body, "head": head, "date_line": letters.date_line(meta),
+            "words": letters.word_count(body), "target": letters.WORD_TARGET,
+            "mtime": path.stat().st_mtime}
+
+
+def save_letter(path: Path, payload: dict, tool: str = "save") -> dict:
+    if "text" in payload:
+        text = str(payload["text"])
+    else:
+        meta, body = letters.parse(path.read_text(encoding="utf-8")) if path.exists() else ({}, "")
+        meta.update({k: v for k, v in (payload.get("meta") or {}).items()})
+        text = letters.dump(meta, payload.get("body", body))
+    path.write_text(text, encoding="utf-8")
+    return load_letter(path)
+
+
+def render_letter(path: Path) -> dict:
+    meta, body = letters.parse(path.read_text(encoding="utf-8"))
+    head = letter_head(meta)
+    cvp = letter_cv(meta)
+    r = letters.render(meta, body, head, output_dir(path), letters.file_stem(head["name"]),
+                       [p for p in ([cvp.parent / "fonts"] if cvp else []) + [path.parent / "fonts"]])
+    if not r.get("ok"):
+        return {"ok": False, "error": r.get("log"), "hint": "The letter did not lay out."}
+    stamp = int(time.time() * 1000)
+    return {"ok": True, "pages": r["pages"], "words": r["words"], "pdf": rel(Path(r["pdf"])),
+            "pngs": [f"/api/asset?path={rel(Path(f))}&v={stamp}" for f in r["png_pages"]]}
+
+
+def letter_export(path: Path, fmt: str) -> tuple[bytes, str, str]:
+    """(bytes, content type, file name) for a letter in another form."""
+    meta, body = letters.parse(path.read_text(encoding="utf-8"))
+    head = letter_head(meta)
+    base = letters.file_stem(head["name"])
+    if fmt == "docx":
+        return (letters.docx(meta, body, head),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                base + ".docx")
+    if fmt == "txt":
+        return letters.plain_text(meta, body, head).encode("utf-8"), \
+            "text/plain; charset=utf-8", base + ".txt"
+    pdf = last_pdf(path)
+    if not pdf or pdf.stat().st_mtime < path.stat().st_mtime:
+        r = render_letter(path)
+        if not r.get("ok"):
+            raise ValueError(r.get("error") or "The letter did not lay out.")
+        pdf = WORKSPACE / r["pdf"]
+    return pdf.read_bytes(), "application/pdf", base + ".pdf"
+
+
+def new_letter(job_id: str | None = None, name: str | None = None) -> dict:
+    """A letter with everything filled in but the words: from the application,
+    its company, role and language; from its CV (else the base CV), the look
+    and the place it is written from. Linked to the application."""
+    job = None
+    if job_id and jobstore is not None:
+        job = next((j for j in jobstore.list_jobs(WORKSPACE) if j["id"] == job_id), None)
+    company = (job or {}).get("company") or ""
+    role = (job or {}).get("title") or ""
+    lang = (job or {}).get("language") or languages.detect(
+        f"{role} {(job or {}).get('description') or ''}") or "en"
+    looks = (job or {}).get("cv_path") or (base_cv() or {}).get("path")
+    place = ""
+    try:
+        data = to_plain(yaml_rt.load(safe_path(looks).read_text(encoding="utf-8"))) if looks else {}
+        place = str(((data or {}).get("cv") or {}).get("location") or "").split(",")[0].strip()
+    except Exception:
+        pass
+    stem = re.sub(r"[^a-z0-9]+", "-", (name or f"cover-{company or 'letter'}").lower()).strip("-") or "cover-letter"
+    folder = WORKSPACE / "letters"
+    folder.mkdir(parents=True, exist_ok=True)
+    dest, n = folder / f"{stem}{letters.EXT}", 2
+    while dest.exists():
+        dest, n = folder / f"{stem}-{n}{letters.EXT}", n + 1
+    dest.write_text(letters.scaffold(company=company, role=role, lang=lang, place=place,
+                                     looks_like=looks, application=job_id if job else None),
+                    encoding="utf-8")
+    if job and jobstore is not None:
+        jobstore.update_job(WORKSPACE, job["id"], {"letter_path": rel(dest)})
+    return {"ok": True, "path": rel(dest)}
+
+
+def convert_legacy_letters() -> list[str]:
+    """Every letter still written as a RenderCV document, as a Markdown letter.
+    The old file is renamed to .yaml.bak beside it, and an application that
+    pointed at it points at the new one."""
+    done = []
+    folder = WORKSPACE / "letters"
+    if not folder.is_dir():
+        return done
+    jobs = jobstore.list_jobs(WORKSPACE) if jobstore is not None else []
+    for f in sorted(folder.glob("*.y*ml")):
+        if f.name.startswith("."):
+            continue
+        try:
+            data = to_plain(yaml_rt.load(f.read_text(encoding="utf-8"))) or {}
+            if not isinstance(data.get("cv"), dict):
+                continue
+            meta, body = letters.from_legacy(data)
+            dest = f.with_suffix(letters.EXT)
+            if dest.exists():
+                continue
+            job = next((j for j in jobs if j.get("letter_path") == rel(f)), None)
+            if job:
+                meta.update({"application": job["id"], "company": job.get("company"),
+                             "looks_like": job.get("cv_path") or (base_cv() or {}).get("path")})
+            else:
+                meta["looks_like"] = (base_cv() or {}).get("path")
+            dest.write_text(letters.dump(meta, body), encoding="utf-8")
+            f.rename(f.with_name(f.name + ".bak"))
+            if job:
+                jobstore.update_job(WORKSPACE, job["id"], {"letter_path": rel(dest)})
+            done.append(rel(dest))
+        except Exception:
+            continue
+    return done
+
+
 def edits_stamp() -> float | None:
     """When the provenance file last changed, so the poll can spot a new mark."""
     try:
@@ -1942,6 +2121,9 @@ def document_files() -> list[tuple[Path, str, str]]:
         if folder.is_dir():
             found += [(f, f.stem, group) for f in sorted(folder.glob("*.y*ml"))
                       if not f.name.startswith(".")]
+            if group == "Cover letters":
+                found += [(f, f.stem, group) for f in sorted(folder.glob("*" + letters.EXT))
+                          if not f.name.startswith(".")]
     apps = WORKSPACE / "applications"
     if apps.is_dir():
         for app_dir in sorted(apps.iterdir(), reverse=True):
@@ -1975,6 +2157,17 @@ def list_documents() -> list[dict]:
 
     out = []
     for f, label, group in document_files():
+        if is_letter(f):
+            path = rel(f)
+            try:
+                meta, _ = letters.parse(f.read_text(encoding="utf-8"))
+            except OSError:
+                meta = {}
+            out.append({"path": path, "label": label, "group": group, "letter": True,
+                        "mtime": f.stat().st_mtime, "ai": last_ai(path), "base": None,
+                        "lang": languages.code_of(meta.get("language")),
+                        "translation_of": None, "looks_like": meta.get("looks_like")})
+            continue
         if not is_cv_yaml(f):
             continue
         path = rel(f)
@@ -2076,6 +2269,9 @@ def write_doc(path: Path, text: str, tool: str = "write") -> dict:
     keeps the marks the same whether a field was set through a patch or a file
     was replaced wholesale.
     """
+    if is_letter(path):
+        path.write_text(text, encoding="utf-8")
+        return {"changed": []}
     before = None
     try:
         before = to_plain(yaml_rt.load(path.read_text(encoding="utf-8")))
@@ -2769,6 +2965,17 @@ def openapi_spec() -> dict:
                                      "yaml": {"type": "string"},
                                      "patches": {"type": "array", "items": {}}}),
                 "responses": ok}},
+            "/api/letter/new": {"post": {"summary":
+                "Write a cover letter scaffold for an application, linked to it",
+                "requestBody": body({"job_id": {"type": "string"}, "name": {"type": "string"}}),
+                "responses": ok}},
+            "/api/letter/export": {"get": {"summary":
+                "A cover letter as PDF, Word (.docx) or plain text",
+                "parameters": [{"name": "path", "in": "query", "required": True,
+                                "schema": {"type": "string"}},
+                               {"name": "format", "in": "query",
+                                "schema": {"type": "string", "enum": ["pdf", "docx", "txt"]}}],
+                "responses": ok}},
             "/api/photo": {"post": {"summary":
                 "Save the workspace photo, a square JPEG the app has already cropped",
                 "requestBody": body({"data": {"type": "string", "description": "base64 JPEG"}}),
@@ -3071,6 +3278,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "__API_TOKEN__", json.dumps(API_TOKEN))
                 return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
             if u.path == "/api/state":
+                convert_legacy_letters()
                 return self._json({
                     "documents": list_documents(), "base": base_cv(),
                     "languages": languages.catalogue(),
@@ -3087,6 +3295,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "api_token": API_TOKEN,
                     "port": self.server.server_address[1],
                 })
+            if u.path.startswith("/cvfont/"):
+                # The fonts a CV prints in, for the letter editor's page to be
+                # set in the same face as the PDF. Only RenderCV's bundled
+                # families, named exactly: a family is a folder name here, and
+                # anything else is not a font this serves.
+                return self._cv_font(unquote(u.path[len("/cvfont/"):]))
             if u.path.startswith("/static/"):
                 name = u.path.split("/static/", 1)[1]
                 # Serve only the vendored assets, and only the shapes they take:
@@ -3149,7 +3363,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/openapi.json":
                 return self._json(openapi_spec())
             if u.path == "/api/doc":
-                return self._json(load_doc(safe_path(q["path"][0])))
+                p = safe_path(q["path"][0])
+                return self._json(load_letter(p) if is_letter(p) else load_doc(p))
+            if u.path == "/api/letter/export":
+                p = safe_path(q["path"][0])
+                try:
+                    data, ctype, fname = letter_export(p, (q.get("format") or ["pdf"])[0])
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 422)
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if u.path == "/api/ai":
                 return self._json({"clients": ai_clients()})
             if u.path == "/api/pulse":
@@ -3172,6 +3400,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as exc:
             return self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
 
+    def _cv_font(self, name: str):
+        try:
+            import rendercv_fonts
+            root = Path(rendercv_fonts.__file__).parent
+        except Exception:
+            return self._json({"error": "not found"}, 404)
+        families = {d.name: d for d in root.iterdir() if d.is_dir() and not d.name.startswith("_")}
+        if name.endswith(".css"):
+            fam = families.get(name[:-4])
+            if not fam:
+                return self._send(200, b"", "text/css")
+            rules = []
+            for f in sorted(fam.glob("*.[ot]tf")):
+                n = f.stem.lower()
+                weight = 700 if "bold" in n and "semi" not in n else 600 if "semibold" in n \
+                    else 500 if "medium" in n else 300 if "light" in n else 400
+                style = "italic" if "italic" in n else "normal"
+                rules.append(f"@font-face{{font-family:'{fam.name}';src:url('/cvfont/"
+                             f"{quote(fam.name)}/{quote(f.name)}');font-weight:{weight};"
+                             f"font-style:{style}}}")
+            return self._send(200, "\n".join(rules).encode("utf-8"), "text/css; charset=utf-8")
+        fam_name, _, file = name.partition("/")
+        fam = families.get(fam_name)
+        f = fam / file if fam and "/" not in file and "\\" not in file else None
+        if not f or not f.is_file() or f.suffix not in (".ttf", ".otf"):
+            return self._json({"error": "not found"}, 404)
+        return self._send(200, f.read_bytes(), "font/ttf" if f.suffix == ".ttf" else "font/otf")
+
     def do_POST(self):
         u = urlparse(self.path)
         if u.path.startswith("/api/") and not self._authed():
@@ -3182,6 +3438,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (json.JSONDecodeError, ValueError):
             return self._json({"error": "bad request"}, 400)
         try:
+            if u.path == "/api/save" and is_letter(safe_path(payload["path"])):
+                return self._json({"ok": True, **save_letter(safe_path(payload["path"]), payload)})
             if u.path == "/api/save":
                 p = safe_path(payload["path"])
                 wrote = {}
@@ -3210,7 +3468,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except (ValueError, OSError) as exc:
                     return self._json({"error": str(exc)}, 400)
             if u.path == "/api/render":
-                return self._json(render(safe_path(payload["path"])))
+                p = safe_path(payload["path"])
+                return self._json(render_letter(p) if is_letter(p) else render(p))
+            if u.path == "/api/letter/new":
+                return self._json(new_letter(payload.get("job_id"), payload.get("name")))
             if u.path == "/api/preview":
                 return self._json(preview(safe_path(payload["path"]),
                                           payload.get("yaml"),
@@ -3309,8 +3570,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not name:
                     return self._json({"error": "Please give it a name."}, 400)
                 kind = payload.get("kind") or "cv"
+                if kind == "letter" and not payload.get("from"):
+                    return self._json(new_letter(payload.get("job_id"), name))
                 folder = "letters" if kind == "letter" else "profile"
-                dest = safe_path(f"{folder}/{name}.yaml")
+                src_ext = Path(str(payload.get("from") or "")).suffix
+                dest = safe_path(f"{folder}/{name}{src_ext if src_ext == letters.EXT else '.yaml'}")
                 if dest.exists():
                     return self._json({"error": "Something with that name already exists."}, 409)
                 src = payload.get("from")
@@ -4277,7 +4541,9 @@ body.dragging{cursor:col-resize;user-select:none}
 .say-box b{font-size:12.5px;font-weight:600;color:var(--t900)}
 .say-box .say{font-size:13px;line-height:1.5;color:var(--t900);padding:9px 11px;border-radius:7px;
   background:var(--app);border:1px solid var(--bd-inner);user-select:all}
-.say-box .row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--t500)}
+.say-box .row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;font-size:12px;
+  color:var(--t500)}
+.lt-panel .say-box .row .grow{flex-basis:100%}
 .say-box .row .grow{flex:1}
 .drift-list{margin:0;padding:0;list-style:none;max-height:320px;overflow-y:auto;
   border:1px solid var(--rule);border-radius:9px;background:var(--field)}
@@ -4720,6 +4986,143 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 @media (prefers-reduced-motion:reduce){
   .onb *,.onb *::before{animation:none!important}
 }
+
+/* ---------- an application, as a page --------------------------------------- */
+.peek-head{height:76px}
+.peek-logo{flex:none;display:grid}
+.peek-logo .colog{width:44px;height:44px;border-radius:11px;font-size:15px}
+.peek-who b{font-size:19px}
+.ap-pill{flex:none;display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;
+  border-radius:14px;background:var(--bar);font-size:12.5px;font-weight:600;color:var(--t800)}
+.ap-pill .dot{width:8px;height:8px}
+.ap-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:12px 14px;
+  padding:14px 16px;border:1px solid var(--rule);border-radius:12px;background:var(--field)}
+.ap-fact{display:flex;flex-direction:column;gap:5px;min-width:0}
+.ap-fact>span{font-size:11.5px;font-weight:600;color:var(--t500)}
+.ap-fact select,.ap-fact input{width:100%;min-width:0;height:32px;border-radius:8px;font-size:13px}
+.ap-fact .statusctl{gap:6px}
+.ap-src{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 10px;
+  border:1px solid var(--bd-field);border-radius:8px;background:var(--field);color:var(--t900);
+  font-size:13px;text-align:left;min-width:0}
+.ap-src:hover{background:var(--paper-hover)}
+.ap-src .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ap-src .caret{color:var(--t500);font-size:10px}
+.ap-src .board,.ap-menu .board{width:20px;height:20px;border-radius:5px}
+.ap-src .board svg,.ap-menu .board svg{width:12px;height:12px}
+.ap-src .board.lettered,.ap-menu .board.lettered{font-size:9px}
+.ap-menu{position:fixed;z-index:48;width:250px;max-height:360px;overflow-y:auto;padding:5px;
+  border:1px solid var(--rule);border-radius:11px;background:var(--field);
+  box-shadow:0 16px 36px -10px rgba(27,26,23,.35);display:flex;flex-direction:column;gap:1px}
+.ap-menu button{flex:none;display:flex;align-items:center;gap:10px;height:34px;padding:0 9px;border:0;
+  border-radius:7px;background:none;color:var(--t900);font-size:13px;text-align:left}
+.ap-menu button:hover{background:var(--paper-hover)}
+.ap-menu button[aria-selected=true]{background:var(--acc-wash);font-weight:600}
+.ap-menu hr{border:0;border-top:1px solid var(--bd-inner);margin:4px 2px}
+.ap-menu .gl{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;
+  background:var(--bar);color:var(--t700);font-size:11px;flex:none}
+.ap-docs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.ap-doc{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ap-doc .pg{aspect-ratio:210/297;border:1px solid var(--rule);border-radius:5px;background:#fff;
+  overflow:hidden;cursor:pointer;display:grid;place-items:center;
+  box-shadow:0 6px 16px -10px rgba(27,26,23,.4)}
+.ap-doc .pg img{width:100%;height:100%;object-fit:contain;object-position:top;display:block}
+.ap-doc .pg>span{font-size:11px;color:#6b675d}
+.ap-doc .pg.none{border:2px dashed var(--bd-field);background:var(--row-alt);cursor:default;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  padding:10px;text-align:center;box-shadow:none}
+.ap-doc .pg.none span{font-size:12px;color:var(--t600);line-height:1.4}
+.ap-doc .pg.post{background:var(--field);cursor:default;display:flex;flex-direction:column;
+  align-items:stretch;justify-content:flex-start;gap:8px;padding:12px;box-shadow:none}
+.ap-doc .pg.post .who{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
+  color:var(--t900)}
+.ap-doc .pg.post .who .board{width:24px;height:24px;border-radius:6px}
+.ap-doc .pg.post .who .board svg{width:14px;height:14px}
+.ap-doc .pg.post .u{font-size:11px;line-height:1.45;color:var(--t600);overflow-wrap:anywhere}
+.ap-doc .pg.post .n{margin-top:auto;font-size:11px;color:var(--t500)}
+.ap-doc .t{display:flex;flex-direction:column;gap:1px;min-width:0}
+.ap-doc .t b{font-size:12.5px;font-weight:600;color:var(--t900)}
+.ap-doc .t span{font-size:11.5px;color:var(--t600);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.ap-doc .a{display:flex;gap:6px;flex-wrap:wrap}
+.ap-doc .a .obtn{height:28px;padding:0 10px;border-radius:7px;font-size:12px}
+/* The posting, read as a posting: its headings and lists, with the facts a
+   posting buries -- where, how much, travel, sponsorship -- pulled up top. */
+.ap-post{font-size:13.5px;line-height:1.6;color:var(--t800);overflow-wrap:anywhere}
+.ap-post h4{margin:16px 0 5px;font-size:14px;font-weight:600;color:var(--t900)}
+.ap-post h4:first-child{margin-top:0}
+.ap-post p{margin:0 0 8px}
+.ap-post ul{margin:0 0 8px;padding-left:18px;display:flex;flex-direction:column;gap:2px}
+.ap-post a{color:var(--acc-text)}
+.ap-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.ap-chips span{height:24px;display:inline-flex;align-items:center;padding:0 10px;border-radius:12px;
+  background:var(--bar);font-size:12px;color:var(--t800)}
+.ap-posthead{display:flex;align-items:baseline;gap:10px}
+.ap-posthead .alink{font-size:12px}
+.peek-grid textarea.posting-edit{min-height:320px;font-size:12.5px;line-height:1.6}
+@media(max-width:1180px){ .ap-docs{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
+/* ---------- cover letters --------------------------------------------------
+   The page is the editor: a sheet at the letter's real size, set in the CV's
+   font at the CV's margins, with the body editable in place. The letterhead
+   comes from the CV and is not edited here. */
+#v-letter{flex:1;min-height:0;display:flex;flex-direction:column}
+.lt-body{flex:1;min-height:0;display:flex}
+.lt-stage{flex:1;min-width:0;overflow:auto;background:var(--canvas);display:flex;
+  flex-direction:column;align-items:center;gap:18px;padding:34px 20px 60px}
+.lt-paper{position:relative;flex:none;background:#fff;color:#1b1a17;
+  box-shadow:0 10px 40px rgba(27,26,23,.16),0 1px 3px rgba(27,26,23,.12)}
+.lt-paper .lh{position:relative;cursor:pointer}
+.lt-paper .lh .tag{position:absolute;right:0;top:-34px;display:none;align-items:center;gap:6px;
+  height:24px;padding:0 10px;border-radius:12px;background:#1b1a17;color:#f5f2ea;
+  font:500 11.5px 'IBM Plex Sans',system-ui,sans-serif;white-space:nowrap}
+.lt-paper .lh:hover .tag,.lt-paper .lh:focus-visible .tag{display:inline-flex}
+.lt-paper .lh:hover{outline:1px dashed #c9c2b3;outline-offset:6px}
+.lt-paper [contenteditable]{outline:none;border-radius:2px}
+.lt-paper [contenteditable]:hover{box-shadow:0 0 0 1px #e2dccf}
+.lt-paper [contenteditable]:focus{box-shadow:0 0 0 1px #d8c29e}
+.lt-paper .subj:empty::before{content:attr(data-ph);color:#b3ad9d;font-weight:400}
+.lt-paper .ltbody p{margin:0}
+.lt-paper .ltbody ul{margin:0;padding-left:1.4em}
+.lt-paper .ltbody a{color:inherit;text-decoration:underline;text-decoration-color:#b3ad9d;
+  text-underline-offset:3px}
+.lt-paper .pgend{position:absolute;left:0;right:0;border-top:1px dashed #d8a86a;
+  pointer-events:none}
+.lt-paper .pgend span{position:absolute;right:8px;top:-10px;padding:0 6px;background:#fff;
+  font:500 10.5px 'IBM Plex Sans',system-ui,sans-serif;color:#a8761f}
+.lt-pdf{display:flex;flex-direction:column;gap:18px;align-items:center}
+.lt-pdf img{display:block;background:#fff;box-shadow:0 10px 40px rgba(27,26,23,.16)}
+.lt-md{width:min(820px,100%);flex:1;min-height:520px;resize:none;padding:18px 20px;
+  border:1px solid var(--rule);border-radius:10px;background:var(--field);color:var(--t900);
+  font:13px/1.7 'IBM Plex Mono',ui-monospace,monospace}
+.lt-bar{position:fixed;z-index:48;display:flex;gap:2px;padding:3px;border-radius:8px;
+  background:#1b1a17;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+.lt-bar button{min-width:30px;height:28px;padding:0 8px;border:0;border-radius:6px;
+  background:transparent;color:#cfcabd;font:500 12.5px 'IBM Plex Sans',system-ui,sans-serif}
+.lt-bar button:hover,.lt-bar button[aria-pressed=true]{background:#3a3833;color:#f5f2ea}
+.lt-panel{width:300px;flex:none;overflow-y:auto;padding:20px;border-left:1px solid var(--rule);
+  background:var(--app);display:flex;flex-direction:column;gap:16px;font-size:13px}
+.lt-panel h4{margin:0;font-size:12px;font-weight:600;color:var(--t500)}
+.lt-panel .big{font-size:20px;font-weight:600;color:var(--t900)}
+.lt-meter{height:6px;border-radius:3px;background:var(--bd-inner);overflow:hidden}
+.lt-meter i{display:block;height:100%;background:var(--acc)}
+.lt-meter.over i{background:var(--bad)}
+.lt-panel .muted2{color:var(--t600);line-height:1.45}
+.lt-panel hr{border:0;border-top:1px solid var(--rule);margin:0}
+.lt-panel .fg{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px 10px;align-items:center}
+.lt-panel .fg label{font-size:12.5px;color:var(--t600)}
+.lt-panel .fg input,.lt-panel .fg select,.lt-panel .fg textarea{width:100%;min-width:0;
+  font-size:12.5px}
+.lt-panel .fg textarea{min-height:64px;resize:vertical}
+.lt-panel .today{display:flex;align-items:center;gap:8px}
+.lt-panel .today input[type=date]{flex:1}
+.lt-export{position:relative}
+.lt-menu{position:absolute;right:0;top:40px;z-index:30;min-width:200px;padding:5px;
+  border:1px solid var(--rule);border-radius:10px;background:var(--field);
+  box-shadow:0 16px 36px -10px rgba(27,26,23,.35);display:flex;flex-direction:column}
+.lt-menu button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:8px 10px;
+  border:0;border-radius:7px;background:none;text-align:left;color:var(--t900);font-size:13px}
+.lt-menu button:hover{background:var(--paper-hover)}
+.lt-menu small{font-size:11.5px;color:var(--t500)}
 
 /* ---------- ATS check ------------------------------------------------------ */
 .sheet.ats{width:980px}
@@ -5523,7 +5926,9 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
          them with the arrow keys without ever closing. -->
     <aside class="peek" id="jpeek" hidden aria-label="Application">
       <div class="peek-head">
+        <span class="peek-logo" id="jinsp-logo" aria-hidden="true"></span>
         <div class="peek-who" aria-live="polite"><b id="jinsp-title"></b><span id="jinsp-sub"></span></div>
+        <span class="ap-pill" id="jinsp-status"></span>
         <div class="peek-nav">
           <button id="jpk-prev" title="Previous application (Up)"
             aria-label="Previous application">&#8593;</button>
@@ -5561,6 +5966,26 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
   </section>
 
   <!-- ------------------------------------------------------------- Funnel -->
+  <!-- ------------------------------------------------------ Cover letter -->
+  <section class="view" id="v-letter" hidden>
+    <div class="docbar">
+      <button class="crumb" id="lt-back">Applications</button>
+      <span class="crumb-sep" aria-hidden="true">/</span>
+      <div class="doctitle"><span class="t" id="lt-title"></span><span class="f mono" id="lt-file"></span></div>
+      <div class="seg light" id="lt-tabs" role="tablist" aria-label="View" style="margin-left:6px">
+        <button role="tab" data-lt="write" aria-selected="true">Write</button>
+        <button role="tab" data-lt="pdf" aria-selected="false">PDF</button>
+        <button role="tab" data-lt="md" aria-selected="false">Markdown</button>
+      </div>
+      <div class="grow"></div>
+      <span class="lt-export"><button class="obtn" id="lt-export" aria-haspopup="menu">Export &#9662;</button></span>
+      <button class="pbtn" id="lt-save">Save</button>
+    </div>
+    <div class="lt-body">
+      <div class="lt-stage" id="lt-stage"></div>
+      <aside class="lt-panel" id="lt-panel" aria-label="This letter"></aside>
+    </div>
+  </section>
   <section class="view" id="v-funnel" hidden>
     <div class="fn-page">
       <div class="phead fn-bar"><div class="fn-head"><h1>Funnel</h1><b id="fn-total"></b>
@@ -6090,8 +6515,9 @@ const isoToday=()=>new Date().toISOString().slice(0,10);
 function setView(v){
   S.view=v;
   const doc=v==="cvs";
-  ["cvs","jobs","docs","funnel"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
+  ["cvs","jobs","docs","funnel","letter"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
   if(doc) paintBackLabel();
+  else if(v==="letter") ltBackLabel();
   else $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===v)));
   if(v==="jobs"){ loadJobs(); loadAlerts() }
   /* Which application a document was written for is a fact about the jobs, so
@@ -6727,6 +7153,7 @@ async function pulse(){
   }
   const bp=S.state&&S.state.base&&S.state.base.path;
   if(bp&&bp!==S.path&&before.docs[bp]!==p.docs[bp]) baseThumb(true);
+  if(LT.path&&before.docs[LT.path]!==p.docs[LT.path]) ltExternal(p.docs[LT.path]);
   if(!S.path) return;
   const now=p.docs[S.path];
   if(now===undefined||S.docMtime==null||now<=S.docMtime+1e-6) return;
@@ -7484,6 +7911,352 @@ async function obNext(){
    screen that has its own Finish later, and the arrows belong to its fields. */
 window.addEventListener("keydown",e=>{ if(onbOpen()) e.stopPropagation() },true);
 
+
+/* =========================================================================
+   Cover letters
+   ========================================================================= */
+/* A letter is a Markdown file laid out by the app itself, in the look of the
+   CV it names. It is written on the page: the body is editable where it
+   prints, the letterhead comes from the CV, and place, date, language and the
+   CV it looks like are set beside it. The PDF tab is the exact render. */
+const LT={path:null, doc:null, meta:{}, body:"", dirty:false, tab:"write", pages:null,
+  png:null, rendering:false, mdText:null, t:null};
+const isLetterPath=p=>/\.md$/i.test(p||"");
+
+async function openLetter(path){
+  if(S.view==="jobs"||S.view==="docs") S.fromList=S.view;
+  closeOverlays();
+  try{
+    const d=await api("/api/doc?path="+encodeURIComponent(path));
+    Object.assign(LT,{path, doc:d, meta:Object.assign({},d.meta), body:d.body, dirty:false,
+      tab:"write", pages:null, png:null, mdText:null});
+  }catch(e){ return toast(e.message,true) }
+  setView("letter");
+  ltPaint();
+  ltRender();
+}
+function ltJob(){
+  const id=LT.meta.application;
+  return (S.jobs||[]).find(j=>j.id===id||j.letter_path===LT.path)||null;
+}
+function ltBackLabel(){
+  const to=(!ltJob()&&S.fromList==="docs")?"docs":"jobs";
+  $("#lt-back").textContent=to==="docs"?"Documents":"Applications";
+  $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===to)));
+}
+$("#lt-back").onclick=()=>{
+  if(LT.dirty&&!confirm("This letter has unsaved changes. Leave without saving?")) return;
+  LT.path=null;
+  const j=ltJob();
+  if(j){ setView("jobs"); selectJob(j.id); return }
+  setView(S.fromList==="docs"?"docs":"jobs");
+};
+
+/* The Markdown a letter uses, as HTML for the page and back. Paragraphs,
+   '- ' lists, **bold**, *italic*, [links](url): what letters.py prints. */
+function ltInline(t){
+  let out="", pos=0;
+  const re=/\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)\s]+)\)/g; let m;
+  while((m=re.exec(t))){
+    out+=esc(t.slice(pos,m.index));
+    if(m[1]||m[2]) out+="<b>"+ltInline(m[1]||m[2])+"</b>";
+    else if(m[3]||m[4]) out+="<i>"+ltInline(m[3]||m[4])+"</i>";
+    else out+='<a href="'+esc(m[6])+'">'+ltInline(m[5])+"</a>";
+    pos=re.lastIndex;
+  }
+  return out+esc(t.slice(pos));
+}
+function ltToHTML(body){
+  return String(body||"").trim().split(/\n\s*\n/).filter(c=>c.trim()).map(c=>{
+    const lines=c.split("\n").filter(l=>l.trim());
+    if(lines.every(l=>/^\s*[-*•]\s+/.test(l)))
+      return "<ul>"+lines.map(l=>"<li>"+ltInline(l.replace(/^\s*[-*•]\s+/,"").trim())+"</li>").join("")+"</ul>";
+    return "<p>"+ltInline(lines.map(l=>l.trim()).join(" "))+"</p>";
+  }).join("")||"<p><br></p>";
+}
+function ltInlineMD(node){
+  let out="";
+  node.childNodes.forEach(n=>{
+    if(n.nodeType===3){ out+=n.nodeValue.replace(/ /g," "); return }
+    if(n.nodeType!==1) return;
+    const t=n.tagName, inner=ltInlineMD(n);
+    const fw=n.style&&(n.style.fontWeight==="bold"||Number(n.style.fontWeight)>=600);
+    const it=n.style&&n.style.fontStyle==="italic";
+    if(t==="BR") out+=" ";
+    else if(!inner.trim()) out+=inner;
+    else if(t==="B"||t==="STRONG"||fw) out+="**"+inner.trim()+"**"+(/\s$/.test(inner)?" ":"");
+    else if(t==="I"||t==="EM"||it) out+="*"+inner.trim()+"*"+(/\s$/.test(inner)?" ":"");
+    else if(t==="A") out+="["+inner+"]("+(n.getAttribute("href")||"")+")";
+    else out+=inner;
+  });
+  return out;
+}
+function ltToMD(root){
+  const out=[];
+  const blockOf=n=>{
+    if(n.nodeType===3){ const t=n.nodeValue.trim(); if(t) out.push(t); return }
+    if(n.nodeType!==1) return;
+    if(n.tagName==="UL"||n.tagName==="OL"){
+      const items=[...n.querySelectorAll(":scope>li")].map(li=>"- "+ltInlineMD(li).replace(/\s+/g," ").trim())
+        .filter(x=>x!=="- ");
+      if(items.length) out.push(items.join("\n"));
+      return;
+    }
+    if(/^(P|DIV|H\d)$/.test(n.tagName)&&n.querySelector("ul,ol,p,div")){ n.childNodes.forEach(blockOf); return }
+    const t=ltInlineMD(n).replace(/\s+/g," ").trim();
+    if(t) out.push(t);
+  };
+  root.childNodes.forEach(blockOf);
+  return out.join("\n\n");
+}
+
+/* Lengths in the letter's own units, drawn at the width the page is shown. */
+const LT_PAPER={"a4":[210,297],"a5":[148,210],"us-letter":[215.9,279.4],"us-executive":[184.15,266.7]};
+function ltMM(v){
+  const m=String(v||"").trim().match(/^([\d.]+)\s*(cm|mm|in|pt)?$/); if(!m) return 20;
+  const n=parseFloat(m[1]);
+  return {cm:n*10,mm:n,in:n*25.4,pt:n*0.3528}[m[2]||"cm"];
+}
+function ltFont(fam){
+  if(!fam) return;
+  const id="cvfont-"+fam.replace(/\W+/g,"-");
+  if(document.getElementById(id)) return;
+  const l=document.createElement("link");
+  l.id=id; l.rel="stylesheet"; l.href="/cvfont/"+encodeURIComponent(fam)+".css";
+  document.head.append(l);
+}
+
+function ltPaint(){
+  const d=LT.doc, h=(d&&d.head)||{}, j=ltJob();
+  const bar=$("#lt-bar"); if(bar) bar.remove();
+  $("#lt-title").textContent="Cover letter"+(j?" · "+j.company:LT.meta.company?" · "+LT.meta.company:"");
+  $("#lt-file").textContent=LT.path.split("/").pop();
+  ltBackLabel();
+  $$("#lt-tabs [data-lt]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.lt===LT.tab)));
+  $("#lt-save").disabled=!LT.dirty;
+  const st=$("#lt-stage");
+  if(LT.tab==="pdf"){
+    st.innerHTML=LT.png&&LT.png.length?'<div class="lt-pdf">'+LT.png.map((u,i)=>
+      '<img alt="Page '+(i+1)+' of the letter" style="width:min(720px,100%)" src="'+esc(u+tok())+'">').join("")+'</div>'
+      :'<p class="sp-note">'+(LT.rendering?"Laying it out…":"Not rendered yet.")+'</p>';
+  }else if(LT.tab==="md"){
+    const text=LT.mdText!=null?LT.mdText:(LT.dirty?null:d.text);
+    st.innerHTML='<textarea class="lt-md" id="lt-md" spellcheck="true" aria-label="The letter as Markdown"></textarea>';
+    const ta=$("#lt-md");
+    ta.value=text!=null?text:"Saving…";
+    if(text==null) ltSave().then(()=>{ ta.value=LT.doc.text });
+    ta.oninput=()=>{ LT.mdText=ta.value; LT.dirty=true; $("#lt-save").disabled=false };
+  }else{
+    ltFont(h.font); ltFont(h.name_font);
+    const [wmm,hmm]=LT_PAPER[h.paper]||LT_PAPER.a4;
+    const W=Math.min(700,Math.max(480,st.clientWidth-60)), u=W/wmm, pt=u*0.3528;
+    const mg=h.margins||{}, to=LT.meta.to;
+    const toLines=Array.isArray(to)?to:String(to||"").split("\n").filter(x=>x.trim());
+    st.innerHTML='<div class="lt-paper" id="lt-paper" style="width:'+W+'px;min-height:'+(hmm*u)+'px;'+
+      'padding:'+(ltMM(mg.top)*u)+'px '+(ltMM(mg.right)*u)+'px '+(ltMM(mg.bottom)*u)+'px '+(ltMM(mg.left)*u)+'px;'+
+      'box-sizing:border-box;font-family:\''+esc(h.font||"Source Sans 3")+'\',sans-serif;font-size:'+(10.5*pt)+'px;'+
+      'line-height:1.52;color:'+esc(h.body_color||"#000")+'">'+
+      '<div class="lh" tabindex="0" role="link" aria-label="Letterhead, from '+esc(h.cv||"the CV")+'. Opens that CV." id="lt-lh">'+
+        '<span class="tag">From '+esc((h.cv||"the CV").split("/").pop().replace(/\.ya?ml$/,""))+' · <u>change it there</u></span>'+
+        '<div style="font-family:\''+esc(h.name_font||h.font)+'\',sans-serif;font-size:'+(24*pt)+'px;line-height:1.1;'+
+          'font-weight:'+(h.name_bold?700:400)+';color:'+esc(h.name_color)+'">'+esc(h.name)+'</div>'+
+        (h.headline?'<div style="font-size:'+(11*pt)+'px;color:'+esc(h.headline_color)+'">'+esc(h.headline)+'</div>':'')+
+        '<div style="margin-top:'+(4*pt)+'px;font-size:'+(9.5*pt)+'px;color:'+esc(h.contact_color)+'">'+
+          (h.contact||[]).map(esc).join(' &nbsp;•&nbsp; ')+'</div>'+
+        '<div style="margin-top:'+(6*pt)+'px;border-top:'+Math.max(1,0.6*pt)+'px solid '+esc(h.rule_color)+'"></div>'+
+      '</div>'+
+      (toLines.length?'<div style="margin-top:'+(16*pt)+'px">'+toLines.map(esc).join("<br>")+'</div>':'')+
+      '<div style="margin-top:'+(16*pt)+'px;text-align:right;color:'+esc(h.contact_color)+'" title="Set the place and date beside the letter">'+
+        esc(LT.doc.date_line||"")+'</div>'+
+      '<div class="subj" id="lt-subj" contenteditable="true" spellcheck="true" data-ph="Subject" '+
+        'aria-label="Subject" style="margin-top:'+(18*pt)+'px;font-weight:700">'+esc(LT.meta.subject||"")+'</div>'+
+      '<div class="ltbody" id="lt-edit" contenteditable="true" spellcheck="true" aria-label="The letter" '+
+        'style="margin-top:'+(10*pt)+'px;display:flex;flex-direction:column;gap:'+(8*pt)+'px;text-align:justify">'+
+        ltToHTML(LT.body)+'</div>'+
+      '<div style="margin-top:'+(24*pt)+'px;font-weight:700">'+esc(h.name)+'</div>'+
+    '</div>';
+    try{ document.execCommand("styleWithCSS",false,false); document.execCommand("defaultParagraphSeparator",false,"p") }catch(e){}
+    const ed=$("#lt-edit"), sj=$("#lt-subj");
+    ed.oninput=()=>ltChanged();
+    sj.oninput=()=>{ LT.meta.subject=sj.textContent.replace(/\s+/g," ").trim(); ltDirty() };
+    sj.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); ed.focus() } };
+    [ed,sj].forEach(el=>el.onpaste=e=>{ e.preventDefault();
+      document.execCommand("insertText",false,(e.clipboardData||window.clipboardData).getData("text/plain")) });
+    ed.onkeydown=e=>{
+      if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){ e.preventDefault(); ltLink() }
+    };
+    const lh=$("#lt-lh"), open=()=>{ if(h.cv){
+      if(LT.dirty&&!confirm("This letter has unsaved changes. Leave without saving?")) return;
+      LT.path=null; openDoc(h.cv) } };
+    lh.onclick=open; lh.onkeydown=e=>{ if(e.key==="Enter") open() };
+    ltPageMark();
+  }
+  ltPanel();
+}
+/* Where the first page ends, drawn on the sheet, so a letter that runs over
+   says so while it is being written. */
+function ltPageMark(){
+  const paper=$("#lt-paper"); if(!paper) return;
+  paper.querySelectorAll(".pgend").forEach(x=>x.remove());
+  const h=LT.doc.head||{}, [wmm,hmm]=LT_PAPER[h.paper]||LT_PAPER.a4;
+  const u=paper.offsetWidth/wmm, pageH=hmm*u-ltMM((h.margins||{}).bottom)*u;
+  if(paper.scrollHeight>hmm*u+2){
+    const m=document.createElement("div"); m.className="pgend"; m.style.top=pageH+"px";
+    m.innerHTML="<span>End of page 1</span>"; paper.append(m);
+  }
+}
+function ltChanged(){
+  LT.body=ltToMD($("#lt-edit"));
+  ltDirty();
+  clearTimeout(LT.t); LT.t=setTimeout(ltPageMark,120);
+}
+function ltDirty(){
+  LT.dirty=true; $("#lt-save").disabled=false;
+  const w=$("#lt-words"); if(w) w.textContent=ltWords(LT.body);
+  const m=$("#lt-meterfill"); if(m) m.style.width=Math.min(100,ltWords(LT.body)/350*100)+"%";
+}
+const ltWords=b=>(String(b||"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").match(/[\p{L}\p{N}'’-]+/gu)||[]).length;
+
+function ltPanel(){
+  const j=ltJob(), n=ltWords(LT.body), m=LT.meta, docs=(S.state&&S.state.documents)||[];
+  const cvs=docs.filter(d=>d.group!=="Cover letters"&&!d.letter);
+  const today=!m.date||m.date==="today";
+  const lang=m.language||"en";
+  const fits=LT.pages==null?(LT.rendering?"Checking the page…":"Not laid out yet.")
+    :LT.pages===1?"Fits on one page.":"Runs to "+LT.pages+" pages. Letters read best on one.";
+  const scaffold=/Open with something only you could write|Commencez par ce que vous seul/.test(LT.body);
+  const say="In CV Studio, write the cover letter "+LT.path+(j?" for my "+j.company+" application, against its posting.":".");
+  $("#lt-panel").innerHTML=
+    '<div style="display:flex;flex-direction:column;gap:8px"><h4>Length</h4>'+
+      '<span><span class="big" id="lt-words">'+n+'</span> <span class="muted2">of about 350 words</span></span>'+
+      '<div class="lt-meter'+(n>420?" over":"")+'"><i id="lt-meterfill" style="width:'+Math.min(100,n/350*100)+'%"></i></div>'+
+      '<span class="muted2">'+fits+'</span></div>'+
+    '<hr>'+
+    '<div style="display:flex;flex-direction:column;gap:10px"><h4>This letter</h4><div class="fg">'+
+      '<label>For</label><span>'+(j?'<b style="font-weight:600">'+esc(j.company)+'</b> · '+esc(j.title)
+        :'<span class="muted2">No application</span>')+'</span>'+
+      '<label for="lt-cv">Looks like</label><select id="lt-cv">'+cvs.map(d=>'<option value="'+esc(d.path)+'"'+
+        (d.path===(m.looks_like||(LT.doc.head||{}).cv)?" selected":"")+'>'+esc(d.label)+'</option>').join("")+'</select>'+
+      '<label for="lt-lang">Language</label><select id="lt-lang">'+((S.state&&S.state.languages)||[]).map(l=>
+        '<option value="'+l.code+'"'+(l.code===lang?" selected":"")+'>'+esc(l.native)+'</option>').join("")+'</select>'+
+      '<label for="lt-place">Written from</label><input id="lt-place" value="'+esc(m.place||"")+'" placeholder="City">'+
+      '<label for="lt-date">Date</label><span class="today"><label style="display:flex;gap:5px;align-items:center;color:var(--t800)">'+
+        '<input type="checkbox" id="lt-today"'+(today?" checked":"")+'>Today</label>'+
+        '<input type="date" id="lt-date" value="'+(today?"":esc(String(m.date)))+'"'+(today?" disabled":"")+'></span>'+
+      '<label for="lt-to">Addressed to</label><textarea id="lt-to" placeholder="Optional. Printed above the date.">'+
+        esc(Array.isArray(m.to)?m.to.join("\n"):(m.to||""))+'</textarea>'+
+    '</div></div>'+
+    '<hr>'+
+    (scaffold?sayBox("To have your AI client write it, ask it:",say)+'<hr>':'')+
+    '<div class="muted2" style="font-size:12.5px">Click anywhere in the letter and type. Select text for bold, '+
+      'italic, a link or a list. The letterhead is the CV’s: change it there, and every letter that '+
+      'looks like it follows.</div>';
+  if(scaffold) wireSay(say);
+  const set=(k,v)=>{ LT.meta[k]=v; ltDirty(); ltSave().then(()=>{ if(LT.tab==="write") ltPaint() }) };
+  $("#lt-cv").onchange=e=>set("looks_like",e.target.value);
+  $("#lt-lang").onchange=e=>set("language",e.target.value);
+  $("#lt-place").onchange=e=>set("place",e.target.value.trim()||null);
+  $("#lt-today").onchange=e=>{ $("#lt-date").disabled=e.target.checked;
+    set("date",e.target.checked?"today":($("#lt-date").value||new Date().toISOString().slice(0,10))) };
+  $("#lt-date").onchange=e=>set("date",e.target.value||"today");
+  $("#lt-to").onchange=e=>{ const v=e.target.value.split("\n").map(x=>x.trim()).filter(Boolean);
+    set("to",v.length?v:null) };
+}
+
+async function ltSave(){
+  if(!LT.path) return;
+  const body=LT.tab==="md"&&LT.mdText!=null?{path:LT.path,text:LT.mdText}
+    :{path:LT.path,meta:LT.meta,body:LT.body};
+  try{
+    const r=await post("/api/save",body);
+    LT.doc=r; LT.meta=Object.assign({},r.meta); LT.body=r.body; LT.mdText=null; LT.dirty=false;
+    $("#lt-save").disabled=true;
+    ltRender();
+  }catch(e){ toast(e.message,true) }
+}
+/* Laid out after every save, so the page count and the PDF tab are always
+   the letter as it stands. */
+async function ltRender(){
+  if(!LT.path) return;
+  LT.rendering=true;
+  try{
+    const r=await post("/api/render",{path:LT.path});
+    if(r.ok){ LT.pages=r.pages; LT.png=r.pngs }
+    else toast(r.hint||"The letter did not lay out.",true);
+  }catch(e){}
+  LT.rendering=false;
+  if(S.view==="letter"){ if(LT.tab==="pdf") ltPaint(); else ltPanel() }
+  S.docThumbs[LT.path]=null;
+}
+$("#lt-save").onclick=()=>ltSave().then(()=>toast("Saved"));
+$$("#lt-tabs [data-lt]").forEach(b=>b.onclick=async()=>{
+  if(b.dataset.lt===LT.tab) return;
+  if(LT.tab==="md"&&LT.mdText!=null) await ltSave();
+  LT.tab=b.dataset.lt; ltPaint();
+});
+document.addEventListener("keydown",e=>{
+  if(S.view!=="letter") return;
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="s"){ e.preventDefault(); ltSave().then(()=>toast("Saved")) }
+});
+
+/* The selection's own bar: the four things a letter prints. */
+function ltLink(){
+  const url=prompt("Link to","https://");
+  if(url&&url!=="https://") document.execCommand("createLink",false,url.trim());
+  ltChanged();
+}
+document.addEventListener("selectionchange",()=>{
+  let bar=$("#lt-bar");
+  const sel=document.getSelection(), ed=$("#lt-edit");
+  const inside=S.view==="letter"&&LT.tab==="write"&&ed&&sel.rangeCount&&!sel.isCollapsed&&
+    ed.contains(sel.anchorNode)&&ed.contains(sel.focusNode);
+  if(!inside){ if(bar) bar.remove(); return }
+  const r=sel.getRangeAt(0).getBoundingClientRect();
+  if(!bar){
+    bar=document.createElement("div"); bar.id="lt-bar"; bar.className="lt-bar";
+    bar.setAttribute("role","toolbar"); bar.setAttribute("aria-label","Format the selection");
+    bar.innerHTML='<button data-c="bold" title="Bold (⌘B)"><b>B</b></button>'+
+      '<button data-c="italic" title="Italic (⌘I)"><i style="font-family:Georgia,serif">I</i></button>'+
+      '<button data-c="link" title="Link (⌘K)">Link</button>'+
+      '<button data-c="insertUnorderedList" title="Bullet list">• List</button>';
+    bar.onmousedown=e=>e.preventDefault();
+    bar.onclick=e=>{ const b=e.target.closest("[data-c]"); if(!b) return;
+      if(b.dataset.c==="link") return ltLink();
+      document.execCommand(b.dataset.c); ltChanged() };
+    document.body.append(bar);
+  }
+  bar.style.left=Math.max(8,r.left+r.width/2-90)+"px";
+  bar.style.top=Math.max(60,r.top-42)+"px";
+  bar.querySelector('[data-c=bold]').setAttribute("aria-pressed",String(document.queryCommandState("bold")));
+  bar.querySelector('[data-c=italic]').setAttribute("aria-pressed",String(document.queryCommandState("italic")));
+});
+
+/* Export: the PDF to attach, Word for recruiters who ask for it, plain text to
+   paste into a form. */
+$("#lt-export").onclick=e=>{
+  e.stopPropagation();
+  let m=$("#lt-menu"); if(m){ m.remove(); return }
+  m=document.createElement("div"); m.className="lt-menu"; m.id="lt-menu"; m.setAttribute("role","menu");
+  m.innerHTML=[["pdf","PDF","To attach to the application"],["docx","Word (.docx)","For recruiters who ask for one"],
+    ["txt","Plain text","To paste into a form's cover letter box"]].map(([f,t,x])=>
+    '<button role="menuitem" data-f="'+f+'">'+t+'<small>'+x+'</small></button>').join("");
+  $("#lt-export").parentElement.append(m);
+  m.onclick=async ev=>{ const b=ev.target.closest("[data-f]"); if(!b) return; m.remove();
+    if(LT.dirty) await ltSave();
+    window.open("/api/letter/export?path="+encodeURIComponent(LT.path)+"&format="+b.dataset.f+tok()) };
+  setTimeout(()=>document.addEventListener("click",function off(){ m.remove();
+    document.removeEventListener("click",off) }),0);
+};
+/* A letter an AI client is writing lands here as it writes, unless there are
+   edits here it would overwrite. */
+async function ltExternal(stamp){
+  if(S.view!=="letter"||!LT.path||LT.dirty||!stamp||!LT.doc||stamp<=LT.doc.mtime+0.001) return;
+  try{
+    const d=await api("/api/doc?path="+encodeURIComponent(LT.path));
+    Object.assign(LT,{doc:d, meta:Object.assign({},d.meta), body:d.body});
+    ltPaint(); ltRender();
+  }catch(e){}
+}
 /* =========================================================================
    Editor
    ========================================================================= */
@@ -7645,6 +8418,7 @@ function renderDocs(docs){
 }
 
 async function openDoc(path){
+  if(isLetterPath(path)) return openLetter(path);
   closeOverlays();
   /* Which list you came from. Not a history stack -- one bit, read once on the
      way out. The application a document belongs to is still the better answer
@@ -9681,16 +10455,112 @@ function closePeek(){
   paintStatus();
 }
 
+
+/* ---- an application's posting ---------------------------------------------
+   Stored as Markdown when an AI client saved it, and as pasted text when a
+   person did. Both read the same: headings from "#" lines, or from a short line
+   ending in a colon; lists from "-", "*" or "•"; bold and links inline. */
+function postInline(t){
+  let out=esc(t);
+  out=out.replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/(^|\W)\*(\S.*?\S|\S)\*(?=\W|$)/g,"$1<i>$2</i>");
+  out=out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  out=out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,'$1<a href="$2" target="_blank" rel="noreferrer">$2</a>');
+  return out;
+}
+function postingHTML(text){
+  const lines=String(text||"").replace(/\r/g,"").split("\n");
+  let html="", list=null, para=[];
+  /* A line break inside a pasted paragraph is usually meant: "Location: ..."
+     under the title is its own line, not the rest of the title's sentence. */
+  const flushP=()=>{ if(para.length){ html+="<p>"+para.map(postInline).join("<br>")+"</p>"; para=[] } };
+  const flushL=()=>{ if(list){ html+="<ul>"+list.map(i=>"<li>"+postInline(i)+"</li>").join("")+"</ul>"; list=null } };
+  for(const raw of lines){
+    const l=raw.trim();
+    if(!l){ flushP(); flushL(); continue }
+    let m;
+    if((m=l.match(/^#{1,6}\s+(.+)$/))||(l.length<60&&/:$/.test(l)&&!/^[-*•]/.test(l)&&!/https?:/.test(l))){
+      flushP(); flushL();
+      html+="<h4>"+postInline((m?m[1]:l.replace(/:$/,"")).replace(/\*\*/g,""))+"</h4>"; continue;
+    }
+    if((m=l.match(/^[-*•]\s+(.+)$/))||(m=l.match(/^\d+[.)]\s+(.+)$/))){ flushP(); (list=list||[]).push(m[1]); continue }
+    flushL(); para.push(l);
+  }
+  flushP(); flushL();
+  return html;
+}
+/* The facts a posting buries, pulled up as chips. Only what reads the same
+   in every posting: a place, a salary range, travel, sponsorship. */
+function postingChips(j){
+  const t=String(j.description||""), out=[];
+  const where=j.location||((t.match(/location\s*:\s*([^\n.]+)/i)||[])[1]||"").trim();
+  const mode=(t.match(/\b(remote|hybrid|on-?site)\b/i)||[])[1];
+  if(where) out.push(where+(mode&&!new RegExp(mode,"i").test(where)?" · "+mode[0].toUpperCase()+mode.slice(1).toLowerCase():""));
+  else if(mode) out.push(mode[0].toUpperCase()+mode.slice(1).toLowerCase());
+  const pay=t.match(/[$€£]\s?\d[\d,.]*\s?[kK]?\s?(?:[-–]|to)\s?[$€£]?\s?\d[\d,.]*\s?[kK]?(?:\s?(?:USD|EUR|GBP))?|\d[\d\s.,]*\s?(?:[kK]\s?)?€\s?(?:[-–]|à|to)\s?\d[\d\s.,]*\s?(?:[kK]\s?)?€/);
+  if(pay) out.push(pay[0].replace(/\s+/g," ").trim());
+  const tr=t.match(/travel[^.\n]{0,40}?(\d{1,2}\s?(?:[-–]\s?\d{1,2}\s?)?%)/i);
+  if(tr) out.push("Travel "+tr[1].replace(/\s/g,""));
+  if(/visa sponsorship|sponsor(?:ship)? (?:a |your )?visa/i.test(t)) out.push("Visa sponsorship");
+  return out;
+}
+/* Where it was found, chosen rather than typed: the boards the app knows,
+   with their marks, then the ways that are not a board. */
+const SRC_FIRST=["linkedin","indeed","welcometothejungle","glassdoor","greenhouse","lever","wellfound"];
+const SRC_OTHER=[["careers","Company’s careers page","↗"],["referral","Referral","♥"],
+  ["recruiter","Recruiter","☎"]];
+function sourceMark(j){
+  const b=jobBoard(j);
+  if(b) return boardMark(b)+'<span class="nm">'+esc(b.label)+'</span>';
+  if(j.source) return '<span class="gl">…</span><span class="nm">'+esc(j.source)+'</span>';
+  return '<span class="nm" style="color:var(--t500)">Not set</span>';
+}
+function sourceMenu(j,btn){
+  let m=$("#ap-menu"); if(m){ m.remove(); return }
+  const cur=(jobBoard(j)||{}).id, said=String(j.source||"");
+  const boards=SRC_FIRST.map(id=>BOARDS.find(b=>b.id===id)).filter(Boolean)
+    .concat(BOARDS.filter(b=>!SRC_FIRST.includes(b.id)));
+  m=document.createElement("div"); m.id="ap-menu"; m.className="ap-menu"; m.setAttribute("role","listbox");
+  m.setAttribute("aria-label","Where you found it");
+  m.innerHTML=boards.map(b=>'<button role="option" data-src="'+esc(b.label)+'" aria-selected="'+
+      String(b.id===cur)+'">'+boardMark(b)+esc(b.label)+'</button>').join("")+'<hr>'+
+    SRC_OTHER.map(([k,l,g])=>'<button role="option" data-src="'+esc(l)+'" aria-selected="'+
+      String(!cur&&said===l)+'"><span class="gl">'+g+'</span>'+esc(l)+'</button>').join("")+
+    '<button role="option" data-src=""><span class="gl">…</span>Other…</button>';
+  document.body.append(m);
+  const r=btn.getBoundingClientRect();
+  m.style.left=Math.min(r.left,innerWidth-260)+"px";
+  m.style.top=Math.min(r.bottom+6,innerHeight-370)+"px";
+  m.onclick=e=>{ const o=e.target.closest("[data-src]"); if(!o) return; m.remove();
+    let v=o.dataset.src;
+    if(!v){ v=(prompt("Where did you find it?",jobBoard(j)?"":said)||"").trim(); if(!v) return }
+    saveJob(j.id,{source:v}) };
+  setTimeout(()=>document.addEventListener("pointerdown",function off(ev){
+    if(!m.contains(ev.target)){ m.remove(); document.removeEventListener("pointerdown",off,true) } },true),0);
+}
+/* A document on the application, as its first page. */
+async function apThumb(el,path){
+  let th=S.docThumbs[path];
+  if(!th){
+    try{ const t=await api("/api/thumb?path="+encodeURIComponent(path));
+      th={png:t.png}; if(!t.fresh){ const r=await post("/api/render",{path});
+        if(r.ok) th={png:r.pngs[0]} } }catch(e){ th={png:null,failed:true} }
+    S.docThumbs[path]=th;
+  }
+  if(el.isConnected) el.innerHTML=th&&th.png?'<img alt="" src="'+esc(th.png+tok())+'">'
+    :'<span>'+(th&&th.failed?"Doesn’t render":"Rendering…")+'</span>';
+}
 function drawJobInspector(){
   const j=S.jobs.find(x=>x.id===S.jsel);
   const peek=$("#jpeek"), head=$("#jinsp-title"), body=$("#jinsp-body");
   $("#v-jobs").classList.toggle("peeking",!!j);
   if(!j){ peek.hidden=true; return }
   peek.hidden=false;
-  head.textContent=j.company;
-  head.title=j.company;
-  $("#jinsp-sub").textContent=j.title;
-  $("#jinsp-sub").title=j.title;
+  head.textContent=j.title||j.company;
+  head.title=j.title||j.company;
+  const sub=[j.company,j.location].filter(Boolean).join(" \u00b7 ");
+  $("#jinsp-sub").textContent=sub; $("#jinsp-sub").title=sub;
+  $("#jinsp-logo").innerHTML=companyMark(j);
+  $("#jinsp-status").innerHTML='<span class="dot '+statusTone(j.status)+'"></span>'+esc(prettyStatus(j.status));
 
   const rows=peekRows(), at=rows.findIndex(x=>x.id===j.id);
   $("#jpk-idx").textContent=at<0?"":(at+1)+" of "+rows.length;
@@ -9720,7 +10590,6 @@ function drawJobInspector(){
       esc(j[k]==null?"":j[k])+'">';
     return '<label>'+esc(label)+'</label>'+ctl;
   };
-  const grid=JOB_GRID.map(field).join("");
   const more=JOB_MORE.map(field).join("");
 
   const docRow=(label,key,group)=>{
@@ -9733,26 +10602,59 @@ function drawJobInspector(){
       (linked?'<button class="alink" data-open-doc="'+esc(linked)+'">Open</button>':"")+
       '</div>';
   };
-  /* The posting itself. The tools have been storing this since the tracker was
-     opened up -- add_job's own description says to paste the whole thing,
-     because it is what a model writes against when you later ask it to tailor
-     a CV for this job, by which time the page is usually gone. Nothing in the
-     app has ever shown it. There is room for it now. */
-  const posting_block=j.description
-    ? '<div class="block grow"><span class="blabel">The posting</span>'+
-      '<div class="posting">'+esc(j.description)+'</div></div>'
-    : '<div class="block grow"><span class="blabel">The posting</span>'+
-      '<p class="note muted">Not saved. Paste it in when you add an application, '+
-      'or ask your AI client to: it is what a tailored CV is written against once '+
-      'the advert is gone.</p></div>';
-  const jb=jobBoard(j);
-  const posting=j.url||jb?'<div class="drow posting-row">'+
-    (jb?boardMark(jb):'')+
-    '<span class="'+(jb?"":"muted")+'">'+(jb?esc(jb.label)+
-      (j.url?' <i class="muted">'+esc(j.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,34))+'</i>':'')
-      :esc(j.url.replace(/^https?:\/\//,"").slice(0,40)))+'</span>'+
-    (j.url?'<a class="alink" href="'+esc(j.url)+'" target="_blank" rel="noreferrer">'+
-      'Open the posting</a>':'')+'</div>':"";
+
+  /* One row of facts, the documents as pages, and the posting beside them,
+     read as a posting. The fields set once when the application was made are
+     folded away, with the delete under them. */
+  const fact=(label,ctl)=>'<div class="ap-fact"><span>'+label+'</span>'+ctl+'</div>';
+  const statusCtl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span>'+
+    '<select data-j="status" aria-label="Status">'+S.statuses.map(s=>'<option value="'+s+'"'+
+    (s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+'</option>').join("")+'</select></span>';
+  const fitCtl='<div class="fit" role="group" aria-label="Fit">'+[1,2,3,4,5].map(n=>
+    '<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+' title="'+n+' of 5" aria-label="'+
+    n+' of 5"></button>').join("")+'</div>';
+  const guess=j.language_guess, curL=j.language||"";
+  const langCtl='<select data-j="language" aria-label="Language">'+
+    '<option value=""'+(curL?"":" selected")+'>'+(guess?"Looks like "+esc(langOf(guess).native):"Not set")+'</option>'+
+    ((S.state&&S.state.languages)||[]).map(l=>'<option value="'+l.code+'"'+(l.code===curL?" selected":"")+'>'+
+      esc(l.native)+'</option>').join("")+'</select>';
+  const facts='<div class="ap-facts">'+
+    fact("Status",statusCtl)+
+    fact("Follow up",'<input data-j="followup_date" type="date" aria-label="Follow up" value="'+esc(j.followup_date||"")+'">')+
+    fact("Fit",fitCtl)+
+    fact("Found on",'<button class="ap-src" id="ap-src" aria-haspopup="listbox">'+sourceMark(j)+
+      '<span class="caret">▾</span></button>')+
+    fact("Language",langCtl)+'</div>';
+
+  const cvName=j.cv_path?j.cv_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
+  const ltName=j.letter_path?j.letter_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
+  const tailoring=S.tailoring&&S.tailoring.has(j.id);
+  const cvCard=j.cv_path
+    ? '<div class="ap-doc"><div class="pg" data-open-doc="'+esc(j.cv_path)+'" data-thumb="'+esc(j.cv_path)+
+        '" role="button" tabindex="0" aria-label="Open the CV"><span>Rendering…</span></div>'+
+      '<div class="t"><b>CV</b><span>'+esc(cvName)+'</span></div>'+
+      '<div class="a"><button class="obtn" data-open-doc="'+esc(j.cv_path)+'">Open</button>'+
+        '<button class="obtn" id="job-ats">ATS check</button></div></div>'
+    : '<div class="ap-doc"><div class="pg none"><span>No CV for this one yet</span>'+
+        '<button class="obtn" data-tailor-here'+(tailoring?" disabled":"")+'>'+(tailoring?"Tailoring…":"Tailor a CV")+'</button></div>'+
+      '<div class="t"><b>CV</b><span>Copied from your base CV</span></div></div>';
+  const ltCard=j.letter_path
+    ? '<div class="ap-doc"><div class="pg" data-open-doc="'+esc(j.letter_path)+'" data-thumb="'+esc(j.letter_path)+
+        '" role="button" tabindex="0" aria-label="Open the cover letter"><span>Rendering…</span></div>'+
+      '<div class="t"><b>Cover letter</b><span>'+esc(ltName)+'</span></div>'+
+      '<div class="a"><button class="obtn" data-open-doc="'+esc(j.letter_path)+'">Open</button></div></div>'
+    : '<div class="ap-doc"><div class="pg none"><span>No cover letter</span>'+
+        '<button class="obtn" id="ap-write">Write one</button></div>'+
+      '<div class="t"><b>Cover letter</b><span>In the look of the CV</span></div></div>';
+  const jb=jobBoard(j), words=(String(j.description||"").match(/\S+/g)||[]).length;
+  const postCard='<div class="ap-doc"><div class="pg post"><span class="who">'+(jb?boardMark(jb):"")+
+      esc(jb?jb.label:(j.source||"The posting"))+'</span>'+
+      (j.url?'<span class="u">'+esc(j.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,70))+'</span>':
+        '<span class="u">No link saved</span>')+
+      '<span class="n">'+(words?words+" words saved below":"Not saved")+'</span></div>'+
+    '<div class="t"><b>The posting</b><span>'+(words?"Kept in case it comes down":"Paste it below")+'</span></div>'+
+    (j.url?'<div class="a"><a class="obtn" href="'+esc(j.url)+'" target="_blank" rel="noreferrer" '+
+      'style="display:inline-flex;align-items:center;text-decoration:none">Open the posting</a></div>':"")+'</div>';
 
   const hist=(j.status_history||[]);
   const timeline=hist.length?'<div class="tl">'+hist.map(h=>
@@ -9760,43 +10662,60 @@ function drawJobInspector(){
     '<div class="ev"><span>'+esc(prettyStatus(h.status))+'</span>'+
     '<span class="when mono">'+esc(shortDate(h.at))+'</span></div></div>').join("")+'</div>'
     :'<p class="note muted">No history yet.</p>';
+  const chips=postingChips(j);
+  const posting=j.description
+    ? (chips.length?'<div class="ap-chips">'+chips.map(c=>'<span>'+esc(c)+'</span>').join("")+'</div>':'')+
+      '<div class="ap-post" id="ap-post">'+postingHTML(j.description)+'</div>'
+    : '<p class="note muted">Not saved. Paste it in, or ask your AI client to save it when it adds '+
+      'the application: it is what a tailored CV and a cover letter are written against once the '+
+      'advert is gone.</p>';
 
-  /* Ordered by how often you touch it, not by the order the columns happen to
-     sit in the table. Status and Follow-up drive the Attention rail, so they
-     lead; Notes is what you write in every time, so it is above the fold
-     rather than under a history block that grows without limit; and the nine
-     fields you set once at creation are folded away. */
-  /* Two columns that both run the full height, so the peek is filled rather
-     than a short stack sitting on top of half a screen of nothing. Notes takes
-     whatever height is left over: it is the one field with no natural size and
-     the one you write the most in. */
   body.innerHTML=
     '<div class="peek-grid">'+
       '<div class="col">'+
-        '<div class="block"><span class="blabel">Where it stands</span>'+
-          '<div class="fg2">'+grid+'</div></div>'+
-        '<div class="block"><span class="blabel">Documents</span><div class="card">'+
-          docRow("CV","cv_path","My CVs")+docRow("Cover letter","letter_path","Cover letters")+
-          posting+'</div></div>'+
-        (j.cv_path?'<div class="block ats-link"><button class="alink" id="job-ats">'+
-          'Check this CV the way an ATS reads it'+(j.description?' against the posting':'')+
-          '</button></div>':'')+
+        facts+
+        '<div class="block"><span class="blabel">Documents</span><div class="ap-docs">'+cvCard+ltCard+postCard+'</div></div>'+
         (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
           'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
           esc(j.cv_path)+'"></div></div>':'')+
+        '<div class="block"><span class="blabel">History</span>'+timeline+'</div>'+
         '<details class="fold"><summary>Company, role and the rest</summary>'+
-          '<div class="fg2" style="margin-top:11px">'+more+'</div></details>'+
+          '<div class="fg2" style="margin-top:11px">'+more+'</div>'+
+          '<div class="card" style="margin-top:12px">'+docRow("CV","cv_path","My CVs")+
+            docRow("Cover letter","letter_path","Cover letters")+'</div></details>'+
         '<div class="block ruled foot-del"><button class="sbtn danger" id="job-del">'+
           'Delete this application</button></div>'+
       '</div>'+
       '<div class="col">'+
         '<div class="block"><span class="blabel">Notes</span>'+
           '<textarea data-j="notes" class="notes">'+esc(j.notes||"")+'</textarea></div>'+
-        '<div class="block"><span class="blabel">History</span>'+timeline+'</div>'+
-        posting_block+
+        '<div class="block grow"><div class="ap-posthead"><span class="blabel">The posting</span>'+
+          '<button class="alink" id="ap-post-edit">'+(j.description?"Edit":"Paste it")+'</button></div>'+
+          posting+'</div>'+
       '</div>'+
     '</div>';
-
+  body.querySelectorAll("[data-thumb]").forEach(el=>apThumb(el,el.dataset.thumb));
+  $("#ap-src").onclick=e=>{ e.stopPropagation(); sourceMenu(j,$("#ap-src")) };
+  const wr=$("#ap-write");
+  if(wr) wr.onclick=async()=>{
+    wr.disabled=true;
+    try{ const r=await post("/api/letter/new",{job_id:j.id});
+      const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
+      await loadJobs(true); openDoc(r.path) }
+    catch(e){ wr.disabled=false; toast(e.message,true) }
+  };
+  const th=body.querySelector("[data-tailor-here]");
+  if(th) th.onclick=()=>tailorFor(j.id);
+  $("#ap-post-edit").onclick=()=>{
+    const host=$("#ap-post-edit").closest(".block");
+    host.querySelectorAll(".ap-chips,.ap-post,.note").forEach(x=>x.remove());
+    const ta=document.createElement("textarea");
+    ta.className="posting-edit"; ta.value=j.description||"";
+    ta.placeholder="Paste the posting. Headings and lists come through: a short line ending in a colon, or lines starting with -.";
+    host.append(ta); ta.focus();
+    $("#ap-post-edit").textContent="Done";
+    $("#ap-post-edit").onclick=()=>saveJob(j.id,{description:ta.value.trim()||null});
+  };
   const diff=$("#jdiff");
   if(diff) fillBaseDiff(diff,j.cv_path);
   const ab=$("#job-ats");

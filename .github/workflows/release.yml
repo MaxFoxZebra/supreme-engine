@@ -192,6 +192,7 @@ jobs:
             --hidden-import ats \
             --hidden-import importer \
             --hidden-import languages \
+            --hidden-import letters \
             --paths . \
             server_main.py
 

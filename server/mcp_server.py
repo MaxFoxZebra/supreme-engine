@@ -64,7 +64,15 @@ mcp = MCPServer(
         "translation_status lists what the translation is missing; carry each "
         "change over, then call mark_translation_current. To tailor for a "
         "posting, copy the base CV in the posting's language (list_cvs says "
-        "each CV's `lang`; read_job says the application's `language`)."
+        "each CV's `lang`; read_job says the application's `language`).\n\n"
+        "Cover letters are Markdown files in letters/, not RenderCV: a short "
+        "header (application, company, looks_like, place, date, subject, "
+        "language) and the letter below it, as it would be typed in an email. "
+        "It prints bold, italic, [links](url) and '- ' bullet lists, nothing "
+        "else. The letterhead, font and colours come from the CV named in "
+        "looks_like, so never write a name or contact details into the body. "
+        "create_letter starts one for an application; write_letter replaces "
+        "its body (and subject); render_cv shows the page."
     ),
 )
 
@@ -232,6 +240,10 @@ def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
         raise ValueError("Give it a name.")
     if kind not in ("cv", "letter"):
         raise ValueError('kind must be "cv" or "letter".')
+    if kind == "letter":
+        # Letters are Markdown now; create_letter is the way to start one for
+        # an application, this the way to start one for nothing in particular.
+        return f"Created {studio.new_letter(None, safe)['path']}. Write it with write_letter."
     folder = "letters" if kind == "letter" else "profile"
     dest = studio.safe_path(f"{folder}/{safe}.yaml")
     if dest.exists():
@@ -260,6 +272,14 @@ def render_cv(path: str, page: int = 1) -> list:
     reporting success: page-break damage does not show up in the YAML.
     """
     p = studio.safe_path(path)
+    if studio.is_letter(p):
+        r = studio.render_letter(p)
+        if not r.get("ok"):
+            return [f"RENDER FAILED\n\n{r.get('error')}"]
+        png = studio.WORKSPACE / r["pngs"][max(1, min(page, r["pages"])) - 1].split("path=")[1].split("&")[0]
+        return [f"Rendered {path}\nPages: {r['pages']}\nWords: {r['words']}\nPDF: {r['pdf']}",
+                ImageContent(type="image", data=base64.b64encode(png.read_bytes()).decode("ascii"),
+                             mime_type="image/png")]
     result = render_file(p, studio.output_dir(p))
 
     if not result.get("ok"):
@@ -668,6 +688,41 @@ def ats_check(path: str, job_id: str | None = None) -> dict:
             "found": [t["term"] for t in kw["found"]],
             "missing": [t["term"] for t in kw["missing"]]},
     }
+
+
+@tool
+def create_letter(job_id: str) -> dict:
+    """Start a cover letter for an application, and attach it to it.
+
+    Writes letters/cover-<company>.md with everything but the words filled in:
+    the subject, greeting and closing in the posting's language, today's date,
+    and the look of the application's CV. The body holds three short prompts
+    for what each paragraph is for: replace them with write_letter.
+    """
+    r = studio.new_letter(job_id)
+    meta, body = studio.letters.parse(studio.safe_path(r["path"]).read_text(encoding="utf-8"))
+    return {"path": r["path"], "header": meta, "body": body,
+            "next": "Write the letter with write_letter, then render_cv to look at it. "
+                    "Keep it under about 350 words and on one page."}
+
+
+@tool
+def write_letter(path: str, body: str, subject: str | None = None) -> str:
+    """Replace a cover letter's body, and its subject line if given.
+
+    `body` is the whole letter from greeting to closing, as Markdown:
+    paragraphs separated by blank lines, **bold**, *italic*, [text](url) and
+    '- ' bullets. The name, contact details and signature are printed from the
+    CV the letter looks like, so leave them out. The header is kept.
+    """
+    p = studio.safe_path(path)
+    if not studio.is_letter(p):
+        raise ValueError(f"{path} is not a cover letter. Letters are letters/*.md.")
+    payload = {"body": body}
+    if subject is not None:
+        payload["meta"] = {"subject": subject}
+    r = studio.save_letter(p, payload)
+    return f"Wrote {path}: {r['words']} words. render_cv it to see the page."
 
 
 @tool

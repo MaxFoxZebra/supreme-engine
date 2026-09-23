@@ -96,7 +96,7 @@ if __name__ == "__main__":
     documents = {"list_cvs", "read_cv", "write_cv", "edit_cv_fields",
                  "create_cv", "render_cv", "ats_check", "design_options",
                  "workspace_info", "add_language", "translation_status",
-                 "mark_translation_current"}
+                 "mark_translation_current", "create_letter", "write_letter"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts",
                     "set_job_status", "update_job_tracking", "add_job",
                     "set_company_logo"}

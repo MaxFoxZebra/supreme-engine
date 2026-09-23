@@ -10,6 +10,38 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Cover letters are letters now.** They used to be CVs in disguise: the
+  subject a section heading with a rule under it, the paragraphs entries, no
+  date and no signature. A letter is now a Markdown file (a short header, and
+  the letter below it as you would type it in an email) that CV Studio lays
+  out itself: the letterhead of the CV it goes with, in that CV's font, colour
+  and margins, then the place and date, a subject line, the letter, and your
+  name. Change the CV's design and its letters follow. Letters you already
+  had are converted the first time the app opens, and the old file is kept
+  beside the new one as `.yaml.bak`.
+- **Write on the letter itself.** The letter opens as its page, at its real
+  size and in its real font, and you click and type. Select text for bold,
+  italic, a link or a list, which is everything a letter prints. Beside it:
+  the word count against about 350, whether it fits on one page, the CV it
+  looks like, its language, where it is written from, the date, and an
+  optional recipient. **PDF** shows the exact render; **Markdown** shows the
+  file. **Export** gives the PDF, a Word file for recruiters who ask for one,
+  or plain text for an application form's box.
+- **Write one, from the application.** It makes the letter with everything
+  but the words filled in: the subject, greeting and closing in the posting's
+  language (« Madame, Monsieur, » in French), today's date, the look of the
+  application's CV. It shows the sentence to ask your AI client if you want it
+  to draft the paragraphs; AI clients get `create_letter` and `write_letter`.
+- **An application reads as a page.** The company's logo, the role, where,
+  and its status at the top; status, follow-up, fit, where you found it and
+  its language in one row; the CV, the cover letter and the posting as cards
+  with their pages; and the posting itself with its headings and lists, with
+  the place, salary, travel and visa sponsorship pulled up as chips. A posting
+  pasted as plain text gets its headings and lists found too.
+- **Where you found it is chosen, not typed**: a menu of job boards with their
+  logos, then the company's careers page, a referral, a recruiter, or
+  anything else.
+
 - **A CV in more than one language.** On Documents, **+ Add a language** on
   the base CV makes a copy in any of the 22 languages RenderCV prints, saved
   beside it (`my-cv.fr.yaml`) and linked to it. The copy already has its
