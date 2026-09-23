@@ -89,7 +89,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.19.0"
+VERSION = "0.20.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -3900,7 +3900,13 @@ button:disabled{opacity:.4;cursor:default}
 .doctitle .t{font-size:14px;font-weight:600;color:var(--t900);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 .doctitle .f{font-size:11.5px;color:var(--t500);white-space:nowrap;flex:none}
-.acts{display:flex;align-items:center;gap:8px}
+.acts{display:flex;align-items:center;gap:8px;flex:none}
+.acts button{white-space:nowrap}
+.doctitle{min-width:70px}
+/* On a narrower window the language switch keeps its flags and drops the
+   names, so the title and the buttons keep their room. */
+@media (max-width:1380px){ #langsw .ln{display:none} #langsw button{padding:0 6px} }
+@media (max-width:1180px){ .doctitle .f{display:none} }
 /* Every screen header's secondary buttons, one height with its primary. */
 .docbar .obtn,.phead .obtn{height:34px;padding:0 13px;font-size:13px;font-weight:500;
   color:var(--t900);border-radius:8px}
@@ -3967,6 +3973,12 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
    sits on a desk, in both rails alike. */
 .row{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;
   text-align:left;width:100%}
+/* A translation of the base CV, hung under it. */
+#doclist .row.tr{padding-left:24px;position:relative}
+#doclist .row.tr::before{content:"";position:absolute;left:13px;top:-2px;bottom:50%;width:7px;
+  border-left:1px solid var(--rule);border-bottom:1px solid var(--rule);border-bottom-left-radius:4px}
+#doclist .row.tr .lbl{font-size:13px;color:var(--t500)}
+.flg-only{display:flex;flex:none;opacity:.85}
 .row:hover{background:var(--paper-hover)}
 .row .mark{display:none}
 .row .lbl{font-size:13.5px;color:var(--t700);flex:1;overflow:hidden;text-overflow:ellipsis;
@@ -4599,7 +4611,7 @@ html.mono .langs,html.mono #langsw{display:none!important}
 .bhero .bl{font-size:12px;font-weight:600;color:var(--acc-text)}
 .bhero .bn{margin:0;font-size:24px;font-weight:700;letter-spacing:-.015em;color:var(--t900);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bhero .bmeta{font-size:13px;color:var(--t500)}
+.bhero .bmeta{display:block;padding:0;font-size:13px;color:var(--t500)}
 .bhero .bwhy{margin:8px 0 0;font-size:13.5px;line-height:1.55;color:var(--t700);max-width:60ch}
 .bstats{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
 .bstats div{min-width:120px;padding:10px 14px;border-radius:10px;background:var(--app);
@@ -4697,6 +4709,9 @@ html.mono .langs,html.mono #langsw{display:none!important}
 .con{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .colog{width:28px;height:28px;border-radius:7px;flex:none;object-fit:contain;
   background:var(--bar)}
+/* A black or near-black tile would melt into the dark surfaces. */
+:root[data-theme=dark] img.colog{box-shadow:0 0 0 1px rgba(255,255,255,.12)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) img.colog{box-shadow:0 0 0 1px rgba(255,255,255,.12)}}
 span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   color:#fff;letter-spacing:.02em}
 .trow .role b{font-weight:400}
@@ -5081,6 +5096,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 
 /* Month */
 .cal-month{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;flex:1;min-height:560px}
+/* Below this the month needs the whole width to be readable; what is coming
+   up goes under it. */
+@media (max-width:1240px){ .cal-month{grid-template-columns:minmax(0,1fr);flex:none} .cal-month .cal-grid{min-height:660px} .cal-side{max-height:none} }
 .cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));overflow:hidden;padding:0}
 .cal-grid .dw{padding:8px 10px;font-size:11.5px;font-weight:600;color:var(--t500);border-bottom:1px solid var(--rule)}
 .cal-cell{display:flex;flex-direction:column;gap:4px;min-width:0;padding:7px 7px 6px;border-right:1px solid var(--bd-inner);
@@ -5091,8 +5109,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-cell .d{height:24px;display:flex;align-items:center;font-size:12.5px;font-weight:600;color:var(--t700)}
 .cal-cell.out .d{color:var(--t400)}
 .cal-cell.today .d span{width:24px;height:24px;border-radius:12px;background:var(--acc);color:#1b1a17;display:grid;place-items:center;font-weight:700}
-.cal-cell .act{margin-top:auto;display:flex;gap:8px;font-size:11px;color:var(--t500)}
-.cal-cell .act span{display:flex;align-items:center;gap:4px}
+.cal-cell .act{margin-top:auto;display:flex;flex-wrap:wrap;gap:2px 8px;font-size:11px;color:var(--t500)}
+.cal-cell .act span{display:flex;align-items:center;gap:4px;white-space:nowrap}
 .cal-cell .act i{width:6px;height:6px;border-radius:50%}
 .cal-chip{display:flex;align-items:center;gap:5px;height:22px;padding:0 7px;border-radius:6px;font-size:11.5px;white-space:nowrap;
   overflow:hidden;cursor:pointer;min-width:0;text-align:left;width:100%}
@@ -5521,7 +5539,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-fact select,.ap-fact input{width:100%;min-width:0;height:32px;border-radius:8px;font-size:13px}
 .ap-fact .statusctl{gap:6px}
 .ap-fact.wide{grid-column:1/-1}
-.ap-iv{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.ap-iv{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;max-width:520px}
 .ap-iv-say{font-size:12.5px;color:var(--t700)}
 .ap-src{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 10px;
   border:1px solid var(--bd-field);border-radius:8px;background:var(--field);color:var(--t900);
@@ -5565,7 +5583,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-doc .t b{font-size:12.5px;font-weight:600;color:var(--t900)}
 .ap-doc .t span{font-size:11.5px;color:var(--t600);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
-.ap-doc .a{display:flex;gap:6px;flex-wrap:wrap}
+.ap-doc .a{display:flex;gap:6px;flex-wrap:nowrap}
 .ap-doc .a .obtn{height:28px;padding:0 10px;border-radius:7px;font-size:12px}
 /* The posting, read as a posting: its headings and lists, with the facts a
    posting buries -- where, how much, travel, sponsorship -- pulled up top. */
@@ -5581,7 +5599,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-posthead{display:flex;align-items:baseline;gap:10px}
 .ap-posthead .alink{font-size:12px}
 .peek-grid textarea.posting-edit{min-height:320px;font-size:12.5px;line-height:1.6}
-@media(max-width:1180px){ .ap-docs{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media(max-width:1180px){ .ap-docs{grid-template-columns:repeat(3,minmax(0,200px))} }
 
 /* ---------- cover letters --------------------------------------------------
    The page is the editor: a sheet at the letter's real size, set in the CV's
@@ -5902,6 +5920,41 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sp-lede{color:var(--t600);font-size:12.5px;line-height:1.6;margin:0 0 16px;max-width:62ch}
 .sp-note{color:var(--t600);font-size:12px;line-height:1.6;margin:14px 0 0;max-width:62ch}
 .srow{display:flex;align-items:center;gap:28px;padding:14px 0;border-top:1px solid var(--rule)}
+/* The time zone on a little world: the land in dots, the night where it is
+   night now, your zone's band and your city pinned, the places you have an
+   interview linked to it. Clicking picks the nearest city. */
+.tzmap{position:relative;max-width:620px;margin:2px auto 6px;padding:14px 14px 10px;border-radius:14px;
+  background:var(--field);border:1px solid var(--bd-inner);overflow:hidden}
+.tzmap svg{display:block;width:100%;height:auto;cursor:crosshair}
+.tzmap .land{fill:none;stroke:var(--t400);stroke-width:2.5;stroke-linecap:round;opacity:.55}
+.tzmap .night{fill:var(--t900);opacity:.07}
+.tzmap .band{fill:var(--acc);opacity:.13}
+.tzmap .band-edge{stroke:var(--acc);stroke-width:1;opacity:.35;stroke-dasharray:2 3}
+.tzmap .arc{fill:none;stroke:var(--acc);stroke-width:1.4;stroke-dasharray:3 4;opacity:.7;
+  animation:tz-flow 1.6s linear infinite}
+.tzmap .iv{fill:var(--card,#fff);stroke:var(--acc);stroke-width:2}
+.tzmap .pin{fill:var(--acc)}
+.tzmap .ring{fill:none;stroke:var(--acc);stroke-width:2;transform-box:fill-box;transform-origin:center;
+  animation:tz-ping 2.4s ease-out infinite}
+.tzmap .ghost{fill:none;stroke:var(--t700);stroke-width:1.5;opacity:.8}
+.tzmap .cap{display:flex;align-items:center;gap:14px;margin-top:8px;font-size:12px;color:var(--t500)}
+.tzmap .cap b{color:var(--t900);font-weight:600}
+.tzmap .cap .sw{display:inline-flex;align-items:center;gap:5px}
+.tzmap .cap .sw i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.tzmap .cap .grow{flex:1}
+.tzmap .tip{position:absolute;pointer-events:none;transform:translate(-50%,-130%);padding:4px 8px;
+  border-radius:6px;background:var(--c900);color:var(--cw);font-size:11.5px;white-space:nowrap;
+  box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.tzmap .card{position:absolute;pointer-events:none;padding:7px 10px;border-radius:9px;
+  background:var(--c900);color:var(--cw);font-size:12px;line-height:1.35;white-space:nowrap;
+  box-shadow:0 6px 18px rgba(0,0,0,.22)}
+.tzmap .card .c1{font-size:13px;font-weight:600}
+.tzmap .card .c2{color:var(--c200)}
+:root[data-theme=dark] .tzmap .night{fill:#000;opacity:.32}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .tzmap .night{fill:#000;opacity:.32}}
+@keyframes tz-ping{0%{transform:scale(.6);opacity:.9}100%{transform:scale(2.6);opacity:0}}
+@keyframes tz-flow{to{stroke-dashoffset:-14}}
+@media (prefers-reduced-motion:reduce){.tzmap .ring,.tzmap .arc{animation:none}}
 .srow>div{flex:1;min-width:0;max-width:56ch}
 .srow b{display:block;font-size:13px;font-weight:500;margin-bottom:2px}
 .srow span{display:block;color:var(--t600);font-size:12px;line-height:1.55;
@@ -6200,6 +6253,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
       document.documentElement.dataset.theme=_p.appearance}catch(e){}
 </script>
 <script src="/static/i18n.js"></script>
+<script src="/static/worldmap.js"></script>
 
 <!-- Marks for the AI clients. The Claude one is as published by Anthropic, and
      identifies that integration and nothing else: see THIRD-PARTY-NOTICES.md. -->
@@ -6676,6 +6730,7 @@ try{var _p=JSON.parse(localStorage.getItem("cvstudio.prefs")||"{}");
         <div class="srow"><div><b>Time zone</b><span>Interviews somewhere else show in
           your time, with theirs beside it.</span></div>
           <select id="s-tz"></select></div>
+        <div class="tzmap" id="tzmap" aria-hidden="true"></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>
@@ -6876,10 +6931,14 @@ function uiLang(){
 const UI_LANG=uiLang();
 const uiLocale=()=>UI_LANGS[UI_LANG];
 const I18N_D=(window.I18N||{})[UI_LANG]||null, I18N_P=(window.I18N_RX||{})[UI_LANG]||[];
+/* The catalogue writes a plural as "envoyée(s)"; with the count in front of
+   it, it becomes the right form. French counts 0 and 1 as singular. */
+const plur=r=>r.indexOf("(s)")<0?r:r.replace(/(\d+)([^\d()]*?)\(s\)/g,
+  (m,n,mid)=>n+mid+((UI_LANG==="fr"?+n<2:+n===1)?"":"s"));
 function t(s,v){
   let r=(I18N_D&&I18N_D[s])||s;
   if(v) r=r.replace(/\{(\w+)\}/g,(m,k)=>v[k]??m);
-  return r;
+  return plur(r);
 }
 function trString(str){
   if(!I18N_D) return null;
@@ -6888,6 +6947,7 @@ function trString(str){
   let out=I18N_D[key];
   if(out==null) for(const [re,rep] of I18N_P){ if(re.test(key)){ out=key.replace(re,rep); break } }
   if(out==null||out===key) return null;
+  out=plur(out);
   const lead=str.match(/^\s*/)[0], trail=str.match(/\s*$/)[0];
   return lead+out+trail;
 }
@@ -7070,10 +7130,106 @@ const COMMON_TZ=["Europe/London","Europe/Dublin","Europe/Lisbon","Europe/Paris",
   "America/Chicago","America/Denver","America/Los_Angeles","America/Sao_Paulo","America/Mexico_City",
   "Asia/Dubai","Asia/Kolkata","Asia/Singapore","Asia/Tokyo","Australia/Sydney","UTC"];
 function allTz(){ try{ return Intl.supportedValuesOf("timeZone") }catch(e){ return COMMON_TZ } }
+/* ---- the little world on the time zone setting ------------------------ */
+const WX=lon=>(lon+180)*2, WY=lat=>(82.5-lat)*2, WW=720, WH=280;
+function tzCoords(z){ const W=window.WORLD; return W&&W.zones[z]||null }
+/* Where it is night now: the terminator from the sun's declination and the
+   meridian it stands over, closed toward the pole that is in the dark. */
+function nightPath(now){
+  const doy=(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate())-
+    Date.UTC(now.getUTCFullYear(),0,0))/864e5;
+  let dec=-23.44*Math.cos(2*Math.PI/365*(doy+10));
+  if(Math.abs(dec)<.3) dec=dec<0?-.3:.3;
+  const sunLon=-((now.getUTCHours()+now.getUTCMinutes()/60)-12)*15, r=Math.PI/180;
+  const pts=[];
+  for(let lon=-180;lon<=180;lon+=3){
+    const lat=Math.atan(-Math.cos((lon-sunLon)*r)/Math.tan(dec*r))/r;
+    pts.push(WX(lon).toFixed(1)+","+Math.max(-4,Math.min(WH+4,WY(lat))).toFixed(1));
+  }
+  const edge=dec>0?WH+4:-4;
+  return "M"+pts.join("L")+"L"+WX(180)+","+edge+"L"+WX(-180)+","+edge+"Z";
+}
+function drawTzMap(sel){
+  const host=$("#tzmap"), W=window.WORLD;
+  if(!host) return;
+  if(!W){ host.hidden=true; return }
+  const now=new Date(), zone=userTz(), here=tzCoords(zone);
+  const off=tzOffset(zone,now)/60;
+  let land="";
+  W.rows.forEach((hex,ri)=>{
+    const y=WY(W.lat0-ri*W.step);
+    for(let c=0;c<hex.length;c++){ const v=parseInt(hex[c],16);
+      for(let b=0;b<4;b++) if(v&(8>>b)) land+="M"+WX(W.lon0+(c*4+b)*W.step).toFixed(1)+" "+y.toFixed(1)+"h0" }
+  });
+  /* The band is the zone's offset as a slice of the globe: fifteen degrees an hour. */
+  const bx=WX(Math.max(-180,off*15-7.5)), bw=WX(Math.min(180,off*15+7.5))-bx;
+  const ivs=[...new Set((S.jobs||[]).filter(j=>j.interview_tz&&j.interview_at&&
+    interviewMoment(j)>=Date.now()-864e5&&j.interview_tz!==zone).map(j=>j.interview_tz))]
+    .map(z=>({z,c:tzCoords(z)})).filter(x=>x.c);
+  const arc=(a,b)=>{ const x1=WX(a[0]),y1=WY(a[1]),x2=WX(b[0]),y2=WY(b[1]);
+    const mx=(x1+x2)/2, my=(y1+y2)/2-Math.hypot(x2-x1,y2-y1)*.28;
+    return '<path class="arc" d="M'+x1+' '+y1+'Q'+mx+' '+my+' '+x2+' '+y2+'"/>' };
+  const hm=z=>new Intl.DateTimeFormat(uiLocale(),{timeZone:z,hour:"2-digit",minute:"2-digit"}).format(now);
+  host.innerHTML='<svg viewBox="0 0 '+WW+' '+WH+'" role="img">'+
+    '<rect class="band" x="'+bx+'" y="0" width="'+bw+'" height="'+WH+'"/>'+
+    '<line class="band-edge" x1="'+bx+'" x2="'+bx+'" y1="0" y2="'+WH+'"/>'+
+    '<line class="band-edge" x1="'+(bx+bw)+'" x2="'+(bx+bw)+'" y1="0" y2="'+WH+'"/>'+
+    '<path class="land" d="'+land+'"/>'+
+    '<path class="night" d="'+nightPath(now)+'"/>'+
+    (here?ivs.map(x=>arc(here,x.c)).join(""):"")+
+    ivs.map(x=>'<circle class="iv" cx="'+WX(x.c[0])+'" cy="'+WY(x.c[1])+'" r="4.5"><title>'+
+      esc(tzCity(x.z)+" · "+hm(x.z))+'</title></circle>').join("")+
+    (here?'<circle class="ring" cx="'+WX(here[0])+'" cy="'+WY(here[1])+'" r="7"/>'+
+      '<circle class="pin" cx="'+WX(here[0])+'" cy="'+WY(here[1])+'" r="5.5"/>':"")+
+    '<circle class="ghost" r="6" cx="-20" cy="-20"/></svg>'+
+    (here?'<div class="card" id="tz-card"><div class="c1">'+esc(tzCity(zone))+'</div><div class="c2">'+esc(hm(zone))+
+      ' · '+esc(utcLabel(zone))+'</div></div>':"")+
+    '<div class="tip" hidden></div>'+
+    '<div class="cap"><span>'+esc(t("Click the map to pick the nearest city."))+'</span><span class="grow"></span>'+
+      (ivs.length?'<span class="sw"><i style="border:2px solid var(--acc);border-radius:50%;width:8px;height:8px"></i>'+
+        esc(t("Interviews"))+'</span>':"")+
+      '<span class="sw"><i style="background:var(--acc);opacity:.35"></i>'+esc(t("Your zone"))+'</span>'+
+      '<span class="sw"><i style="background:var(--t900);opacity:.2"></i>'+esc(t("Night now"))+'</span></div>';
+  /* The card sits beside the pin, on whichever side has room. */
+  const card=$("#tz-card"), svg=host.querySelector("svg");
+  const place=()=>{ if(!card||!here) return;
+    const k=svg.clientWidth/WW, x=14+WX(here[0])*k, y=14+WY(here[1])*k;
+    const left=x>svg.clientWidth*.6;
+    card.style.left=(left?x-card.offsetWidth-14:x+14)+"px"; card.style.top=(y-card.offsetHeight/2)+"px" };
+  requestAnimationFrame(place);
+  const zones=allTz().map(z=>[z,tzCoords(z)]).filter(x=>x[1]);
+  const nearest=(lon,lat)=>{ let best=null,bd=1e9;
+    for(const [z,c] of zones){ const dl=Math.abs(c[0]-lon), dx=Math.min(dl,360-dl)*Math.cos(lat*Math.PI/180),
+      d=dx*dx+(c[1]-lat)**2; if(d<bd){bd=d;best=[z,c]} } return best };
+  const at=e=>{ const r=svg.getBoundingClientRect(), k=WW/r.width;
+    return [(e.clientX-r.left)*k/2-180, 82.5-(e.clientY-r.top)*k/2] };
+  const tip=host.querySelector(".tip"), ghost=host.querySelector(".ghost");
+  svg.onmousemove=e=>{ const n=nearest(...at(e)); if(!n) return;
+    const k=svg.clientWidth/WW;
+    ghost.setAttribute("cx",WX(n[1][0])); ghost.setAttribute("cy",WY(n[1][1]));
+    tip.hidden=false; tip.textContent=tzCity(n[0])+" · "+utcLabel(n[0]);
+    tip.style.left=(14+WX(n[1][0])*k)+"px"; tip.style.top=(14+WY(n[1][1])*k)+"px" };
+  svg.onmouseleave=()=>{ tip.hidden=true; ghost.setAttribute("cx",-20) };
+  svg.onclick=e=>{ const n=nearest(...at(e)); if(!n||n[0]===zone) return;
+    if(![...sel.options].some(o=>o.value===n[0])) sel.insertAdjacentHTML("beforeend",
+      '<option value="'+esc(n[0])+'">'+esc(tzCity(n[0]))+'</option>');
+    sel.value=n[0]; sel.onchange() };
+}
+
+/* A zone as people read it: "UTC−3", "UTC+5:30". Worked out once per zone. */
+const TZ_UTC=new Map();
+function utcLabel(z){
+  if(TZ_UTC.has(z)) return TZ_UTC.get(z);
+  let l="";
+  try{ const m=Math.round(tzOffset(z,new Date())), a=Math.abs(m);
+    l="UTC"+(m?(m<0?"\u2212":"+")+Math.floor(a/60)+(a%60?":"+String(a%60).padStart(2,"0"):""):"");
+  }catch(e){}
+  TZ_UTC.set(z,l); return l;
+}
 function tzOptions(cur,first){
   const top=[...new Set([first,...COMMON_TZ].filter(Boolean))];
   const opt=z=>'<option value="'+esc(z)+'"'+(z===cur?" selected":"")+'>'+esc(tzCity(z))+
-    (z.includes("/")?' · '+esc(z.split("/")[0]):"")+'</option>';
+    (utcLabel(z)?' · '+utcLabel(z):"")+'</option>';
   return top.map(opt).join("")+'<option disabled>──────────</option>'+
     allTz().filter(z=>!top.includes(z)).map(opt).join("");
 }
@@ -7428,7 +7584,7 @@ function aiSay(c){
      it up when it is restarted, and until then nothing is connected. Promising
      one click and then putting the step that completes it in a toast -- the
      most disposable container in the app -- is most of why this felt clunky. */
-  if(c.state==="absent") return "Not set up. Two steps, below.";
+  if(c.state==="absent") return "Not set up yet. The steps are below.";
   if(c.state==="elsewhere") return "Pointing at another copy of CV Studio, so "+
     "it is editing CVs you are not looking at.";
   if(c.state==="other-workspace")
@@ -8099,6 +8255,9 @@ async function boot(){
   const pill=$("#samp-pill");
   pill.hidden=!d.sample; pill.onclick=()=>setSample(false,pill);
   if(!d.sample&&shouldOnboard(d)) onboardingSheet();
+  /* A time zone change reloads the page; come back to where it was made. */
+  let back=null; try{ back=sessionStorage.getItem("cvs.reopen"); sessionStorage.removeItem("cvs.reopen") }catch(e){}
+  if(back) openSettings(back);
 }
 /* Into the sample folder, or back to your own. Everything on screen belongs
    to one workspace, so the page starts over in the other one. */
@@ -8903,7 +9062,7 @@ function ltPanel(){
       '<label for="lt-place">Written from</label><input id="lt-place" value="'+esc(m.place||"")+'" placeholder="City">'+
       '<label for="lt-date">Date</label><span class="today"><label style="display:flex;gap:5px;align-items:center;color:var(--t800)">'+
         '<input type="checkbox" id="lt-today"'+(today?" checked":"")+'>Today</label>'+
-        '<input type="date" id="lt-date" value="'+(today?"":esc(String(m.date)))+'"'+(today?" disabled":"")+'></span>'+
+        '<input type="date" id="lt-date" value="'+(today?"":esc(String(m.date)))+'"'+(today?" hidden":"")+'></span>'+
       '<label for="lt-to">Addressed to</label><textarea id="lt-to" placeholder="Optional. Printed above the date.">'+
         esc(Array.isArray(m.to)?m.to.join("\n"):(m.to||""))+'</textarea>'+
     '</div></div>'+
@@ -8917,7 +9076,8 @@ function ltPanel(){
   $("#lt-cv").onchange=e=>set("looks_like",e.target.value);
   $("#lt-lang").onchange=e=>set("language",e.target.value);
   $("#lt-place").onchange=e=>set("place",e.target.value.trim()||null);
-  $("#lt-today").onchange=e=>{ $("#lt-date").disabled=e.target.checked;
+  $("#lt-today").onchange=e=>{ const d=$("#lt-date"); d.hidden=e.target.checked;
+    if(!d.hidden&&!d.value) d.value=new Date().toISOString().slice(0,10);
     set("date",e.target.checked?"today":($("#lt-date").value||new Date().toISOString().slice(0,10))) };
   $("#lt-date").onchange=e=>set("date",e.target.value||"today");
   $("#lt-to").onchange=e=>{ const v=e.target.value.split("\n").map(x=>x.trim()).filter(Boolean);
@@ -9145,19 +9305,28 @@ function renderDocs(docs){
     const groups=DOC_GROUPS.filter(g=>docs.some(d=>d.group===g));
     /* Only a document in another language than the base CV says which. */
     const srcLang=(baseFamily()[0]||{}).lang||"en";
+    /* The base CV leads its group with its translations tucked under it,
+       each named by its language rather than a fourth "my-cv". */
+    const fam=baseFamily(), famAt=new Map(fam.map((m,i)=>[m.path,i]));
+    const order=d=>famAt.has(d.path)?famAt.get(d.path):fam.length;
     host.innerHTML=groups.map(g=>{
-      const rows=docs.filter(d=>d.group===g).map(d=>{
+      const inG=docs.filter(d=>d.group===g).map((d,i)=>[d,i])
+        .sort((a,b)=>order(a[0])-order(b[0])||a[1]-b[1]).map(x=>x[0]);
+      const rows=inG.map(d=>{
+        const tr=famAt.get(d.path)>0;
+        const other=(d.lang||"en")!==srcLang;
+        const label=tr?langOf(d.lang).native:other?String(d.label).replace(/\.[a-z]{2}(-[a-z]{2})?$/i,""):d.label;
         const pp=S.pages[d.path];
         const job=S.jobs.find(j=>j.cv_path===d.path||j.letter_path===d.path);
-        return '<button class="row'+(d.path===S.path?" sel":"")+
+        return '<button class="row'+(tr?" tr":"")+(d.path===S.path?" sel":"")+
           '" data-path="'+esc(d.path)+'" title="'+esc(d.path)+
           (d.base?"\ntailored from "+esc(d.base):"")+
           (d.ai?"\n"+esc(whoLabel(d.ai))+" worked on this "+
             ago(d.ai.at*1000)+" ago":"")+
           (job?"\n"+esc(job.title+" · "+job.company):"")+'">'+
           '<span class="mark"></span>'+
-          '<span class="lbl">'+esc(d.label)+'</span>'+
-          ((d.lang||"en")!==srcLang?lchip(d.lang):'')+
+          '<span class="lbl">'+esc(label)+'</span>'+
+          (other&&!tr?lchip(d.lang):tr?'<span class="flg-only">'+flag(d.lang)+'</span>':'')+
           (isBase(d.path)?'<span class="btag" title="The base CV: every tailored CV '+
             'starts as a copy of it">base</span>':'')+
           markHTML(d.ai,null,true)+
@@ -10860,7 +11029,7 @@ function paintLang(){
     sw.innerHTML=members.map(m=>'<button data-lp="'+esc(m.path)+'"'+
       (m.path===S.path?' aria-current="true"':'')+' title="'+esc(m.path)+
       (m.source?" · the source":" · translated from "+docLabel(fam.source))+'">'+
-      lchip(m.lang,m.path===S.path)+esc(langOf(m.lang).native)+'</button>').join("");
+      lchip(m.lang,m.path===S.path)+'<span class="ln">'+esc(langOf(m.lang).native)+'</span></button>').join("");
     $$("#langsw [data-lp]").forEach(b=>b.onclick=()=>{
       if(b.dataset.lp===S.path) return;
       if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
@@ -11446,7 +11615,7 @@ function drawJobInspector(){
         '" role="button" tabindex="0" aria-label="Open the CV"><span>Rendering…</span></div>'+
       '<div class="t"><b>CV</b><span>'+esc(cvName)+'</span></div>'+
       '<div class="a"><button class="obtn" data-open-doc="'+esc(j.cv_path)+'">Open</button>'+
-        '<button class="obtn" id="job-ats">ATS check</button></div></div>'
+        '<button class="obtn" id="job-ats" title="ATS check: what an applicant tracking system reads">ATS</button></div></div>'
     : '<div class="ap-doc"><div class="pg none"><span>No CV for this one yet</span>'+
         '<button class="obtn" data-tailor-here'+(tailoring?" disabled":"")+'>'+(tailoring?"Tailoring…":"Tailor a CV")+'</button></div>'+
       '<div class="t"><b>CV</b><span>Copied from your base CV</span></div></div>';
@@ -11464,7 +11633,7 @@ function drawJobInspector(){
       (j.url?'<span class="u">'+esc(j.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,70))+'</span>':
         '<span class="u">No link saved</span>')+
       '<span class="n">'+(words?words+" words saved below":"Not saved")+'</span></div>'+
-    '<div class="t"><b>The posting</b><span>'+(words?"Kept in case it comes down":"Paste it below")+'</span></div>'+
+    '<div class="t"><b>The posting</b><span>'+(words?"Kept in case it comes down":"Save it while it’s up")+'</span></div>'+
     (j.url?'<div class="a"><a class="obtn" href="'+esc(j.url)+'" target="_blank" rel="noreferrer" '+
       'style="display:inline-flex;align-items:center;text-decoration:none">Open the posting</a></div>':"")+'</div>';
 
@@ -13439,7 +13608,10 @@ function fillSettings(){
   tzs.innerHTML='<option value="">'+esc(t("Match system"))+' · '+esc(tzCity(machineTz()))+'</option>'+
     tzOptions(pr.tz||"",null);
   tzs.value=pr.tz||"";
-  tzs.onchange=()=>{ setPref("tz",tzs.value||null); location.reload() };
+  tzs.onchange=()=>{ setPref("tz",tzs.value||null);
+    try{ sessionStorage.setItem("cvs.reopen","region") }catch(e){}
+    location.reload() };
+  drawTzMap(tzs);
   const sb=$("#s-sample");
   sb.textContent=st.sample?"Back to my workspace":"Open sample data";
   sb.onclick=()=>setSample(!st.sample,sb);
@@ -13475,7 +13647,7 @@ function fillSettings(){
   ap.onchange=()=>{ setPref("appearance",ap.value); applyAppearance() };
   const dt=$("#s-deftheme");
   if(dt&&!dt.dataset.filled){
-    dt.innerHTML=(st.themes||[]).map(t=>"<option>"+esc(t)+"</option>").join("");
+    dt.innerHTML=(st.themes||[]).map(t=>"<option value=\""+esc(t)+"\">"+esc(themeLabel(t))+"</option>").join("");
     dt.dataset.filled="1";
   }
   if(dt){ dt.value=pr.theme||(st.themes||[])[0]||"";

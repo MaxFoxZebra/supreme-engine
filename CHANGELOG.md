@@ -8,8 +8,13 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.20.0
 
+- **A little world on the time zone setting.** Settings › Language & region
+  now draws the world in dots, shaded where it is night right now, with your
+  zone's band and your city pinned beside its time. Cities where you have an
+  interview coming up are marked and linked to yours. Hover to see the nearest
+  city and its offset; click to switch to it.
 - **Try it before you set it up.** The welcome screen has a second way in,
   under "Skip setup": *Try it with sample data* opens the app on the made-up
   workspace straight away, and your own folder is never touched. The welcome
@@ -19,6 +24,28 @@ tag, so a release is never published with nothing said about it.
   ships with the app, so nothing is fetched). The few that had no mark
   available were swapped for companies that do, among them Revolut, Figma,
   Adyen, Zalando, Klarna and Booking.com, with their own cities and zones.
+- **A pass over every screen.**
+  - The editor's top bar fits a smaller window: the language switch drops
+    to flags, and *ATS check*, *Export PDF…* and *Render* no longer wrap or
+    fall off the edge.
+  - In the documents rail, the base CV leads its group with its translations
+    tucked under it by language, instead of four rows all called "my-cv".
+  - Time zones read as offsets everywhere you pick one: "São Paulo · UTC−3"
+    rather than "São Paulo · America". Changing yours brings you back to the
+    settings you were in.
+  - The calendar's month puts *Coming up* under the grid on narrower windows,
+    so events stay readable.
+  - An application's document cards keep their buttons on one line and keep
+    a sensible size on narrow windows. The interview row no longer stretches
+    across the whole page.
+  - Company logos on a dark tile get a faint ring in dark mode so they don't
+    melt into the background.
+  - French, Spanish and Portuguese say "1 envoyée" and "3 envoyées" instead
+    of "envoyée(s)".
+  - Smaller things: theme names are capitalised in Settings; a letter dated
+    *Today* no longer shows an empty date field; an AI client that isn't set
+    up no longer promises "two steps" above three; no stray space before
+    "updated today" on the base CV card.
 
 ## 0.19.0
 

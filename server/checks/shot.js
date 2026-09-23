@@ -24,7 +24,7 @@ async function main() {
   if (!list) {
     require("child_process").spawn(CHROME, [
       `--remote-debugging-port=${PORT}`, "--headless=new", "--disable-gpu",
-      "--no-sandbox", "--hide-scrollbars", "--window-size=1440,960",
+      "--no-sandbox", "--hide-scrollbars", `--window-size=${process.env.WIN || "1440,960"}`,
       `--user-data-dir=${outDir}/profile`, "about:blank",
     ], { detached: true, stdio: "ignore" }).unref();
     for (let i = 0; i < 40 && !list; i++) {
