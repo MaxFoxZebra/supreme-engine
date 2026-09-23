@@ -1058,6 +1058,94 @@ def _forget_deleted(data: dict) -> bool:
     return bool(gone)
 
 
+def _rewrite_refs(old: str, new: str | None) -> None:
+    """Point everything that named `old` at `new` (or at nothing): the
+    bookkeeping beside the documents, the applications, and the letters that
+    say which CV they look like."""
+    data = _edits_read()
+    docs = data.get("docs") or {}
+    entry = docs.pop(old, None)
+    if entry is not None and new:
+        docs[new] = entry
+
+    def walk(x):
+        if isinstance(x, dict):
+            return {k: walk(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [walk(v) for v in x]
+        return new if x == old else x
+    _edits_write(walk(data))
+    if jobstore is not None:
+        for j in jobstore.list_jobs(WORKSPACE):
+            for key in ("cv_path", "letter_path"):
+                if j.get(key) == old:
+                    jobstore.update_job(WORKSPACE, j["id"], {key: new})
+    for f in (WORKSPACE / "letters").glob("*" + letters.EXT):
+        try:
+            meta, body = letters.parse(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if any(v == old for v in meta.values()):
+            meta = {k: (new if v == old else v) for k, v in meta.items()}
+            f.write_text(letters.dump(meta, body), encoding="utf-8")
+
+
+def _clean_name(raw: str) -> str:
+    return "".join(c for c in (raw or "") if c.isalnum() or c in "-_ ").strip()
+
+
+def rename_document(path: str, name: str) -> dict:
+    """Rename a CV or a letter where it is, keeping a translation's language
+    suffix (my-cv.fr.yaml stays .fr), and repoint everything that named it."""
+    src = safe_path(path)
+    if not src.is_file():
+        raise FileNotFoundError(path)
+    clean = _clean_name(name)
+    if not clean:
+        raise ValueError("Please give it a name.")
+    ext = src.suffix
+    stem = src.name[: -len(ext)] if ext else src.name
+    link = ((_edits_read().get("docs") or {}).get(rel(src)) or {}).get("translation") or {}
+    suffix = ""
+    m = re.match(r"^.+(\.[a-z]{2}(?:-[a-z]{2})?)$", stem, re.I)
+    if link and m:
+        suffix = m.group(1)
+    dest = src.with_name(clean + suffix + ext)
+    if dest == src:
+        return {"ok": True, "path": rel(src)}
+    if dest.exists():
+        raise ValueError(f"Something called {dest.name} already exists.")
+    src.rename(dest)
+    _rewrite_refs(rel(src), rel(dest))
+    return {"ok": True, "path": rel(dest), "was": rel(src)}
+
+
+def delete_document(path: str) -> dict:
+    """Move a CV or a letter to the workspace's .trash folder and detach it
+    from its application. The base CV, and a document other languages are
+    translated from, are refused: both would leave something pointing at
+    nothing."""
+    src = safe_path(path)
+    if not src.is_file():
+        raise FileNotFoundError(path)
+    rp = rel(src)
+    base = base_cv()
+    if base and base.get("path") == rp:
+        raise ValueError("This is the base CV, which every tailored CV is copied from. "
+                         "Choose another base first, on Documents.")
+    kids = [d for d in list_documents() if d.get("translation_of") == rp]
+    if kids:
+        raise ValueError("Other languages are translated from it ("
+                         + ", ".join(sorted(str(d.get("lang")) for d in kids))
+                         + "). Delete those first.")
+    trash = WORKSPACE / ".trash"
+    trash.mkdir(exist_ok=True)
+    dest = trash / f"{time.strftime('%Y%m%d-%H%M%S')}-{src.name}"
+    shutil.move(str(src), str(dest))
+    _rewrite_refs(rp, None)
+    return {"ok": True, "trashed": dest.relative_to(WORKSPACE).as_posix()}
+
+
 def note_lineage(path: Path, base: str | None) -> None:
     """Remember which document this one was copied from.
 
@@ -3163,6 +3251,9 @@ def openapi_spec() -> dict:
             "/api/calendar.ics": {"get": {"summary":
                 "Interviews and follow-ups as an iCalendar file; ?id= for one application",
                 "responses": ok}},
+            "/api/jobs/trash": {"get": {"summary":
+                "Deleted applications still in the trash, newest first; each can be restored",
+                "responses": ok}},
             "/api/jobs/export": {"get": {"summary": "Export every job as JSON or CSV",
                 "parameters": [{"name": "format", "in": "query",
                                 "schema": {"type": "string", "enum": ["json", "csv"]}}],
@@ -3213,8 +3304,21 @@ def openapi_spec() -> dict:
             "/api/asset": {"get": {"summary": "Fetch a rendered PDF or PNG",
                 "parameters": [{"name": "path", "in": "query", "required": True,
                                 "schema": {"type": "string"}}], "responses": ok}},
-            "/api/jobs/delete": {"post": {"summary": "Delete one job application",
+            "/api/jobs/delete": {"post": {"summary":
+                "Move one job application to the trash (kept 30 days)",
                 "requestBody": body({"id": {"type": "string"}}), "responses": ok}},
+            "/api/jobs/restore": {"post": {"summary":
+                "Put a deleted application back, with its id and history",
+                "requestBody": body({"id": {"type": "string"}}), "responses": ok}},
+            "/api/doc/rename": {"post": {"summary":
+                "Rename a CV or a letter in place; applications, the base CV and "
+                "translation links follow it",
+                "requestBody": body({"path": {"type": "string"}, "name": {"type": "string"}}),
+                "responses": ok}},
+            "/api/doc/delete": {"post": {"summary":
+                "Move a CV or a letter to the workspace's .trash folder. Refuses the base CV "
+                "and a document others are translated from",
+                "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
             "/api/reveal": {"post": {"summary":
                 "Open the workspace, or one path inside it, in the file manager",
                 "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
@@ -3489,6 +3593,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 body = jobstore.ics(WORKSPACE, q.get("id", [None])[0]).encode("utf-8")
                 return self._send(200, body, "text/calendar; charset=utf-8")
+            if u.path == "/api/jobs/trash":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                return self._json({"trash": jobstore.list_trash(WORKSPACE),
+                                   "days": jobstore.TRASH_DAYS})
             if u.path == "/api/jobs/export":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -3704,6 +3813,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 jobstore.delete_job(WORKSPACE, payload.get("id", ""))
                 return self._json({"ok": True})
+            if u.path == "/api/jobs/restore":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                try:
+                    return self._json(jobstore.restore_job(WORKSPACE, payload.get("id", "")))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 404)
+            if u.path == "/api/doc/rename":
+                try:
+                    return self._json(rename_document(payload.get("path", ""), payload.get("name", "")))
+                except FileNotFoundError:
+                    return self._json({"error": "That document no longer exists."}, 404)
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 409)
+            if u.path == "/api/doc/delete":
+                try:
+                    return self._json(delete_document(payload.get("path", "")))
+                except FileNotFoundError:
+                    return self._json({"error": "That document no longer exists."}, 404)
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 409)
             if u.path == "/api/new":
                 raw = payload.get("name") or "untitled"
                 name = "".join(c for c in raw if c.isalnum() or c in "-_ ").strip()
@@ -4039,6 +4169,9 @@ button:disabled{opacity:.4;cursor:default}
 .acts{display:flex;align-items:center;gap:8px;flex:none}
 .acts button{white-space:nowrap}
 .doctitle{min-width:70px}
+.docbar .more{flex:none;width:30px;height:30px;border:0;border-radius:7px;background:none;color:var(--t500);
+  font-size:18px;line-height:1}
+.docbar .more:hover{background:var(--paper-hover);color:var(--t900)}
 /* On a narrower window the language switch keeps its flags and drops the
    names, so the title and the buttons keep their room. */
 @media (max-width:1380px){ #langsw .ln{display:none} #langsw button{padding:0 6px} }
@@ -4764,6 +4897,13 @@ html.mono .langs,html.mono #langsw{display:none!important}
 .dsec h2 .n{color:var(--t500);font-weight:400;font-size:13px}
 .dsec .why{margin:4px 0 14px;font-size:13px;color:var(--t600);max-width:70ch}
 .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:18px}
+.dcw{position:relative;min-width:0;display:flex}
+.dcw .dcard{flex:1}
+.dcw .dmore{position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:8px;border:1px solid var(--rule);
+  background:var(--field);color:var(--t700);font-size:17px;line-height:1;opacity:0;transition:opacity .12s;
+  box-shadow:0 2px 8px rgba(27,26,23,.12)}
+.dcw:hover .dmore,.dcw .dmore:focus-visible{opacity:1}
+@media (hover:none){.dcw .dmore{opacity:1}}
 .dcard{display:flex;flex-direction:column;gap:10px;padding:0;border:0;background:none;
   text-align:left;color:var(--t900);cursor:pointer;font-family:inherit;min-width:0}
 .dcard .pg{position:relative;aspect-ratio:210/297;background:#fff;border:1px solid var(--rule);
@@ -6374,6 +6514,9 @@ textarea{resize:vertical}
 .toast{background:var(--c700);color:var(--c050);border-radius:5px;padding:7px 12px;
   font-size:12.5px;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,.3);animation:rise .16s ease-out}
 .toast.bad{background:var(--bad);color:#fff}
+.toast.has-act{pointer-events:auto;display:flex;align-items:center;gap:14px}
+.toast .act{border:0;background:none;padding:0;color:inherit;font-size:12.5px;font-weight:600;
+  text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
 @media(max-width:1100px){
@@ -6525,6 +6668,8 @@ if(_p.appearance==="dark"||_p.appearance==="light") document.documentElement.dat
         <button class="crumb" id="back">Applications</button>
         <span class="crumb-sep" aria-hidden="true">/</span>
         <div class="doctitle" id="doctitle"><span class="t"></span><span class="f mono"></span></div>
+        <button class="more" id="doc-more" title="Rename or delete this document"
+          aria-label="Rename or delete this document">&#8943;</button>
         <div class="langsw" id="langsw" role="group" aria-label="Language" hidden></div>
         <div class="grow"></div>
         <span class="acts" id="act-doc">
@@ -7224,12 +7369,15 @@ const S={
 };
 const DZ={theme:null, section:"theme"};
 
-function toast(msg,bad){
+/* act = {label, fn}: one button in the toast, and a longer life to reach it. */
+function toast(msg,bad,act){
   const t=document.createElement("div");
-  t.className="toast"+(bad?" bad":""); t.textContent=msg;
+  t.className="toast"+(bad?" bad":"")+(act?" has-act":""); t.textContent=msg;
+  if(act){ const b=document.createElement("button"); b.className="act"; b.textContent=act.label;
+    b.onclick=()=>{ t.remove(); act.fn() }; t.append(b) }
   $("#toasts").append(t);
   setTimeout(()=>{t.style.transition="opacity .3s";t.style.opacity="0";
-    setTimeout(()=>t.remove(),320)}, bad?5200:2200);
+    setTimeout(()=>t.remove(),320)}, act?9000:bad?5200:2200);
 }
 window.studioError=m=>{$("#pane-page").innerHTML=
   '<div class="err"><h4>Could not start</h4><p>'+esc(m)+'</p></div>'};
@@ -9586,6 +9734,43 @@ async function openDoc(path){
   }catch(e){ toast(e.message,true) }
 }
 
+/* Rename and delete, for the open document. Deleting takes a second click
+   and goes to the workspace's .trash folder; the base CV and a document
+   others are translated from are refused by the server, which says why. */
+function docMenuSheet(path){
+  const doc=(S.state.documents||[]).find(d=>d.path===path)||{};
+  let stem=path.split("/").pop().replace(/\.(ya?ml|md)$/i,"");
+  if(doc.translation_of) stem=stem.replace(/\.[a-z]{2}(-[a-z]{2})?$/i,"");
+  openSheet('<div><h3>'+t("This document")+'</h3><p class="mono" style="font-size:12px">'+esc(path)+'</p></div>'+
+    '<div class="fg w88"><label for="dm-name">'+t("Name")+'</label><input id="dm-name" value="'+esc(stem)+'"></div>'+
+    '<div class="foot"><button class="sbtn danger" id="dm-del">'+t("Delete…")+'</button><div class="grow"></div>'+
+    '<button class="sbtn" data-cancel>'+t("Cancel")+'</button>'+
+    '<button class="sbtn primary" id="dm-ren">'+t("Rename")+'</button></div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  const refresh=async()=>{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents); paintBase();
+    await loadJobs(true); if(S.view==="docs") drawDocuments() };
+  $("#dm-ren").onclick=async()=>{
+    if(S.dirty&&S.path===path) return toast(t("Save your changes first."),true);
+    try{
+      const r=await post("/api/doc/rename",{path,name:$("#dm-name").value});
+      closeSheet(); await refresh();
+      if(S.path===path&&r.path!==path){ S.dirty=false; openDoc(r.path) }
+      toast(t("Renamed"));
+    }catch(e){ toast(e.message,true) }
+  };
+  const del=$("#dm-del");
+  del.onclick=async()=>{
+    if(!del.dataset.sure){ del.dataset.sure="1"; del.textContent=t("Delete it: it goes to the .trash folder"); return }
+    try{
+      await post("/api/doc/delete",{path});
+      closeSheet();
+      if(S.path===path){ S.dirty=false; closeEditor() }
+      await refresh(); toast(t("Moved to the .trash folder in your workspace"));
+    }catch(e){ toast(e.message,true); del.dataset.sure=""; del.textContent=t("Delete…") }
+  };
+}
+$("#doc-more").onclick=()=>{ if(S.path) docMenuSheet(S.path) };
+
 function paintTitle(){
   const cv=(S.data&&S.data.cv)||{};
   const doc=(S.state.documents||[]).find(d=>d.path===S.path);
@@ -11382,14 +11567,16 @@ function drawDocuments(){
       ? '<span class="dot '+statusTone(j.status)+'"></span>'+esc(j.company)+' \u00b7 '+esc(j.title)
       : copied?'Copied from '+esc(copied):letter?'Cover letter':'Not attached';
     const th=S.docThumbs[d.path];
-    return '<button class="dcard" data-open="'+esc(d.path)+'" title="'+esc(d.path)+'">'+
+    return '<div class="dcw"><button class="dcard" data-open="'+esc(d.path)+'" title="'+esc(d.path)+'">'+
       '<span class="pg">'+(th&&th.png?'<img alt="" loading="lazy" src="'+esc(th.png+tok())+'">'
         :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
         ((d.lang||"en")!==srcLang?'<span class="langs">'+lchip(d.lang,true)+'</span>':'')+
         (letter?'<span class="tag">Letter</span>':'')+'</span>'+
       '<span class="meta"><b>'+esc(d.label)+'</b><span>'+about+'</span>'+
         '<em>'+esc(mtimeLabel(d.mtime))+(S.pages[d.path]?" \u00b7 "+S.pages[d.path]+
-          " page"+(S.pages[d.path]===1?"":"s"):"")+'</em></span></button>';
+          " page"+(S.pages[d.path]===1?"":"s"):"")+'</em></span></button>'+
+      '<button class="dmore" data-more="'+esc(d.path)+'" aria-label="'+esc(t("Rename or delete {name}",{name:d.label}))+
+        '" title="'+esc(t("Rename or delete"))+'">&#8943;</button></div>';
   };
   const lane=(title,list,why,empty)=>
     '<section class="dsec"><h2>'+title+'<span class="n">'+list.length+'</span></h2>'+
@@ -11413,6 +11600,7 @@ function drawDocuments(){
       openDoc(b.dataset.open);
     };
   });
+  $$("#doclanes [data-more]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); docMenuSheet(b.dataset.more) });
   docThumbs();
 }
 /* Every card's page. What is on disk is shown at once; anything missing or
@@ -12018,11 +12206,14 @@ function drawJobInspector(){
     if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
     openDoc(b.dataset.openDoc);
   });
+  /* No "are you sure": it goes to the trash, and the toast can bring it back. */
   $("#job-del").onclick=async()=>{
-    if(!confirm("Delete this application? This cannot be undone.")) return;
     try{
       await post("/api/jobs/delete",{id:j.id});
-      S.jsel=null; await loadJobs(); toast("Deleted");
+      S.jsel=null; await loadJobs();
+      toast(t("Deleted {what}",{what:j.title+" · "+j.company}),false,{label:t("Undo"),fn:async()=>{
+        try{ await post("/api/jobs/restore",{id:j.id}); await loadJobs(); selectJob(j.id); toast(t("Restored")) }
+        catch(e){ toast(e.message,true) } }});
     }catch(e){ toast(e.message,true) }
   };
 }

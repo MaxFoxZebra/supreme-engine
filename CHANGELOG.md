@@ -10,6 +10,15 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Nothing is lost to a click.** Deleting an application moves it to a
+  trash kept for thirty days, and the toast that says so has *Undo*, which
+  brings it back with its history and documents. Documents can now be
+  renamed and deleted from the app: the *⋯* beside the title in the editor,
+  or on a card on Documents. A renamed document takes its application, the
+  base CV setting, its translations and the letters that name it along; a
+  deleted one goes to a `.trash` folder in the workspace. The base CV, and a
+  document other languages are translated from, cannot be deleted until
+  that is changed.
 - **Reminders come with the window closed.** With notifications on, closing
   the window leaves CV Studio in the tray (the menu bar on a Mac), where
   *Open CV Studio* and *Quit CV Studio* live, so a 9:00 follow-up still

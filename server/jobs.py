@@ -113,6 +113,13 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL
 );
+-- A deleted application, whole, for thirty days: Undo puts it back with its
+-- id and its history rather than as a new row.
+CREATE TABLE IF NOT EXISTS trash (
+  id          TEXT PRIMARY KEY,
+  data        TEXT NOT NULL,
+  deleted_at  TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_company ON jobs(company);
 """
@@ -324,11 +331,57 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
         con.close()
 
 
+TRASH_DAYS = 30
+
+
 def delete_job(workspace: Path, job_id: str) -> None:
+    """Move an application to the trash. restore_job brings it back as it
+    was; after TRASH_DAYS it is gone for good."""
     con = connect(workspace)
     try:
+        row = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if row is None:
+            return
+        con.execute("INSERT OR REPLACE INTO trash (id, data, deleted_at) VALUES (?,?,?)",
+                    (job_id, json.dumps(dict(row), ensure_ascii=False), _now()))
         con.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        cutoff = time.strftime("%Y-%m-%dT%H:%M:%S",
+                               time.localtime(time.time() - TRASH_DAYS * 86400))
+        con.execute("DELETE FROM trash WHERE deleted_at < ?", (cutoff,))
         con.commit()
+    finally:
+        con.close()
+
+
+def restore_job(workspace: Path, job_id: str) -> dict:
+    """Put a deleted application back, with the id and history it had."""
+    con = connect(workspace)
+    try:
+        row = con.execute("SELECT data FROM trash WHERE id=?", (job_id,)).fetchone()
+        if row is None:
+            raise ValueError("That application is no longer in the trash.")
+        data = json.loads(row["data"])
+        cols = [r["name"] for r in con.execute("PRAGMA table_info(jobs)")]
+        keep = [c for c in cols if c in data]
+        con.execute(f"INSERT OR REPLACE INTO jobs ({', '.join(keep)}) VALUES "
+                    f"({', '.join('?' for _ in keep)})", [data[c] for c in keep])
+        con.execute("DELETE FROM trash WHERE id=?", (job_id,))
+        con.commit()
+        return _row(con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
+    finally:
+        con.close()
+
+
+def list_trash(workspace: Path) -> list[dict]:
+    """What is in the trash, newest first: id, company, title and when."""
+    con = connect(workspace)
+    try:
+        out = []
+        for r in con.execute("SELECT id, data, deleted_at FROM trash ORDER BY deleted_at DESC"):
+            d = json.loads(r["data"])
+            out.append({"id": r["id"], "company": d.get("company"), "title": d.get("title"),
+                        "deleted_at": r["deleted_at"]})
+        return out
     finally:
         con.close()
 

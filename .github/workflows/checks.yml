@@ -77,6 +77,9 @@ jobs:
       - name: Sample data
         run: python checks/sampletest.py
 
+      - name: Trash and rename
+        run: python checks/trashtest.py
+
       - name: MCP over stdio
         run: |
           mkdir -p "$RUNNER_TEMP/mcp-ws"
