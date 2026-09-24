@@ -1766,6 +1766,47 @@ def pack_info(job_id: str) -> dict:
             "posting": bool((job.get("description") or "").strip())}
 
 
+# Save to CV Studio, the bookmark: it has to find the app at an address that
+# does not change between launches, and the desktop app picks a new port every
+# time. So the server also listens here, for the bookmark's window.
+CLIP_PORT = int(os.environ.get("CVSTUDIO_CLIP_PORT") or 47811)
+CLIP_STATE = {"ok": False, "why": "not started"}
+
+# Runs on the job page when the bookmark is clicked. It reads the job the page
+# describes for search engines (schema.org JobPosting), or the text selected,
+# and hands it to CV Studio's own window, which it opens. The page never sees
+# the app's key: the window is served by the app and saves from there.
+BOOKMARKLET = """(()=>{const O="http://127.0.0.1:__PORT__";
+const F=o=>{if(!o||typeof o!=="object")return null;if(Array.isArray(o)){for(const x of o){const r=F(x);if(r)return r}return null}
+if(o["@graph"])return F(o["@graph"]);return [].concat(o["@type"]||[]).includes("JobPosting")?o:null};
+let J=null;for(const s of document.querySelectorAll('script[type="application/ld+json"]')){try{J=F(JSON.parse(s.textContent));if(J)break}catch(e){}}
+const m=n=>{const e=document.querySelector('meta[property="'+n+'"],meta[name="'+n+'"]');return e?e.content:""};
+const d={url:location.href,host:location.hostname,title:document.title,site:m("og:site_name"),job:J,
+selection:String(getSelection()||"").slice(0,40000)};
+const w=window.open(O+"/clip","cvstudio_clip","width=500,height=760");
+if(!w){alert("CV Studio: allow pop-ups for this site, then click again.");return}
+const h=e=>{if(e.origin===O&&e.data==="cvstudio-clip-ready"){w.postMessage(d,O);removeEventListener("message",h)}};
+addEventListener("message",h)})();"""
+
+
+def bookmarklet() -> str:
+    code = re.sub(r"\n", "", BOOKMARKLET.replace("__PORT__", str(CLIP_PORT)))
+    return "javascript:" + code
+
+
+def start_clip_listener() -> None:
+    """Listen on CLIP_PORT as well, for the bookmark. Taken (another copy of
+    the app, or something else): the bookmark will not work, and Settings
+    says so, but nothing else changes."""
+    try:
+        srv = Server(("127.0.0.1", CLIP_PORT), Handler)
+    except OSError as exc:
+        CLIP_STATE.update(ok=False, why=f"port {CLIP_PORT} is in use ({exc.strerror or exc})")
+        return
+    CLIP_STATE.update(ok=True, why="")
+    threading.Thread(target=srv.serve_forever, daemon=True, name="clip").start()
+
+
 def draft_context(job_id: str) -> dict:
     """What an email about an application can say without asking: whose name
     to sign, when you applied and met, and the posting's first duties."""
@@ -3419,6 +3460,10 @@ def openapi_spec() -> dict:
             "/api/funnel": {"get": {"summary":
                 "Application funnel: node counts, flows and conversion rates",
                 "responses": ok}},
+            "/api/clip": {"get": {"summary":
+                "Save to CV Studio, the bookmark: the fixed port its window is "
+                "served on, whether it is listening, and the bookmarklet itself",
+                "responses": ok}},
             "/api/jobs/draft": {"get": {"summary":
                 "What an email about an application can be written from: your "
                 "name (from its CV, else the base CV), the dates you applied and "
@@ -3531,6 +3576,210 @@ def openapi_spec() -> dict:
 # --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
+
+CLIP_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Save to CV Studio</title>
+<style>
+:root{--app:#f7f6f3;--field:#fff;--t900:#1b1a17;--t700:#4a463d;--t600:#5b574d;--rule:#ddd8cc;
+  --bd:#cfcabd;--acc:#c08a3e;--acc-text:#8a5316;--wash:#fbf4e8;--wash-line:#ecd9b8;--ok:#2f7a63;--bad:#a83519;
+  --chrome:#1b1a17;--chrome-t:#f5f2ea}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app:#22211d;--field:#26241f;--t900:#f4f2ef;
+  --t700:#c6c0b0;--t600:#b6af9b;--rule:#38352e;--bd:#4a473e;--acc-text:#e8bc7c;--wash:#2e2820;--wash-line:#5a4a30;
+  --ok:#6cc4a6;--bad:#ea8466;--chrome:#161513}}
+:root[data-theme=dark]{--app:#22211d;--field:#26241f;--t900:#f4f2ef;--t700:#c6c0b0;--t600:#b6af9b;--rule:#38352e;
+  --bd:#4a473e;--acc-text:#e8bc7c;--wash:#2e2820;--wash-line:#5a4a30;--ok:#6cc4a6;--bad:#ea8466;--chrome:#161513}
+*{box-sizing:border-box}
+body{margin:0;background:var(--app);color:var(--t900);font:14px/1.45 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+header{height:44px;display:flex;align-items:center;gap:9px;padding:0 16px;background:var(--chrome);color:var(--chrome-t);font-weight:600;font-size:13.5px}
+header img{width:20px;height:20px}
+main{display:flex;flex-direction:column;gap:14px;padding:18px}
+.who{display:flex;align-items:center;gap:12px}
+.who b{font-size:15.5px;display:block}
+.who small{font-size:12.5px;color:var(--t600)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--t600)}
+label.wide{grid-column:1/3}
+input,select{height:36px;padding:0 10px;border:1px solid var(--bd);border-radius:8px;background:var(--field);
+  color:var(--t900);font:inherit;font-size:13.5px;font-weight:400}
+.card{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--rule);border-radius:10px;background:var(--field)}
+.card.warn{background:var(--wash);border-color:var(--wash-line)}
+.line{display:flex;align-items:center;gap:8px;font-size:13px}
+.line svg{flex:none}
+.muted{color:var(--t600);font-size:12.5px}
+.acts{display:flex;gap:8px}
+button{font:inherit;cursor:pointer}
+.go{flex:1;height:40px;border:0;border-radius:8px;background:var(--acc);color:#1b1a17;font-size:14px;font-weight:600}
+.alt{height:40px;padding:0 14px;border:1px solid var(--bd);border-radius:8px;background:var(--field);color:var(--t900);font-size:13.5px}
+.link{align-self:flex-start;border:0;background:none;padding:0;color:var(--acc-text);font-size:12.5px;font-weight:500}
+.err{color:var(--bad);font-size:12.5px}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+</style></head><body>
+<header><img src="/static/brand-mark.png" alt="">Save to CV Studio</header>
+<main id="wait"><p class="muted" id="wait-say">Waiting for the job page…</p></main>
+<main id="form" hidden>
+  <div class="who"><div><b id="f-head">A new application</b><small id="f-sub">Read from the page: check it, then save</small></div></div>
+  <div id="known" class="card" hidden>
+    <b id="k-name" data-noi18n></b>
+    <span class="muted" id="k-line"></span>
+  </div>
+  <div class="grid" id="fields">
+    <label class="wide">Role<input id="f-title" autocomplete="off"></label>
+    <label>Company<input id="f-company" autocomplete="off"></label>
+    <label>Location<input id="f-location" autocomplete="off"></label>
+    <label>Status<select id="f-status"><option value="pending">Draft, not sent yet</option>
+      <option value="applied">Applied today</option></select></label>
+    <label>Found on<input id="f-source" autocomplete="off"></label>
+  </div>
+  <div class="card" id="post-card">
+    <div class="line" id="post-line"></div>
+    <span class="muted" id="post-heads" data-noi18n></span>
+    <div class="line"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.4"
+      aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><span>The link, so you can open it again</span></div>
+  </div>
+  <p class="err" id="f-err" hidden></p>
+  <div class="acts"><button class="go" id="f-save">Save application</button><button class="alt" id="f-cancel">Cancel</button></div>
+  <button class="link" id="f-new" hidden>It is a different role: save it as a new application</button>
+</main>
+<main id="done" hidden>
+  <div class="card"><div class="line"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ok)"
+    stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><b id="d-head">Saved to CV Studio</b></div>
+    <span class="muted" id="d-say"></span></div>
+  <div class="acts"><button class="alt" id="d-close">Close</button></div>
+</main>
+<script>
+var PREFS=__PREFS__||{};
+const API_TOKEN=__API_TOKEN__;
+if(PREFS.appearance==="dark"||PREFS.appearance==="light") document.documentElement.dataset.theme=PREFS.appearance;
+</script>
+<script src="/static/i18n.js"></script>
+<script>
+/* CV Studio's own window for the bookmark: the page it was opened from sends
+   what it read, this shows it, and nothing is saved until you say so. */
+const $=s=>document.querySelector(s);
+const LANG=(()=>{ const l=PREFS.ui_lang||(navigator.language||"en").slice(0,2); return ["fr","es","pt"].includes(l)?l:"en" })();
+document.documentElement.lang=LANG;
+const D=(window.I18N||{})[LANG]||{};
+const t=(s,v)=>{ let r=D[s]||s; if(v) r=r.replace(/\{(\w+)\}/g,(m,k)=>v[k]??m);
+  return r.replace(/(\d+)([^\d()]*?)\(s\)/g,(m,n,mid)=>n+mid+((LANG==="fr"?+n<2:+n===1)?"":"s")) };
+/* The interface's own words, in its language. */
+document.querySelectorAll("header,#wait-say,#f-head,#f-sub,label,option,#fields label,.line span,#f-save,#f-cancel,#f-new,#d-head,#d-close")
+  .forEach(el=>{ for(const n of el.childNodes) if(n.nodeType===3&&n.nodeValue.trim()){
+    const k=n.nodeValue.trim(); if(D[k]) n.nodeValue=n.nodeValue.replace(k,D[k]) } });
+document.title=t("Save to CV Studio");
+const api=async(u,o)=>{ o=o||{}; o.headers=Object.assign({"Content-Type":"application/json"},API_TOKEN?{"X-API-Key":API_TOKEN}:{},o.headers);
+  const r=await fetch(u,o); const j=await r.json().catch(()=>({error:"No answer from CV Studio."}));
+  if(!r.ok||j.error) throw new Error(j.error||("HTTP "+r.status)); return j };
+
+const BOARDS=[[/linkedin\./,"LinkedIn"],[/indeed\./,"Indeed"],[/welcometothejungle\./,"Welcome to the Jungle"],
+  [/glassdoor\./,"Glassdoor"],[/wellfound\.|angel\.co/,"Wellfound"],[/xing\./,"XING"],[/hellowork\./,"HelloWork"],
+  [/apec\.fr/,"APEC"],[/francetravail\.|pole-emploi\./,"France Travail"],[/jobteaser\./,"JobTeaser"],
+  [/greenhouse\.io/,"Greenhouse"],[/lever\.co/,"Lever"],[/workable\.com/,"Workable"],[/ashbyhq\.com/,"Ashby"]];
+const sourceOf=d=>{ for(const [re,n] of BOARDS) if(re.test(d.host)) return n; return d.site||d.host.replace(/^www\./,"") };
+/* A posting's HTML as the Markdown the app keeps: headings, lists, bold, paragraphs. */
+function toMd(html){
+  if(!html) return "";
+  if(/&lt;\/?[a-z]/i.test(html)&&!/<\/?[a-z]/i.test(html)){ const x=document.createElement("textarea"); x.innerHTML=html; html=x.value }
+  const doc=new DOMParser().parseFromString("<div>"+html+"</div>","text/html");
+  const walk=n=>{
+    if(n.nodeType===3) return n.nodeValue.replace(/\s+/g," ");
+    if(n.nodeType!==1) return "";
+    const tag=n.tagName.toLowerCase(), inner=()=>[...n.childNodes].map(walk).join("");
+    if(/^(script|style)$/.test(tag)) return "";
+    if(/^h[1-6]$/.test(tag)) return "\n\n## "+inner().trim()+"\n\n";
+    if(tag==="li") return "\n- "+inner().trim();
+    if(tag==="br") return "\n";
+    if(/^(p|div|section|ul|ol)$/.test(tag)) return "\n\n"+inner().trim()+"\n\n";
+    if(/^(b|strong)$/.test(tag)){ const s=inner().trim(); return s?" **"+s+"** ":"" }
+    return inner();
+  };
+  return walk(doc.body.firstChild).replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").replace(/\n{3,}/g,"\n\n")
+    .replace(/ +/g," ").replace(/\*\* ([,.;:])/g,"**$1").trim();
+}
+const placeOf=j=>{ const L=[].concat(j.jobLocation||[])[0]; const a=L&&L.address||{};
+  const where=(typeof a==="string"?a:a.addressLocality||a.addressRegion||a.addressCountry&&(a.addressCountry.name||a.addressCountry))||"";
+  return where||(/TELECOMMUTE/i.test(j.jobLocationType||"")?"Remote":"") };
+const payOf=j=>{ const b=j.baseSalary; if(!b||!b.value) return ""; const v=b.value, c=b.currency||"";
+  const n=x=>x==null?"":Number(x).toLocaleString("en"); const lo=v.minValue??v.value, hi=v.maxValue;
+  return (hi&&hi!==lo?n(lo)+"–"+n(hi):n(lo))+(c?" "+c:"")+(v.unitText?" per "+String(v.unitText).toLowerCase():"") };
+/* Links are kept, and matched, without the tracking noise boards add. */
+const clean=u=>{ try{ const x=new URL(u); [...x.searchParams.keys()].forEach(k=>{ if(/^(utm_|ref|refId|trk|tracking|src|source|from)/i.test(k)) x.searchParams.delete(k) });
+  x.hash=""; return x.toString() }catch(e){ return String(u||"") } };
+const norm=u=>{ try{ const x=new URL(clean(u));
+  return (x.host.replace(/^www\./,"")+x.pathname.replace(/\/+$/,"")+(x.search||"")).toLowerCase() }catch(e){ return String(u||"").toLowerCase() } };
+
+let PAGE=null, KNOWN=null, POST="";
+function show(id){ ["wait","form","done"].forEach(k=>$("#"+k).hidden=k!==id) }
+async function receive(d){
+  PAGE=d; const j=d.job||{};
+  const org=j.hiringOrganization; const company=typeof org==="string"?org:(org&&org.name)||"";
+  $("#f-title").value=(j.title||(!d.job&&d.title?d.title.split(/\s+[|–-]\s+/)[0]:"")||"").trim();
+  $("#f-company").value=company.trim();
+  $("#f-location").value=placeOf(j);
+  $("#f-source").value=sourceOf(d);
+  const pay=payOf(j);
+  POST=d.job?toMd(j.description||""):(d.selection||"").trim();
+  if(POST&&pay&&!POST.includes(pay)) POST="**Salary:** "+pay+"\n\n"+POST;
+  const words=POST?POST.split(/\s+/).filter(Boolean).length:0;
+  const heads=(POST.match(/^## .+$/gm)||[]).map(h=>h.slice(3)).slice(0,4);
+  $("#post-line").innerHTML=words
+    ?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><b></b><span class="muted" style="margin-left:auto"></span>'
+    :'<b></b>';
+  $("#post-line b").textContent=words?t("The posting, {n} words",{n:words}):t("No posting found on this page");
+  if(words) $("#post-line .muted").textContent=d.job?t("headings and lists kept"):t("the text you selected");
+  $("#post-heads").textContent=words?[...heads,pay].filter(Boolean).join(" · "):t("Select the posting's text on the page, then click the button again.");
+  show("form");
+  try{
+    const r=await api("/api/jobs");
+    KNOWN=(r.jobs||[]).find(x=>x.url&&norm(x.url)===norm(j.url||d.url))||null;
+  }catch(e){ KNOWN=null }
+  if(KNOWN){
+    $("#f-head").textContent=t("Already in CV Studio");
+    $("#f-sub").textContent=t("Same link as an application you track");
+    $("#known").hidden=false; $("#fields").hidden=true;
+    $("#k-name").textContent=KNOWN.company+" · "+KNOWN.title;
+    const has=(KNOWN.description||"").trim();
+    $("#k-line").textContent=has?t("Its posting is saved already."):t("Its posting was never saved: this page has it.");
+    $("#f-save").textContent=has?t("Replace the saved posting"):t("Save the posting to it");
+    $("#f-save").disabled=!words;
+    $("#f-new").hidden=false;
+  }
+}
+$("#f-new").onclick=()=>{ KNOWN=null; $("#known").hidden=true; $("#fields").hidden=false; $("#f-new").hidden=true;
+  $("#f-head").textContent=t("A new application"); $("#f-sub").textContent=t("Read from the page: check it, then save");
+  $("#f-save").textContent=t("Save application"); $("#f-save").disabled=false };
+$("#f-cancel").onclick=()=>window.close();
+$("#d-close").onclick=()=>window.close();
+$("#f-save").onclick=async()=>{
+  const err=$("#f-err"); err.hidden=true; $("#f-save").disabled=true;
+  try{
+    const url=clean((PAGE.job&&PAGE.job.url)||PAGE.url);
+    if(KNOWN){
+      await api("/api/jobs/update",{method:"POST",body:JSON.stringify({id:KNOWN.id,description:POST,url:KNOWN.url||url})});
+      $("#d-say").textContent=t("The posting is saved with {co}, {role}.",{co:KNOWN.company,role:KNOWN.title});
+    }else{
+      const title=$("#f-title").value.trim(), company=$("#f-company").value.trim();
+      if(!title||!company) throw new Error(t("A job needs at least a title and a company."));
+      const status=$("#f-status").value;
+      const j=await api("/api/jobs",{method:"POST",body:JSON.stringify({title,company,
+        location:$("#f-location").value.trim()||null,source:$("#f-source").value.trim()||null,url,
+        description:POST||null,status:"pending"})});
+      if(status==="applied") await api("/api/jobs/update",{method:"POST",body:JSON.stringify({id:j.id,status:"applied"})});
+      $("#d-say").textContent=t("{co}, {role}: at the top of your applications.",{co:company,role:title});
+    }
+    show("done");
+    setTimeout(()=>window.close(),4000);
+  }catch(e){ err.textContent=(D[e.message]||e.message); err.hidden=false; $("#f-save").disabled=false }
+};
+addEventListener("message",e=>{
+  if(!window.opener||e.source!==window.opener||!e.data||typeof e.data!=="object"||!e.data.url) return;
+  receive(e.data);
+});
+if(window.opener) window.opener.postMessage("cvstudio-clip-ready","*");
+else $("#wait-say").textContent=t("Open a job page and click Save to CV Studio in your bookmarks bar.");
+</script></body></html>"""
+
 
 DOCS_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -3818,6 +4067,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/doc":
                 p = safe_path(q["path"][0])
                 return self._json(load_letter(p) if is_letter(p) else load_doc(p))
+            if u.path == "/clip":
+                page = CLIP_HTML.replace(
+                    "__API_TOKEN__", json.dumps(API_TOKEN)).replace(
+                    "__PREFS__", json.dumps(load_prefs()).replace("</", "<\\/"))
+                return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            if u.path == "/api/clip":
+                return self._json({"port": CLIP_PORT, "ok": CLIP_STATE["ok"],
+                                   "why": CLIP_STATE["why"], "bookmarklet": bookmarklet()})
             if u.path == "/api/jobs/draft":
                 try:
                     return self._json(draft_context((q.get("id") or [""])[0]))
@@ -4599,6 +4856,7 @@ const API_TOKEN=__API_TOKEN__;
       <button data-s="editor" aria-selected="false">Editor</button>
       <button data-s="region" aria-selected="false">Language &amp; region</button>
       <button data-s="notify" aria-selected="false">Notifications</button>
+      <button data-s="browser" aria-selected="false">Browser</button>
       <button data-s="ai" aria-selected="false">AI clients</button>
       <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
@@ -4834,6 +5092,27 @@ const API_TOKEN=__API_TOKEN__;
         <button class="obtn" id="s-key" hidden>Show the key</button></div>
       </section>
 
+      <section class="sp" id="sp-browser" hidden>
+        <h3>Save postings from your browser</h3>
+        <p class="sp-lede">One button in your bookmarks bar. On a job page it opens a small CV Studio
+          window with the role, the company and the posting already filled in, and saves them as an
+          application.</p>
+        <div class="clip-steps">
+          <div class="clip-step"><span class="clip-n">1</span><div><b>Drag this button to your bookmarks bar</b>
+            <a class="clip-bm" id="s-clip-bm" href="#" draggable="true"><img src="/static/brand-mark.png"
+              alt="" width="18" height="18">Save to CV Studio</a>
+            <span class="clip-hint">No bookmarks bar? Show it with Ctrl+Shift+B (⌘⇧B on a Mac).</span>
+            <span class="clip-hint">Dragging does not work? <button class="linkbtn" id="s-clip-copy">Copy it</button>,
+              add a bookmark to any page, name it Save to CV Studio and paste it in place of the address.</span></div></div>
+          <div class="clip-step"><span class="clip-n">2</span><div><b>On a job page, click it</b></div></div>
+        </div>
+        <div class="srow"><div><b>Works where the page describes the job</b><span>Most job boards and
+          careers pages do, for search engines. Elsewhere, select the posting's text first and it takes
+          that.</span></div></div>
+        <div class="srow"><div><b>CV Studio needs to be running</b><span id="s-clip-say">With the window
+          closed it waits in the tray. Nothing leaves your computer: the page goes straight to the
+          app.</span></div><span class="clip-state" id="s-clip-state"></span></div>
+      </section>
       <section class="sp" id="sp-updates" hidden>
         <h3>Updates</h3>
         <p class="sp-lede">Updates are signed with the key baked into this build, so a
@@ -4912,6 +5191,8 @@ def main() -> int:
         print(f"Generated API token: {API_TOKEN}")
 
     url = f"http://{args.host}:{args.port}/"
+    if args.host in ("127.0.0.1", "localhost", "::1"):
+        start_clip_listener()
     # Loopback only: this reads and writes files and has no authentication.
     with Server((args.host, args.port), Handler) as httpd:
         print(f"CV Studio  -> {url}")

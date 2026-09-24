@@ -7049,10 +7049,30 @@ document.addEventListener("keydown",e=>{
 function showSettingsPane(which){
   $$("#set-rail button").forEach(x=>
     x.setAttribute("aria-selected",String(x.dataset.s===which)));
-  ["workspace","editor","region","notify","ai","api","updates","about"].forEach(k=>
+  ["workspace","editor","region","notify","browser","ai","api","updates","about"].forEach(k=>
     $("#sp-"+k).hidden = k!==which);
   if(which==="updates") checkUpdates(true);
   if(which==="ai") loadAI();
+  if(which==="browser") fillClip();
+}
+/* Save to CV Studio: the bookmark is made by the server, for the port it
+   listens on for it. Clicking it here, rather than dragging, would run it on
+   this page: say what to do instead. */
+async function fillClip(){
+  const a=$("#s-clip-bm"), st=$("#s-clip-state");
+  try{
+    const r=await api("/api/clip");
+    a.href=r.bookmarklet;
+    st.textContent=r.ok?t("Ready"):t("Not available");
+    st.className="clip-state "+(r.ok?"ok":"bad");
+    st.title=r.ok?"":r.why;
+    if(!r.ok) $("#s-clip-say").textContent=t("Another program is using the address the button needs ({why}). Quit it, or the other copy of CV Studio, then restart this one.",{why:r.why});
+  }catch(e){ st.textContent=t("Not available"); st.className="clip-state bad" }
+  a.onclick=e=>{ e.preventDefault(); toast(t("Drag it to your bookmarks bar, then click it there on a job page.")) };
+  $("#s-clip-copy").onclick=async()=>{
+    try{ await navigator.clipboard.writeText(a.href); toast(t("Copied")) }
+    catch(e){ toast(t("Could not copy: select the text instead."),true) }
+  };
 }
 $$("#set-rail button").forEach(b=>b.onclick=()=>showSettingsPane(b.dataset.s));
 $$("[data-copy]").forEach(b=>b.onclick=async()=>{
@@ -7386,7 +7406,7 @@ const palPlaces=()=>[
   {label:t("Documents"),icon:"doc",run:()=>setView("docs")},
   {label:t("Funnel"),icon:"funnel",run:()=>setView("funnel")},
   {label:t("Calendar"),icon:"cal",run:()=>setView("cal")},
-  ...[["workspace","Workspace"],["editor","Editor"],["region","Language & region"],["notify","Notifications"],
+  ...[["workspace","Workspace"],["editor","Editor"],["region","Language & region"],["notify","Notifications"],["browser","Browser"],
       ["ai","AI clients"],["api","API"],["updates","Updates"],["about","About"]]
     .map(([k,l])=>({label:t("Settings")+" › "+t(l),icon:"gear",stay:true,run:()=>openSettings(k)})),
 ];

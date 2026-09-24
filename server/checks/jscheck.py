@@ -24,6 +24,10 @@ import studio  # noqa: E402
 def main() -> int:
     page = studio.INDEX_HTML.replace("__PREFS__", "null").replace("__API_TOKEN__", '"t"')
     scripts = re.findall(r"<script>(.*?)</script>", page, re.S)
+    # Save to CV Studio's window, and the bookmark itself.
+    clip = studio.CLIP_HTML.replace("__PREFS__", "null").replace("__API_TOKEN__", '"t"')
+    scripts += re.findall(r"<script>(.*?)</script>", clip, re.S)
+    scripts.append(studio.bookmarklet()[len("javascript:"):])
     bad = 0
     with tempfile.TemporaryDirectory() as tmp:
         for i, body in enumerate(scripts):

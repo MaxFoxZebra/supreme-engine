@@ -23,6 +23,14 @@ tag, so a release is never published with nothing said about it.
   or a zip of separate files (with the posting, if you like). It is named
   for you, the company and the role, is rendered from what is saved, and
   can mark a draft as applied today.
+- **Save a job from your browser.** Settings › Browser has a Save to CV
+  Studio button to drag to your bookmarks bar. On a job page it opens a
+  small CV Studio window with the role, the company, the place, the salary
+  and the posting (headings and lists kept) read from the page; you check
+  them and save. On a page that does not describe its job, it takes the text
+  you selected. A link you already track offers to save the posting to that
+  application instead of a duplicate. Everything goes straight to the app on
+  your computer, which has to be running (the tray is enough).
 - **People, and what to write them.** Each application has a People card:
   the recruiter, the hiring manager, whoever referred you, with their email
   and when you last wrote. A follow-up, a thank-you after an interview or a
