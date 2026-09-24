@@ -7080,11 +7080,9 @@ async function fillClip(){
     if(!r.ok) $("#s-clip-say").textContent=t("Another program is using the address the button needs ({why}). Quit it, or the other copy of CV Studio, then restart this one.",{why:r.why});
   }catch(e){ st.textContent=t("Not available"); st.className="clip-state bad" }
   a.onclick=e=>{ e.preventDefault(); toast(t("Drag it to your bookmarks bar, then click it there on a job page.")) };
-  /* A bookmarklet cannot have an icon, so its name starts with one. Chrome
-     names the bookmark from the link's text (the emoji is there, hidden);
-     Firefox takes it from here. */
-  a.ondragstart=e=>{ const name="💼 "+a.textContent.replace("💼","").trim();
-    try{ e.dataTransfer.setData("text/x-moz-url",a.href+"\n"+name) }catch(err){} };
+  /* A bookmarklet cannot have an icon, so its name starts with one: the
+     browser names the bookmark from the link's text, where the emoji is,
+     hidden. The drag itself is left to the browser. */
   $("#s-clip-copy").onclick=async()=>{
     try{ await navigator.clipboard.writeText(a.href); toast(t("Copied")) }
     catch(e){ toast(t("Could not copy: select the text instead."),true) }

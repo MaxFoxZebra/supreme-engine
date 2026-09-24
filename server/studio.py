@@ -1807,7 +1807,10 @@ addEventListener("message",h)})();"""
 
 def bookmarklet() -> str:
     code = re.sub(r"\n", "", BOOKMARKLET.replace("__PORT__", str(CLIP_PORT)))
-    return "javascript:" + code
+    # Some browsers end a bookmark's address at "#", and read "%" as the
+    # start of an escape: both are written escaped, which the browser undoes
+    # before running it.
+    return "javascript:" + code.replace("%", "%25").replace("#", "%23")
 
 
 def start_clip_listener() -> None:

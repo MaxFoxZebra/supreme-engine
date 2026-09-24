@@ -7,6 +7,7 @@ so when it cannot.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 import urllib.request
@@ -32,6 +33,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 def main() -> int:
     bm = studio.bookmarklet()
     check("the bookmark is one line of script", bm.startswith("javascript:") and "\n" not in bm)
+    check("with nothing a browser would cut it at", "#" not in bm and not re.search(r"%(?![0-9A-F]{2})", bm))
     check("pointing at the fixed port", "127.0.0.1:47899" in bm)
     check("reading the job the page describes", "JobPosting" in bm and "ld+json" in bm)
     studio.start_clip_listener()
