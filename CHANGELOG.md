@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.23.0
 
 - **Search everything, from anywhere.** Ctrl K (⌘K on a Mac), or the
   magnifier in the top bar. Before you type it offers what you opened last

@@ -160,6 +160,8 @@ design:
   /* Search: Ctrl K, a few letters of a company, Enter, and its application is open. */
   r = await evalJs(`(async () => {
     closeSheet(); setView("jobs"); closePeek();
+    /* A fresh workspace opens on the welcome, and search stays out of its way. */
+    if (onbOpen()) obClose();
     document.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}));
     const open = !document.querySelector("#pal").hidden;
     const i = document.querySelector("#pal-in"); i.value = "qont";
