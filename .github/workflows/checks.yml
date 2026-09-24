@@ -89,6 +89,9 @@ jobs:
       - name: Search
         run: python checks/searchtest.py
 
+      - name: Application pack
+        run: python checks/packtest.py
+
       - name: Translations built and complete
         run: |
           python i18n/build.py

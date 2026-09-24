@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import http.server
+import io
 import json
 import mimetypes
 import os
@@ -1724,6 +1725,85 @@ def render_letter(path: Path) -> dict:
             "pngs": [f"/api/asset?path={rel(Path(f))}&v={stamp}" for f in r["png_pages"]]}
 
 
+def _slug_name(*parts: str) -> str:
+    """"Alex Moreau", "Mistral AI", "Senior Platform Engineer" ->
+    Alex-Moreau-Mistral-AI-Senior-Platform-Engineer: what a recruiter's
+    download folder can tell apart."""
+    words = []
+    for p in parts:
+        words += re.findall(r"[\w]+", unicodedata.normalize("NFKD", str(p or ""))
+                            .encode("ascii", "ignore").decode())
+    return "-".join(words)[:120] or "application"
+
+
+def pack_info(job_id: str) -> dict:
+    """What Export both would put together for an application."""
+    job = next((j for j in jobstore.list_jobs(WORKSPACE) if j["id"] == job_id), None) \
+        if jobstore is not None else None
+    if job is None:
+        raise ValueError("No such job.")
+    have = {}
+    for key in ("cv_path", "letter_path"):
+        p = job.get(key)
+        if p:
+            try:
+                f = safe_path(p)
+            except (ValueError, PermissionError):
+                continue
+            if f.is_file():
+                have[key] = f
+    person = ""
+    if "cv_path" in have:
+        data = to_plain(yaml_rt.load(have["cv_path"].read_text(encoding="utf-8"))) or {}
+        person = str(((data.get("cv") or {}).get("name")) or "")
+    if not person and "letter_path" in have:
+        meta, _ = letters.parse(have["letter_path"].read_text(encoding="utf-8"))
+        person = str(letter_head(meta).get("name") or "")
+    return {"job": job, "files": have,
+            "name": _slug_name(person, job.get("company"), job.get("title")),
+            "person": _slug_name(person) if person else "",
+            "cv": "cv_path" in have, "letter": "letter_path" in have,
+            "posting": bool((job.get("description") or "").strip())}
+
+
+def application_pack(job_id: str, fmt: str = "pdf", name: str | None = None,
+                     posting: bool = False) -> tuple[bytes, str, str]:
+    """The CV and the letter for one application as one PDF (CV first) or a
+    zip of separate files, each rendered from what is saved now."""
+    info = pack_info(job_id)
+    if not (info["cv"] or info["letter"]):
+        raise ValueError("This application has no CV or letter yet.")
+    parts = []
+    if info["cv"]:
+        pdf, failed = current_pdf(info["files"]["cv_path"])
+        if pdf is None:
+            raise ValueError((failed or {}).get("hint") or "The CV did not render.")
+        parts.append(("CV", pdf.read_bytes()))
+    if info["letter"]:
+        data, _, _ = letter_export(info["files"]["letter_path"], "pdf")
+        parts.append(("Cover-letter", data))
+    stem = _slug_name(re.sub(r"\.(pdf|zip)\s*$", "", name.strip(), flags=re.I)) if name and name.strip() \
+        else info["name"]
+    if fmt == "zip":
+        buf = io.BytesIO()
+        who = info["person"] or "Application"
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for label, data in parts:
+                z.writestr(f"{who}-{label}.pdf", data)
+            if posting and info["posting"]:
+                z.writestr("posting.md", info["job"]["description"])
+        return buf.getvalue(), "application/zip", stem + ".zip"
+    if len(parts) == 1:
+        return parts[0][1], "application/pdf", stem + ".pdf"
+    from pypdf import PdfReader, PdfWriter
+    w = PdfWriter()
+    for _, data in parts:
+        w.append(PdfReader(io.BytesIO(data)))
+    out = io.BytesIO()
+    w.write(out)
+    return out.getvalue(), "application/pdf", stem + ".pdf"
+
+
 def letter_export(path: Path, fmt: str) -> tuple[bytes, str, str]:
     """(bytes, content type, file name) for a letter in another form."""
     meta, body = letters.parse(path.read_text(encoding="utf-8"))
@@ -3312,6 +3392,18 @@ def openapi_spec() -> dict:
             "/api/funnel": {"get": {"summary":
                 "Application funnel: node counts, flows and conversion rates",
                 "responses": ok}},
+            "/api/pack": {"get": {"summary":
+                "An application's CV and cover letter as one PDF (format=pdf, CV "
+                "first) or a zip of separate files (format=zip, with posting=1 to "
+                "add the posting as Markdown). name sets the file name",
+                "parameters": [{"name": n, "in": "query", "schema": {"type": "string"}}
+                               for n in ("job", "format", "name", "posting")],
+                "responses": {"200": {"description": "The file"}}}},
+            "/api/pack/info": {"get": {"summary":
+                "What /api/pack would put together: the suggested file name and "
+                "whether there is a CV, a letter and a posting",
+                "parameters": [{"name": "job", "in": "query", "schema": {"type": "string"}}],
+                "responses": ok}},
             "/api/search": {"get": {"summary":
                 "Documents whose text holds every word of q (accents and case "
                 "ignored), with the line where the first word was found",
@@ -3693,6 +3785,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/doc":
                 p = safe_path(q["path"][0])
                 return self._json(load_letter(p) if is_letter(p) else load_doc(p))
+            if u.path == "/api/pack" or u.path == "/api/pack/info":
+                job_id = (q.get("job") or [""])[0]
+                try:
+                    if u.path == "/api/pack/info":
+                        i = pack_info(job_id)
+                        return self._json({k: i[k] for k in ("name", "cv", "letter", "posting")})
+                    data, ctype, fname = application_pack(
+                        job_id, (q.get("format") or ["pdf"])[0], (q.get("name") or [None])[0],
+                        (q.get("posting") or [""])[0] in ("1", "true"))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 422)
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if u.path == "/api/letter/export":
                 p = safe_path(q["path"][0])
                 try:
@@ -4055,6 +4165,11 @@ const API_TOKEN=__API_TOKEN__;
     <button role="tab" data-view="funnel" aria-selected="false">Funnel</button>
     <button role="tab" data-view="cal" aria-selected="false">Calendar</button>
   </div>
+  <button class="tsearch" id="btn-search" title="Search everything (Ctrl K)"
+    aria-label="Search" aria-keyshortcuts="Control+K Meta+K"><svg width="14" height="14"
+    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+    <circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><span>Search</span>
+    <kbd id="tsearch-kbd">Ctrl K</kbd></button>
   <div class="grow"></div>
   <!-- Only what is true on every screen lives up here -- the AI clients and
        the gear -- so the bar never changes shape. What belongs to a screen
@@ -4076,10 +4191,6 @@ const API_TOKEN=__API_TOKEN__;
       height="13" viewBox="0 0 24 24" aria-hidden="true"
       ><use href="#mistral-mark"/></svg><i class="dot"></i></span>
   </button>
-  <button class="cbtn icon" id="btn-search" title="Search everything (Ctrl K)"
-    aria-label="Search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/>
-    <path d="M20 20l-4-4"/></svg></button>
   <button class="cbtn icon" id="btn-settings" title="Settings, setup and help"
     aria-label="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/>

@@ -16,7 +16,18 @@ tag, so a release is never published with nothing said about it.
   and role, documents by name and by what is written in them, and the words
   inside postings and notes, each with the match highlighted. Arrows and
   Enter to open, and a place like Settings › Notifications is a few letters
-  away. Accents and capitals do not matter.
+  away. Accents and capitals do not matter. A search field in the top bar
+  opens it too.
+- **The CV and the letter as one file.** Export both… on an application
+  gives one PDF, the CV then the letter, for forms that take a single file,
+  or a zip of separate files (with the posting, if you like). It is named
+  for you, the company and the role, is rendered from what is saved, and
+  can mark a draft as applied today.
+- **Smaller fixes.** The fields under "Company, role and the rest" are
+  announced by their labels; the words of your CV in "Changed from the
+  base" are no longer run through the translator; the change count there is
+  translated; the selected row in the narrowed list is readable in dark
+  mode.
 
 ## 0.22.0
 

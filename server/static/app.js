@@ -537,11 +537,11 @@ async function fillBaseDiff(el,path){
   const n=d.changes.length;
   const item=c=>'<li><span class="bd-where">'+esc(c.where)+
       (c.kind==="changed"?"":' <em class="bd-kind '+c.kind+'">'+c.kind+'</em>')+'</span>'+
-    (c.before&&c.kind!=="added"?'<del>'+esc(c.before)+'</del>':'')+
-    (c.after&&c.kind!=="removed"?'<ins>'+esc(c.after)+'</ins>':'')+'</li>';
+    (c.before&&c.kind!=="added"?'<del data-noi18n>'+esc(c.before)+'</del>':'')+
+    (c.after&&c.kind!=="removed"?'<ins data-noi18n>'+esc(c.after)+'</ins>':'')+'</li>';
   el.innerHTML=
     '<p class="bd-head">'+(n
-      ?'<b>'+n+' change'+(n===1?"":"s")+'</b> from <b>'+esc(base)+'</b>'
+      ?'<b>'+esc(t("{n} change(s)",{n}))+'</b> from <b>'+esc(base)+'</b>'
       :'Same as <b>'+esc(base)+'</b> so far. Nothing has been tailored yet.')+
     (d.design.length?'<span class="bd-design">Design: '+esc(d.design.join(", "))+'</span>':'')+
     '</p>'+
@@ -4908,7 +4908,7 @@ function drawJobInspector(){
       [1,2,3,4,5].map(n=>'<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+
       ' title="'+n+' of 5" aria-label="'+n+' of 5"></button>').join("")+
       '<span class="fitv">'+(j.score?j.score+" / 5":"not rated")+'</span></div>';
-    else ctl='<input data-j="'+k+'"'+(kind==="date"?' type="date"':"")+
+    else ctl='<input data-j="'+k+'" aria-label="'+esc(label)+'"'+(kind==="date"?' type="date"':"")+
       (kind==="number"?' type="number" class="mono"':"")+' value="'+
       esc(j[k]==null?"":j[k])+'">';
     return '<label>'+esc(label)+'</label>'+ctl;
@@ -5014,7 +5014,10 @@ function drawJobInspector(){
     '<div class="peek-grid">'+
       '<div class="col">'+
         facts+
-        '<div class="block"><span class="blabel">Documents</span><div class="ap-docs">'+cvCard+ltCard+'</div></div>'+
+        '<div class="block"><div class="bhead"><span class="blabel">Documents</span>'+
+          (j.cv_path||j.letter_path?'<button class="obtn" id="ap-pack" data-job="'+esc(j.id)+'">'+
+            (j.cv_path&&j.letter_path?"Export both…":"Export…")+'</button>':'')+
+          '</div><div class="ap-docs">'+cvCard+ltCard+'</div></div>'+
         (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
           'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
           esc(j.cv_path)+'"></div></div>':'')+
@@ -7520,6 +7523,7 @@ function openPal(){
 function closePal(){ $("#pal").hidden=true; $("#pal-scrim").hidden=true }
 $("#pal-scrim").onclick=closePal;
 $("#btn-search").onclick=()=>$("#pal").hidden?openPal():closePal();
+if(PAL_MAC){ $("#tsearch-kbd").textContent="⌘K"; $("#btn-search").title=t("Search everything (⌘K)") }
 $("#pal-in").addEventListener("input",e=>{
   PAL.q=e.target.value; PAL.sel=0; palDraw();
   clearTimeout(PAL.fetchT); PAL.fetchT=setTimeout(palFetch,140);
@@ -7537,5 +7541,50 @@ document.addEventListener("keydown",e=>{
     e.preventDefault(); $("#pal").hidden?openPal():closePal();
   }
 });
+
+
+/* ---- Export both: the CV and the letter for one application ------------- */
+document.addEventListener("click",e=>{ const b=e.target.closest("#ap-pack"); if(b) packSheet(b.dataset.job) });
+async function packSheet(id){
+  const j=(S.jobs||[]).find(x=>x.id===id); if(!j) return;
+  let info;
+  try{ info=await api("/api/pack/info?job="+encodeURIComponent(id)) }catch(e){ return toast(e.message,true) }
+  const both=info.cv&&info.letter, draft=j.status==="pending";
+  openSheet('<h3>'+esc(t("Export for {co}",{co:j.company}))+'</h3>'+
+    '<p>'+esc(both?t("The CV and the letter for this application, ready to upload or attach."):
+      t("This application's document, ready to upload or attach."))+'</p>'+
+    '<div class="pk-opts" role="radiogroup" aria-label="'+esc(t("Format"))+'">'+
+      '<label class="pk-opt"><span class="pk-h"><input type="radio" name="pk-f" value="pdf" checked><b>'+
+        esc(both?t("One PDF"):t("PDF"))+'</b></span><small>'+
+        esc(both?t("The CV, then the letter. For forms that take a single file."):t("Ready to attach."))+'</small></label>'+
+      '<label class="pk-opt"><span class="pk-h"><input type="radio" name="pk-f" value="zip"><b>'+esc(t("A zip"))+'</b></span><small>'+
+        esc(t("Separate files, for forms with one field each, or for your records."))+'</small></label>'+
+    '</div>'+
+    '<label class="pk-field">'+esc(t("File name"))+'<input id="pk-name" spellcheck="false" value="'+esc(info.name)+'"></label>'+
+    (info.posting?'<label class="pk-check" id="pk-post-row" hidden><input type="checkbox" id="pk-post" checked>'+
+      esc(t("Add the posting, as Markdown"))+'</label>':'')+
+    (draft?'<label class="pk-check"><input type="checkbox" id="pk-applied" checked>'+
+      esc(t("Mark the application as applied today"))+'</label>':'')+
+    '<p class="pk-note">'+esc(t("Each is rendered from what is saved now."))+'</p>'+
+    '<div class="foot"><button class="sbtn" id="pk-cancel">'+esc(t("Cancel"))+'</button>'+
+      '<button class="sbtn primary" id="pk-go">'+esc(t("Save PDF…"))+'</button></div>');
+  const fmt=()=>($("#sheet [name=pk-f]:checked")||{}).value||"pdf";
+  $$("#sheet [name=pk-f]").forEach(r=>r.onchange=()=>{
+    const z=fmt()==="zip";
+    $("#pk-go").textContent=t(z?"Save zip…":"Save PDF…");
+    const pr=$("#pk-post-row"); if(pr) pr.hidden=!z;
+    $$("#sheet .pk-opt").forEach(o=>o.classList.toggle("on",o.contains(r)&&r.checked||o.querySelector("input").checked));
+  });
+  $$("#sheet .pk-opt")[0].classList.add("on");
+  $("#pk-cancel").onclick=closeSheet;
+  $("#pk-go").onclick=()=>{
+    const q="job="+encodeURIComponent(id)+"&format="+fmt()+"&name="+encodeURIComponent($("#pk-name").value)+
+      "&posting="+($("#pk-post")&&$("#pk-post").checked?1:0);
+    const mark=$("#pk-applied")&&$("#pk-applied").checked;
+    window.open("/api/pack?"+q+tok());
+    closeSheet();
+    if(mark) saveJob(id,{status:"applied"});
+  };
+}
 
 boot();

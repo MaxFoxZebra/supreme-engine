@@ -1143,6 +1143,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 /* Selected is the accent's one job in the table: a wash and an edge, with
    the text left as it was so nothing has to be re-read in a new colour. */
 .trow.sel,.trow.sel:hover{background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc)}
+/* On the highlight the muted grey is too faint to read in dark mode. */
+.peeking .trow.sel>:nth-child(2){color:var(--t700)}
 
 /* ---------- funnel ------------------------------------------------------- */
 .fn-page{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;
@@ -2718,3 +2720,31 @@ textarea{resize:vertical}
 .pal-none{padding:22px 18px;font-size:13.5px;color:var(--t600)}
 .pal-foot{height:38px;flex:none;display:flex;align-items:center;gap:18px;padding:0 18px;
   border-top:1px solid var(--bd-inner);background:var(--panel);font-size:12px;color:var(--t500)}
+
+/* ---- Export both ---------------------------------------------------------- */
+.bhead{display:flex;align-items:center;gap:10px}
+.bhead .blabel{flex:1}
+.pk-opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pk-opt{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--bd-field);
+  border-radius:10px;background:var(--field);cursor:pointer}
+.pk-opt.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc);background:var(--acc-wash)}
+.pk-h{display:flex;align-items:center;gap:8px;font-size:14px}
+.pk-h input{margin:0;accent-color:var(--acc)}
+.pk-opt small{font-size:12.5px;line-height:1.45;color:var(--t600)}
+.pk-field{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--t600)}
+.pk-field input{height:34px;padding:0 10px;border:1px solid var(--bd-field);border-radius:8px;
+  background:var(--field);color:var(--t900);font:13px var(--mono,ui-monospace,monospace)}
+.pk-check{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--t800)}
+.pk-check input{margin:0;accent-color:var(--acc)}
+.sheet p.pk-note{margin:0;font-size:12px;color:var(--t600)}
+
+/* The search field in the top bar: the palette's door for the mouse. */
+.tsearch{display:flex;align-items:center;gap:9px;width:300px;height:32px;
+  padding:0 8px 0 11px;border:1px solid var(--c600);border-radius:8px;background:rgba(255,255,255,.05);
+  color:var(--c200);font:inherit;font-size:13px;text-align:left;cursor:text;flex:none}
+.tsearch span{flex:1}
+.tsearch:hover{background:rgba(255,255,255,.09);border-color:var(--c500);color:var(--c100)}
+.tsearch kbd{font-family:var(--mono,ui-monospace,monospace);font-size:11px;padding:2px 6px;
+  border-radius:5px;border:1px solid var(--c600);color:var(--c200)}
+@media (max-width:1180px){.tsearch{width:180px}}
+@media (max-width:980px){.tsearch{width:34px;padding:0;justify-content:center}.tsearch span,.tsearch kbd{display:none}}
