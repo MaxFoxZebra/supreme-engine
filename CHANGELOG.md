@@ -42,6 +42,11 @@ needs an account or leaves your machine.
   - Smaller: the countdown no longer ticks seconds, long YAML lines wrap,
     New document says what it will make, every checkbox takes the accent,
     and in dark mode logos and floating panels keep a visible edge.
+- **Save to CV Studio reads Indeed, LinkedIn and Glassdoor**, including
+  their search pages: it takes the job you have selected in the side panel
+  (its role, company, place and full description) and links to that job,
+  not to the search. Drag the button from Settings › Browser to your
+  bookmarks bar again to get this.
 - **The sample data has people**: recruiters, hiring managers, interviewers
   and whoever referred you, on most applications that got that far.
 - **Hybrid, Remote and On-site** on a posting's tag are translated.

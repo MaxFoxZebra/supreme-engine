@@ -1784,10 +1784,18 @@ OPEN_NETWORK = False
 # describes for search engines (schema.org JobPosting), or the text selected,
 # and hands it to CV Studio's own window, which it opens. The page never sees
 # the app's key: the window is served by the app and saves from there.
-BOOKMARKLET = """(()=>{const O="http://127.0.0.1:__PORT__";
+BOOKMARKLET = r"""(()=>{const O="http://127.0.0.1:__PORT__";
 const F=o=>{if(!o||typeof o!=="object")return null;if(Array.isArray(o)){for(const x of o){const r=F(x);if(r)return r}return null}
 if(o["@graph"])return F(o["@graph"]);return [].concat(o["@type"]||[]).includes("JobPosting")?o:null};
 let J=null;for(const s of document.querySelectorAll('script[type="application/ld+json"]')){try{J=F(JSON.parse(s.textContent));if(J)break}catch(e){}}
+const q=l=>{for(const x of l.split("|")){const e=document.querySelector(x);if(e&&e.innerText.trim())return e}return null};
+const tx=l=>{const e=q(l);return e?e.innerText.trim().split("\n")[0].trim():""};
+const P=new URLSearchParams(location.search);
+const B=[[/indeed\./,'[data-testid="jobsearch-JobInfoHeader-title"]|.jobsearch-JobInfoHeader-title','[data-testid="inlineHeader-companyName"]|[data-company-name]','[data-testid="inlineHeader-companyLocation"]|[data-testid="job-location"]|#jobLocationText','#jobDescriptionText',()=>{const k=P.get("vjk")||P.get("jk");return k?location.origin+"/viewjob?jk="+k:""}],
+[/linkedin\./,'.job-details-jobs-unified-top-card__job-title|.jobs-unified-top-card__job-title|.top-card-layout__title','.job-details-jobs-unified-top-card__company-name|.jobs-unified-top-card__company-name|.topcard__org-name-link','.job-details-jobs-unified-top-card__primary-description-container .tvm__text|.job-details-jobs-unified-top-card__bullet|.topcard__flavor--bullet','#job-details|.jobs-description__content|.show-more-less-html__markup',()=>{const k=P.get("currentJobId");return k?"https://www.linkedin.com/jobs/view/"+k+"/":""}],
+[/glassdoor\./,'[data-test="job-title"]|[id^="jd-job-title"]','[data-test="employer-name"]|[class*="EmployerProfile_employerName"]','[data-test="location"]','[class*="JobDetails_jobDescription"]|#JobDescriptionContainer',()=>""]];
+for(const [re,t,c,l,ds,u] of B){if(!re.test(location.hostname))continue;const T=tx(t).replace(/\s+-\s+(job post|offre d.emploi|emploi)$/i,""),D=q(ds);if(!T)break;
+J={"@type":"JobPosting",title:T,hiringOrganization:{name:tx(c)},jobLocation:{address:tx(l)},description:D?D.innerHTML:"",url:u()||location.href};break}
 const m=n=>{const e=document.querySelector('meta[property="'+n+'"],meta[name="'+n+'"]');return e?e.content:""};
 const d={url:location.href,host:location.hostname,title:document.title,site:m("og:site_name"),job:J,
 selection:String(getSelection()||"").slice(0,40000)};
