@@ -8,7 +8,11 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 1.0.0
+
+CV Studio 1.0: the CV, the letters and the whole search in one app on your
+own computer, with an AI client working in the same folder. Nothing in it
+needs an account or leaves your machine.
 
 - **Other websites cannot reach CV Studio through your browser.** The app
   answers only on your own machine, but a page you had open elsewhere could
