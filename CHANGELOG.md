@@ -8,6 +8,17 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Other websites cannot reach CV Studio through your browser.** The app
+  answers only on your own machine, but a page you had open elsewhere could
+  still send it requests, and since 0.23.0 knew where to find it: the Save
+  to CV Studio button's address is fixed. Requests that do not name this
+  machine (a site pointing its own domain at it) and writes from any page
+  that is not CV Studio's own are now refused. Scripts and your AI client
+  work as before.
+- **Hybrid, Remote and On-site** on a posting's tag are translated.
+
 ## 0.23.0
 
 - **Search everything, from anywhere.** Ctrl K (⌘K on a Mac), or the

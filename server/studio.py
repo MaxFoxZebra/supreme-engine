@@ -1771,6 +1771,13 @@ def pack_info(job_id: str) -> dict:
 # time. So the server also listens here, for the bookmark's window.
 CLIP_PORT = int(os.environ.get("CVSTUDIO_CLIP_PORT") or 47811)
 CLIP_STATE = {"ok": False, "why": "not started"}
+# Who may talk to the server: requests addressed to this machine, and writes
+# from the app's own pages (on its port or the bookmark's). main() widens the
+# names when it is told to bind beyond loopback.
+LOOPBACK_NAMES = {"127.0.0.1", "localhost", "::1"}
+ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+OWN_PORTS = {CLIP_PORT}
+OPEN_NETWORK = False
 
 # Runs on the job page when the bookmark is clicked. It reads the job the page
 # describes for search engines (schema.org JobPosting), or the text selected,
@@ -3939,6 +3946,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj).encode("utf-8"))
 
+    def _addressed_here(self) -> bool:
+        """The request names this machine. A page on some other site can
+        point its own domain at 127.0.0.1 (DNS rebinding) and then read and
+        call this server as if it were its own origin; that request still
+        carries the other domain in Host, so it stops here."""
+        if OPEN_NETWORK:
+            return True                   # served to the network: the token guards it
+        host = (self.headers.get("Host") or "").strip().lower()
+        name = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
+        return name in ALLOWED_HOSTS
+
+    def _from_here(self) -> bool:
+        """A write comes from one of this app's own pages, or from no page at
+        all (a script, curl). Another site's page may send a request here but
+        it announces itself in Origin; and one that is not JSON, the only kind
+        a page can send across sites without asking first, is refused."""
+        origin = self.headers.get("Origin")
+        if origin is not None and not OPEN_NETWORK:
+            o = urlparse(origin)
+            if o.scheme != "http" or (o.hostname or "") not in LOOPBACK_NAMES \
+                    or o.port not in OWN_PORTS:
+                return False
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        return ctype == "application/json" or int(self.headers.get("Content-Length") or 0) == 0
+
     def _authed(self) -> bool:
         """No token means loopback-only and open; a token means always required.
 
@@ -3952,6 +3984,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return supplied == API_TOKEN
 
     def do_GET(self):
+        if not self._addressed_here():
+            return self._json({"error": "not found"}, 404)
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path.startswith("/api/") and u.path != "/api/docs" and not self._authed():
@@ -4162,6 +4196,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._send(200, f.read_bytes(), "font/ttf" if f.suffix == ".ttf" else "font/otf")
 
     def do_POST(self):
+        if not (self._addressed_here() and self._from_here()):
+            return self._json({"error": "not found"}, 404)
         u = urlparse(self.path)
         if u.path.startswith("/api/") and not self._authed():
             return self._json({"error": "unauthorised: supply X-API-Key"}, 401)
@@ -5152,7 +5188,7 @@ class Server(socketserver.ThreadingTCPServer):
 
 
 def main() -> int:
-    global WORKSPACE, FIRST_RUN, API_TOKEN, VERSION
+    global WORKSPACE, FIRST_RUN, API_TOKEN, VERSION, OPEN_NETWORK
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -5191,6 +5227,11 @@ def main() -> int:
         print(f"Generated API token: {API_TOKEN}")
 
     url = f"http://{args.host}:{args.port}/"
+    OWN_PORTS.add(args.port)
+    if args.host not in LOOPBACK_NAMES:
+        # Deliberately served beyond loopback, where it is reached by names
+        # this cannot know: the token (made mandatory above) guards it.
+        OPEN_NETWORK = True
     if args.host in ("127.0.0.1", "localhost", "::1"):
         start_clip_listener()
     # Loopback only: this reads and writes files and has no authentication.

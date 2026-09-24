@@ -98,6 +98,9 @@ jobs:
       - name: Save to CV Studio
         run: python checks/cliptest.py
 
+      - name: Other websites cannot reach the app
+        run: python checks/originsafety.py
+
       - name: Translations built and complete
         run: |
           python i18n/build.py
