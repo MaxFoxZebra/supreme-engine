@@ -127,6 +127,20 @@ def parse_checks(pages: list[str], data: dict) -> list[dict]:
             "search for “profile” can miss the word. Changing the "
             "body font usually fixes it.")
 
+    # A word broken at the end of a line ("Post-" / "greSQL") comes out of the
+    # PDF as two pieces, and a keyword search misses both. Justified text
+    # hyphenates; RenderCV can justify without it.
+    split = re.findall(r"([A-Za-zÀ-ÿ]{2,}) ?-\s*\n\s*([a-zà-ÿ][A-Za-zÀ-ÿ]+)", text)
+    typo = (((data or {}).get("design") or {}).get("typography") or {})
+    if split and typo.get("alignment") != "justified-with-no-hyphenation":
+        shown = ", ".join(f"“{a}-{b}”" for a, b in split[:3])
+        add("warn", "hyphens",
+            f"{len(split)} word{'s' if len(split) != 1 else ''} split across lines",
+            "The page hyphenates long words at the end of a line, so the text an "
+            "ATS reads has them in two pieces and a search for the whole word "
+            f"misses them: {shown}. Justifying without hyphenation fixes it.",
+            fix="hyphens")
+
     head = _norm(" ".join(pages[0].split()[:40])) if pages else ""
     name = _plain(cv.get("name"))
     if name and _norm(name) in head:
@@ -161,7 +175,7 @@ def parse_checks(pages: list[str], data: dict) -> list[dict]:
             hidden.append(network)
     if hidden:
         add("warn", "urls",
-            f"{', '.join(hidden)} shows as a username only",
+            f"{', '.join(hidden)}: username only",
             "The PDF prints the handle without the site it belongs to, so a "
             "parser sees a bare word and cannot fill in the profile link. "
             "Showing the full address fixes it.", fix="urls")

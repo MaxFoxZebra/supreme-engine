@@ -298,6 +298,9 @@ def _rounds(status: str, hist: list[dict], interview_at: str | None, tz: str | N
     iv = next((h["at"] for h in hist if h["status"] == "interviewing"), None)
     if iv is None:
         return []
+    # History times carry the hour the sample was built; a screen is booked
+    # in working hours.
+    iv = iv.replace(hour=15, minute=0, second=0)
     who = {p["role"]: p["name"] for p in people}
     at = lambda d: _iso(d)[:16]
     # Past rounds are in your own time: that is the clock the history keeps.
@@ -490,7 +493,7 @@ def build(studio, applications: int = 64) -> dict:
         # A screen with the recruiter, the round coming up with the manager,
         # and in London one more still to be set.
         at_next = _iso((now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0))[:16]
-        rounds = [{"id": "r1", "kind": "Recruiter screen", "at": _iso(iv)[:16], "tz": "",
+        rounds = [{"id": "r1", "kind": "Recruiter screen", "at": _iso(iv.replace(hour=15, minute=0))[:16], "tz": "",
                    "with": people[0]["name"], "outcome": "passed", "note": ""},
                   {"id": "r2", "kind": "System design" if city == "London" else "Technical",
                    "at": at_next, "tz": ZONES[city], "with": people[1]["name"], "outcome": "", "note": ""}]

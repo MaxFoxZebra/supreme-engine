@@ -52,7 +52,7 @@ async function main() {
     ["search", search("eng")],
     ["clear the search", search("")],
     ["funnel", `setView("funnel")`],
-    ["pick a funnel stage", `document.querySelector(".sk-hit").dispatchEvent(new MouseEvent("click",{bubbles:true}))`],
+    ["pick a funnel stage", `document.querySelector(".sk-hit[role=button]").dispatchEvent(new MouseEvent("click",{bubbles:true}))`],
     ["calendar", `setView("jobs"); setView("cal")`],
     ["calendar month", `document.querySelector('#cal-views [data-cv=month]').click()`],
     ["calendar week", `document.querySelector('#cal-views [data-cv=week]').click()`],

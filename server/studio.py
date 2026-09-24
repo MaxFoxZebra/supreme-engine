@@ -3163,12 +3163,13 @@ def photo_unusual(job: dict) -> bool:
     return bool(PHOTO_UNUSUAL.search(where))
 
 
-# The two parsing problems RenderCV's own design options solve, keyed by the
+# The parsing problems RenderCV's own design options solve, keyed by the
 # id parse_checks gives them.
 ATS_FIXES = {
     "icons": (["design", "header", "connections", "show_icons"], False),
     "urls": (["design", "header", "connections",
               "display_urls_instead_of_usernames"], True),
+    "hyphens": (["design", "typography", "alignment"], "justified-with-no-hyphenation"),
 }
 
 
@@ -3632,7 +3633,7 @@ CLIP_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
   U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,
   U+2C60-2C7F,U+A720-A7FF}
 :root{--app:#f7f6f3;--field:#fff;--t900:#1b1a17;--t700:#4a463d;--t600:#5b574d;--rule:#ddd8cc;
-  --bd:#cfcabd;--acc:#c08a3e;--acc-text:#8a5316;--wash:#fbf4e8;--wash-line:#ecd9b8;--ok:#2f7a63;--bad:#a83519;
+  --bd:#cfcabd;--acc:#c08a3e;--acc-text:#8a5316;--wash:#fbf4e8;--wash-line:#ecd9b8;--ok:#2f7a63;--bad:#a83519;--warn:#a8761f;
   --chrome:#1b1a17;--chrome-t:#f5f2ea}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--app:#22211d;--field:#26241f;--t900:#f4f2ef;
   --t700:#c6c0b0;--t600:#b6af9b;--rule:#38352e;--bd:#4a473e;--acc-text:#e8bc7c;--wash:#2e2820;--wash-line:#5a4a30;
@@ -3781,12 +3782,19 @@ async function receive(d){
   if(POST&&pay&&!POST.includes(pay)) POST="**Salary:** "+pay+"\n\n"+POST;
   const words=POST?POST.split(/\s+/).filter(Boolean).length:0;
   const heads=(POST.match(/^## .+$/gm)||[]).map(h=>h.slice(3)).slice(0,4);
-  $("#post-line").innerHTML=words
+  /* A real posting runs to a few hundred words; a few dozen is a page that
+     only showed its first lines, and saying "done" would be wrong. */
+  const thin=words>0&&words<120;
+  $("#post-line").innerHTML=words&&!thin
     ?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.4" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><b></b><span class="muted" style="margin-left:auto"></span>'
+    :thin?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2.4" aria-hidden="true"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg><b></b>'
     :'<b></b>';
-  $("#post-line b").textContent=words?t("The posting, {n} words",{n:words}):t("No posting found on this page");
-  if(words) $("#post-line .muted").textContent=d.job?t("headings and lists kept"):t("the text you selected");
-  $("#post-heads").textContent=words?[...heads,pay].filter(Boolean).join(" · "):t("Select the posting's text on the page, then click the button again.");
+  $("#post-card").classList.toggle("warn",thin);
+  $("#post-line b").textContent=thin?t("Only {n} words of the posting",{n:words})
+    :words?t("The posting, {n} words",{n:words}):t("No posting found on this page");
+  if(words&&!thin) $("#post-line .muted").textContent=d.job?t("headings and lists kept"):t("the text you selected");
+  $("#post-heads").textContent=words&&!thin?[...heads,pay].filter(Boolean).join(" · ")
+    :t("Select the posting's text on the page, then click the button again.");
   show("form");
   try{
     const r=await api("/api/jobs");
@@ -4748,7 +4756,7 @@ const API_TOKEN=__API_TOKEN__;
       <div class="tcard">
         <div class="thead"><span>Company</span><span>Role</span>
           <span>Documents</span><span>Status</span>
-          <span>Applied</span><span>Follow-up</span></div>
+          <span>Applied</span><span>Next step</span></div>
         <div class="tbody" id="jobrows"></div>
       </div>
     </div>
@@ -5214,10 +5222,9 @@ const API_TOKEN=__API_TOKEN__;
 
       <section class="sp" id="sp-about" hidden>
         <h3>About</h3>
-        <p class="sp-lede">The eyes of a CV written with Claude. The model reads the
-          posting and writes the YAML; this renders it, shows you the page and the page
-          budget, and lets you fix by hand what is easier pointed at than described.
-          Built on RenderCV and Typst.</p>
+        <p class="sp-lede">A CV tailored to every application, every follow-up on time and every
+          interview in your calendar, with an AI client doing the writing beside you if you
+          connect one. Built on RenderCV and Typst.</p>
         <p class="sp-lede">Everything runs on your machine. No account, no server, no
           telemetry, which matters more, not less, once an AI is editing the files:
           your CVs stay plain YAML in a folder you own, and both halves only ever touch
@@ -5226,7 +5233,7 @@ const API_TOKEN=__API_TOKEN__;
           RenderCV font set and IBM Plex (SIL Open Font License), and d3-sankey (ISC).
           The Claude mark is a trademark of Anthropic, used here only to identify the
           Claude Desktop integration.</p>
-        <div class="srow"><div><b>Log</b><span>What the app noted while running, errors included. Useful
+        <div class="srow" style="margin-top:8px"><div><b>Log</b><span>What the app noted while running, errors included. Useful
           to attach if you report a problem; nothing in it leaves your computer on its own.</span></div>
           <button class="sbtn" id="s-logs">Open the log folder</button></div>
       </section>

@@ -101,7 +101,7 @@
   --fn-band:.42;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
   --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
-  --bad:#f0a189; --bad-bg:#2e1c15;
+  --bad:#f27b82; --bad-bg:#2e1c15;
   --seg-track:#141310; --seg-on:#413d34; --knob:#e8e4da;
   --row-hover:#2c2a24; --spine:#5c574b; --bad-line:#4a2a1e;
   --c-hover:#6f6b60;
@@ -124,7 +124,7 @@
     --fn-band:.42;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
     --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
-    --bad:#f0a189; --bad-bg:#2e1c15;
+    --bad:#f27b82; --bad-bg:#2e1c15;
     --seg-track:#141310; --seg-on:#413d34; --knob:#e8e4da;
     --row-hover:#2c2a24; --spine:#5c574b; --bad-line:#4a2a1e;
     --c-hover:#6f6b60;
@@ -1021,7 +1021,7 @@ html.mono .langs,html.mono #langsw{display:none!important}
   .bhero .bthumb{width:150px}
 }
 .thead,.trow{display:grid;
-  grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,1.15fr) 186px 86px 96px;
+  grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,.8fr) 176px 80px 168px;
   align-items:center}
 .thead{height:38px;flex:none;background:var(--row-alt);border-bottom:1px solid var(--rule);
   font-size:12px;font-weight:600;color:var(--t500)}
@@ -1071,7 +1071,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .trow.dead{color:var(--t600)}
 .trow.dead .money,.trow.dead .when{color:var(--t600)}
 .trow .when.none,.trow .money.none{color:var(--t400)}
-.trow .when.due{color:var(--acc-text);font-weight:600}
+.trow .when.due{color:var(--bad);font-weight:600}
+.trow .when.iv{color:var(--t900);font-weight:500}
+.trow .when{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Selected is the accent's one job in the table: a wash and an edge, with
    the text left as it was so nothing has to be re-read in a new colour. */
 .trow.sel,.trow.sel:hover{background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc)}
@@ -1208,7 +1210,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .fn-list .fn-ch .grow{flex:1}
 .fn-list .x{width:28px;height:28px;border-radius:7px;color:var(--t600);font-size:13px}
 .fn-list .x:hover{background:var(--paper-hover);color:var(--t900)}
-.fn-list .sw{width:10px;height:10px;border-radius:3px;flex:none;align-self:center}
+.fn-list .fsw{width:10px;height:10px;border-radius:3px;flex:none;align-self:center}
 .fn-jrow{display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid
   var(--bd-inner);text-align:left;width:100%}
 .fn-jrow:hover{background:var(--row-hover)}
@@ -1377,10 +1379,11 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   :root:not([data-theme=light]) .cal-md.l3{background:color-mix(in srgb,var(--acc) 55%,var(--field))}
 }
 .cal-md.today{box-shadow:0 0 0 2px var(--t900)}
-.cal-md i{position:absolute;right:4px;top:4px;width:7px;height:7px;border-radius:2px;background:var(--t900);transform:rotate(45deg)}
+.cal-md i{position:absolute;right:4px;top:4px;width:7px;height:7px;border-radius:2px;background:var(--acc);
+  box-shadow:0 0 0 1.5px var(--field);transform:rotate(45deg)}
 .cal-legend{display:flex;align-items:center;gap:14px;font-size:11.5px;color:var(--t500)}
 .cal-legend .ramp{display:flex;gap:2px}.cal-legend .ramp i{width:10px;height:10px;border-radius:3px}
-.cal-legend .dia{width:7px;height:7px;border-radius:2px;background:var(--t900);transform:rotate(45deg)}
+.cal-legend .dia{width:7px;height:7px;border-radius:2px;background:var(--acc);transform:rotate(45deg)}
 
 /* Journeys: each application from sent to now, and what is ahead. */
 .cal-jr{padding:18px 24px 16px}
@@ -1627,7 +1630,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   border-radius:12px;background:var(--acc);color:var(--c800);font-size:16px;font-weight:600;
   box-shadow:0 8px 24px rgba(192,138,62,.28)}
 .onb-cta:hover{background:var(--acc-hover)}
-.onb-skip{border:0;background:none;font-size:13.5px;color:var(--c200)}
+.onb-skip{border:0;background:none;font-size:13.5px;color:var(--c100);text-decoration:underline;text-underline-offset:3px}
 .onb-skip:hover{color:var(--cw)}
 .onb-or{display:flex;align-items:center;gap:12px;width:340px;max-width:80vw;margin-top:6px;
   color:var(--c300);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase}
@@ -2816,3 +2819,17 @@ textarea{resize:vertical}
 .na-stat b{font-weight:600;color:var(--t900);font-variant-numeric:tabular-nums}
 @media (max-width:1240px){ .na{grid-template-columns:minmax(0,1fr)} .na-side{display:none} }
 .dot.late{background:var(--bad)}
+.pbtn.idle{background:var(--field);color:var(--t800);box-shadow:inset 0 0 0 1px var(--bd-field)}
+/* The heatmap's subtitle on its own line, so a longer language does not
+   push the grid down beside the Next up card. */
+.cal-mini .cal-ch{flex-direction:column;align-items:flex-start;gap:1px}
+/* A date and zone that fit the longest reminder choice. */
+#s-notify-iv{min-width:260px}
+/* In the dark the busy steps need more room between them to be told apart. */
+:root[data-theme=dark] .cal-md.l1{background:color-mix(in srgb,var(--acc) 18%,var(--field))}
+:root[data-theme=dark] .cal-md.l2{background:color-mix(in srgb,var(--acc) 45%,var(--field))}
+:root[data-theme=dark] .cal-md.l3{background:color-mix(in srgb,var(--acc) 85%,var(--field));color:#1b1a17}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme=light]) .cal-md.l1{background:color-mix(in srgb,var(--acc) 18%,var(--field))}
+  :root:not([data-theme=light]) .cal-md.l2{background:color-mix(in srgb,var(--acc) 45%,var(--field))}
+  :root:not([data-theme=light]) .cal-md.l3{background:color-mix(in srgb,var(--acc) 85%,var(--field));color:#1b1a17}}

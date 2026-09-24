@@ -421,7 +421,7 @@ function tzOptions(cur,first){
 
 const prettyStatus=s=>{
   const map={pending:"Draft", applied:"Awaiting reply", interviewing:"Interviewing",
-    offer:"Offer", accepted:"Accepted", refused:"Declined", rejected:"Rejected",
+    offer:"Offer", accepted:"Accepted", refused:"Declined by me", rejected:"Rejected",
     ghosted:"Ghosted", rejected_interviewing:"Rejected after interview",
     ghosted_interviewing:"Ghosted after interview"};
   return map[s]||String(s).replace(/_/g," ");
@@ -639,6 +639,8 @@ function paintStatus(){
     else if(S.savedAt) bits.push(t("saved {t} ago",{t:ago(S.savedAt)}));
     L.className=S.live==="bad"||S.dirty?"warn":"";
     L.textContent=bits.join(" · ")||t("all saved");
+    /* Save is the primary action only while there is something to save. */
+    $("#btn-render").classList.toggle("idle",!S.dirty);
     L.classList.add("mono");
     /* The right of the status bar is where the workspace lives, and what Claude
        last did in it belongs in the same place -- it is the other thing acting
@@ -3776,7 +3778,7 @@ const SAVED={"No cover letter":NO_LETTER};
    copies of "what counts as overdue" would have drifted apart within a month.
    Needs-follow-up used to live in SAVED above and is now one of them. */
 const ATTENTION=[
-  ["interview_soon",   "Interview soon"],
+  ["interview_soon",   "Interview in 7 days"],
   ["followup_due",     "Follow-up due"],
   ["interview_passed", "Interview, no outcome"],
   ["silent",           "No reply in 2 weeks"],
@@ -4657,6 +4659,17 @@ function filterTitle(){
   }
   return "All applications";
 }
+/* The next dated thing on an application: an interview coming, else the
+   follow-up, late in red. What a job seeker scans the list for. */
+function nextStep(j,due){
+  const at=!DEAD_ST.has(j.status)&&interviewMoment(j);
+  if(at&&at>new Date())
+    return '<span class="when iv" title="'+esc(interviewLine(j))+'">'+esc(t("Interview"))+' · '+
+      esc(fmtKey(dayIn(at),{weekday:"short",day:"numeric",month:"short"}))+'</span>';
+  if(j.followup_date&&!DEAD_ST.has(j.status))
+    return '<span class="when'+(due?" due":"")+'">'+esc(t("Follow up"))+' · '+esc(shortDate(j.followup_date))+'</span>';
+  return '<span class="when none">–</span>';
+}
 function drawJobs(){
   drawRail();
   drawNextUp();
@@ -4698,8 +4711,7 @@ function drawJobs(){
       '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
         esc(prettyStatus(j.status))+'</span>'+
       '<span class="when'+(ap?"":" none")+'">'+(ap?esc(shortDate(ap)):"–")+'</span>'+
-      '<span class="when'+(j.followup_date?(due?" due":""):" none")+'">'+
-        (j.followup_date?esc(shortDate(j.followup_date)):"–")+'</span>'+
+      nextStep(j,due)+
       '</button>';
   }).join(""):(S.jobs.length
     ? '<div class="empty"><h3>Nothing matches</h3>'+
@@ -4963,7 +4975,7 @@ function drawJobInspector(){
     (s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+'</option>').join("")+'</select></span>';
   const fitCtl='<div class="fit" role="group" aria-label="Fit">'+[1,2,3,4,5].map(n=>
     '<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+' title="'+n+' of 5" aria-label="'+
-    n+' of 5"></button>').join("")+'</div>';
+    n+' of 5"></button>').join("")+'<span class="fitv">'+(j.score?j.score+"/5":esc(t("not rated")))+'</span></div>';
   const guess=j.language_guess, curL=j.language||"";
   const langCtl='<span class="ap-lang">'+flag(curL||guess)+'<select data-j="language" aria-label="Language">'+
     '<option value=""'+(curL?"":" selected")+'>'+(guess?"Looks like "+esc(langOf(guess).native):"Not set")+'</option>'+
@@ -5623,7 +5635,7 @@ function drawSankey(mode,animate){
   const bars=g.nodes.map(n=>{
     const h=Math.max(3,n.y1-n.y0);
     const off=S.fnode&&S.fnode!==n.id&&![...lineage.get(S.fnode)].some(l=>l.sid===n.id||l.tid===n.id);
-    return '<g class="sk-hit'+(off?" sk-dim":"")+'" data-node="'+esc(n.id)+'" role="button" tabindex="0" '+
+    return '<g class="sk-hit'+(off?" sk-dim":"")+'" data-node="'+esc(n.id)+'"'+(n.id==="all"?'':' role="button" tabindex="0"')+' '+
       'aria-label="'+esc(t(n.label))+': '+n.count+'. '+esc(t("List them"))+'" style="animation-delay:'+
       (.7+n.depth*.28).toFixed(2)+'s">'+
       '<rect x="'+(n.x0-6)+'" y="'+(n.y0-10)+'" width="'+(n.x1-n.x0+12)+'" height="'+(h+20)+
@@ -5674,7 +5686,8 @@ function drawSankey(mode,animate){
   };
   host.querySelectorAll("[data-node]").forEach(el=>{
     const id=el.dataset.node, pick=()=>fnPick(id);
-    el.onclick=pick;
+    /* Every application is the list already: the root traces, it does not select. */
+    if(id!=="all") el.onclick=pick;
     el.onmouseenter=el.onfocus=()=>trace(id);
     el.onmouseleave=el.onblur=()=>trace(null);
     el.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); pick() } };
@@ -5743,7 +5756,7 @@ function drawMomentum(){
   host.innerHTML='<div class="fn-ch"><h2>Momentum</h2><span>applications sent, by week</span></div>'+
     '<div class="fn-mhead"><div><span class="fn-big" data-to="'+sent[weeks-1]+'" data-delay="900">'+
     sent[weeks-1]+'</span><span style="font-size:13px;color:var(--t500)"> this week</span></div>'+
-    '<div class="sub">'+avg+' a week on average<br><b>● '+ivs+' interview'+(ivs===1?"":"s")+'</b> in '+
+    '<div class="sub">'+avg+' a week on average<br><b>● '+ivs+' reached interview</b> in '+
     weeks+' week'+(weeks===1?"":"s")+'</div></div>'+
     '<div class="fn-weeks" role="img" aria-label="'+esc(sent.join(", "))+' sent per week, oldest first">'+
     sent.map((s,i)=>'<div class="fn-wk" title="Week of '+shortDate(new Date(+w0+i*7*DAY))+': '+s+
@@ -5797,7 +5810,7 @@ function paintFunnelJobs(){
     const rows=fnJobs().filter(j=>want.has(j.status));
     const label=(S.labels&&S.labels[S.fnode])||S.fnode;
     hint.innerHTML="Showing <b>"+esc(label)+"</b> · click it again to clear";
-    host.innerHTML='<div class="fn-ch"><span class="sw" style="background:'+skCol(S.fnode)+
+    host.innerHTML='<div class="fn-ch"><span class="fsw" style="background:'+skCol(S.fnode)+
       '"></span><h2>'+esc(label)+'</h2><span>'+rows.length+'</span><span class="grow"></span>'+
       '<button class="x" id="fn-clear" title="Back to the open applications" aria-label="Clear">&#10005;</button></div>'+
       (rows.length?'<div class="fn-jlist">'+rows.map(row).join("")+'</div>'
@@ -6005,7 +6018,10 @@ const GLOBE='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke=
 function nextActions(){
   const now=new Date(), today=todayKey(), out=[];
   const dshort=k=>fmtKey(k,{day:"numeric",month:"short"});
-  const writer=j=>(j.people||[]).find(p=>p.email)||null;
+  /* Who an email goes to: the hiring manager or the recruiter first, the
+     person who referred you last. */
+  const writer=j=>{ const ps=(j.people||[]).filter(p=>p.email);
+    return ps.find(p=>p.role==="Hiring manager")||ps.find(p=>p.role==="Recruiter")||ps.find(p=>p.role!=="Referral")||ps[0]||null };
   const lastWrote=j=>(j.people||[]).filter(p=>p.last).sort((a,b)=>b.last.localeCompare(a.last))[0];
   const when=at=>{
     const mins=Math.round((at-now)/6e4), k=dayIn(at), days=dayDiff(today,k), hm=hmIn(at,userTz());
@@ -6054,8 +6070,9 @@ function nextActions(){
     if(j.status==="offer"){
       const h=(j.status_history||[]).filter(x=>x.status==="offer").pop(), k=h?dayIn(new Date(String(h.at).slice(0,19))):today;
       const p=writer(j), days=dayDiff(k,today);
+      /* A week is a long time to leave an offer unanswered. */
       out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),why:t("Offer since {d}",{d:dshort(k)}),
-        when:days?t("{n} day(s) ago",{n:days}):t("today"),act:t("Reply to the offer"),run:()=>p?draftSheet(j,p,"offer"):selectJob(j.id)});
+        when:days?t("{n} day(s) ago",{n:days}):t("today"),hot:days>7,act:t("Reply to the offer"),run:()=>p?draftSheet(j,p,"offer"):selectJob(j.id)});
     }
     /* A draft left for more than three days; after a month it is not a
        plan any more, and it stays in the list below. */
@@ -6091,7 +6108,7 @@ function drawNextUp(){
   const end=addDays(mon,6), inWeek=k=>k>=mon&&k<=end;
   const ivWeek=ev.filter(e=>e.kind==="iv"&&inWeek(e.day)).length;
   const sentWeek=(S.jobs||[]).filter(j=>(j.status_history||[]).some(h=>h.status==="applied"&&inWeek(String(h.at).slice(0,10)))).length;
-  const waiting=(S.jobs||[]).filter(j=>j.status==="applied").length;
+  const dueWeek=(S.jobs||[]).filter(j=>j.followup_date&&!DEAD_ST.has(j.status)&&inWeek(j.followup_date)).length;
   const stat=(label,n)=>'<span class="na-stat"><span>'+esc(label)+'</span><b>'+n+'</b></span>';
   el.className="na";
   el.innerHTML='<div class="na-main"><div class="na-hd"><h2>'+esc(t("Next actions"))+'</h2><span>'+
@@ -6101,7 +6118,7 @@ function drawNextUp(){
         esc(more>0?t("Show {n} more",{n:more}):t("Show fewer"))+'</button></div>':'')+'</div>'+
     '<div class="na-side"><div class="hd">'+esc(t("This week"))+'<button data-nu-cal>'+esc(t("Open calendar"))+' →</button></div>'+
       '<div class="days">'+days+'</div>'+
-      '<div class="na-stats">'+stat(t("Interviews this week"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Waiting on a reply"),waiting)+'</div></div>';
+      '<div class="na-stats">'+stat(t("Interviews this week"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups due this week"),dueWeek)+'</div></div>';
   el.hidden=false;
   $$("#nextup [data-na]").forEach(b=>b.onclick=()=>shown[+b.dataset.na].run());
   const mb=$("#nextup [data-na-more]"); if(mb) mb.onclick=()=>{ S.naAll=!S.naAll; drawNextUp() };
@@ -6331,15 +6348,15 @@ function calJourneys(ev){
 
 /* ---- month --------------------------------------------------------------- */
 function calChip(e){
-  /* Two applications at one company are told apart by their role. */
-  const j=e.job, twin=(S.jobs||[]).some(x=>x!==j&&x.id!==j.id&&x.company===j.company&&!DEAD_ST.has(x.status));
-  const co=esc(j.company)+(twin?' · '+esc(j.title):'');
+  /* The company on the chip, the role in its tooltip: two applications at
+     one company are told apart by hovering, not by a truncated label. */
+  const j=e.job, co=esc(j.company);
   const drag=(e.kind==="iv"||e.kind==="fu")?' draggable="true" data-drag="'+e.kind+':'+esc(j.id)+'"':'';
   if(e.kind==="iv") return '<button class="cal-chip iv" data-open-job="'+esc(j.id)+'"'+drag+' title="'+esc(interviewLine(j))+
     '"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
-  if(e.kind==="fu") return '<button class="cal-chip fu'+(e.late?" late":"")+'" data-open-job="'+esc(j.id)+'"'+drag+'><span>'+
+  if(e.kind==="fu") return '<button class="cal-chip fu'+(e.late?" late":"")+'" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"'+drag+'><span>'+
     esc(e.late?t("Overdue"):t("Follow up"))+' · '+co+'</span></button>';
-  if(e.kind==="of") return '<button class="cal-chip of" data-open-job="'+esc(j.id)+'"><span>'+t("Offer")+' · '+co+'</span></button>';
+  if(e.kind==="of") return '<button class="cal-chip of" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"><span>'+t("Offer")+' · '+co+'</span></button>';
   if(e.kind==="rp") return '<button class="cal-chip rp" data-open-job="'+esc(j.id)+'"><span>↗ '+co+' · '+t("interviews")+'</span></button>';
   return "";
 }
@@ -6359,7 +6376,7 @@ function drawCalMonth(ev){
       '<div class="d"><span>'+dnum+(dnum===1?" "+esc(fmtKey(k,{month:"short"})):"")+'</span></div>'+
       chips.slice(0,3).map(calChip).join("")+(chips.length>3?'<small style="font-size:11px;color:var(--t500)">+'+(chips.length-3)+'</small>':'')+
       ((sent||closed)?'<div class="act">'+(sent?'<span><i style="background:var(--fn-wait)"></i>'+esc(t("{n} sent",{n:sent}))+'</span>':'')+
-        (closed?'<span><i style="background:var(--bd-field)"></i>'+esc(t("{n} ended",{n:closed}))+'</span>':'')+'</div>':'')+'</div>';
+        (closed?'<span title="'+esc(list.filter(e=>e.kind==="closed").map(e=>e.job.company+" · "+t(prettyStatus(e.job.status))).join("\n"))+'"><i style="background:var(--bd-field)"></i>'+esc(t("{n} ended",{n:closed}))+'</span>':'')+'</div>':'')+'</div>';
   }
   const dows=Array.from({length:7},(_,i)=>'<div class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"short"}))+'</div>').join("");
   $("#cal-body").innerHTML='<div class="cal-month"><section class="cal-card cal-grid cal-r" style="grid-template-rows:auto repeat('+
@@ -6369,8 +6386,9 @@ function drawCalMonth(ev){
 function calComing(ev){
   const today=todayKey(), end=addDays(today,7), now=new Date();
   const late=ev.filter(e=>e.kind==="fu"&&e.late).sort((a,b)=>a.day.localeCompare(b.day));
-  const up=ev.filter(e=>(e.kind==="iv"&&e.at>=now&&e.day<=end)||(e.kind==="fu"&&!e.late&&e.day<=end)||
-      (e.kind==="rp"&&e.day===today)||(e.kind==="of"&&e.day===today))
+  /* What is ahead only: something that already happened today is in the
+     month, not in Coming up. */
+  const up=ev.filter(e=>(e.kind==="iv"&&e.at>=now&&e.day<=end)||(e.kind==="fu"&&!e.late&&e.day<=end))
     .sort((a,b)=>a.day.localeCompare(b.day)||(a.at||0)-(b.at||0));
   const col={iv:"var(--fn-positive)",fu:"var(--fn-wait)",rp:"var(--fn-offer)",of:"var(--fn-offer)"};
   const when=e=>(e.day===today?t("Today")+" · ":"")+fmtKey(e.day,{weekday:"short",day:"numeric"})+
@@ -7590,13 +7608,16 @@ function palBuild(){
   const docs=(S.state&&S.state.documents)||[];
   const docItem=(d,sub,kind)=>({html:palIcon(isLetterPath(d.path)?"letter":"doc"),
     title:esc(d.label||d.path), sub, kind:kind||t(isLetterPath(d.path)?"Letter":"CV"), run:()=>openDoc(d.path)});
+  /* A document is described by what it is for, not by its path. */
+  const docSub=d=>{ const j=(S.jobs||[]).find(x=>x.cv_path===d.path||x.letter_path===d.path);
+    return esc(j?t("for {co}",{co:j.company}):d.lang?langName(d.lang):"") };
   const jobItem=(j,sub,kind,title)=>({html:'<span class="ic">'+companyMark(j)+'</span>',
     title:title||esc(j.company)+" · "+esc(j.title), sub:sub==null?esc(palJobLine(j)):sub,
-    kind:kind||t("Application"), run:()=>openJob(j.id)});
+    kind:kind==null?t("Application"):kind, run:()=>openJob(j.id)});
   if(!words.length){
     const recent=(prefs().recent||[]).map(r=>{
       if(r.job){ const j=(S.jobs||[]).find(x=>x.id===r.job); return j&&jobItem(j) }
-      const d=docs.find(x=>x.path===r.doc); return d&&docItem(d,esc(d.path))
+      const d=docs.find(x=>x.path===r.doc); return d&&docItem(d,docSub(d))
     }).filter(Boolean).slice(0,4);
     if(recent.length) groups.push([t("Recent"),recent]);
     /* New application, New document, Calendar, Funnel, Settings › Notifications. */
@@ -7607,7 +7628,7 @@ function palBuild(){
     const jobs=S.jobs||[], apps=[], inside=[];
     jobs.forEach(j=>{
       const head=[j.company,j.title,j.location].join(" ");
-      if(palHas(head,words)) apps.push(jobItem(j,null,null,palMark(j.company,words)+" · "+palMark(j.title,words)));
+      if(palHas(head,words)) apps.push(jobItem(j,null,"",palMark(j.company,words)+" · "+palMark(j.title,words)));
       else for(const [field,label] of [["notes","Notes"],["description","Posting"]]){
         if(j[field]&&palHas(head+" "+j[field],words)&&palHas(j[field],words.slice(0,1))){
           inside.push(jobItem(j,esc(t(label))+": “"+palMark(palSnip(j[field],words),words)+"”",t(label)));
@@ -7617,7 +7638,7 @@ function palBuild(){
     });
     if(apps.length) groups.push([t("Applications"),apps.slice(0,6),apps.length]);
     const seen=new Set(), dl=[];
-    docs.forEach(d=>{ if(palHas(d.label+" "+d.path,words)){ seen.add(d.path); dl.push(docItem(d,esc(d.path))) } });
+    docs.forEach(d=>{ if(palHas(d.label+" "+d.path,words)){ seen.add(d.path); dl.push(docItem(d,docSub(d))) } });
     (PAL.docs||[]).forEach(d=>{ if(seen.has(d.path)) return;
       dl.push(docItem(d,palMark(d.line,words))) });
     if(dl.length) groups.push([t("Documents"),dl.slice(0,6),dl.length]);
@@ -7758,7 +7779,10 @@ const PP_ROLES=["Recruiter","Hiring manager","Interviewer","Referral"];
 const ppInitials=n=>String(n||"").split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("")||"@";
 const ppTint=n=>["#f3dfb8","#dbe6f2","#dcecd9","#f2dcdc","#e6dff2"][[...String(n||"")].reduce((a,c)=>a+c.charCodeAt(0),0)%5];
 /* After an interview in the last few days, the email to write is a thank-you. */
-function ppKind(j){
+function ppKind(j,p){
+  /* The person who referred you is kept posted, not sent an offer reply or
+     a thank-you for an interview they were not in. */
+  if(p&&p.role==="Referral") return "followup";
   const h=(j.status_history||[]).filter(x=>x.status==="interviewing").pop();
   const iv=j.interview_at&&new Date(j.interview_at)<new Date()?j.interview_at:(h&&h.at);
   /* What there is to say depends on where the application is: an offer is
@@ -7778,7 +7802,7 @@ function peopleHTML(j){
   return '<div class="block" id="ap-people"><div class="bhead"><span class="blabel">'+esc(t("People"))+'</span>'+
     '<button class="obtn" data-pp-add="'+esc(j.id)+'">'+esc(t("+ Add someone"))+'</button></div>'+
     (ps.length?'<div class="pp-list">'+ps.map(p=>{
-      const kind=ppKind(j);
+      const kind=ppKind(j,p);
       return '<div class="pp-row"><span class="pp-av" aria-hidden="true" style="background:'+ppTint(p.name||p.email)+'">'+
         esc(ppInitials(p.name||p.email))+'</span>'+
         '<span class="pp-tx"><b><span data-noi18n>'+esc(p.name||p.email)+'</span>'+

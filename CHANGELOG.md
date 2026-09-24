@@ -34,6 +34,28 @@ A polish and safety release on the way to 1.0.
   interview time the calendar, reminders and AI clients read, and setting
   that time (from the calendar or your AI client) moves the round. Rounds
   are in the CSV export.
+- **Words split across lines.** Justified CVs hyphenate long words at the
+  end of a line, so an ATS reads "Post-" and "greSQL" and a keyword search
+  misses both. The ATS check now says so, with a Fix that keeps the text
+  justified without hyphenation.
+- **Round two of the review:**
+  - The applications table shows the *next step* (the interview coming, or
+    the follow-up, late in red) instead of a follow-up column of dashes.
+  - An offer reply goes to the hiring manager or recruiter, never the person
+    who referred you; their row offers a follow-up instead.
+  - Save to CV Studio warns when it caught only a few dozen words of the
+    posting, instead of ticking it off.
+  - The editor's Save is only orange when there is something to save.
+  - An offer left unanswered for over a week turns red in Next actions;
+    the week's counts show the follow-ups due this week; Fit shows its value
+    (3/5); "Interview soon" says its seven days; "Declined" says "by me".
+  - Calendar: one interview mark everywhere, clearer busy steps in the dark,
+    Coming up lists only what is ahead, month chips name the company (the
+    role is in the tooltip), and the "ended" count says which ones ended.
+  - Search describes a document by the application it is for; the funnel's
+    root stage no longer opens a list of everything; late is a clearer red
+    in dark mode; the Momentum card says it counts applications that reached
+    interview.
 - **A second, harsher review of every screen**, asking of each number and
   block whether it helps the search:
   - Offer is green everywhere (it was ochre in the list and green on the
