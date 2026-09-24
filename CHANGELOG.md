@@ -42,6 +42,8 @@ needs an account or leaves your machine.
   - Smaller: the countdown no longer ticks seconds, long YAML lines wrap,
     New document says what it will make, every checkbox takes the accent,
     and in dark mode logos and floating panels keep a visible edge.
+- **The sample data has people**: recruiters, hiring managers, interviewers
+  and whoever referred you, on most applications that got that far.
 - **Hybrid, Remote and On-site** on a posting's tag are translated.
 - **A log, for when something goes wrong.** The desktop app now keeps what
   the renderer notes while running, errors with their details included, in a

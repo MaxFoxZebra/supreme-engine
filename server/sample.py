@@ -18,8 +18,10 @@ from __future__ import annotations
 import datetime as dt
 import json
 import random
+import re
 import shutil
 import sqlite3
+import unicodedata
 from pathlib import Path
 
 import cjkfonts
@@ -239,6 +241,54 @@ NOTES = [
 def _iso(d: dt.datetime) -> str:
     return d.isoformat(timespec="seconds")
 
+# Names for the people on an application, by the language the company works
+# in. Roles are the ones the app offers.
+FIRST = {"en": ["Emma", "James", "Priya", "Oliver", "Chloe", "Daniel", "Aisha", "Lucas", "Hannah", "Noah"],
+         "fr": ["Camille", "Julien", "Léa", "Thomas", "Manon", "Nicolas", "Inès", "Antoine", "Sarah", "Hugo"],
+         "es": ["Lucía", "Javier", "Carmen", "Pablo", "Marta", "Diego", "Elena", "Sergio", "Paula", "Álvaro"],
+         "pt": ["Ana", "João", "Beatriz", "Pedro", "Larissa", "Gabriel", "Juliana", "Mateus", "Camila", "Felipe"]}
+LAST = {"en": ["Walker", "Patel", "Nguyen", "Berg", "Schmidt", "Kowalski", "Jansen", "Murphy", "Lindqvist", "Costa"],
+        "fr": ["Martin", "Bernard", "Dubois", "Lefèvre", "Moreau", "Garnier", "Rousseau", "Fontaine", "Chevalier", "Lambert"],
+        "es": ["García", "Fernández", "López", "Martínez", "Sánchez", "Romero", "Navarro", "Torres", "Ruiz", "Castro"],
+        "pt": ["Silva", "Santos", "Oliveira", "Pereira", "Almeida", "Carvalho", "Ribeiro", "Gomes", "Barbosa", "Rocha"]}
+
+
+def _people(P, company: str, lang: str, source: str, reached: list[str], sent, now) -> list[dict]:
+    """Who you would know at an application by now: whoever brought it to
+    you, a recruiter once they replied, the manager and an engineer once you
+    interviewed. `P` is its own random source, so the rest of the sample
+    comes out the same with or without them."""
+    names = lang if lang in FIRST else "en"
+    domain = re.sub(r"[^a-z0-9]", "", company.lower()) + ".example"
+    used = set()
+
+    def person(role, email=True, link=False, wrote=False):
+        while True:
+            first, last = P.choice(FIRST[names]), P.choice(LAST[names])
+            if (first, last) not in used:
+                used.add((first, last))
+                break
+        plain = lambda x: re.sub(r"[^a-z]", "", unicodedata.normalize("NFKD", x.lower()))
+        last_day = ""
+        if wrote and sent and sent < now:
+            last_day = (sent + (now - sent) * P.uniform(.2, .9)).date().isoformat()
+        return {"name": f"{first} {last}", "role": role,
+                "email": f"{plain(first)}.{plain(last)}@{domain}" if email else "",
+                "link": f"https://www.linkedin.com/in/{plain(first)}-{plain(last)}-example" if link else "",
+                "last": last_day}
+
+    out = []
+    if source == "Referral":
+        out.append(person("Referral", email=P.random() < .5, link=True, wrote=True))
+    if source == "Recruiter" or ("heard" in reached and P.random() < .7):
+        out.append(person("Recruiter", wrote=True))
+    if "interviewing" in reached:
+        if P.random() < .75:
+            out.append(person("Hiring manager", email=P.random() < .6, wrote=P.random() < .5))
+        if P.random() < .4:
+            out.append(person("Interviewer", email=False, link=True))
+    return out
+
 
 def build(studio, applications: int = 64) -> dict:
     """Rebuild the sample folder and fill it. `studio` is the studio module,
@@ -252,6 +302,7 @@ def build(studio, applications: int = 64) -> dict:
     for sub in ("profile", "applications", "letters", "assets"):
         (ws / sub).mkdir(parents=True, exist_ok=True)
     R = random.Random(20260923)
+    P = random.Random(7)
     now = dt.datetime.now().replace(microsecond=0)
 
     base = ws / "profile" / "my-cv.yaml"
@@ -364,10 +415,17 @@ def build(studio, applications: int = 64) -> dict:
         if status in ("offer", "accepted", "refused"):
             data["salary_offered"] = R.choice([68000, 72000, 78000, 85000])
         j = jobs.add_job(ws, data)
+        steps = {h["status"] for h in hist}
+        reached = (["heard"] if steps & {"interviewing", "rejected"} else []) + \
+                  (["interviewing"] if "interviewing" in steps else [])
+        sent_at = next((h["at"] for h in hist if h["status"] == "applied"), None)
+        people = jobs.clean_people(_people(P, company, lang, source, reached, sent_at, now))
         con = sqlite3.connect(jobs.db_path(ws))
-        con.execute("UPDATE jobs SET status=?, status_history=?, created_at=?, updated_at=? WHERE id=?",
+        con.execute("UPDATE jobs SET status=?, status_history=?, created_at=?, updated_at=?, people=?, "
+                    "contact_email=? WHERE id=?",
                     (status, json.dumps([{"status": h["status"], "at": _iso(h["at"])} for h in hist]),
-                     _iso(start), _iso(hist[-1]["at"]), j["id"]))
+                     _iso(start), _iso(hist[-1]["at"]), json.dumps(people),
+                     next((q["email"] for q in people if q["email"]), ""), j["id"]))
         con.commit()
         con.close()
         made.append({**j, "status": status, "lang": plang})
