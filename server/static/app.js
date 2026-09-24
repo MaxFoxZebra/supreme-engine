@@ -4814,16 +4814,18 @@ function postingHTML(text){
 /* The facts a posting buries, pulled up as chips. Only what reads the same
    in every posting: a place, a salary range, travel, sponsorship. */
 function postingChips(j){
-  const t=String(j.description||""), out=[];
-  const where=j.location||((t.match(/location\s*:\s*([^\n.]+)/i)||[])[1]||"").trim();
-  const mode=(t.match(/\b(remote|hybrid|on-?site)\b/i)||[])[1];
-  if(where) out.push(where+(mode&&!new RegExp(mode,"i").test(where)?" · "+mode[0].toUpperCase()+mode.slice(1).toLowerCase():""));
-  else if(mode) out.push(mode[0].toUpperCase()+mode.slice(1).toLowerCase());
-  const pay=t.match(/[$€£]\s?\d[\d,.]*\s?[kK]?\s?(?:[-–]|to)\s?[$€£]?\s?\d[\d,.]*\s?[kK]?(?:\s?(?:USD|EUR|GBP))?|\d[\d\s.,]*\s?(?:[kK]\s?)?€\s?(?:[-–]|à|to)\s?\d[\d\s.,]*\s?(?:[kK]\s?)?€/);
+  const txt=String(j.description||""), out=[];
+  const where=j.location||((txt.match(/location\s*:\s*([^\n.]+)/i)||[])[1]||"").trim();
+  const mode=(txt.match(/\b(remote|hybrid|on-?site)\b/i)||[])[1];
+  /* The place is the posting's; how you work there is the app's word for it. */
+  const how=mode&&t(mode[0].toUpperCase()+mode.slice(1).toLowerCase().replace(/^on-?site$/,"On-site"));
+  if(where) out.push(where+(mode&&!new RegExp(mode,"i").test(where)?" · "+how:""));
+  else if(mode) out.push(how);
+  const pay=txt.match(/[$€£]\s?\d[\d,.]*\s?[kK]?\s?(?:[-–]|to)\s?[$€£]?\s?\d[\d,.]*\s?[kK]?(?:\s?(?:USD|EUR|GBP))?|\d[\d\s.,]*\s?(?:[kK]\s?)?€\s?(?:[-–]|à|to)\s?\d[\d\s.,]*\s?(?:[kK]\s?)?€/);
   if(pay) out.push(pay[0].replace(/\s+/g," ").trim());
-  const tr=t.match(/travel[^.\n]{0,40}?(\d{1,2}\s?(?:[-–]\s?\d{1,2}\s?)?%)/i);
+  const tr=txt.match(/travel[^.\n]{0,40}?(\d{1,2}\s?(?:[-–]\s?\d{1,2}\s?)?%)/i);
   if(tr) out.push("Travel "+tr[1].replace(/\s/g,""));
-  if(/visa sponsorship|sponsor(?:ship)? (?:a |your )?visa/i.test(t)) out.push("Visa sponsorship");
+  if(/visa sponsorship|sponsor(?:ship)? (?:a |your )?visa/i.test(txt)) out.push("Visa sponsorship");
   return out;
 }
 /* Where it was found, chosen rather than typed: the boards the app knows,
