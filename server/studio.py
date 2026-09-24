@@ -3611,6 +3611,15 @@ CLIP_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Save to CV Studio</title>
 <style>
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400 600;font-display:swap;
+  src:url(/static/fonts/ibm-plex-sans-latin-var.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,
+  U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400 600;font-display:swap;
+  src:url(/static/fonts/ibm-plex-sans-latin-ext-var.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,
+  U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,
+  U+2C60-2C7F,U+A720-A7FF}
 :root{--app:#f7f6f3;--field:#fff;--t900:#1b1a17;--t700:#4a463d;--t600:#5b574d;--rule:#ddd8cc;
   --bd:#cfcabd;--acc:#c08a3e;--acc-text:#8a5316;--wash:#fbf4e8;--wash-line:#ecd9b8;--ok:#2f7a63;--bad:#a83519;
   --chrome:#1b1a17;--chrome-t:#f5f2ea}
@@ -3632,6 +3641,9 @@ label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;
 label.wide{grid-column:1/3}
 input,select{height:36px;padding:0 10px;border:1px solid var(--bd);border-radius:8px;background:var(--field);
   color:var(--t900);font:inherit;font-size:13.5px;font-weight:400}
+select{appearance:none;-webkit-appearance:none;padding-right:30px;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8578' stroke-width='2.4' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center}
 .card{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--rule);border-radius:10px;background:var(--field)}
 .card.warn{background:var(--wash);border-color:var(--wash-line)}
 .line{display:flex;align-items:center;gap:8px;font-size:13px}
@@ -3655,12 +3667,12 @@ button{font:inherit;cursor:pointer}
     <span class="muted" id="k-line"></span>
   </div>
   <div class="grid" id="fields">
-    <label class="wide">Role<input id="f-title" autocomplete="off"></label>
     <label>Company<input id="f-company" autocomplete="off"></label>
+    <label>Role<input id="f-title" autocomplete="off"></label>
     <label>Location<input id="f-location" autocomplete="off"></label>
-    <label>Status<select id="f-status"><option value="pending">Draft, not sent yet</option>
-      <option value="applied">Applied today</option></select></label>
     <label>Found on<input id="f-source" autocomplete="off"></label>
+    <label class="wide">Status<select id="f-status"><option value="pending">Draft, not sent yet</option>
+      <option value="applied">Applied today</option></select></label>
   </div>
   <div class="card" id="post-card">
     <div class="line" id="post-line"></div>
@@ -3741,6 +3753,11 @@ const norm=u=>{ try{ const x=new URL(clean(u));
 
 let PAGE=null, KNOWN=null, POST="";
 function show(id){ ["wait","form","done"].forEach(k=>$("#"+k).hidden=k!==id) }
+/* The window is as tall as what it shows, not the size it was opened at. */
+if(window.ResizeObserver) new ResizeObserver(()=>{
+  const h=Math.ceil(document.body.getBoundingClientRect().height)+(outerHeight-innerHeight);
+  if(Math.abs(h-outerHeight)>12) try{ resizeTo(outerWidth,Math.min(h,screen.availHeight)) }catch(e){}
+}).observe(document.body);
 async function receive(d){
   PAGE=d; const j=d.job||{};
   const org=j.hiringOrganization; const company=typeof org==="string"?org:(org&&org.name)||"";

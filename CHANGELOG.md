@@ -21,6 +21,27 @@ needs an account or leaves your machine.
   machine (a site pointing its own domain at it) and writes from any page
   that is not CV Studio's own are now refused. Scripts and your AI client
   work as before.
+- **A polish pass over every screen**, after a review of each one:
+  - Nothing that matters is cut off any more: the next interview, the
+    overdue follow-ups (their "Show them" link was hidden in French), the
+    editor's title, a person's last contact, the longer statuses.
+  - The editor always sits under Documents, and under Applications only
+    when the document was written for one; its title is the document's name.
+  - The application panel: the interview time and notes look like the other
+    fields, empty CV and letter slots are short cards, the Fit bars read
+    clearly and the source shows its own icon.
+  - The ATS check stays inside the window, with its buttons at the bottom.
+  - The funnel's highlighted step says what it is ("to offer · lowest
+    step"), not "biggest drop" beside the share that got through.
+  - Search counts agree ("6 of 22 shown").
+  - In French a job posting is an "annonce", no longer an "offre" like a job
+    offer (Spanish: "anuncio"); decimals take a comma; a few awkward phrases
+    are rewritten.
+  - The Save to CV Studio window uses the app's font and fields, in the same
+    order as New application, and is as tall as what it shows.
+  - Smaller: the countdown no longer ticks seconds, long YAML lines wrap,
+    New document says what it will make, every checkbox takes the accent,
+    and in dark mode logos and floating panels keep a visible edge.
 - **Hybrid, Remote and On-site** on a posting's tag are translated.
 - **A log, for when something goes wrong.** The desktop app now keeps what
   the renderer notes while running, errors with their details included, in a

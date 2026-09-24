@@ -597,16 +597,17 @@ function setView(v){
    Derived from the link rather than remembered as history: a stack can go
    stale and this cannot, and "this document belongs to Acme" is the relation
    that is actually true. With nothing linked it is the list you left, which
-   still has whatever you had selected -- S.jsel survives the trip. */
+   A document written for no application lives in Documents, however it was
+   opened. */
 function goBack(){
   const j=linkedJob();
   if(j){ setView("jobs"); selectJob(j.id); return }
-  setView(S.fromList==="docs"?"docs":"jobs");
+  setView("docs");
 }
-/* The crumb says where it goes, which is not always the applications, and
-   the tab for that list stays lit while you are in the editor. */
+/* The crumb says where it goes -- the application the document was written
+   for, or Documents -- and that tab stays lit while you are in the editor. */
 function paintBackLabel(){
-  const to=(!linkedJob()&&S.fromList==="docs")?"docs":"jobs";
+  const to=linkedJob()?"jobs":"docs";
   $("#back").textContent = to==="docs" ? "Documents" : "Applications";
   $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===to)));
 }
@@ -1553,7 +1554,9 @@ function atsPaint(r){
       (c.fix?'<button class="obtn" data-fix="'+c.fix+'"'+
         (S.path===ATS.path&&S.dirty?' disabled title="Save your changes first"':'')+'>Fix</button>':'')+
       '</li>').join("")+'</ul></section>';
-  body.innerHTML='<div class="ats-main">'+match+checks+'</div>'+
+  /* With no posting to compare against, the parse comes first and the
+     keywords are a line under it. */
+  body.innerHTML='<div class="ats-main">'+(kw&&kw.total?match+checks:checks+match)+'</div>'+
     '<div class="ats-read"><span class="blabel">What it reads<em>'+r.pages+' page'+
       (r.pages===1?"":"s")+' · '+r.words+' words</em></span>'+
       '<pre class="mono">'+atsReadable(r.text)+'</pre></div>';
@@ -2016,7 +2019,6 @@ const isLetterPath=p=>/\.md$/i.test(p||"");
 
 async function openLetter(path){
   if(path) palRemember({doc:path});
-  if(S.view==="jobs"||S.view==="docs") S.fromList=S.view;
   closeOverlays();
   try{
     const d=await api("/api/doc?path="+encodeURIComponent(path));
@@ -2032,7 +2034,7 @@ function ltJob(){
   return (S.jobs||[]).find(j=>j.id===id||j.letter_path===LT.path)||null;
 }
 function ltBackLabel(){
-  const to=(!ltJob()&&S.fromList==="docs")?"docs":"jobs";
+  const to=ltJob()?"jobs":"docs";
   $("#lt-back").textContent=to==="docs"?"Documents":"Applications";
   $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===to)));
 }
@@ -2041,7 +2043,7 @@ $("#lt-back").onclick=()=>{
   LT.path=null;
   const j=ltJob();
   if(j){ setView("jobs"); selectJob(j.id); return }
-  setView(S.fromList==="docs"?"docs":"jobs");
+  setView("docs");
 };
 
 /* The Markdown a letter uses, as HTML for the page and back. Paragraphs,
@@ -2227,7 +2229,7 @@ function ltPanel(){
     '<div style="display:flex;flex-direction:column;gap:10px"><h4>This letter</h4><div class="fg">'+
       '<label>For</label><span>'+(j?'<b style="font-weight:600">'+esc(j.company)+'</b> · '+esc(j.title)
         :'<span class="muted2">No application</span>')+'</span>'+
-      '<label for="lt-cv">Looks like</label><select id="lt-cv">'+cvs.map(d=>'<option value="'+esc(d.path)+'"'+
+      '<label for="lt-cv">Letterhead from</label><select id="lt-cv">'+cvs.map(d=>'<option value="'+esc(d.path)+'"'+
         (d.path===(m.looks_like||(LT.doc.head||{}).cv)?" selected":"")+'>'+esc(d.label)+'</option>').join("")+'</select>'+
       '<label for="lt-lang">Language</label><select id="lt-lang">'+((S.state&&S.state.languages)||[]).map(l=>
         '<option value="'+l.code+'"'+(l.code===lang?" selected":"")+'>'+esc(l.native)+'</option>').join("")+'</select>'+
@@ -2526,7 +2528,6 @@ async function openDoc(path){
   /* Which list you came from. Not a history stack -- one bit, read once on the
      way out. The application a document belongs to is still the better answer
      when there is one, and goBack asks for that first. */
-  if(S.view==="jobs"||S.view==="docs") S.fromList=S.view;
   setView("cvs");
   S.path=path; S.dirty=false; S.savedAt=null; S.sel=null; S.openSection=null;
   S.prov=null; $("#provchip").hidden=true;
@@ -2594,13 +2595,13 @@ function docMenuSheet(path){
 $("#doc-more").onclick=()=>{ if(S.path) docMenuSheet(S.path) };
 
 function paintTitle(){
-  const cv=(S.data&&S.data.cv)||{};
+  /* The document by the name it has everywhere else (Documents, the Design
+     crumb), after the company it was written for. */
   const doc=(S.state.documents||[]).find(d=>d.path===S.path);
-  const link=linkedJob();
-  const name=link?(link.title+" · "+link.company)
-                 :(cv.headline?cv.headline+(cv.name?" · "+cv.name:""):(cv.name||(doc&&doc.label)||""));
-  $("#doctitle .t").textContent=name||"";
-  $("#doctitle .f").textContent=S.path?S.path.split("/").pop():"";
+  const link=linkedJob(), file=S.path?S.path.split("/").pop():"";
+  const label=(doc&&doc.label)||file.replace(/\.(ya?ml|md)$/,"");
+  $("#doctitle .t").textContent=link?link.company+" · "+label:label;
+  $("#doctitle .f").textContent=link?file:"";
 }
 
 /* ---- outline ------------------------------------------------------------ */
@@ -4744,7 +4745,7 @@ function moveSel(){
 
 const JOB_GRID=[
   ["status","Status","status"],["followup_date","Follow-up","date"],
-  ["score","Fit","fit"],["source","Source","text"],
+  ["score","Fit","fit"],["source","Found on","text"],
   ["language","Language","lang"],
 ];
 /* Everything you set once when the application is created and rarely touch
@@ -4836,7 +4837,8 @@ const SRC_OTHER=[["careers","Company’s careers page","↗"],["referral","Refer
 function sourceMark(j){
   const b=jobBoard(j);
   if(b) return boardMark(b)+'<span class="nm">'+esc(b.label)+'</span>';
-  if(j.source) return '<span class="gl">…</span><span class="nm">'+esc(j.source)+'</span>';
+  const o=SRC_OTHER.find(x=>x[1]===j.source);
+  if(j.source) return (o?'<span class="gl">'+o[2]+'</span>':'')+'<span class="nm">'+esc(j.source)+'</span>';
   return '<span class="nm" style="color:var(--t500)">Not set</span>';
 }
 function sourceMenu(j,btn){
@@ -4946,10 +4948,10 @@ function drawJobInspector(){
       esc(l.native)+'</option>').join("")+'</select></span>';
   const facts='<div class="ap-facts">'+
     fact("Status",statusCtl)+
-    fact("Follow up",'<input data-j="followup_date" type="date" aria-label="Follow up" value="'+esc(j.followup_date||"")+'">')+
+    fact("Follow-up",'<input data-j="followup_date" type="date" aria-label="Follow-up" value="'+esc(j.followup_date||"")+'">')+
     fact("Fit",fitCtl)+
     fact("Found on",'<button class="ap-src" id="ap-src" aria-haspopup="listbox">'+sourceMark(j)+
-      '<span class="caret">▾</span></button>')+
+      '<span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button>')+
     fact("Language",langCtl)+
     fact("Interview",interviewCtl(j))+'</div>';
 
@@ -5004,7 +5006,7 @@ function drawJobInspector(){
   const posting='<article class="ap-pcard" aria-label="'+esc(t("The posting"))+'">'+
     '<div class="ap-phead"><div class="tx"><b>'+t("The posting")+'</b><span>'+
       esc(words?t("{n} words · kept here in case the advert comes down",{n:words})
-        :t("Not saved yet · adverts come down, and a tailored CV and a letter are written against it"))+
+        :t("Not saved yet · keep a copy before the advert comes down"))+
       '</span></div>'+openLink+
       (words?'<button class="obtn" id="ap-post-edit">'+t("Edit")+'</button>':'')+'</div>'+
     '<div class="ap-pbody" id="ap-pbody">'+(words
@@ -5166,7 +5168,7 @@ function newJobSheet(seed){
       '<label>Role</label><input id="nj-title" autocomplete="off">'+
       '<label>Status</label><select id="nj-status">'+S.statuses.map(s=>
         '<option value="'+s+'">'+esc(prettyStatus(s))+'</option>').join("")+'</select>'+
-      '<label>Source</label><input id="nj-source" autocomplete="off" '+
+      '<label>Found on</label><input id="nj-source" autocomplete="off" '+
         'placeholder="LinkedIn, referral, careers page…">'+
       '<label>Salary</label><input id="nj-salary" type="number" class="mono">'+
       '<label>Follow-up</label><input id="nj-followup" type="date">'+
@@ -5414,7 +5416,8 @@ function fnStages(){
 function drawJourney(mode,animate){
   const host=$("#fn-journey"), st=fnStages(), t=S.funnel.totals, sent=st[0][1];
   const prev=S.fnPrevJourney||[];
-  const conv=[["replied"],["of replies"],["became offers"],["accepted"]];
+  /* Each arrow is the share of the stage before it that made the next one. */
+  const conv=[["replied"],["to interview"],["to offer"],["accepted"]];
   /* The accent marks the step that is actually leaking, once there are
      enough applications under it to call it a rate. */
   let worst=-1, low=101;
@@ -5427,7 +5430,7 @@ function drawJourney(mode,animate){
       h+='<div class="fj-conv'+(i===worst?" acc":"")+'" style="animation-delay:'+(.55+i*.18)+'s">'+
         '<svg width="26" height="12" viewBox="0 0 26 12" aria-hidden="true"><path d="M0 6h22M17 1l5 5-5 5" '+
         'fill="none" stroke="currentColor" stroke-width="1.6"/></svg><b>'+(r==null?"–":r+"%")+'</b>'+
-        '<span>'+(i===worst?"biggest drop":conv[i-1][0])+'</span></div>';
+        '<span>'+conv[i-1][0]+(i===worst?'<br>lowest step':'')+'</span></div>';
     }
     const sub=i?(sent?Math.round(n/sent*100)+"% of sent":"–"):
       (t.total?Math.round(n/t.total*100)+"% of "+t.total+" tracked":"");
@@ -5939,7 +5942,7 @@ function drawNextUp(){
       html+='<div class="nu-fu"><span class="stack">'+lead.slice(0,3).map(e=>companyMark(e.job)).join("")+'</span>'+
         '<div class="nu-tx"><span class="ey '+(late.length?"late":"due")+'"><i></i>'+esc(head)+'</span>'+
         '<span class="who" title="'+esc(lead.map(e=>e.job.company).join(", "))+'">'+esc(names(lead))+'</span>'+
-        '<span class="sub">'+(sub?esc(sub)+' · ':'')+'<button class="lnk" data-nu-show>'+t("Show them")+' →</button></span></div></div>';
+        (sub?'<span class="sub">'+esc(sub)+'</span>':'')+'<button class="lnk" data-nu-show>'+t("Show them")+' →</button></div></div>';
       cols+="minmax(0,1fr) ";
     }
     if(next){
@@ -5977,14 +5980,15 @@ function drawNextUp(){
       if(!cd&&!lf){ clearInterval(S.nuTick); return }
       const left=Math.max(0,next.at-new Date());
       const d=Math.floor(left/864e5), h=Math.floor(left/36e5)%24, m=Math.floor(left/6e4)%60, s=Math.floor(left/1e3)%60;
-      if(cd){ cd.innerHTML=(d?'<b>'+d+'</b><u>'+U.d+'</u>':'')+'<b>'+p(h)+'</b><u>h</u><b>'+p(m)+'</b><u>'+
-        U.m+'</u><b class="s">'+p(s)+'</b><u>s</u>';
+      /* Days and hours while it is days away, minutes once it is today: no seconds ticking. */
+      if(cd){ cd.innerHTML=d?'<b>'+d+'</b><u>'+U.d+'</u><b>'+p(h)+'</b><u>h</u>'
+        :'<b>'+p(h)+'</b><u>h</u><b>'+p(m)+'</b><u>'+U.m+'</u>';
         /* Read as one time, not digit by digit; a timer is never announced unasked. */
         cd.setAttribute("aria-label",(d?d+" "+U.d+" ":"")+h+" h "+m+" min") }
       if(lf) lf.textContent=(h?h+" h ":"")+m+" min";
       if(left<=0) drawNextUp();
     };
-    tick(); S.nuTick=setInterval(tick,1000);
+    tick(); S.nuTick=setInterval(tick,15000);
   }
 }
 
@@ -6361,8 +6365,7 @@ function newDocumentSheet(){
   const all=(S.state&&S.state.documents)||[];
   const forKind=k=>all.filter(d=>(d.group==="Cover letters")===(k==="letter"));
   openSheet(
-    '<div><h3 id="sheet-title">New document</h3><p>Duplicating copies the YAML and its '+
-    'comments. The original is untouched.</p></div>'+
+    '<div><h3 id="sheet-title">New document</h3><p id="nd-say"></p></div>'+
     '<div class="fg w88">'+
       '<label>Kind</label><div class="seg paper acc" id="nd-kind" role="tablist">'+
         '<button role="tab" data-kind="cv" aria-selected="true">CV</button>'+
@@ -6371,15 +6374,20 @@ function newDocumentSheet(){
       '<label>Base on</label><select id="nd-base"></select>'+
       '<label>Company</label><input id="nd-company" autocomplete="off">'+
       '<label>Role</label><input id="nd-role" autocomplete="off">'+
-      '<label>Save as</label><input id="nd-name" readonly class="mono">'+
+      '<label>File name</label><span id="nd-name" class="mono nd-name" data-noi18n></span>'+
       '<div></div><label class="check"><input type="checkbox" id="nd-draft" checked>'+
-        '<i>✓</i>Add a Draft row to the applications</label>'+
+        '<i>✓</i>Also track it as a draft application</label>'+
     '</div>'+
     '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
     '<button class="sbtn primary" id="nd-go">Create</button></div>');
   let kind=(S.path&&S.path.startsWith("letters/"))?"letter":"cv";
+  /* What you get follows what it is based on, and so does the file name. */
   const sync=()=>{
-    $("#nd-name").value=derivedName($("#nd-role").value,$("#nd-company").value)+".yaml";
+    const base=$("#nd-base").value, doc=all.find(d=>d.path===base);
+    $("#nd-name").textContent=derivedName($("#nd-role").value,$("#nd-company").value)+
+      (kind==="letter"&&!/\.ya?ml$/.test(base)?".md":".yaml");
+    $("#nd-say").textContent=doc?t("A copy of {doc}, comments and all. The original is untouched.",{doc:doc.label})
+      :t(kind==="letter"?"A blank letter to write.":"A blank CV to fill in.");
   };
   /* Basing a letter on a CV produces nonsense, so the list follows the kind.
      The document you have open is the obvious thing to duplicate. */
@@ -6397,11 +6405,11 @@ function newDocumentSheet(){
       $$("#nd-kind button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));
       $("#nd-draft").parentElement.style.opacity=kind==="cv"?"":".5";
       $("#nd-draft").disabled=kind!=="cv";
-      fillBase();
+      fillBase(); sync();
     };
   });
   fillBase();
-  $("#nd-company").oninput=sync; $("#nd-role").oninput=sync; sync();
+  $("#nd-company").oninput=sync; $("#nd-role").oninput=sync; $("#nd-base").onchange=sync; sync();
   $("#sheet [data-cancel]").onclick=closeSheet;
   $("#nd-go").onclick=async()=>{
     const company=$("#nd-company").value.trim(), role=$("#nd-role").value.trim();
@@ -7176,7 +7184,7 @@ function fillSettings(){
   /* Masked by default: this pane ends up in screenshots and screen shares,
      and the key in it is live. Copy still copies the real thing. */
   const shown=st.api_token&&S.keyShown?st.api_token
-    :st.api_token?"•".repeat(Math.min(24,st.api_token.length)):"";
+    :st.api_token?"•".repeat(16):"";
   const auth=st.api_token?' \
   -H "X-API-Key: '+shown+'"':"";
   $("#s-curl").textContent=
@@ -7508,8 +7516,9 @@ function palDraw(){
   if(!PAL.items.length) html='<div class="pal-none">'+esc(t("Nothing matches “{q}”.",{q:PAL.q.trim()}))+'</div>';
   list.innerHTML=html;
   PAL.sel=Math.min(PAL.sel,Math.max(0,PAL.items.length-1));
-  const n=PAL.items.length;
-  $("#pal-count").textContent=PAL.q.trim()?t("{n} result(s)",{n}):(PAL_MAC?t("⌘K, from anywhere"):t("Ctrl K, from anywhere"));
+  /* The footer agrees with the group counts: each group lists its first few. */
+  const n=PAL.items.length, total=groups.reduce((a,[,items,c])=>a+(c||items.length),0);
+  $("#pal-count").textContent=PAL.q.trim()?(total>n?t("{n} of {total} shown",{n,total}):t("{n} result(s)",{n})):(PAL_MAC?t("⌘K, from anywhere"):t("Ctrl K, from anywhere"));
   $("#pal-in").setAttribute("aria-activedescendant",n?"pal-o"+PAL.sel:"");
   $$("#pal-list .pal-it").forEach(b=>{
     b.onclick=()=>palRun(+b.dataset.i);
@@ -7736,12 +7745,17 @@ function ppDraft(kind,lang,j,p,ctx){
   const first=String(p.name||"").trim().split(/\s+/)[0]||"";
   return {subject:fill(T.s), body:L.greet(first)+"\n\n"+fill(T.b)+"\n\n"+L.sign+(ctx.you?"\n"+ctx.you:"")};
 }
+/* A language named in the interface's own language: "anglais", not "English". */
+function langName(code){
+  try{ return new Intl.DisplayNames([uiLocale()],{type:"language"}).of(code) }catch(e){ return code }
+}
 async function draftSheet(j,p,kind){
   let ctx={};
   try{ ctx=await api("/api/jobs/draft?id="+encodeURIComponent(j.id)) }catch(e){}
   const lang=PP_TPL[j.language]?j.language:(PP_TPL[UI_LANG]?UI_LANG:"en");
   openSheet('<h3>'+esc(t(PP_KIND_LABEL[kind]))+'</h3>'+
-    '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name||p.email,co:j.company}))+'</p>'+
+    '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name||p.email,co:j.company}))+
+      (lang!==UI_LANG?' '+esc(t("In {lang}, the application's language.",{lang:langName(lang)})):'')+'</p>'+
     '<div class="pp-kinds" role="radiogroup" aria-label="'+esc(t("Kind of email"))+'">'+
       Object.keys(PP_KIND_LABEL).map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
         esc(t(PP_KIND_LABEL[k]))+'</button>').join("")+'</div>'+

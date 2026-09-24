@@ -131,7 +131,8 @@
   }
 }
 :root{color-scheme:light}
-:root[data-theme=dark]{color-scheme:dark}
+:root[data-theme=dark]{color-scheme:dark;--edge:rgba(255,255,255,.14)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--edge:rgba(255,255,255,.14)}}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -216,7 +217,6 @@ button:disabled{opacity:.4;cursor:default}
 .nu .cd{display:flex;align-items:baseline;gap:3px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--t900)}
 .nu .cd b{font-size:22px;font-weight:600}
 .nu .cd u{text-decoration:none;font-size:11.5px;color:var(--t500);margin-right:6px}
-.nu .cd b.s{color:var(--acc-text)}
 .nu .acts{display:flex;gap:8px}
 .nu .acts .obtn{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;font-weight:500;white-space:nowrap}
 .nu .obtn.dark{background:var(--t900);color:var(--app);border-color:var(--t900)}
@@ -253,7 +253,9 @@ button:disabled{opacity:.4;cursor:default}
 .nu .pbtn{flex:none}
 .nu .nu-fu .who{font-size:14px;font-weight:500}
 .nu .ey{white-space:nowrap}
-.nu .lnk{border:0;background:none;padding:0;font-size:12.5px;font-weight:500;color:var(--acc-text)}
+.nu .lnk{border:0;background:none;padding:0;font-size:12.5px;font-weight:500;color:var(--acc-text);align-self:flex-start;white-space:nowrap}
+/* Names and times wrap to a second line rather than lose their end. */
+.nu .nu-iv .who,.nu .nu-iv .sub{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .nu .lnk:hover{text-decoration:underline}
 .nu .cd b{font-size:20px}
 .nu.soon .nu-iv .nu-tx{flex:0 1 auto;max-width:38%}
@@ -282,13 +284,13 @@ button:disabled{opacity:.4;cursor:default}
 .doctitle .f{font-size:11.5px;color:var(--t500);white-space:nowrap;flex:none}
 .acts{display:flex;align-items:center;gap:8px;flex:none}
 .acts button{white-space:nowrap}
-.doctitle{min-width:70px}
+.doctitle{min-width:120px;flex:0 1 auto}
 .docbar .more{flex:none;width:30px;height:30px;border:0;border-radius:7px;background:none;color:var(--t500);
   font-size:18px;line-height:1}
 .docbar .more:hover{background:var(--paper-hover);color:var(--t900)}
 /* On a narrower window the language switch keeps its flags and drops the
    names, so the title and the buttons keep their room. */
-@media (max-width:1380px){ #langsw .ln{display:none} #langsw button{padding:0 6px} }
+@media (max-width:1500px){ #langsw .ln{display:none} #langsw button{padding:0 6px} }
 @media (max-width:1180px){ .doctitle .f{display:none} }
 /* Every screen header's secondary buttons, one height with its primary. */
 .docbar .obtn,.phead .obtn{height:34px;padding:0 13px;font-size:13px;font-weight:500;
@@ -366,6 +368,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .row .mark{display:none}
 .row .lbl{font-size:13.5px;color:var(--t700);flex:1;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
+.rail-jobs .row .lbl{white-space:normal;line-height:1.3}
 .row .ct{font-size:12px;color:var(--t500);flex:none;font-variant-numeric:tabular-nums}
 /* Attention borrows the ochre already used for an overdue follow-up rather
    than introducing a second warning colour. The section hides itself when
@@ -742,7 +745,12 @@ body.dragging{cursor:col-resize;user-select:none}
 .peek-grid .col{display:flex;flex-direction:column;gap:16px;min-width:0}
 /* Notes gets real room -- it used to be three rows -- but not the whole column:
    stretched to 700px it reads as a mistake rather than as generosity. */
-.peek-grid textarea.notes{min-height:150px;max-height:280px;resize:vertical}
+.peek-grid textarea.notes{min-height:150px;max-height:280px;resize:vertical;width:100%;
+  padding:10px 12px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
+  color:var(--t900);font-size:13px;line-height:1.55}
+.peek-grid textarea.notes:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ap-iv input{min-height:32px;border-radius:8px;font-size:13px;width:100%;min-width:0}
+.ap-iv select{min-height:32px;border-radius:8px;font-size:13px}
 /* The posting is the long one, so it takes what is left and scrolls. */
 .peek-grid .block.grow{flex:1;min-height:0}
 .peek .posting{flex:1;min-height:80px;overflow-y:auto;white-space:pre-wrap;
@@ -832,13 +840,12 @@ body.dragging{cursor:col-resize;user-select:none}
    difference between "best possible fit" and "no opinion recorded" was hue.
    The hit area is padded out to something a finger or a hurried cursor can
    land on; the bar itself stays 6px. */
-.fit button{width:16px;height:20px;background:none;border-radius:0;padding:7px 0;
-  background-clip:content-box;box-shadow:inset 0 0 0 1px var(--bd-inner);
-  -webkit-background-clip:content-box}
+.fit button{width:16px;height:20px;background:var(--bd-field);border-radius:0;padding:7px 0;
+  background-clip:content-box;-webkit-background-clip:content-box;opacity:.7}
+.fit button.on,.fit button:hover{opacity:1}
 .fit button:hover{background:var(--t500);background-clip:content-box}
 .fitv{margin-left:8px;font-size:11.5px;color:var(--t500);white-space:nowrap}
-.fit button.on{background:var(--acc);background-clip:content-box;
-  box-shadow:inset 0 0 0 1px transparent}
+.fit button.on{background:var(--acc);background-clip:content-box}
 .dot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--dot-idle)}
 .dot.live{background:var(--acc)}
 .dot.won{background:var(--fn-won)} .dot.lost{background:var(--fn-lost)}
@@ -1100,8 +1107,8 @@ html.mono .langs,html.mono #langsw{display:none!important}
 .colog{width:28px;height:28px;border-radius:7px;flex:none;object-fit:contain;
   background:var(--bar)}
 /* A black or near-black tile would melt into the dark surfaces. */
-:root[data-theme=dark] img.colog{box-shadow:0 0 0 1px rgba(255,255,255,.12)}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]) img.colog{box-shadow:0 0 0 1px rgba(255,255,255,.12)}}
+:root[data-theme=dark] img.colog{box-shadow:0 0 0 1px rgba(255,255,255,.24)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) img.colog{box-shadow:0 0 0 1px rgba(255,255,255,.24)}}
 span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   color:#fff;letter-spacing:.02em}
 .trow .role b{font-weight:400}
@@ -1245,7 +1252,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .sk-chip span{color:var(--sk-mute);font-size:11.5px}
 .sk-chip em{font-style:normal;font-size:10.5px;font-weight:600;color:#1b1a17;
   background:#e8bc7c;border-radius:8px;padding:1px 6px;animation:fx-breathe 2.2s ease-in-out infinite}
-.sk-chip.won{box-shadow:0 0 0 1px var(--sk-won),0 0 22px color-mix(in srgb,var(--sk-won) 40%,transparent)}
+.sk-chip.won{box-shadow:0 0 0 1px var(--sk-won)}
 .sk-chip.won b{color:var(--sk-won)}
 .sk-chip.sk-dim{opacity:.4}
 .sk-tip{position:absolute;z-index:3;display:flex;flex-direction:column;gap:3px;min-width:210px;
@@ -1952,7 +1959,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   font-size:13px;text-align:left;min-width:0}
 .ap-src:hover{background:var(--paper-hover)}
 .ap-src .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ap-src .caret{color:var(--t500);font-size:10px}
+.ap-src .caret{display:flex;color:var(--t500)}
 .ap-src .board,.ap-menu .board{width:20px;height:20px;border-radius:5px}
 .ap-src .board svg,.ap-menu .board svg{width:12px;height:12px}
 .ap-src .board.lettered,.ap-menu .board.lettered{font-size:9px}
@@ -1964,7 +1971,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-menu button:hover{background:var(--paper-hover)}
 .ap-menu button[aria-selected=true]{background:var(--acc-wash);font-weight:600}
 .ap-menu hr{border:0;border-top:1px solid var(--bd-inner);margin:4px 2px}
-.ap-menu .gl{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;
+.ap-src .gl,.ap-menu .gl{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;
   background:var(--bar);color:var(--t700);font-size:11px;flex:none}
 .ap-docs{display:grid;grid-template-columns:repeat(2,minmax(0,210px));gap:18px}
 .ap-doc{display:flex;flex-direction:column;gap:8px;min-width:0}
@@ -1977,6 +1984,10 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
   padding:10px;text-align:center;box-shadow:none}
 .ap-doc .pg.none span{font-size:12px;color:var(--t600);line-height:1.4}
+/* Nothing to show yet: a short card with its caption on top, not an empty page. */
+.ap-doc .pg.none{aspect-ratio:auto;min-height:112px;border-width:1.5px}
+.ap-doc:has(.pg.none) .t{order:-1}
+.ap-docs{align-items:start}
 .ap-doc .pg.post{background:var(--field);cursor:default;display:flex;flex-direction:column;
   align-items:stretch;justify-content:flex-start;gap:8px;padding:12px;box-shadow:none}
 .ap-doc .pg.post .who{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
@@ -2089,12 +2100,16 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .lt-menu small{font-size:11.5px;color:var(--t500)}
 
 /* ---------- ATS check ------------------------------------------------------ */
-.sheet.ats{width:980px}
+/* The sheet stays inside the window: its body scrolls, its buttons stay at
+   the bottom. */
+.sheet.ats{width:980px;overflow:hidden;border-radius:0 0 12px 12px;padding-bottom:0}
+.sheet.ats .ats-body{flex:1 1 auto;overflow-y:auto;margin:0 -24px;padding:2px 24px 8px}
+.sheet.ats .foot{flex:none;margin:0 -24px;padding:12px 24px;border-top:1px solid var(--rule)}
 .ats-top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between}
 .ats-vs{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t600);
   flex:none;margin-top:2px}
-.ats-vs select{max-width:280px;font-size:12.5px;padding:5px 8px;border-radius:5px;
-  border:1px solid var(--bd-field);background:var(--field);color:var(--t900)}
+.ats-vs select{max-width:280px;font-size:12.5px;padding:5px 30px 5px 8px;border-radius:5px;
+  border:1px solid var(--bd-field);background-color:var(--field);color:var(--t900)}
 .ats-paste{width:100%;min-height:110px;resize:vertical;font:12.5px/1.5 inherit;padding:9px 10px;
   border:1px solid var(--bd-field);border-radius:6px;background:var(--field);color:var(--t900)}
 .ats-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:22px;
@@ -2133,7 +2148,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .checks li.ok span{color:var(--t500)}
 .checks .obtn{flex:none;align-self:center}
 .ats-read{display:flex;flex-direction:column;gap:8px;min-width:0}
-.ats-read pre{margin:0;padding:12px 13px;max-height:520px;overflow:auto;white-space:pre-wrap;
+.ats-read pre{margin:0;padding:12px 13px;max-height:none;overflow:auto;white-space:pre-wrap;
   word-break:break-word;font-size:11.5px;line-height:1.55;color:var(--t800);
   background:var(--field);border:1px solid var(--bd-field);border-radius:9px}
 .ats-read .pua{font-style:normal;color:var(--bad);background:var(--bad-bg);border-radius:2px;
@@ -2315,6 +2330,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .dctl input[type=color]{width:34px;height:28px;padding:2px;border:1px solid var(--bd-field);
   border-radius:7px;background:var(--field);cursor:pointer;flex:none}
 .dctl input[type=checkbox]{width:17px;height:17px;accent-color:var(--acc);cursor:pointer}
+/* Every checkbox in the app, not the OS blue. */
+input[type=checkbox]{accent-color:var(--acc)}
 .dctl .hex{font-size:11px;color:var(--t500);flex:none}
 
 /* ---------- settings ----------------------------------------------------- */
@@ -2569,13 +2586,16 @@ select:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 /* The native date control brings its own chrome and its own glyph. The
    displayed format follows the OS locale and cannot be overridden without
    giving up the picker, so match the rest and let the format be. */
-input[type=date]{appearance:none;-webkit-appearance:none;
+input[type=date],input[type=datetime-local]{appearance:none;-webkit-appearance:none;
   background-color:var(--field);border:1px solid var(--bd-field);
   border-radius:5px;padding:6px 10px;font:inherit;font-size:12.5px;
   color:var(--t900)}
-input[type=date]::-webkit-calendar-picker-indicator{opacity:.55;cursor:pointer;
+input[type=date]::-webkit-calendar-picker-indicator,
+input[type=datetime-local]::-webkit-calendar-picker-indicator{opacity:.55;cursor:pointer;
   filter:grayscale(1)}
-input[type=date]::-webkit-calendar-picker-indicator:hover{opacity:1}
+input[type=date]::-webkit-calendar-picker-indicator:hover,
+input[type=datetime-local]::-webkit-calendar-picker-indicator:hover{opacity:1}
+input[type=date]:focus-visible,input[type=datetime-local]:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 textarea{resize:vertical}
 .insp textarea,.fg textarea{resize:none}
 .tgl{position:relative;display:inline-block;width:34px;height:20px;flex:none;cursor:pointer}
@@ -2590,8 +2610,8 @@ textarea{resize:vertical}
 /* ---------- yaml editor --------------------------------------------------- */
 .edwrap{position:relative;flex:1;min-height:0;background:var(--app)}
 .edwrap pre,.edwrap textarea{position:absolute;inset:0;margin:0;padding:16px 18px;border:0;
-  font:12.5px/1.7 'IBM Plex Mono',ui-monospace,Consolas,monospace;white-space:pre;
-  overflow:auto;tab-size:2}
+  font:12.5px/1.7 'IBM Plex Mono',ui-monospace,Consolas,monospace;white-space:pre-wrap;
+  overflow-wrap:anywhere;overflow-x:hidden;overflow-y:scroll;tab-size:2}
 .edwrap pre{pointer-events:none;color:var(--t900)}
 .edwrap textarea{background:transparent;color:transparent;caret-color:var(--t900);resize:none}
 .edwrap textarea::selection{background:var(--tk-sel)}
@@ -2761,7 +2781,7 @@ textarea{resize:vertical}
 .pp-tx{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 180px}
 .pp-tx b{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pp-role{font-weight:400;color:var(--t600)}
-.pp-tx small{font-size:12px;color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp-tx small{font-size:12px;line-height:1.4;color:var(--t600);overflow-wrap:anywhere}
 .obtn.icon{width:30px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center}
 .pp-empty{margin:0;font-size:12.5px;line-height:1.5;color:var(--t600)}
 .pp-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -2790,3 +2810,8 @@ textarea{resize:vertical}
 .clip-state{font-size:12.5px;font-weight:600;white-space:nowrap}
 .clip-state.ok{color:var(--fn-offer-text)}.clip-state.bad{color:var(--fn-lost-text)}
 .linkbtn{border:0;background:none;padding:0;color:var(--acc-text);font:inherit;font-weight:500;cursor:pointer;text-decoration:underline}
+/* The file a new document will be saved as: shown, not edited. */
+.nd-name{font-size:12.5px;color:var(--t700);align-self:center;overflow-wrap:anywhere}
+/* Floating surfaces keep an edge in the dark, where a shadow on a dark page
+   hardly shows. */
+.sheet,.pal,#ovl-settings{outline:1px solid var(--edge,transparent);outline-offset:-1px}
