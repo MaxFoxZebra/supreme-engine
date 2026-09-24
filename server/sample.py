@@ -290,6 +290,34 @@ def _people(P, company: str, lang: str, source: str, reached: list[str], sent, n
     return out
 
 
+def _rounds(status: str, hist: list[dict], interview_at: str | None, tz: str | None,
+            people: list[dict]) -> list[dict]:
+    """The interview rounds an application at this point would have had: a
+    screen first, then the rounds that led to where it is now. The next one,
+    when there is an interview booked, is that interview."""
+    iv = next((h["at"] for h in hist if h["status"] == "interviewing"), None)
+    if iv is None:
+        return []
+    who = {p["role"]: p["name"] for p in people}
+    at = lambda d: _iso(d)[:16]
+    # Past rounds are in your own time: that is the clock the history keeps.
+    screen = {"id": "r1", "kind": "Recruiter screen", "at": at(iv), "tz": "",
+              "with": who.get("Recruiter", ""), "outcome": "passed", "note": ""}
+    later = iv + dt.timedelta(days=6)
+    if status == "interviewing":
+        nxt = {"id": "r2", "kind": "Technical", "at": (interview_at or "")[:16], "tz": tz or "",
+               "with": who.get("Hiring manager", ""), "outcome": "", "note": ""}
+        return [screen, nxt] if interview_at else [screen, dict(nxt, at="")]
+    if status in ("rejected_interviewing", "ghosted_interviewing"):
+        return [screen, {"id": "r2", "kind": "Technical", "at": at(later), "tz": "",
+                         "with": who.get("Hiring manager", ""),
+                         "outcome": "failed" if status == "rejected_interviewing" else "", "note": ""}]
+    return [screen, {"id": "r2", "kind": "Technical", "at": at(later), "tz": "",
+                     "with": who.get("Hiring manager", ""), "outcome": "passed", "note": ""},
+            {"id": "r3", "kind": "Final", "at": at(later + dt.timedelta(days=5)), "tz": "",
+             "with": "", "outcome": "passed", "note": ""}]
+
+
 def build(studio, applications: int = 64) -> dict:
     """Rebuild the sample folder and fill it. `studio` is the studio module,
     whose WORKSPACE must already point at folder(). `applications` is how
@@ -423,11 +451,13 @@ def build(studio, applications: int = 64) -> dict:
         sent_at = next((h["at"] for h in hist if h["status"] == "applied"), None)
         people = jobs.clean_people(_people(P, company, lang, source, reached, sent_at, now))
         con = sqlite3.connect(jobs.db_path(ws))
+        rounds = _rounds(status, hist, data.get("interview_at"), data.get("interview_tz"), people)
         con.execute("UPDATE jobs SET status=?, status_history=?, created_at=?, updated_at=?, people=?, "
-                    "contact_email=? WHERE id=?",
+                    "contact_email=?, rounds=? WHERE id=?",
                     (status, json.dumps([{"status": h["status"], "at": _iso(h["at"])} for h in hist]),
                      _iso(start), _iso(hist[-1]["at"]), json.dumps(people),
-                     next((q["email"] for q in people if q["email"]), ""), j["id"]))
+                     next((q["email"] for q in people if q["email"]), ""),
+                     json.dumps(rounds, ensure_ascii=False), j["id"]))
         con.commit()
         con.close()
         made.append({**j, "status": status, "lang": plang})
@@ -457,10 +487,19 @@ def build(studio, applications: int = 64) -> dict:
                   {"id": slug + "2", "name": "Tom Reid" if city == "London" else "Rafael Souza",
                    "role": "Hiring manager", "email": "", "link": "", "last": ""}]
         con = sqlite3.connect(jobs.db_path(ws))
+        # A screen with the recruiter, the round coming up with the manager,
+        # and in London one more still to be set.
+        at_next = _iso((now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0))[:16]
+        rounds = [{"id": "r1", "kind": "Recruiter screen", "at": _iso(iv)[:16], "tz": "",
+                   "with": people[0]["name"], "outcome": "passed", "note": ""},
+                  {"id": "r2", "kind": "System design" if city == "London" else "Technical",
+                   "at": at_next, "tz": ZONES[city], "with": people[1]["name"], "outcome": "", "note": ""}]
+        if city == "London":
+            rounds.append({"id": "r3", "kind": "Team fit", "at": "", "tz": "", "with": "", "outcome": "", "note": ""})
         con.execute("UPDATE jobs SET status='interviewing', status_history=?, created_at=?, updated_at=?, "
-                    "people=?, contact_email=? WHERE id=?",
+                    "people=?, contact_email=?, rounds=? WHERE id=?",
                     (json.dumps(hist), hist[0]["at"], hist[-1]["at"], json.dumps(people),
-                     people[0]["email"], j["id"]))
+                     people[0]["email"], json.dumps(rounds, ensure_ascii=False), j["id"]))
         con.commit()
         con.close()
         made.append({**j, "status": "interviewing", "lang": j["language"]})

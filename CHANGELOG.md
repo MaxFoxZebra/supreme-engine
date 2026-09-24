@@ -19,6 +19,21 @@ A polish and safety release on the way to 1.0.
   machine (a site pointing its own domain at it) and writes from any page
   that is not CV Studio's own are now refused. Scripts and your AI client
   work as before.
+- **Next actions** replaces Next up on the applications list: one row per
+  thing to do, most urgent first, each with its button. An interview coming
+  (*Prepare*), a follow-up late (*Write follow-up*, drafted to the person you
+  last wrote to), an offer to answer (*Reply to the offer*), a thank-you the
+  day after an interview, an interview with no outcome yet, a draft left
+  for days. Beside it, this week, with three counts: interviews this week,
+  sent this week, waiting on a reply.
+- **Interview rounds.** An application keeps its interviews as rounds (a
+  screen, a technical round, team fit, a final), each with its time and zone,
+  who you meet, and whether you passed. The next one is open to edit on the
+  application; a round you did not pass offers to mark the application
+  Rejected after interview. The next undecided round is still the one
+  interview time the calendar, reminders and AI clients read, and setting
+  that time (from the calendar or your AI client) moves the round. Rounds
+  are in the CSV export.
 - **A second, harsher review of every screen**, asking of each number and
   block whether it helps the search:
   - Offer is green everywhere (it was ochre in the list and green on the

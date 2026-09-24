@@ -636,6 +636,11 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     interview moves, update it here; if it is cancelled, pass an empty string
     to clear it, which also writes a note so the change is not silent.
 
+    The app keeps the interviews as rounds (screen, technical, final...), and
+    `interview_at` is always the next one not decided yet. Setting it moves
+    that round; once every round has an outcome, a new time adds a round. The
+    user records the outcome of each round in the app.
+
     `last_contact_at` is when they last got in touch. Set it for an
     acknowledgement that changes nothing else, so the application stops looking
     abandoned when it is not.

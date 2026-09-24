@@ -190,7 +190,7 @@ def connect(workspace: Path) -> sqlite3.Connection:
                       ("logo", "TEXT"), ("interview_at", "TEXT"),
                       ("contact_email", "TEXT"), ("last_contact_at", "TEXT"),
                       ("language", "TEXT"), ("interview_tz", "TEXT"),
-                      ("people", "TEXT")):
+                      ("people", "TEXT"), ("rounds", "TEXT")):
         if col not in have:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
     con.commit()
@@ -216,7 +216,53 @@ def _row(r: sqlite3.Row) -> dict:
     if not d["people"] and d.get("contact_email"):
         d["people"] = [{"id": "contact", "name": "", "role": "", "email": d["contact_email"],
                         "link": "", "last": ""}]
+    try:
+        d["rounds"] = json.loads(d.get("rounds") or "[]")
+    except json.JSONDecodeError:
+        d["rounds"] = []
+    # Before rounds, an application had one interview time. It is the first
+    # round until the rounds are written.
+    if not d["rounds"] and d.get("interview_at"):
+        d["rounds"] = [{"id": "iv", "kind": "", "at": str(d["interview_at"])[:16],
+                        "tz": d.get("interview_tz") or "", "with": "", "outcome": "", "note": ""}]
     return d
+
+
+# One interview round: what kind, when (local time in `tz`, empty for "not
+# scheduled yet"), with whom, and how it went ("" until you say).
+ROUND_FIELDS = {"kind": 60, "at": 16, "tz": 64, "with": 120, "outcome": 8, "note": 400}
+ROUND_OUTCOMES = ("", "passed", "failed")
+
+
+def clean_rounds(rounds) -> list[dict]:
+    """The rounds as they may be stored: known fields, a date and time or
+    nothing, a real time zone, an outcome from the short list; twelve at most."""
+    if not isinstance(rounds, list):
+        raise ValueError("Rounds must be a list.")
+    out = []
+    for r in rounds[:12]:
+        if not isinstance(r, dict):
+            continue
+        q = {k: str(r.get(k) or "").strip()[:n] for k, n in ROUND_FIELDS.items()}
+        if q["at"] and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", q["at"]):
+            raise ValueError(f"{q['at']} is not a date and time (YYYY-MM-DDTHH:MM).")
+        if q["tz"]:
+            valid_tz(q["tz"])
+        if q["outcome"] not in ROUND_OUTCOMES:
+            raise ValueError(f"Unknown outcome: {q['outcome']}. Use passed, failed or nothing.")
+        q["id"] = str(r.get("id") or "") or uuid.uuid4().hex[:8]
+        out.append(q)
+    return out
+
+
+def interview_of(rounds: list[dict]) -> tuple[str | None, str | None]:
+    """The one interview time everything else reads (calendar, reminders, the
+    countdown, an AI client): the first round not decided yet that has a time,
+    else the last round that had one. Rounds happen in order, so the list
+    order is the time order without converting any zones."""
+    timed = [r for r in rounds if r.get("at")]
+    nxt = next((r for r in timed if not r.get("outcome")), None) or (timed[-1] if timed else None)
+    return (nxt["at"] + ":00", nxt.get("tz") or None) if nxt else (None, None)
 
 
 PERSON_FIELDS = {"name": 120, "role": 80, "email": 200, "link": 400, "last": 10}
@@ -352,6 +398,34 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
                 if first != cur["contact_email"] and "contact_email=?" not in sets:
                     sets.append("contact_email=?")
                     args.append(first)
+        # Rounds carry the interview time: writing them moves interview_at to
+        # the next one. Writing interview_at alone (the calendar, a mail
+        # reconcile) moves that round, or adds one when none is waiting.
+        rounds = None
+        if "rounds" in data:
+            rounds = clean_rounds(data["rounds"])
+        elif "interview_at" in data and cur["rounds"]:
+            rounds = json.loads(cur["rounds"] or "[]")
+            at = str(data["interview_at"] or "")[:16]
+            tz = data.get("interview_tz", cur["interview_tz"]) or ""
+            nxt = next((r for r in rounds if not r.get("outcome")), None)
+            if nxt is not None:
+                nxt.update(at=at, tz=tz)
+            elif at:
+                rounds.append({"id": uuid.uuid4().hex[:8], "kind": "", "at": at, "tz": tz,
+                               "with": "", "outcome": "", "note": ""})
+            rounds = clean_rounds(rounds)
+        if rounds is not None:
+            stored = json.dumps(rounds, ensure_ascii=False)
+            if stored != (cur["rounds"] or "[]"):
+                sets.append("rounds=?")
+                args.append(stored)
+            if "rounds" in data:
+                at, tz = interview_of(rounds)
+                for col, val in (("interview_at", at), ("interview_tz", tz)):
+                    if val != cur[col] and f"{col}=?" not in sets:
+                        sets.append(f"{col}=?")
+                        args.append(val)
         note = (data.get("append_note") or "").strip()
         if note:
             stamped = f"[{time.strftime('%Y-%m-%d')}] {note}"
@@ -699,7 +773,7 @@ def export(workspace: Path, fmt: str = "json") -> str:
     rows = list_jobs(workspace)
     if fmt == "csv":
         buf = io.StringIO()
-        cols = ["id", *FIELDS, "people", "created_at", "updated_at"]
+        cols = ["id", *FIELDS, "people", "rounds", "created_at", "updated_at"]
         w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for r in rows:
@@ -707,7 +781,11 @@ def export(workspace: Path, fmt: str = "json") -> str:
             r = dict(r, people="; ".join(
                 " ".join(x for x in (p.get("name"), f"({p['role']})" if p.get("role") else "",
                                      f"<{p['email']}>" if p.get("email") else "") if x)
-                for p in r.get("people") or []))
+                for p in r.get("people") or []),
+                rounds="; ".join(
+                " ".join(x for x in (rd.get("kind") or "Interview", rd.get("at", "").replace("T", " "),
+                                     f"({rd['outcome']})" if rd.get("outcome") else "") if x)
+                for rd in r.get("rounds") or []))
             w.writerow(r)
         return buf.getvalue()
     return json.dumps(rows, indent=2)

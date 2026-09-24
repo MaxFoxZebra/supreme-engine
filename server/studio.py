@@ -4744,7 +4744,7 @@ const API_TOKEN=__API_TOKEN__;
       </div>
       <!-- What is next, above the list: the next interview, the follow-ups
            that are late, and the week. Only there when something is. -->
-      <section class="nu" id="nextup" aria-label="Next up" hidden></section>
+      <section class="na" id="nextup" aria-label="Next actions" hidden></section>
       <div class="tcard">
         <div class="thead"><span>Company</span><span>Role</span>
           <span>Documents</span><span>Status</span>

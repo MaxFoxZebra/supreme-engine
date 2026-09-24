@@ -78,15 +78,20 @@ middle: company and logo, role, where it was found, the documents written for
 it, status, when it was sent and when to follow up. Down the left, *Attention*
 gathers what needs you (an interview soon, a follow-up due, no reply for a
 fortnight), with the statuses and saved views under it. Above the list,
-**Next up** says what is coming: the next interview with a live countdown, in
-your time and theirs; the follow-ups that are late, with *Show them*; and this
-week in seven days. It is only there when something is, and when an interview is
-under three hours away it takes the whole strip, with what is ready for it.
+**Next actions** says what to do now, most urgent first, each with the button
+that does it: an interview coming (*Prepare*), a follow-up late (*Write
+follow-up*), an offer to answer, a thank-you after yesterday's interview, a
+draft left sitting. Beside it, this week in seven days, with the interviews
+this week, what you sent and how many are waiting on a reply.
 
 Click a row and the application opens beside the list, and `↑` `↓` walk through
 them without closing it. Its facts sit in one card: status, follow-up date, how
-good a fit it is, where you found it, the language the posting is in, and the
-interview, with the zone the invitation gave it in. Under them, the CV and cover
+good a fit it is, where you found it and the language the posting is in.
+Under them, **Interviews**, one row per round: what kind (screen, technical,
+final), when, in the zone the invitation gave it in, and with whom. The next one
+is open to edit, with *Add to calendar*, *Passed* and *Didn't pass*; the next
+undecided round is the interview the calendar, the reminders and your AI client
+see. Under that, the CV and cover
 letter written for it, as pages; opposite, your notes and **the posting**, saved
 as text with its headings and lists, because adverts come down and a tailored
 CV and a letter are written against it. Not saved yet, that card is where you

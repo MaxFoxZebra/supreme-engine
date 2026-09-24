@@ -4739,6 +4739,7 @@ function drawJobs(){
 $("#jobq").addEventListener("input",()=>drawJobs());
 
 function selectJob(id){
+  if(S.jsel!==id) S.roundOpen=null;
   S.jsel=id;
   if(id) palRemember({job:id});
   const j=S.jobs.find(x=>x.id===id);
@@ -4974,8 +4975,7 @@ function drawJobInspector(){
     fact("Fit",fitCtl)+
     fact("Found on",'<button class="ap-src" id="ap-src" aria-haspopup="listbox" title="'+esc(j.source||"")+'">'+sourceMark(j)+
       '<span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button>')+
-    fact("Language",langCtl)+
-    fact("Interview",interviewCtl(j))+'</div>';
+    fact("Language",langCtl)+'</div>';
 
   const cvName=j.cv_path?j.cv_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
   const ltName=j.letter_path?j.letter_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
@@ -5039,7 +5039,7 @@ function drawJobInspector(){
   body.innerHTML=
     '<div class="peek-grid">'+
       '<div class="col">'+
-        facts+
+        facts+roundsHTML(j)+
         '<div class="block"><div class="bhead"><span class="blabel">Documents</span>'+
           (j.cv_path||j.letter_path?'<button class="obtn" id="ap-pack" data-job="'+esc(j.id)+'">'+
             (j.cv_path&&j.letter_path?"Export both…":"Export…")+'</button>':'')+
@@ -5098,7 +5098,7 @@ function drawJobInspector(){
       saveJob(j.id,{[el.dataset.j]:v===""?null:v});
     };
   });
-  wireInterview(j);
+  wireRounds(j);
   body.querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>{
     const n=+b.dataset.fit;
     saveJob(j.id,{score:j.score===n?null:n});
@@ -5139,29 +5139,109 @@ document.addEventListener("keydown",e=>{
   peekStep(e.key==="ArrowDown"?1:-1);
 });
 
-/* When and where the interview is: the time as the invitation gave it, the
-   zone it gave it in (guessed from where the job is), and what that is for
-   you. */
-function interviewCtl(j){
-  const zone=j.interview_tz||"", guess=guessTz(j);
-  const mine=userTz();
-  return '<div class="ap-iv"><input type="datetime-local" id="ap-iv-at" aria-label="'+t("Interview time")+
-    '" value="'+esc(String(j.interview_at||"").slice(0,16))+'">'+
-    '<select id="ap-iv-tz" aria-label="'+t("Time zone of the interview")+'">'+
-    '<option value=""'+(zone?"":" selected")+'>'+t("Your time")+' · '+esc(tzCity(mine))+'</option>'+
-    tzOptions(zone,guess&&guess!==mine?guess:null)+'</select></div>'+
-    (j.interview_at?'<small class="ap-iv-say">'+esc(interviewLine(j))+'</small>':'');
+/* ---- interview rounds ------------------------------------------------------
+   An application's interviews, one row per round, in the order they happen.
+   The next one not decided yet is open to edit; the server makes its time the
+   application's interview time, which is what the calendar, the reminders and
+   an AI client read. */
+const ROUND_KINDS=["Recruiter screen","Technical","System design","Take-home","Team fit","Final"];
+const roundJob=(j,r)=>({interview_at:r.at?r.at+":00":null,interview_tz:r.tz||null,location:j.location});
+function roundWhen(j,r){
+  if(!r.at) return t("Not scheduled yet");
+  return interviewLine(roundJob(j,r));
 }
-function wireInterview(j){
-  const at=$("#ap-iv-at"), tz=$("#ap-iv-tz");
-  if(!at) return;
-  at.onchange=()=>{
-    const patch={interview_at:at.value?at.value+":00":null};
-    /* A first time for a job somewhere else starts in that place's zone. */
-    if(at.value&&!j.interview_at&&!tz.value){ const g=guessTz(j); if(g&&g!==userTz()) patch.interview_tz=g }
-    saveJob(j.id,patch);
+function roundDue(j,r){
+  if(r.outcome==="passed") return ['ok',t("Passed")];
+  if(r.outcome==="failed") return ['bad',t("Didn't pass")];
+  const at=r.at&&interviewMoment(roundJob(j,r)); if(!at) return ['',''];
+  const days=dayDiff(todayKey(),dayIn(at));
+  if(at<new Date()) return ['ask',t("How did it go?")];
+  return ['soon',days<=0?t("today"):days===1?t("tomorrow"):t("in {n} days",{n:days})];
+}
+function roundsHTML(j){
+  const rs=j.rounds||[], mine=userTz();
+  /* The one you opened, else the next not decided; "__none" when you folded it. */
+  const open=S.roundOpen==="__none"?null:S.roundOpen&&rs.some(r=>r.id===S.roundOpen)?S.roundOpen:(rs.find(r=>!r.outcome)||{}).id;
+  const passed=rs.filter(r=>r.outcome==="passed").length, coming=rs.filter(r=>!r.outcome&&r.at).length,
+    unset=rs.filter(r=>!r.outcome&&!r.at).length;
+  const sum=rs.length?[t("{n} round(s)",{n:rs.length}),passed?t("{n} passed",{n:passed}):"",
+    coming?t("{n} coming",{n:coming}):"",unset?t("{n} to schedule",{n:unset}):""].filter(Boolean).join(" · "):t("None yet");
+  const people=(j.people||[]).filter(p=>p.name);
+  const row=(r,i)=>{
+    const [tone,label]=roundDue(j,r), isOpen=r.id===open;
+    const mark=r.outcome==="passed"?"✓":r.outcome==="failed"?"×":String(i+1);
+    let h='<div class="rd'+(isOpen?" open":"")+'" data-rd="'+esc(r.id)+'">'+
+      '<button type="button" class="rd-hd" data-rd-toggle="'+esc(r.id)+'" aria-expanded="'+isOpen+'">'+
+        '<span class="rd-n '+(r.outcome||(r.at?"":"unset"))+'" aria-hidden="true">'+mark+'</span>'+
+        '<span class="rd-tx"><b>'+esc(r.kind?t(r.kind):t("Interview"))+
+          (r.with?' <span>· '+esc(t("with {n}",{n:r.with}))+'</span>':'')+'</b>'+
+          '<small>'+esc(roundWhen(j,r))+'</small></span>'+
+        (label?'<span class="rd-due '+tone+'">'+esc(label)+'</span>':'')+'</button>';
+    if(isOpen){
+      const zone=r.tz||"", guess=guessTz(j);
+      h+='<div class="rd-ed">'+
+        '<label>'+esc(t("Kind"))+'<input data-rf="kind" list="rd-kinds" value="'+esc(r.kind?t(r.kind):"")+'" placeholder="'+esc(t("Technical, team fit…"))+'"></label>'+
+        '<label>'+esc(t("With"))+'<input data-rf="with" list="rd-people" value="'+esc(r.with)+'" placeholder="'+esc(t("Who you will meet"))+'"></label>'+
+        '<label>'+esc(t("When"))+'<span class="rd-when"><input type="datetime-local" data-rf="at" value="'+esc(r.at)+'">'+
+          '<select id="rd-tz" data-rf="tz" aria-label="'+esc(t("Time zone of the interview"))+'"><option value=""'+(zone?"":" selected")+'>'+
+          esc(t("Your time"))+' · '+esc(tzCity(mine))+'</option>'+tzOptions(zone,guess&&guess!==mine?guess:null)+'</select></span></label>'+
+        '<div class="rd-acts">'+
+          (r.at&&tone!=="ok"&&tone!=="bad"?'<button type="button" class="obtn" data-rd-ics>'+esc(t("Add to calendar"))+'</button>':'')+
+          '<span class="grow"></span>'+
+          '<button type="button" class="obtn" data-rd-out="passed" aria-pressed="'+(r.outcome==="passed")+'">'+esc(t("Passed"))+'</button>'+
+          '<button type="button" class="obtn" data-rd-out="failed" aria-pressed="'+(r.outcome==="failed")+'">'+esc(t("Didn't pass"))+'</button>'+
+          '<button type="button" class="obtn icon" data-rd-del aria-label="'+esc(t("Remove this round"))+'" title="'+esc(t("Remove this round"))+'">'+
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>'+
+        '</div></div>';
+    }
+    return h+'</div>';
   };
-  tz.onchange=()=>saveJob(j.id,{interview_tz:tz.value||null});
+  const last=rs.filter(r=>r.outcome).slice(-1)[0];
+  const offer=last&&last.outcome==="failed"&&j.status==="interviewing";
+  return '<div class="block rounds" id="ap-rounds"><div class="bhead"><span class="blabel">'+esc(t("Interviews"))+'</span>'+
+      '<span class="rd-sum">'+esc(sum)+'</span><span class="grow"></span>'+
+      '<button class="obtn" data-rd-add>'+esc(t("+ Add a round"))+'</button></div>'+
+    (rs.length?'<div class="rd-list">'+rs.map(row).join("")+'</div>':'')+
+    (offer?'<div class="rd-note">'+esc(t("That round did not go through."))+' <button type="button" class="linkbtn" data-rd-reject>'+
+      esc(t("Mark the application Rejected after interview"))+'</button></div>':'')+
+    '<datalist id="rd-kinds">'+ROUND_KINDS.map(k=>'<option value="'+esc(t(k))+'">').join("")+'</datalist>'+
+    '<datalist id="rd-people">'+people.map(p=>'<option value="'+esc(p.name)+'">').join("")+'</datalist></div>';
+}
+function wireRounds(j){
+  const box=$("#ap-rounds"); if(!box) return;
+  const rs=()=>(j.rounds||[]).map(r=>Object.assign({},r));
+  const save=(list,extra)=>{
+    const patch=Object.assign({rounds:list},extra||{});
+    /* A first time for an application still waiting moves it to interviewing. */
+    if(list.some(r=>r.at)&&(j.status==="applied"||j.status==="pending")) patch.status="interviewing";
+    return saveJob(j.id,patch);
+  };
+  /* Kinds are stored in English, so they read in any language. */
+  const kindKey=v=>ROUND_KINDS.find(k=>t(k)===v||k===v)||v;
+  box.querySelectorAll("[data-rd-toggle]").forEach(b=>b.onclick=()=>{
+    S.roundOpen=S.roundOpen===b.dataset.rdToggle?"__none":b.dataset.rdToggle; drawJobInspector() });
+  box.querySelectorAll(".rd.open").forEach(el=>{
+    const id=el.dataset.rd, edit=(f)=>{ const list=rs(), r=list.find(x=>x.id===id); f(r); save(list) };
+    el.querySelectorAll("[data-rf]").forEach(inp=>inp.onchange=()=>edit(r=>{
+      const k=inp.dataset.rf; let v=inp.value.trim();
+      if(k==="kind") v=kindKey(v);
+      /* A first time in a place elsewhere starts in that place's zone. */
+      if(k==="at"&&v&&!r.at&&!r.tz){ const g=guessTz(j); if(g&&g!==userTz()) r.tz=g }
+      r[k]=v }));
+    el.querySelectorAll("[data-rd-out]").forEach(b=>b.onclick=()=>edit(r=>{
+      r.outcome=r.outcome===b.dataset.rdOut?"":b.dataset.rdOut;
+      if(r.outcome) S.roundOpen=null }));
+    const ics=el.querySelector("[data-rd-ics]");
+    if(ics) ics.onclick=()=>window.open("/api/calendar.ics?id="+encodeURIComponent(j.id)+tok());
+    el.querySelector("[data-rd-del]").onclick=()=>{ S.roundOpen=null; save(rs().filter(x=>x.id!==id)) };
+  });
+  box.querySelector("[data-rd-add]").onclick=()=>{
+    const list=rs(), id="r"+Math.random().toString(36).slice(2,8);
+    list.push({id,kind:"",at:"",tz:"",with:"",outcome:"",note:""});
+    S.roundOpen=id; save(list);
+  };
+  const rj=box.querySelector("[data-rd-reject]");
+  if(rj) rj.onclick=()=>saveJob(j.id,{status:"rejected_interviewing"});
 }
 
 async function saveJob(id,patch){
@@ -5917,109 +5997,119 @@ const otherTz=j=>{ const at=interviewMoment(j); return j.interview_tz&&at&&tzOff
 const GLOBE='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '+
   'aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>';
 
-/* Every dated thing, in one list: {kind, day, job, at?, late?}. */
-/* ---- Next up, above the applications list ------------------------------ */
-/* The home screen's one look ahead: the next interview with a countdown, the
-   follow-ups that are late, and this week in seven days. It shows on the
-   whole list only, and only when one of those has something in it. */
+/* ---- Next actions, above the applications list -----------------------------
+   What to do now, one row per thing, most urgent first, each with the button
+   that does it: an interview coming, a follow-up late, an offer to answer, a
+   thank-you after yesterday's interview, a draft left sitting. Beside it,
+   this week in seven days and three counts. It shows on the whole list only. */
+function nextActions(){
+  const now=new Date(), today=todayKey(), out=[];
+  const dshort=k=>fmtKey(k,{day:"numeric",month:"short"});
+  const writer=j=>(j.people||[]).find(p=>p.email)||null;
+  const lastWrote=j=>(j.people||[]).filter(p=>p.last).sort((a,b)=>b.last.localeCompare(a.last))[0];
+  const when=at=>{
+    const mins=Math.round((at-now)/6e4), k=dayIn(at), days=dayDiff(today,k), hm=hmIn(at,userTz());
+    if(mins<180) return t("in {h} h {m} min",{h:Math.floor(mins/60),m:mins%60});
+    if(days===0) return t("today {t}",{t:hm});
+    if(days===1) return t("tomorrow {t}",{t:hm});
+    return fmtKey(k,{weekday:"short"})+" "+hm+" · "+t("in {n} days",{n:days});
+  };
+  (S.jobs||[]).forEach(j=>{
+    if(DEAD_ST.has(j.status)) return;
+    const rs=j.rounds||[], at=interviewMoment(j);
+    /* An interview this week. */
+    if(at&&at>now&&at-now<7*864e5){
+      const n=rs.findIndex(r=>!r.outcome&&r.at), r=rs[n]||{};
+      const why=[rs.length>1&&n>=0?t("Round {n} of {m}",{n:n+1,m:rs.length}):"",r.kind?t(r.kind):"",
+        r.with?t("with {n}",{n:r.with}):"",!j.cv_path?t("no tailored CV yet"):""].filter(Boolean).join(" · ");
+      out.push({j,rank:at-now<2*864e5?0:5,at:+at,dot:"live",what:t("Interview"),why,when:when(at),
+        hot:at-now<3*36e5,act:t("Prepare"),run:()=>selectJob(j.id)});
+    }
+    /* An interview that has happened and has no outcome yet. */
+    const past=rs.filter(r=>r.at&&!r.outcome).map(r=>({r,at:interviewMoment({interview_at:r.at+":00",interview_tz:r.tz||null})}))
+      .filter(x=>x.at&&x.at<now).pop();
+    if(past&&j.status==="interviewing"){
+      const ago=dayDiff(dayIn(past.at),today), p=past.r.with&&(j.people||[]).find(x=>x.name===past.r.with&&x.email)||writer(j);
+      const thanked=p&&p.last&&p.last>=dayIn(past.at);
+      if(ago<=2&&p&&!thanked)
+        out.push({j,rank:2,at:+past.at,dot:"live",what:t("Say thank you"),
+          why:[past.r.kind?t(past.r.kind):t("Interview"),past.r.with?t("with {n}",{n:past.r.with}):"",
+            ago===0?t("today"):ago===1?t("yesterday"):t("{n} days ago",{n:ago})].filter(Boolean).join(" · "),
+          when:t("today"),act:t("Write thank-you"),run:()=>draftSheet(j,p,"thanks")});
+      else if(ago<=21)
+        out.push({j,rank:4,at:+past.at,dot:"live",what:t("How did it go?"),
+          why:[past.r.kind?t(past.r.kind):t("Interview"),dshort(dayIn(past.at))].join(" · "),
+          when:ago===0?t("today"):t("{n} days ago",{n:ago}),act:t("Open"),run:()=>selectJob(j.id)});
+    }
+    /* A follow-up late or due today. */
+    if(j.followup_date&&j.followup_date<=today){
+      const late=dayDiff(j.followup_date,today), lw=lastWrote(j), p=writer(j), ap=appliedAt(j);
+      out.push({j,rank:late?1:3,at:-late,dot:late?"late":"waiting",what:t("Follow up"),
+        why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)})
+          :ap?t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}):"",
+        when:late?t("{n} day(s) late",{n:late}):t("today"),hot:!!late,
+        act:t("Write follow-up"),run:()=>p?draftSheet(j,p,"followup"):selectJob(j.id)});
+    }
+    /* An offer to answer. */
+    if(j.status==="offer"){
+      const h=(j.status_history||[]).filter(x=>x.status==="offer").pop(), k=h?dayIn(new Date(String(h.at).slice(0,19))):today;
+      const p=writer(j), days=dayDiff(k,today);
+      out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),why:t("Offer since {d}",{d:dshort(k)}),
+        when:days?t("{n} day(s) ago",{n:days}):t("today"),act:t("Reply to the offer"),run:()=>p?draftSheet(j,p,"offer"):selectJob(j.id)});
+    }
+    /* A draft left for more than three days; after a month it is not a
+       plan any more, and it stays in the list below. */
+    if(j.status==="pending"){
+      const days=dayDiff(String(j.created_at||"").slice(0,10)||today,today);
+      if(days>3&&days<=30) out.push({j,rank:6,at:-days,dot:"draft",what:t("Send it"),
+        why:j.cv_path?t("CV ready"):t("No tailored CV yet"),when:t("draft for {n} days",{n:days}),
+        act:t("Open"),run:()=>selectJob(j.id)});
+    }
+  });
+  return out.sort((a,b)=>a.rank-b.rank||a.at-b.at);
+}
 function drawNextUp(){
   const el=$("#nextup"); if(!el) return;
-  clearInterval(S.nuTick);
   const f=S.jfilter||{kind:"all"}, q=($("#jobq").value||"").trim();
-  if(!S.jready||f.kind!=="all"||q||S.jsel){ el.hidden=true; return }
-  const now=new Date(), today=todayKey(), ev=calEvents();
-  const next=ev.filter(e=>e.kind==="iv"&&e.at>now).sort((a,b)=>a.at-b.at)[0];
-  const fus=ev.filter(e=>e.kind==="fu"&&e.day<=today).sort((a,b)=>a.day.localeCompare(b.day));
-  const late=fus.filter(e=>e.late), dueToday=fus.filter(e=>!e.late);
-  if(!next&&!fus.length){ el.hidden=true; return }
-  const soon=next&&next.at-now<3*36e5;
-  const names=list=>{ const n=list.map(e=>e.job.company);
-    if(n.length>3) return n.slice(0,3).join(", ")+" +"+(n.length-3);
-    try{ return new Intl.ListFormat(uiLocale(),{type:"conjunction"}).format(n) }catch(e){ return n.join(", ") } };
-  const ivPart=j=>'<div class="nu-iv">'+companyMark(j)+'<div class="nu-tx">'+
-      '<span class="ey"><i></i>'+t(soon?"Interview today":"Next interview")+'</span>'+
-      '<span class="who">'+esc(j.company)+' <span>· '+esc(j.title)+'</span></span>'+
-      '<span class="sub">'+esc(interviewLine(j))+'</span></div>';
-  let html="", cols="";
-  if(soon){
-    const j=next.job, cvName=j.cv_path?j.cv_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
-    const words=(String(j.description||"").match(/\S+/g)||[]).length;
-    const li=(ok,yes,no)=>'<li><i class="'+(ok?"ok":"no")+'">'+(ok?"✓":"")+'</i>'+esc(ok?yes:no)+'</li>';
-    html=ivPart(j)+'<div class="left"><small>'+t("Starts in")+'</small><b id="nu-left"></b></div>'+
-      '<ul class="ready" aria-label="'+esc(t("Ready for it"))+'">'+
-        li(cvName,t("CV tailored")+(cvName?" · "+cvName:""),t("No tailored CV yet"))+
-        li(words,t("Posting saved"),t("Posting not saved"))+
-        li(j.notes,t("Notes written"),t("Notes for this round"))+'</ul>'+
-      '<button class="pbtn" data-nu-open="'+esc(j.id)+'">'+t("Prepare")+'</button></div>';
-    el.className="nu soon"; el.style.gridTemplateColumns="minmax(0,1fr)";
-  }else{
-    if(next){
-      const j=next.job;
-      html+=ivPart(j)+'<div class="end"><div class="cd" id="nu-cd" role="timer"></div><div class="acts">'+
-        '<button class="obtn" data-nu-ics="'+esc(j.id)+'">'+t("Add to calendar")+'</button>'+
-        '<button class="obtn dark" data-nu-open="'+esc(j.id)+'">'+t("Prepare")+'</button></div></div></div>';
-      cols+="minmax(0,1.35fr) ";
-    }
-    if(fus.length){
-      const lead=late.length?late:dueToday, oldest=late.length?dayDiff(late[0].day,today):0;
-      const head=late.length?t(late.length===1?"1 follow-up overdue":"{n} follow-ups overdue",{n:late.length})
-        :t(dueToday.length===1?"1 follow-up due today":"{n} follow-ups due today",{n:dueToday.length});
-      const sub=late.length?(oldest===1?t("The oldest is 1 day late"):t("The oldest is {n} days late",{n:oldest}))
-        +(dueToday.length?" · "+t("{n} more due today",{n:dueToday.length}):"")
-        :(next?"":t("No interview booked"));
-      html+='<div class="nu-fu"><span class="stack">'+lead.slice(0,3).map(e=>companyMark(e.job)).join("")+'</span>'+
-        '<div class="nu-tx"><span class="ey '+(late.length?"late":"due")+'"><i></i>'+esc(head)+'</span>'+
-        '<span class="who" title="'+esc(lead.map(e=>e.job.company).join(", "))+'">'+esc(names(lead))+'</span>'+
-        (sub?'<span class="sub">'+esc(sub)+'</span>':'')+'<button class="lnk" data-nu-show>'+t("Show them")+' →</button></div></div>';
-      cols+="minmax(0,1fr) ";
-    }
-    if(next){
-      const mon=monday(today);
-      const days=Array.from({length:7},(_,i)=>{
-        const k=addDays(mon,i), iv=ev.some(e=>e.kind==="iv"&&e.day===k),
-          fu=ev.filter(e=>e.kind==="fu"&&e.day===k), lt=fu.some(e=>e.late);
-        const tip=[iv?t("Interview")+" · "+ev.filter(e=>e.kind==="iv"&&e.day===k).map(e=>e.job.company).join(", "):"",
-          fu.length?t("Follow up")+" · "+fu.map(e=>e.job.company).join(", "):""].filter(Boolean).join("\n");
-        return '<button data-nu-day="'+k+'"'+(k===today?' class="today"':'')+' title="'+esc(tip||fmtKey(k,{weekday:"long",day:"numeric",month:"long"}))+'">'+
-          '<small>'+esc(fmtKey(k,{weekday:"short"}))+'</small>'+Number(k.slice(8))+
-          '<span class="mk">'+(iv?'<span class="d"></span>':'')+(fu.length?'<span class="r'+(lt?" late":"")+'"></span>':'')+'</span></button>';
-      }).join("");
-      html+='<div class="nu-wk"><div class="hd">'+t("This week")+'<button data-nu-cal>'+t("Open calendar")+' →</button></div>'+
-        '<div class="days">'+days+'</div></div>';
-      cols+="300px";
-    }
-    el.className="nu"+(next?"":" slim");
-    el.style.gridTemplateColumns=cols.trim();
-  }
-  const wasHidden=el.hidden;
-  el.innerHTML=html; el.hidden=false;
-  el.style.animation=wasHidden?"":"none";
-  $$("#nextup [data-nu-open]").forEach(b=>b.onclick=()=>selectJob(b.dataset.nuOpen));
-  $$("#nextup [data-nu-ics]").forEach(b=>b.onclick=()=>window.open("/api/calendar.ics?id="+encodeURIComponent(b.dataset.nuIcs)+tok()));
-  const sh=$("#nextup [data-nu-show]"); if(sh) sh.onclick=()=>{ S.jfilter={kind:"alert",value:"followup_due"}; S.fnode=null; drawJobs() };
+  if(!S.jready||f.kind!=="all"||q||S.jsel||!(S.jobs||[]).length){ el.hidden=true; return }
+  const acts=nextActions(), today=todayKey(), ev=calEvents(), mon=monday(today);
+  const shown=S.naAll?acts:acts.slice(0,5), more=acts.length-shown.length;
+  const rows=shown.map((a,i)=>'<div class="na-row">'+companyMark(a.j)+
+      '<span class="dot '+a.dot+'" aria-hidden="true"></span>'+
+      '<span class="na-tx"><b>'+esc(a.what)+' <span>· '+esc(a.j.company)+', '+esc(a.j.title)+'</span></b>'+
+        (a.why?'<small>'+esc(a.why)+'</small>':'')+'</span>'+
+      '<span class="na-when'+(a.hot?" hot":"")+'">'+esc(a.when)+'</span>'+
+      '<button type="button" class="obtn" data-na="'+i+'">'+esc(a.act)+'</button></div>').join("");
+  const days=Array.from({length:7},(_,i)=>{
+    const k=addDays(mon,i), iv=ev.filter(e=>e.kind==="iv"&&e.day===k), fu=ev.filter(e=>e.kind==="fu"&&e.day===k), lt=fu.some(e=>e.late);
+    const tip=[iv.length?t("Interview")+" · "+iv.map(e=>e.job.company).join(", "):"",
+      fu.length?t("Follow up")+" · "+fu.map(e=>e.job.company).join(", "):""].filter(Boolean).join("\n");
+    return '<button data-nu-day="'+k+'"'+(k===today?' class="today"':'')+' title="'+esc(tip||fmtKey(k,{weekday:"long",day:"numeric",month:"long"}))+'">'+
+      '<small>'+esc(fmtKey(k,{weekday:"short"}))+'</small>'+Number(k.slice(8))+
+      '<span class="mk">'+(iv.length?'<span class="d"></span>':'')+(fu.length?'<span class="r'+(lt?" late":"")+'"></span>':'')+'</span></button>';
+  }).join("");
+  const end=addDays(mon,6), inWeek=k=>k>=mon&&k<=end;
+  const ivWeek=ev.filter(e=>e.kind==="iv"&&inWeek(e.day)).length;
+  const sentWeek=(S.jobs||[]).filter(j=>(j.status_history||[]).some(h=>h.status==="applied"&&inWeek(String(h.at).slice(0,10)))).length;
+  const waiting=(S.jobs||[]).filter(j=>j.status==="applied").length;
+  const stat=(label,n)=>'<span class="na-stat"><span>'+esc(label)+'</span><b>'+n+'</b></span>';
+  el.className="na";
+  el.innerHTML='<div class="na-main"><div class="na-hd"><h2>'+esc(t("Next actions"))+'</h2><span>'+
+      esc(acts.length?t("{n} thing(s) to do, most urgent first",{n:acts.length}):t("Nothing to do right now"))+'</span></div>'+
+      (rows||'<p class="na-none">'+esc(t("Nothing is late or coming up."))+'</p>')+
+      (more>0||S.naAll&&acts.length>5?'<div class="na-more"><button type="button" class="linkbtn" data-na-more>'+
+        esc(more>0?t("Show {n} more",{n:more}):t("Show fewer"))+'</button></div>':'')+'</div>'+
+    '<div class="na-side"><div class="hd">'+esc(t("This week"))+'<button data-nu-cal>'+esc(t("Open calendar"))+' →</button></div>'+
+      '<div class="days">'+days+'</div>'+
+      '<div class="na-stats">'+stat(t("Interviews this week"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Waiting on a reply"),waiting)+'</div></div>';
+  el.hidden=false;
+  $$("#nextup [data-na]").forEach(b=>b.onclick=()=>shown[+b.dataset.na].run());
+  const mb=$("#nextup [data-na-more]"); if(mb) mb.onclick=()=>{ S.naAll=!S.naAll; drawNextUp() };
   const cal=$("#nextup [data-nu-cal]"); if(cal) cal.onclick=()=>{ S.calView="overview"; setView("cal") };
   $$("#nextup [data-nu-day]").forEach(b=>b.onclick=()=>{ S.calView="week"; S.calAnchor=b.dataset.nuDay; setView("cal") });
-  if(next){
-    const p=n=>String(n).padStart(2,"0");
-    /* Units short enough to sit beside the digits; French counts days in "j". */
-    const U={d:UI_LANG==="fr"?"j":"d", m:UI_LANG==="en"?"m":"min"};
-    const tick=()=>{
-      const cd=$("#nu-cd"), lf=$("#nu-left");
-      if(!cd&&!lf){ clearInterval(S.nuTick); return }
-      const left=Math.max(0,next.at-new Date());
-      const d=Math.floor(left/864e5), h=Math.floor(left/36e5)%24, m=Math.floor(left/6e4)%60, s=Math.floor(left/1e3)%60;
-      /* Days and hours while it is days away, minutes once it is today: no seconds ticking. */
-      if(cd){ cd.innerHTML=d?'<b>'+d+'</b><u>'+U.d+'</u><b>'+p(h)+'</b><u>h</u>'
-        :'<b>'+p(h)+'</b><u>h</u><b>'+p(m)+'</b><u>'+U.m+'</u>';
-        /* Read as one time, not digit by digit; a timer is never announced unasked. */
-        cd.setAttribute("aria-label",(d?d+" "+U.d+" ":"")+h+" h "+m+" min") }
-      if(lf) lf.textContent=(h?h+" h ":"")+m+" min";
-      if(left<=0) drawNextUp();
-    };
-    tick(); S.nuTick=setInterval(tick,15000);
-  }
 }
 
+/* Every dated thing, in one list: {kind, day, job, at?, late?}. */
 function calEvents(){
   const out=[], today=todayKey();
   (S.jobs||[]).forEach(j=>{

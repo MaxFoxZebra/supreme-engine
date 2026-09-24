@@ -195,79 +195,6 @@ button:disabled{opacity:.4;cursor:default}
 
 /* A screen's own header: what it is, how many, and what you can do there. */
 .phead{flex:none;display:flex;align-items:center;gap:12px;padding:20px 24px 14px}
-/* ---- Next up, on the applications list ---- */
-.nu{flex:none;margin:0 24px 14px;display:grid;border:1px solid var(--rule);border-radius:14px;
-  background:var(--field);overflow:hidden;box-shadow:0 1px 2px rgba(27,26,23,.05),0 6px 18px rgba(27,26,23,.05);
-  animation:nu-rise .45s cubic-bezier(.2,.8,.2,1) both}
-.nu>div{display:flex;align-items:center;gap:16px;padding:14px 20px;min-width:0}
-.nu>div+div{border-left:1px solid var(--bd-inner)}
-.nu .nu-tx{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
-.nu .ey{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.06em;
-  text-transform:uppercase;color:var(--acc-text)}
-.nu .ey i{width:7px;height:7px;border-radius:50%;background:var(--acc);flex:none;animation:nu-live 1.6s ease-in-out infinite}
-.nu .ey.late{color:var(--bad)}
-.nu .ey.late i{background:var(--bad);animation:nu-late 1.8s ease-out infinite}
-.nu .ey.due{color:var(--fn-wait-text)}
-.nu .ey.due i{background:var(--fn-wait);animation:none}
-.nu .who{font-size:15px;font-weight:600;color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nu .who span{font-weight:400;color:var(--t600)}
-.nu .sub{font-size:12.5px;color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nu .colog{width:44px;height:44px;border-radius:11px;font-size:14px}
-.nu .end{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none}
-.nu .cd{display:flex;align-items:baseline;gap:3px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--t900)}
-.nu .cd b{font-size:22px;font-weight:600}
-.nu .cd u{text-decoration:none;font-size:11.5px;color:var(--t500);margin-right:6px}
-.nu .acts{display:flex;gap:8px}
-.nu .acts .obtn{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;font-weight:500;white-space:nowrap}
-.nu .obtn.dark{background:var(--t900);color:var(--app);border-color:var(--t900)}
-.nu .stack{display:flex;flex:none}
-.nu .stack .colog{width:30px;height:30px;border-radius:8px;font-size:10px;box-shadow:0 0 0 2px var(--field)}
-.nu .stack .colog+.colog{margin-left:-8px}
-.nu-wk{flex-direction:column;align-items:stretch!important;gap:8px!important;background:var(--row-alt)}
-.nu-wk .hd{display:flex;align-items:baseline;justify-content:space-between;font-size:12.5px;font-weight:600;color:var(--t900)}
-.nu-wk .hd button{border:0;background:none;padding:0;font-size:12.5px;font-weight:500;color:var(--acc-text)}
-.nu-wk .hd button:hover{text-decoration:underline}
-.nu-wk .days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-.nu-wk .days button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0 5px;border:0;
-  border-radius:7px;background:transparent;color:var(--t700);font-size:12.5px}
-.nu-wk .days button:hover{background:var(--paper-hover)}
-.nu-wk .days button.today{background:var(--field);box-shadow:0 0 0 1.5px var(--t900);color:var(--t900);font-weight:600}
-.nu-wk .days small{font-size:10px;color:var(--t500)}
-.nu-wk .days .mk{height:7px;display:flex;gap:3px;align-items:center}
-.nu-wk .days .mk .d{width:6px;height:6px;background:var(--acc);transform:rotate(45deg)}
-.nu-wk .days .mk .r{width:5px;height:5px;border-radius:50%;border:1.5px solid var(--fn-wait)}
-.nu-wk .days .mk .r.late{border-color:var(--bad)}
-/* An interview in under three hours takes the strip. */
-.nu.soon{border-color:color-mix(in srgb,var(--acc) 55%,var(--rule));
-  box-shadow:0 1px 2px rgba(27,26,23,.05),0 8px 24px color-mix(in srgb,var(--acc) 16%,transparent)}
-.nu.soon .ey i{animation:nu-soon 1.6s ease-out infinite}
-.nu .left{display:flex;flex-direction:column;align-items:center;padding:0 22px;border-left:1px solid var(--bd-inner);
-  border-right:1px solid var(--bd-inner);flex:none}
-.nu .left small{font-size:12px;color:var(--t500)}
-.nu .left b{font-size:26px;font-weight:700;color:var(--acc-text);font-variant-numeric:tabular-nums;white-space:nowrap}
-.nu .ready{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--t700);flex:1;min-width:0}
-.nu .ready li{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nu .ready i{width:14px;height:14px;border-radius:50%;flex:none;display:grid;place-items:center;font-style:normal;
-  font-size:9px;font-weight:700;color:#fff;background:var(--good,#007a5e)}
-.nu .ready i.no{background:none;border:1.5px solid var(--bd-field)}
-.nu .pbtn{flex:none}
-.nu .nu-fu .who{font-size:14px;font-weight:500}
-.nu .ey{white-space:nowrap}
-.nu .lnk{border:0;background:none;padding:0;font-size:12.5px;font-weight:500;color:var(--acc-text);align-self:flex-start;white-space:nowrap}
-/* Names and times wrap to a second line rather than lose their end. */
-.nu .nu-iv .who,.nu .nu-iv .sub{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
-.nu .lnk:hover{text-decoration:underline}
-.nu .cd b{font-size:20px}
-.nu.soon .nu-iv .nu-tx{flex:0 1 auto;max-width:38%}
-/* Only follow-ups: one slim line. */
-.nu.slim>div{padding:10px 18px}
-.nu.slim .who{font-size:14px}
-@keyframes nu-rise{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-@keyframes nu-live{0%,100%{opacity:.45}50%{opacity:1}}
-@keyframes nu-late{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--bad) 45%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
-@keyframes nu-soon{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 50%,transparent)}50%{box-shadow:0 0 0 7px transparent}}
-@media (prefers-reduced-motion:reduce){.nu,.nu .ey i{animation:none!important}}
-@media (max-width:1240px){ .nu .nu-wk{display:none} .nu{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)!important} }
 .phead h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em;
   color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pcount{font-size:14px;color:var(--t500);font-variant-numeric:tabular-nums}
@@ -2812,3 +2739,80 @@ textarea{resize:vertical}
 .sheet,.pal,#ovl-settings{outline:1px solid var(--edge,transparent);outline-offset:-1px}
 /* Part of the text (and of a dragged link's name), but not seen. */
 .vh{font-size:0;letter-spacing:0}
+/* ---- interview rounds, on an application ---- */
+.rounds .bhead{display:flex;align-items:center;gap:10px}
+.rd-sum{font-size:12px;color:var(--t500);min-width:0}
+.rounds .bhead .obtn{white-space:nowrap;flex:none}
+.rd-list{display:flex;flex-direction:column;border:1px solid var(--rule);border-radius:12px;background:var(--field);overflow:hidden}
+.rd+.rd{border-top:1px solid var(--bd-inner)}
+.rd-hd{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;column-gap:12px;width:100%;
+  padding:10px 14px;border:0;background:none;text-align:left;color:var(--t900)}
+.rd-hd:hover{background:var(--paper-hover)}
+.rd.open{background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc)}
+.rd.open .rd-hd:hover{background:transparent}
+.rd-n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11.5px;font-weight:700;
+  background:var(--bar);color:var(--t700)}
+.rd-n.passed{background:color-mix(in srgb,var(--fn-won) 16%,var(--field));color:var(--fn-offer-text)}
+.rd-n.failed{background:color-mix(in srgb,var(--fn-lost) 14%,var(--field));color:var(--fn-lost-text)}
+.rd-n.unset{background:none;border:1.5px dashed var(--bd-field);color:var(--t500)}
+.rd.open .rd-n:not(.passed):not(.failed){background:var(--acc);color:#1b1a17;border:0}
+.rd-tx{display:flex;flex-direction:column;gap:1px;min-width:0}
+.rd-tx b{font-size:13.5px;font-weight:600}
+.rd-tx b span{font-weight:400;color:var(--t600)}
+.rd-tx small{font-size:12.5px;color:var(--t600);line-height:1.35}
+.rd-due{font-size:12.5px;font-weight:600;white-space:nowrap;color:var(--t600)}
+.rd-due.ok{color:var(--fn-offer-text)} .rd-due.bad{color:var(--fn-lost-text)}
+.rd-due.soon{color:var(--acc-text)} .rd-due.ask{color:var(--acc-text)}
+.rd-ed{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;padding:2px 14px 14px 50px}
+.rd-ed label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--t600);min-width:0}
+.rd-ed label:nth-child(3){grid-column:1/-1}
+.rd-ed input{width:100%;box-sizing:border-box;height:32px;padding:0 10px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
+  color:var(--t900);font-size:13px;font-weight:400;min-width:0}
+.rd-when{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.rd-when select{min-height:32px;border-radius:8px;font-size:13px}
+.rd-acts{grid-column:1/-1;display:flex;align-items:center;gap:6px}
+.rd-acts .obtn{height:30px;padding:0 11px;border-radius:7px;font-size:12.5px}
+.rd-acts .obtn[aria-pressed=true]{background:var(--t900);color:var(--app);border-color:var(--t900)}
+.rd-acts .obtn.icon{width:30px;padding:0;display:grid;place-items:center}
+.rd-note{margin-top:8px;font-size:12.5px;color:var(--t700)}
+/* ---- Next actions, on the applications list ---- */
+.na{flex:none;margin:0 24px 14px;display:grid;grid-template-columns:minmax(0,1fr) 290px;border:1px solid var(--rule);
+  border-radius:14px;background:var(--field);overflow:hidden;
+  box-shadow:0 1px 2px rgba(27,26,23,.05),0 6px 18px rgba(27,26,23,.05)}
+.na-main{display:flex;flex-direction:column;min-width:0}
+.na-hd{display:flex;align-items:baseline;gap:10px;padding:13px 18px 9px}
+.na-hd h2{margin:0;font-size:15px;font-weight:600;color:var(--t900)}
+.na-hd span{font-size:12.5px;color:var(--t500)}
+.na-row{display:grid;grid-template-columns:28px 8px minmax(0,1fr) auto auto;align-items:center;column-gap:12px;
+  padding:8px 18px;border-top:1px solid var(--bd-inner)}
+.na-row .colog{width:28px;height:28px;border-radius:7px;font-size:10px}
+.na-row .dot{width:8px;height:8px}
+.na-tx{display:flex;flex-direction:column;gap:1px;min-width:0}
+.na-tx b{font-size:13.5px;font-weight:600;color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.na-tx b span{font-weight:400;color:var(--t600)}
+.na-tx small{font-size:12.5px;color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.na-when{font-size:12.5px;color:var(--t700);white-space:nowrap}
+.na-when.hot{color:var(--bad);font-weight:600}
+.na-row .obtn{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.na-more{padding:8px 18px 11px;border-top:1px solid var(--bd-inner);font-size:12.5px}
+.na-more .linkbtn{text-decoration:none}
+.na-none{margin:0;padding:10px 18px 16px;font-size:13px;color:var(--t600)}
+.na-side{display:flex;flex-direction:column;gap:10px;padding:13px 18px;border-left:1px solid var(--bd-inner);background:var(--row-alt)}
+.na-side .hd{display:flex;align-items:baseline;justify-content:space-between;font-size:12.5px;font-weight:600;color:var(--t900)}
+.na-side .hd button{border:0;background:none;padding:0;font-size:12.5px;font-weight:500;color:var(--t600)}
+.na-side .hd button:hover{color:var(--t900);text-decoration:underline}
+.na-side .days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.na-side .days button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0 5px;border:0;
+  border-radius:7px;background:transparent;color:var(--t700);font-size:12.5px}
+.na-side .days button:hover{background:var(--paper-hover)}
+.na-side .days button.today{background:var(--field);box-shadow:0 0 0 1.5px var(--t900);color:var(--t900);font-weight:600}
+.na-side .days small{font-size:10px;color:var(--t500)}
+.na-side .mk{height:7px;display:flex;gap:3px;align-items:center}
+.na-side .mk .d{width:6px;height:6px;background:var(--acc);transform:rotate(45deg)}
+.na-side .mk .r{width:5px;height:5px;border-radius:50%;border:1.5px solid var(--fn-wait)}
+.na-side .mk .r.late{border-color:var(--bad)}
+.na-stats{margin-top:4px;padding-top:10px;border-top:1px solid var(--bd-inner);display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--t700)}
+.na-stat{display:flex;justify-content:space-between}
+.na-stat b{font-weight:600;color:var(--t900);font-variant-numeric:tabular-nums}
+@media (max-width:1240px){ .na{grid-template-columns:minmax(0,1fr)} .na-side{display:none} }
+.dot.late{background:var(--bad)}

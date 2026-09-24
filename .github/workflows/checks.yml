@@ -95,6 +95,9 @@ jobs:
       - name: People
         run: python checks/peopletest.py
 
+      - name: Interview rounds
+        run: python checks/roundstest.py
+
       - name: Save to CV Studio
         run: python checks/cliptest.py
 
