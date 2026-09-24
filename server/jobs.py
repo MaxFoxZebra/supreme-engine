@@ -19,6 +19,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -188,7 +189,8 @@ def connect(workspace: Path) -> sqlite3.Connection:
     for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT"),
                       ("logo", "TEXT"), ("interview_at", "TEXT"),
                       ("contact_email", "TEXT"), ("last_contact_at", "TEXT"),
-                      ("language", "TEXT"), ("interview_tz", "TEXT")):
+                      ("language", "TEXT"), ("interview_tz", "TEXT"),
+                      ("people", "TEXT")):
         if col not in have:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
     con.commit()
@@ -205,7 +207,43 @@ def _row(r: sqlite3.Row) -> dict:
         d["status_history"] = json.loads(d.get("status_history") or "[]")
     except json.JSONDecodeError:
         d["status_history"] = []
+    try:
+        d["people"] = json.loads(d.get("people") or "[]")
+    except json.JSONDecodeError:
+        d["people"] = []
+    # Before people, an application had one contact email. It is the first
+    # person until someone is added.
+    if not d["people"] and d.get("contact_email"):
+        d["people"] = [{"id": "contact", "name": "", "role": "", "email": d["contact_email"],
+                        "link": "", "last": ""}]
     return d
+
+
+PERSON_FIELDS = {"name": 120, "role": 80, "email": 200, "link": 400, "last": 10}
+
+
+def clean_people(people) -> list[dict]:
+    """The people on an application as they may be stored: known fields only,
+    trimmed, an email that looks like one, a web link, a date; nobody without
+    a name or an email; twenty at most."""
+    if not isinstance(people, list):
+        raise ValueError("People must be a list.")
+    out = []
+    for p in people[:20]:
+        if not isinstance(p, dict):
+            continue
+        q = {k: str(p.get(k) or "").strip()[:n] for k, n in PERSON_FIELDS.items()}
+        if q["email"] and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", q["email"]):
+            raise ValueError(f"{q['email']} is not an email address.")
+        if q["link"] and not re.match(r"https?://", q["link"]):
+            q["link"] = "https://" + q["link"]
+        if q["last"] and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", q["last"]):
+            q["last"] = ""
+        if not (q["name"] or q["email"]):
+            continue
+        q["id"] = str(p.get("id") or "") or uuid.uuid4().hex[:8]
+        out.append(q)
+    return out
 
 
 def list_jobs(workspace: Path, status: str | None = None, q: str | None = None,
@@ -302,6 +340,18 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
             if f in data and data[f] != cur[f]:
                 sets.append(f"{f}=?")
                 args.append(data[f])
+        if "people" in data:
+            people = clean_people(data["people"])
+            stored = json.dumps(people, ensure_ascii=False)
+            if stored != (cur["people"] or "[]"):
+                sets.append("people=?")
+                args.append(stored)
+                # contact_email is what the mail matching reads: keep it the
+                # first person's.
+                first = next((p["email"] for p in people if p["email"]), None)
+                if first != cur["contact_email"] and "contact_email=?" not in sets:
+                    sets.append("contact_email=?")
+                    args.append(first)
         note = (data.get("append_note") or "").strip()
         if note:
             stamped = f"[{time.strftime('%Y-%m-%d')}] {note}"

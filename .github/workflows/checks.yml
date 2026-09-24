@@ -92,6 +92,9 @@ jobs:
       - name: Application pack
         run: python checks/packtest.py
 
+      - name: People
+        run: python checks/peopletest.py
+
       - name: Translations built and complete
         run: |
           python i18n/build.py

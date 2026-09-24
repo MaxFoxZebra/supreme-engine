@@ -1766,6 +1766,33 @@ def pack_info(job_id: str) -> dict:
             "posting": bool((job.get("description") or "").strip())}
 
 
+def draft_context(job_id: str) -> dict:
+    """What an email about an application can say without asking: whose name
+    to sign, when you applied and met, and the posting's first duties."""
+    job = next((j for j in jobstore.list_jobs(WORKSPACE) if j["id"] == job_id), None) \
+        if jobstore is not None else None
+    if job is None:
+        raise ValueError("No such job.")
+    you = ""
+    for p in (job.get("cv_path"), (base_cv() or {}).get("path")):
+        if not p:
+            continue
+        try:
+            data = to_plain(yaml_rt.load(safe_path(p).read_text(encoding="utf-8"))) or {}
+        except Exception:
+            continue
+        you = str(((data.get("cv") or {}).get("name")) or "")
+        if you:
+            break
+    when = {}
+    for h in job.get("status_history") or []:
+        when.setdefault(h.get("status"), str(h.get("at") or "")[:10])
+    duties = [re.sub(r"[*_`]", "", m).strip().rstrip(".")
+              for m in re.findall(r"(?m)^\s*[-*•]\s+(.+)$", job.get("description") or "")][:2]
+    return {"you": you, "applied": when.get("applied"), "interviewed": when.get("interviewing"),
+            "duties": duties}
+
+
 def application_pack(job_id: str, fmt: str = "pdf", name: str | None = None,
                      posting: bool = False) -> tuple[bytes, str, str]:
     """The CV and the letter for one application as one PDF (CV first) or a
@@ -3392,6 +3419,12 @@ def openapi_spec() -> dict:
             "/api/funnel": {"get": {"summary":
                 "Application funnel: node counts, flows and conversion rates",
                 "responses": ok}},
+            "/api/jobs/draft": {"get": {"summary":
+                "What an email about an application can be written from: your "
+                "name (from its CV, else the base CV), the dates you applied and "
+                "were interviewed, and the posting's first two duties",
+                "parameters": [{"name": "id", "in": "query", "schema": {"type": "string"}}],
+                "responses": ok}},
             "/api/pack": {"get": {"summary":
                 "An application's CV and cover letter as one PDF (format=pdf, CV "
                 "first) or a zip of separate files (format=zip, with posting=1 to "
@@ -3785,6 +3818,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/doc":
                 p = safe_path(q["path"][0])
                 return self._json(load_letter(p) if is_letter(p) else load_doc(p))
+            if u.path == "/api/jobs/draft":
+                try:
+                    return self._json(draft_context((q.get("id") or [""])[0]))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 404)
             if u.path == "/api/pack" or u.path == "/api/pack/info":
                 job_id = (q.get("job") or [""])[0]
                 try:
@@ -3975,10 +4013,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/open":
                 # A link out of the app. The desktop webview drops target=_blank
                 # on the floor, so the page asks for it here and the system
-                # browser opens it. Web links only: this is not a way to launch
-                # whatever a stored URL happens to name.
+                # browser opens it. Web links, and an email to write in the mail
+                # app: this is not a way to launch whatever a stored URL names.
                 link = str(payload.get("url") or "")
-                if urlparse(link).scheme not in ("http", "https"):
+                if urlparse(link).scheme not in ("http", "https", "mailto"):
                     return self._json({"error": "Only web links can be opened."}, 400)
                 webbrowser.open(link)
                 return self._json({"ok": True})

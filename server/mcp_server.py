@@ -52,6 +52,9 @@ mcp = MCPServer(
         "3. An automated acknowledgement is not a status change. Record it "
         "with last_contact_at and leave the status alone. Never set a ghosted "
         "status from silence: absence of a message is not a message.\n\n"
+        "When a thread or an invitation names the recruiter, the hiring "
+        "manager or an interviewer, record them with save_person: the app "
+        "drafts follow-ups and thank-you notes to them.\n\n"
         "When you add an application, pass company_website: the company's own "
         "domain, found from the posting or its careers page, not the job "
         "board's. Its logo is fetched from there and shown on the row.\n\n"
@@ -674,6 +677,36 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                        "Interview time cleared, no matching calendar event.")
     data["append_note"] = append_note
     return studio.jobstore.update_job(_ws(), job_id, data)
+
+
+@tool
+def save_person(job_id: str, name: str | None = None, email: str | None = None,
+                role: str | None = None, link: str | None = None) -> dict:
+    """Record someone the user is talking to about an application: a
+    recruiter, a hiring manager, an interviewer, whoever referred them.
+
+    Use it when an email thread or an invitation names them. Someone already
+    listed (same email, else same name) is completed, never duplicated; only
+    the fields you pass change, and nobody is ever removed here. `role` reads
+    best as one of Recruiter, Hiring manager, Interviewer or Referral, which
+    the app shows in the user's language. `link` is a profile or page URL.
+    """
+    if not (name or email):
+        raise ValueError("Give at least a name or an email.")
+    people = [dict(p) for p in read_job(job_id).get("people") or []]
+    match = next((p for p in people if email and (p.get("email") or "").lower() == email.lower()), None) \
+        or next((p for p in people if name and (p.get("name") or "").strip().lower() == name.strip().lower()), None)
+    fields = {"name": name, "email": email, "role": role, "link": link}
+    if match is None:
+        match = {"name": "", "email": "", "role": "", "link": "", "last": ""}
+        people.append(match)
+    for k, v in fields.items():
+        if v is not None and v.strip():
+            if k == "email" and (match.get("email") or "").lower() == v.strip().lower():
+                continue                # the same address, written differently
+            match[k] = v.strip()
+    job = studio.jobstore.update_job(_ws(), job_id, {"people": people})
+    return {"people": job.get("people"), "id": job_id}
 
 
 @tool

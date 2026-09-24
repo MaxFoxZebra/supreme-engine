@@ -388,9 +388,19 @@ def build(studio, applications: int = 64) -> dict:
             "notes": "Second round: system design, 60 minutes, video call."})
         hist = [{"status": "pending", "at": _iso(sent - dt.timedelta(days=1))},
                 {"status": "applied", "at": _iso(sent)}, {"status": "interviewing", "at": _iso(iv)}]
+        # Who you have been talking to there: a recruiter you wrote to, and the
+        # manager you will meet.
+        slug = company.lower().replace(" ", "")
+        people = [{"id": slug + "1", "name": "Sarah Okafor" if city == "London" else "Mariana Lima",
+                   "role": "Recruiter", "email": ("sarah.okafor@" if city == "London" else "mariana.lima@")
+                   + slug + ".example", "link": "", "last": (now - dt.timedelta(days=9)).date().isoformat()},
+                  {"id": slug + "2", "name": "Tom Reid" if city == "London" else "Rafael Souza",
+                   "role": "Hiring manager", "email": "", "link": "", "last": ""}]
         con = sqlite3.connect(jobs.db_path(ws))
-        con.execute("UPDATE jobs SET status='interviewing', status_history=?, created_at=?, updated_at=? "
-                    "WHERE id=?", (json.dumps(hist), hist[0]["at"], hist[-1]["at"], j["id"]))
+        con.execute("UPDATE jobs SET status='interviewing', status_history=?, created_at=?, updated_at=?, "
+                    "people=?, contact_email=? WHERE id=?",
+                    (json.dumps(hist), hist[0]["at"], hist[-1]["at"], json.dumps(people),
+                     people[0]["email"], j["id"]))
         con.commit()
         con.close()
         made.append({**j, "status": "interviewing", "lang": j["language"]})

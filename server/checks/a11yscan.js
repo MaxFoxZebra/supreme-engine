@@ -160,7 +160,9 @@ async function main() {
     ["week", `document.querySelector('#cal-views [data-cv=week]').click()`],
     ...["workspace", "editor", "region", "notify", "ai", "api", "updates", "about"].map(p =>
       ["settings " + p, `openSettings("${p}")`]),
-    ["pack", `closeOverlays(); setView("jobs"); selectJob(S.jobs.find(j=>j.cv_path&&j.letter_path).id);
+    ["people", `closeOverlays(); setView("jobs"); selectJob(S.jobs.find(j=>j.people&&j.people.length>1).id)`],
+    ["email draft", `document.querySelector("[data-pp-write]").click(); await new Promise(r=>setTimeout(r,600))`],
+    ["pack", `closeSheet(); closeOverlays(); setView("jobs"); selectJob(S.jobs.find(j=>j.cv_path&&j.letter_path).id);
       await new Promise(r=>setTimeout(r,600)); document.querySelector("#ap-pack").click()`],
     ["search", `closeSheet(); closeOverlays(); openPal()`],
     ["search results", `(()=>{ const i=document.querySelector("#pal-in"); i.value="platform";

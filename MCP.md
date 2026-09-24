@@ -29,6 +29,7 @@ one rendered by clicking Save.
 | `job_alerts` | The same list the Jobs view shows under Attention |
 | `set_job_status` | Move one along the funnel |
 | `update_job_tracking` | Interview time, follow-up date, who is writing to you, which CV or letter was sent, and the posting (link, text, place, source) |
+| `save_person` | Record someone you are talking to about an application (recruiter, hiring manager, interviewer, referral), from an email thread or an invitation. Completes someone already listed, never removes anyone |
 | `ats_check` | Reads a CV's PDF the way an applicant tracking system does: what fails to parse, and which of the posting's keywords it uses |
 | `add_job` | Add one, refusing a likely duplicate unless you confirm. Given the company's website, it fetches the company's logo too |
 | `set_company_logo` | Give a company a logo, from its website or an image on disk, and use it on every application to that company |

@@ -23,6 +23,13 @@ tag, so a release is never published with nothing said about it.
   or a zip of separate files (with the posting, if you like). It is named
   for you, the company and the role, is rendered from what is saved, and
   can mark a draft as applied today.
+- **People, and what to write them.** Each application has a People card:
+  the recruiter, the hiring manager, whoever referred you, with their email
+  and when you last wrote. A follow-up, a thank-you after an interview or a
+  question about next steps is drafted from the application, in its
+  language, and opens in your own mail app; sending a follow-up can move the
+  reminder a week on. Your AI client can add people from an email thread
+  (save_person). The single Contact field becomes the first person.
 - **Smaller fixes.** The fields under "Company, role and the rest" are
   announced by their labels; the words of your CV in "Changed from the
   base" are no longer run through the translator; the change count there is

@@ -4754,7 +4754,7 @@ const JOB_GRID=[
 const JOB_MORE=[
   ["company","Company","text"],["title","Role","text"],
   ["location","Location","text"],["url","Link","text"],
-  ["salary_expected","Salary","number"],["contact_email","Contact","text"],
+  ["salary_expected","Salary","number"],
 ];
 /* The rows the arrows walk: what the table is currently showing, in the order
    it is showing it, so Down always means "the row under this one". */
@@ -5032,6 +5032,7 @@ function drawJobInspector(){
       '<div class="col">'+
         '<div class="block"><span class="blabel">Notes</span>'+
           '<textarea data-j="notes" class="notes" aria-label="Notes">'+esc(j.notes||"")+'</textarea></div>'+
+        peopleHTML(j)+
         '<div class="block grow">'+posting+'</div>'+
       '</div>'+
     '</div>';
@@ -7584,6 +7585,175 @@ async function packSheet(id){
     window.open("/api/pack?"+q+tok());
     closeSheet();
     if(mark) saveJob(id,{status:"applied"});
+  };
+}
+
+
+/* ---- People on an application, and what to write them --------------------
+   A recruiter, a manager, whoever referred you: kept with the application,
+   with when you last wrote. The emails are drafted here from what the
+   application knows, in its language, and sent from your own mail app. */
+const PP_ROLES=["Recruiter","Hiring manager","Interviewer","Referral"];
+const ppInitials=n=>String(n||"").split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("")||"@";
+const ppTint=n=>["#f3dfb8","#dbe6f2","#dcecd9","#f2dcdc","#e6dff2"][[...String(n||"")].reduce((a,c)=>a+c.charCodeAt(0),0)%5];
+/* After an interview in the last few days, the email to write is a thank-you. */
+function ppKind(j){
+  const h=(j.status_history||[]).filter(x=>x.status==="interviewing").pop();
+  const iv=j.interview_at&&new Date(j.interview_at)<new Date()?j.interview_at:(h&&h.at);
+  return iv&&(Date.now()-new Date(iv))<5*DAY?"thanks":"followup";
+}
+const PP_KIND_LABEL={followup:"Follow-up email",thanks:"Thank-you note",next:"Ask about next steps"};
+function ppLast(p){
+  if(!p.last) return t("not written to from here yet");
+  const d=dayDiff(p.last,todayKey());
+  return d<=0?t("last written to today"):t("last written to {d}, {n} day(s) ago",{d:fmtKey(p.last,{day:"numeric",month:"short"}),n:d});
+}
+function peopleHTML(j){
+  const ps=j.people||[];
+  return '<div class="block" id="ap-people"><div class="bhead"><span class="blabel">'+esc(t("People"))+'</span>'+
+    '<button class="obtn" data-pp-add="'+esc(j.id)+'">'+esc(t("+ Add someone"))+'</button></div>'+
+    (ps.length?'<div class="pp-list">'+ps.map(p=>{
+      const kind=ppKind(j);
+      return '<div class="pp-row"><span class="pp-av" aria-hidden="true" style="background:'+ppTint(p.name||p.email)+'">'+
+        esc(ppInitials(p.name||p.email))+'</span>'+
+        '<span class="pp-tx"><b><span data-noi18n>'+esc(p.name||p.email)+'</span>'+
+          (p.role?' <span class="pp-role">· '+(PP_ROLES.includes(p.role)?esc(t(p.role)):'<span data-noi18n>'+esc(p.role)+'</span>')+'</span>':'')+'</b>'+
+        '<small>'+(p.email&&p.name?'<span data-noi18n>'+esc(p.email)+'</span> · ':'')+esc(ppLast(p))+'</small></span>'+
+        '<span class="pp-acts"><button class="obtn" data-pp-write="'+esc(p.id)+'" data-kind="'+kind+'">'+esc(t(PP_KIND_LABEL[kind]))+'</button>'+
+        '<button class="obtn icon" data-pp-edit="'+esc(p.id)+'" aria-label="'+esc(t("Edit {n}",{n:p.name||p.email}))+'">'+
+          '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">'+
+          '<path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button></span></div>';
+    }).join("")+'</div>'
+    :'<p class="pp-empty">'+esc(t("Who you are talking to about this role: the recruiter, the manager, whoever referred you."))+'</p>')+
+  '</div>';
+}
+const ppJob=()=>(S.jobs||[]).find(x=>x.id===S.jsel);
+document.addEventListener("click",e=>{
+  const a=e.target.closest("[data-pp-add],[data-pp-edit],[data-pp-write]"); if(!a) return;
+  const j=ppJob(); if(!j) return;
+  if(a.dataset.ppAdd!=null) return personSheet(j,null);
+  const p=(j.people||[]).find(x=>x.id===(a.dataset.ppEdit||a.dataset.ppWrite)); if(!p) return;
+  if(a.dataset.ppEdit!=null) return personSheet(j,p);
+  draftSheet(j,p,a.dataset.kind||"followup");
+});
+
+function personSheet(j,p){
+  const v=k=>esc(p&&p[k]||"");
+  openSheet('<h3>'+esc(p?t("Edit {n}",{n:p.name||p.email}):t("Someone at {co}",{co:j.company}))+'</h3>'+
+    '<div class="pp-form">'+
+      '<label>'+esc(t("Name"))+'<input id="pp-name" value="'+v("name")+'" autocomplete="off"></label>'+
+      '<label>'+esc(t("Role"))+'<input id="pp-role" list="pp-roles" value="'+esc(p&&p.role?t(p.role):"")+'" autocomplete="off">'+
+        '<datalist id="pp-roles">'+PP_ROLES.map(r=>'<option value="'+esc(t(r))+'">').join("")+'</datalist></label>'+
+      '<label>'+esc(t("Email"))+'<input id="pp-email" type="email" value="'+v("email")+'" autocomplete="off"></label>'+
+      '<label>'+esc(t("Link"))+'<input id="pp-link" type="url" value="'+v("link")+'" placeholder="https://" autocomplete="off"></label>'+
+    '</div>'+
+    '<div class="foot">'+(p?'<button class="sbtn danger left" id="pp-del">'+esc(t("Remove"))+'</button>':'')+
+      '<button class="sbtn" id="pp-cancel">'+esc(t("Cancel"))+'</button>'+
+      '<button class="sbtn primary" id="pp-save">'+esc(t(p?"Save":"Add"))+'</button></div>');
+  $("#pp-cancel").onclick=closeSheet;
+  /* A role picked from the list is stored in English, so it reads in every language. */
+  const roleIn=()=>{ const r=$("#pp-role").value.trim(); return PP_ROLES.find(x=>t(x)===r)||r };
+  $("#pp-save").onclick=async()=>{
+    const q={id:p&&p.id,name:$("#pp-name").value,role:roleIn(),email:$("#pp-email").value,
+             link:$("#pp-link").value,last:p&&p.last||""};
+    if(!q.name.trim()&&!q.email.trim()) return toast(t("Give them a name or an email."),true);
+    const list=j.people||[];
+    const people=p?list.map(x=>x.id===p.id?q:x):[...list,q];
+    closeSheet(); await saveJob(j.id,{people});
+  };
+  const del=$("#pp-del");
+  if(del) del.onclick=async()=>{ closeSheet(); await saveJob(j.id,{people:(j.people||[]).filter(x=>x.id!==p.id)}) };
+}
+
+/* The drafts, in the application's language. {first}: their first name,
+   {role} and {co}: the application, {applied} and {met}: dates, {duty}: the
+   posting's first duty, {you}: your name. */
+const PP_TPL={
+  en:{greet:n=>n?"Hi "+n+",":"Hello,", sign:"Best regards,",
+    followup:{s:"{role}: following up on my application",
+      b:"I applied for the {role} role{applied} and wanted to check in on where things stand.\n\nI am still very interested{duty}.\n\nIs there anything else I can send you?"},
+    thanks:{s:"Thank you: {role} interview",
+      b:"Thank you for your time{met}. I enjoyed hearing about the team and the work, and it made me more keen on the {role} role.\n\n[One thing you talked about that stayed with you.]\n\nI look forward to hearing about the next steps."},
+    next:{s:"{role}: next steps",
+      b:"Thank you again for the conversation{met}. Could you tell me what the next steps are, and roughly when I might hear back?\n\nI remain very interested in the {role} role at {co}."},
+    applied:d=>" on "+d, met:d=>" on "+d, duty:d=>", not least in this part of the role: “"+d+"”"},
+  fr:{greet:n=>n?"Bonjour "+n+",":"Bonjour,", sign:"Bien cordialement,",
+    followup:{s:"{role} : suivi de ma candidature",
+      b:"J'ai postulé au poste de {role}{applied} et je me permets de revenir vers vous pour savoir où en est le processus.\n\nLe poste m'intéresse toujours beaucoup{duty}.\n\nPuis-je vous transmettre autre chose ?"},
+    thanks:{s:"Merci pour l'entretien : {role}",
+      b:"Merci pour le temps que vous m'avez accordé{met}. J'ai beaucoup apprécié d'en apprendre plus sur l'équipe et le travail, et le poste de {role} m'intéresse d'autant plus.\n\n[Un point de l'échange qui vous a marqué.]\n\nJe reste à votre disposition pour la suite."},
+    next:{s:"{role} : prochaines étapes",
+      b:"Merci encore pour notre échange{met}. Pourriez-vous m'indiquer les prochaines étapes, et à peu près quand je pourrai avoir un retour ?\n\nLe poste de {role} chez {co} m'intéresse toujours beaucoup."},
+    applied:d=>" le "+d, met:d=>" le "+d, duty:d=>", en particulier pour cette partie du poste : « "+d+" »"},
+  es:{greet:n=>n?"Hola, "+n+":":"Hola:", sign:"Un saludo,",
+    followup:{s:"{role}: seguimiento de mi candidatura",
+      b:"Presenté mi candidatura al puesto de {role}{applied} y quería saber en qué punto está el proceso.\n\nEl puesto me sigue interesando mucho{duty}.\n\n¿Puedo enviarte algo más?"},
+    thanks:{s:"Gracias por la entrevista: {role}",
+      b:"Gracias por tu tiempo{met}. Me gustó mucho conocer mejor el equipo y el trabajo, y el puesto de {role} me interesa todavía más.\n\n[Algo de la conversación que te quedó.]\n\nQuedo a la espera de los próximos pasos."},
+    next:{s:"{role}: próximos pasos",
+      b:"Gracias de nuevo por la conversación{met}. ¿Podrías decirme cuáles son los próximos pasos y cuándo podría tener noticias?\n\nEl puesto de {role} en {co} me sigue interesando mucho."},
+    applied:d=>" el "+d, met:d=>" el "+d, duty:d=>", sobre todo esta parte del puesto: «"+d+"»"},
+  pt:{greet:n=>n?"Olá, "+n+",":"Olá,", sign:"Atenciosamente,",
+    followup:{s:"{role}: acompanhamento da minha candidatura",
+      b:"Candidatei-me à vaga de {role}{applied} e gostaria de saber em que ponto está o processo.\n\nA vaga continua me interessando muito{duty}.\n\nPosso enviar mais alguma coisa?"},
+    thanks:{s:"Agradecimento pela entrevista: {role}",
+      b:"Agradeço pelo seu tempo{met}. Gostei muito de conhecer melhor o time e o trabalho, e a vaga de {role} me interessa ainda mais.\n\n[Algo da conversa que ficou com você.]\n\nFico no aguardo dos próximos passos."},
+    next:{s:"{role}: próximos passos",
+      b:"Agradeço novamente pela conversa{met}. Poderia me dizer quais são os próximos passos e quando devo ter um retorno?\n\nA vaga de {role} na {co} continua me interessando muito."},
+    applied:d=>" em "+d, met:d=>" em "+d, duty:d=>", principalmente esta parte da vaga: “"+d+"”"},
+};
+const PP_LOCALE={en:"en-GB",fr:"fr-FR",es:"es-ES",pt:"pt-BR"};
+function ppDraft(kind,lang,j,p,ctx){
+  const L=PP_TPL[lang]||PP_TPL.en, T=L[kind];
+  const day=d=>{ try{ return DTF(PP_LOCALE[lang]||"en-GB",{day:"numeric",month:"long",timeZone:"UTC"}).format(keyDate(d.slice(0,10))) }catch(e){ return d } };
+  const fill=s=>s.replace(/\{role\}/g,j.title).replace(/\{co\}/g,j.company)
+    .replace(/\{applied\}/g,ctx.applied?L.applied(day(ctx.applied)):"")
+    .replace(/\{met\}/g,ctx.interviewed?L.met(day(ctx.interviewed)):"")
+    .replace(/\{duty\}/g,ctx.duties&&ctx.duties[0]?L.duty(ctx.duties[0]):"");
+  const first=String(p.name||"").trim().split(/\s+/)[0]||"";
+  return {subject:fill(T.s), body:L.greet(first)+"\n\n"+fill(T.b)+"\n\n"+L.sign+(ctx.you?"\n"+ctx.you:"")};
+}
+async function draftSheet(j,p,kind){
+  let ctx={};
+  try{ ctx=await api("/api/jobs/draft?id="+encodeURIComponent(j.id)) }catch(e){}
+  const lang=PP_TPL[j.language]?j.language:(PP_TPL[UI_LANG]?UI_LANG:"en");
+  openSheet('<h3>'+esc(t(PP_KIND_LABEL[kind]))+'</h3>'+
+    '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name||p.email,co:j.company}))+'</p>'+
+    '<div class="pp-kinds" role="radiogroup" aria-label="'+esc(t("Kind of email"))+'">'+
+      Object.keys(PP_KIND_LABEL).map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
+        esc(t(PP_KIND_LABEL[k]))+'</button>').join("")+'</div>'+
+    '<label class="pk-field">'+esc(t("Subject"))+'<input id="dr-sub" spellcheck="true"></label>'+
+    '<label class="pk-field">'+esc(t("Message"))+'<textarea id="dr-body" rows="12" spellcheck="true"></textarea></label>'+
+    '<label class="pk-check" id="dr-move-row"><input type="checkbox" id="dr-move" checked>'+
+      esc(t("Afterwards, move the follow-up to a week from today"))+'</label>'+
+    '<div class="foot"><button class="sbtn" id="dr-cancel">'+esc(t("Cancel"))+'</button>'+
+      '<button class="sbtn" id="dr-copy">'+esc(t("Copy"))+'</button>'+
+      '<button class="sbtn primary" id="dr-mail"'+(p.email?'':' disabled title="'+esc(t("No email address for them yet"))+'"')+'>'+
+        esc(t("Open in my mail app"))+'</button></div>');
+  const fillIn=k=>{
+    kind=k;
+    const d=ppDraft(k,lang,j,p,ctx);
+    $("#dr-sub").value=d.subject; $("#dr-body").value=d.body;
+    $$("#sheet .pp-kind").forEach(b=>b.setAttribute("aria-checked",String(b.dataset.k===k)));
+    $("#sheet h3").textContent=t(PP_KIND_LABEL[k]);
+    $("#dr-move-row").hidden=k!=="followup";
+  };
+  fillIn(kind);
+  $$("#sheet .pp-kind").forEach(b=>b.onclick=()=>fillIn(b.dataset.k));
+  $("#dr-cancel").onclick=closeSheet;
+  $("#dr-copy").onclick=async()=>{
+    try{ await navigator.clipboard.writeText($("#dr-sub").value+"\n\n"+$("#dr-body").value); toast(t("Copied")) }
+    catch(e){ toast(t("Could not copy: select the text instead."),true) }
+  };
+  $("#dr-mail").onclick=async()=>{
+    const url="mailto:"+encodeURIComponent(p.email).replace(/%40/g,"@")+"?subject="+encodeURIComponent($("#dr-sub").value)+
+      "&body="+encodeURIComponent($("#dr-body").value);
+    const move=kind==="followup"&&$("#dr-move").checked;
+    closeSheet();
+    if(window.__TAURI__) post("/api/open",{url}).catch(err=>toast(err.message,true));
+    else location.href=url;
+    const people=(j.people||[]).map(x=>x.id===p.id?Object.assign({},x,{last:todayKey()}):x);
+    await saveJob(j.id,Object.assign({people},move?{followup_date:addDays(todayKey(),7)}:{}));
   };
 }
 
