@@ -62,7 +62,7 @@ NODE_STATUSES: dict[str, list[str]] = {
 LABELS = {
     "all": "All applications", "pending": "Draft", "applied_s": "Applied",
     "awaiting": "Awaiting reply", "interview_s": "Interviewed",
-    "still_iv": "Still interviewing", "offer_s": "Offer", "deciding": "Deciding",
+    "still_iv": "Interviewing", "offer_s": "Got an offer", "deciding": "Offer",
     "accepted": "Accepted", "refused": "Declined", "rejected": "Rejected",
     "ghosted": "Ghosted", "rejected_iv": "Rejected after interview",
     "ghosted_iv": "Ghosted after interview",

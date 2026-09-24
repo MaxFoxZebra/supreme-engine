@@ -19,6 +19,33 @@ A polish and safety release on the way to 1.0.
   machine (a site pointing its own domain at it) and writes from any page
   that is not CV Studio's own are now refused. Scripts and your AI client
   work as before.
+- **A second, harsher review of every screen**, asking of each number and
+  block whether it helps the search:
+  - Offer is green everywhere (it was ochre in the list and green on the
+    funnel), and in dark mode Rejected no longer looks like Interviewing.
+  - One vocabulary: the funnel and calendar use the status names ("Offer",
+    "Interviewing", "Awaiting reply") instead of "Deciding", "live",
+    "Waiting" or "closed"; "No reply" says it means two weeks.
+  - The email draft fits the application: an offer gets a reply asking for
+    the details in writing and a deadline, an interview a few days old a
+    thank-you, an older one a question about next steps. It shows the
+    address it goes to, and a follow-up moved a week never lands on a
+    weekend.
+  - The CV editor's button says Save (it saved all along), and the status
+    bar says "all saved" or "unsaved changes" instead of render times.
+  - Less noise: no seconds on the calendar countdown, no database file name
+    or long paths in the status bar, no "1pp" on every document (a page count
+    shows only past one page), no setting counts in Design, a link icon
+    instead of an unexplained dot on linked documents, CV + letter in the
+    list instead of file names, and "3 drafts not sent yet" on the funnel
+    instead of a share of everything tracked.
+  - New application asks for the location, and suggests the same places as
+    Found on; New document starts from your base CV; the cover letter says
+    when it is short; Settings exports CSV as well as JSON; the search
+    shortcuts lead to follow-ups due.
+  - Journeys keeps today in the middle, so labels no longer sit on the
+    Today line; calendar entries name the role when a company has two
+    applications; French says Londres, Adéquation and Déclinée par moi.
 - **A polish pass over every screen**, after a review of each one:
   - Nothing that matters is cut off any more: the next interview, the
     overdue follow-ups (their "Show them" link was hidden in French), the

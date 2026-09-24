@@ -3643,7 +3643,7 @@ CLIP_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 body{margin:0;background:var(--app);color:var(--t900);font:14px/1.45 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
 header{height:44px;display:flex;align-items:center;gap:9px;padding:0 16px;background:var(--chrome);color:var(--chrome-t);font-weight:600;font-size:13.5px}
 header img{width:20px;height:20px}
-main{display:flex;flex-direction:column;gap:14px;padding:18px}
+main{display:flex;flex-direction:column;gap:14px;padding:18px;max-width:560px;margin:0 auto}
 .who{display:flex;align-items:center;gap:12px}
 .who b{font-size:15.5px;display:block}
 .who small{font-size:12.5px;color:var(--t600)}
@@ -3682,7 +3682,7 @@ button{font:inherit;cursor:pointer}
     <label>Role<input id="f-title" autocomplete="off"></label>
     <label>Location<input id="f-location" autocomplete="off"></label>
     <label>Found on<input id="f-source" autocomplete="off"></label>
-    <label class="wide">Status<select id="f-status"><option value="pending">Draft, not sent yet</option>
+    <label class="wide">Status<select id="f-status"><option value="pending">Draft</option>
       <option value="applied">Applied today</option></select></label>
   </div>
   <div class="card" id="post-card">
@@ -4622,7 +4622,7 @@ const API_TOKEN=__API_TOKEN__;
           <button class="obtn" id="btn-ats" title="What an applicant tracking system reads from this CV">ATS check</button>
           <button class="obtn" id="btn-design" title="Theme, typeface and page size">Design</button>
           <button class="obtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
-          <button class="pbtn" id="btn-render">Render</button>
+          <button class="pbtn" id="btn-render" title="Save and lay out the page again (Ctrl S)">Save</button>
         </span>
       </div>
       <!-- A translation whose source moved on since it was translated. -->
@@ -4849,7 +4849,7 @@ const API_TOKEN=__API_TOKEN__;
           <button role="tab" data-since="30d" aria-selected="false">30 days</button>
         </div>
         <button class="obtn" id="ex-csv">Export CSV</button>
-        <button class="obtn" id="ex-json">JSON</button></div>
+</div>
       <div id="fn-body">
         <!-- Sent to accepted, as five numbers and the rate between each pair. -->
         <section class="fn-card fn-journey" id="fn-journey" aria-label="From sent to accepted"></section>
@@ -4858,7 +4858,7 @@ const API_TOKEN=__API_TOKEN__;
           <section class="fn-stage" aria-labelledby="fn-stage-h">
             <div class="fn-shead"><h2 id="fn-stage-h">Where they went</h2><span id="fn-hint"></span>
               <div class="grow"></div>
-              <span class="fn-legend" id="fn-legend"><i></i>Moving: still in play</span></div>
+              <span class="fn-legend" id="fn-legend"><i></i>Moving dots: applications still open</span></div>
             <div id="chart"></div>
           </section>
           <!-- What is behind the stage you clicked goes beside the chart, in
@@ -4976,10 +4976,10 @@ const API_TOKEN=__API_TOKEN__;
           <button class="obtn" id="s-sample">Open sample data</button></div>
         <div class="srow"><div><b>Folder</b><span id="s-ws" class="mono"></span></div>
           <button class="obtn" id="s-open">Open folder</button></div>
-        <div class="srow"><div><b>Documents</b><span id="s-count"></span></div></div>
-        <div class="srow"><div><b>Applications</b><span>Exported as JSON or CSV so the
-          database is never a lock-in.</span></div>
-          <button class="obtn" id="s-exp">Export JSON</button></div>
+        <div class="srow"><div><b>Applications</b><span>Exported as CSV for a spreadsheet, or JSON
+          for another program: the list is never locked in here.</span></div>
+          <span class="acts"><button class="obtn" id="s-exp-csv">Export CSV</button>
+          <button class="obtn" id="s-exp">Export JSON</button></span></div>
       </section>
 
       <section class="sp" id="sp-notify" hidden>
@@ -4993,7 +4993,7 @@ const API_TOKEN=__API_TOKEN__;
             <option value="off">Off</option>
             <option value="10">10 minutes before</option>
             <option value="60">1 hour before</option>
-            <option value="60,10">1 hour and 10 minutes before</option>
+            <option value="60,10">1 hour before, and 10 minutes before</option>
             <option value="1440,60">The day before, and 1 hour before</option>
           </select></div>
         <div class="srow nf-sub"><div><b>Follow-ups</b><span>One notification for all the ones due that day,
@@ -5068,13 +5068,10 @@ const API_TOKEN=__API_TOKEN__;
 
       <section class="sp" id="sp-ai" hidden>
         <h3>AI clients</h3>
-        <p class="sp-lede">This app is one half of a pair. The model writes and tailors
-          the CVs, through a server that ships inside this app; here you look at the
-          rendered page and fix what it got wrong. It can keep your applications up to
-          date too: given a mail or calendar connector of its own, it reads the replies
-          and moves the statuses, and nothing about that passes through this app. Both
-          halves work on the same workspace, so there is nothing to sync and nothing to
-          upload.</p>
+        <p class="sp-lede">Connect an AI client and ask it, in plain words, to tailor your CV to
+          a posting, write the cover letter or prepare an interview. With your mail connected
+          to it, it also moves your applications along as replies come in. It works on the
+          same files as this app: nothing to sync, nothing to upload.</p>
 
         <div class="clients" id="s-ai-clients"></div>
 

@@ -97,7 +97,7 @@
   --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
-  --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
+  --fn-won:#189072; --fn-lost:#e0626b; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
   --fn-band:.42;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
   --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
@@ -120,7 +120,7 @@
   --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
-  --fn-won:#189072; --fn-lost:#cf5a39; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
+  --fn-won:#189072; --fn-lost:#e0626b; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
     --fn-band:.42;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
     --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
@@ -349,9 +349,8 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
    the documents stay the thing you read and the kinds just separate them */
 .rail-sub{padding:12px 10px 4px;font-size:11.5px;color:var(--t500)}
 .rail-list>.rail-sub:first-child{padding-top:2px}
-/* a document that belongs to an application wears a small ochre tie */
-.row .tie{width:5px;height:5px;border-radius:50%;background:var(--acc);
-  flex:none;opacity:.75}
+/* a document that belongs to an application shows a small link */
+.row .tie{display:flex;flex:none;color:var(--t500)}
 
 
 /* A sidebar row. Selected lifts onto the field colour, the way a chosen card
@@ -850,11 +849,10 @@ body.dragging{cursor:col-resize;user-select:none}
 .dot.live{background:var(--acc)}
 .dot.won{background:var(--fn-won)} .dot.lost{background:var(--fn-lost)}
 .dot.waiting{background:var(--fn-wait)} .dot.closed{background:var(--fn-closed)}
-/* An offer is a live conversation at its peak -- same family, higher
-   stakes -- so it keeps the amber and earns a ring rather than a sixth
-   hue. The palette is at its useful hue budget; shape is the encoding
-   with room left in it. */
-.dot.offer{background:var(--acc);outline:1.5px solid var(--acc);
+/* An offer is green, as it is on the funnel and the calendar: the job is
+   on the table. The ring tells it from Accepted, which is the same green,
+   solid. */
+.dot.offer{background:var(--fn-won);outline:1.5px solid var(--fn-won);
   outline-offset:1.5px}
 /* Draft had the lowest contrast of any dot in the app at 2.2:1 -- the one
    state you genuinely could not see. */
@@ -1395,8 +1393,6 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   background:radial-gradient(520px 260px at 88% 10%,color-mix(in srgb,var(--acc) 38%,transparent),transparent 70%),
     linear-gradient(135deg,color-mix(in srgb,var(--acc) 5%,var(--field)) 0%,color-mix(in srgb,var(--acc) 18%,var(--field)) 100%);
   border:1px solid color-mix(in srgb,var(--acc) 30%,var(--rule));box-shadow:0 20px 50px -30px color-mix(in srgb,var(--acc) 70%,transparent)}
-.cal-hero::after{content:"";position:absolute;right:-60px;bottom:-80px;width:260px;height:260px;border-radius:50%;
-  border:1px dashed color-mix(in srgb,var(--acc) 40%,transparent);animation:cv-sweep 60s linear infinite;pointer-events:none}
 .cal-hero>*{position:relative;z-index:1}
 .cal-next{display:flex;align-items:center;gap:10px}
 .cal-next .tag{height:24px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:12px;
@@ -1573,8 +1569,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-blk b{font-size:12px;color:var(--acc-text)}.cal-blk span{font-size:11.5px;color:var(--acc-text)}
 .cal-blk em{font-style:normal;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--fn-positive-text)}
 .cal-blk.on{box-shadow:0 0 0 2px var(--t900),0 10px 24px -8px rgba(0,0,0,.35)}
-.cal-nowline{position:absolute;height:2px;background:var(--fn-lost);z-index:2}
-.cal-nowline::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--fn-lost)}
+.cal-nowline{position:absolute;height:2px;background:var(--t900);z-index:2}
+.cal-nowline::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--t900)}
 .cal-pop{position:absolute;width:320px;display:flex;flex-direction:column;gap:10px;padding:16px 18px;border-radius:14px;
   background:var(--field);box-shadow:0 0 0 1px var(--rule),0 24px 48px -16px rgba(0,0,0,.35);z-index:5}
 .cal-pop .hd{display:flex;align-items:center;gap:10px}
@@ -1597,7 +1593,6 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 @keyframes cv-now{0%,100%{opacity:.55}50%{opacity:1}}
 @keyframes cv-dash{to{background-position:24px 0}}
 @keyframes cv-hand{from{transform:rotate(0deg)}to{transform:rotate(var(--a))}}
-@keyframes cv-sweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.cal-page *{animation:none!important}}
 
 /* ---------- sheets and overlays ------------------------------------------ */
@@ -2019,7 +2014,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   background:var(--row-alt)}
 .ap-phead .tx{display:flex;flex-direction:column;gap:1px;min-width:0}
 .ap-phead .tx b{font-size:14px;font-weight:600;color:var(--t900)}
-.ap-phead .tx span{font-size:12px;line-height:1.35;color:var(--t500);display:-webkit-box;-webkit-line-clamp:2;
+.ap-phead .tx span{font-size:12px;line-height:1.35;color:var(--t500);display:-webkit-box;-webkit-line-clamp:3;
   -webkit-box-orient:vertical;overflow:hidden}
 .ap-phead .tx{flex:1}
 .ap-phead .obtn{height:30px;display:inline-flex;align-items:center;gap:7px;padding:0 11px;border-radius:8px;

@@ -244,7 +244,21 @@ function interviewMoment(j){
   return wallToInstant(String(j.interview_at).slice(0,16),j.interview_tz||machineTz());
 }
 const TZ_NAMES={Sao_Paulo:"São Paulo",Bogota:"Bogotá",Mexico_City:"Mexico City",Zurich:"Zürich"};
-const tzCity=tz=>{ const k=String(tz||"").split("/").pop(); return TZ_NAMES[k]||k.replace(/_/g," ") };
+/* The cities people write differently in the interface's languages. */
+const TZ_LOCAL={
+  fr:{London:"Londres",Lisbon:"Lisbonne",Brussels:"Bruxelles",Vienna:"Vienne",Warsaw:"Varsovie",Copenhagen:"Copenhague",
+    Athens:"Athènes",Moscow:"Moscou",Singapore:"Singapour",Mexico_City:"Mexico",Montreal:"Montréal",Rome:"Rome",
+    Prague:"Prague",Bucharest:"Bucarest",Cairo:"Le Caire",Algiers:"Alger",Tunis:"Tunis",Casablanca:"Casablanca"},
+  es:{London:"Londres",Lisbon:"Lisboa",Brussels:"Bruselas",Vienna:"Viena",Warsaw:"Varsovia",Copenhagen:"Copenhague",
+    Athens:"Atenas",Moscow:"Moscú",Singapore:"Singapur",Mexico_City:"Ciudad de México",New_York:"Nueva York",
+    Stockholm:"Estocolmo",Berlin:"Berlín",Paris:"París",Munich:"Múnich",Zurich:"Zúrich",Rome:"Roma",Prague:"Praga",
+    Tokyo:"Tokio",Cairo:"El Cairo",Amsterdam:"Ámsterdam",Dublin:"Dublín",Helsinki:"Helsinki"},
+  pt:{London:"Londres",Lisbon:"Lisboa",Brussels:"Bruxelas",Vienna:"Viena",Warsaw:"Varsóvia",Copenhagen:"Copenhague",
+    Athens:"Atenas",Moscow:"Moscou",Singapore:"Singapura",Mexico_City:"Cidade do México",New_York:"Nova York",
+    Stockholm:"Estocolmo",Berlin:"Berlim",Munich:"Munique",Zurich:"Zurique",Rome:"Roma",Prague:"Praga",
+    Tokyo:"Tóquio",Cairo:"Cairo",Amsterdam:"Amsterdã",Dublin:"Dublin"}};
+const tzCity=tz=>{ const k=String(tz||"").split("/").pop();
+  return ((TZ_LOCAL[UI_LANG]||{})[k])||TZ_NAMES[k]||k.replace(/_/g," ") };
 function fmtWhen(date,tz,withDay=true){
   const o={timeZone:tz,hour:"2-digit",minute:"2-digit"};
   if(withDay) Object.assign(o,{weekday:"short",day:"numeric",month:"short"});
@@ -619,13 +633,12 @@ function paintStatus(){
   const L=$("#st-left"), R=$("#st-right");
   if(S.view==="cvs"){
     const bits=[];
-    if(S.renderMs!=null) bits.push("rendered "+(S.renderMs/1000).toFixed(2)+"s");
-    if(S.live==="working") bits.push("rendering…");
-    else if(S.live==="bad") bits.push(S.liveMsg||"not valid yet");
-    if(S.dirty) bits.push("unsaved changes");
-    else if(S.savedAt) bits.push("saved "+ago(S.savedAt)+" ago");
+    if(S.live==="working") bits.push(t("rendering…"));
+    else if(S.live==="bad") bits.push(S.liveMsg?tx(S.liveMsg):t("not valid yet"));
+    if(S.dirty) bits.push(t("unsaved changes"));
+    else if(S.savedAt) bits.push(t("saved {t} ago",{t:ago(S.savedAt)}));
     L.className=S.live==="bad"||S.dirty?"warn":"";
-    L.textContent=bits.join(" · ")||"ready";
+    L.textContent=bits.join(" · ")||t("all saved");
     L.classList.add("mono");
     /* The right of the status bar is where the workspace lives, and what Claude
        last did in it belongs in the same place -- it is the other thing acting
@@ -654,20 +667,20 @@ function paintStatus(){
     L.className="mono";
     L.textContent=S.jobs.length+" application"+(S.jobs.length===1?"":"s")+
       (S.jsel?" · 1 selected":"");
-    R.textContent="applications.db";
+    R.textContent=""; R.title="";
   }else if(S.view==="docs"){
-    /* The applications view names the store its rows live in; these rows live
-       in the workspace folder, so that is what belongs in the same slot. */
+    /* Documents are files in the workspace folder: its short path says where. */
     const n=((S.state&&S.state.documents)||[]).length;
     L.className="mono";
     L.textContent=n+" document"+(n===1?"":"s");
-    R.textContent=(S.state&&S.state.workspace)||"";
+    R.textContent=shortPath((S.state&&S.state.workspace)||"");
+    R.title=(S.state&&S.state.workspace)||"";
   }else{
     /* The chart says how to use it, in its own header; the footer only says
        which applications it is drawn from. */
     L.className="mono";
     L.textContent=S.funnel?S.funnel.totals.total+" applications":"";
-    R.textContent="applications.db";
+    R.textContent=""; R.title="";
   }
 }
 function ago(t){
@@ -1762,8 +1775,8 @@ function obWelcome(){
     '<div class="onb-mark"><img src="/static/brand-mark-256.png" alt=""></div>'+
     '<h1 class="onb-word" id="onb-title" aria-label="Welcome to CV Studio">'+letters+'</h1>'+
     '<span class="onb-rule" aria-hidden="true"></span>'+
-    '<p class="onb-lede">A CV editor that shows you the page, and an application tracker '+
-      'beside it. An AI client can read and write both, if you connect one.</p>'+
+    '<p class="onb-lede">A CV tailored to every application, every follow-up on time, '+
+      'and every interview in your calendar. Connect an AI client and it does the writing with you.</p>'+
     '<div class="onb-facts">'+facts.map(([ic,t,x],i)=>
       '<div class="onb-fact" style="animation-delay:'+(1.85+i*0.15).toFixed(2)+'s">'+
         '<span class="ic">'+obIcon(ic,17)+'</span><b>'+t+'</b><span>'+x+'</span></div>').join("")+
@@ -2208,7 +2221,11 @@ function ltDirty(){
   LT.dirty=true; $("#lt-save").disabled=false;
   const w=$("#lt-words"); if(w) w.textContent=ltWords(LT.body);
   const m=$("#lt-meterfill"); if(m) m.style.width=Math.min(100,ltWords(LT.body)/350*100)+"%";
+  const sh=$("#lt-short"); if(sh) sh.hidden=!ltShort(ltWords(LT.body));
 }
+/* Short is worth saying once there is a letter to speak of, not while the
+   page is still empty. */
+const ltShort=n=>n>=20&&n<200;
 const ltWords=b=>(String(b||"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").match(/[\p{L}\p{N}'’-]+/gu)||[]).length;
 
 function ltPanel(){
@@ -2224,7 +2241,8 @@ function ltPanel(){
     '<div style="display:flex;flex-direction:column;gap:8px"><h4>Length</h4>'+
       '<span><span class="big" id="lt-words">'+n+'</span> <span class="muted2">of about 350 words</span></span>'+
       '<div class="lt-meter'+(n>420?" over":"")+'"><i id="lt-meterfill" style="width:'+Math.min(100,n/350*100)+'%"></i></div>'+
-      '<span class="muted2">'+fits+'</span></div>'+
+      '<span class="muted2">'+fits+'</span>'+
+      '<span class="muted2" id="lt-short"'+(ltShort(n)?'':' hidden')+'>'+t("Short: most letters run 250 to 350 words.")+'</span></div>'+
     '<hr>'+
     '<div style="display:flex;flex-direction:column;gap:10px"><h4>This letter</h4><div class="fg">'+
       '<label>For</label><span>'+(j?'<b style="font-weight:600">'+esc(j.company)+'</b> · '+esc(j.title)
@@ -2505,8 +2523,10 @@ function renderDocs(docs){
             'starts as a copy of it">base</span>':'')+
           markHTML(d.ai,null,true)+
           (job?'<span class="tie" title="'+esc(t("Linked to"))+' '+
-            esc(job.title+" · "+job.company)+'"></span>':"")+
-          '<span class="ct mono">'+(pp?pp+"pp":"")+'</span></button>';
+            esc(job.title+" · "+job.company)+'"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" '+
+            'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/>'+
+            '<path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span>':"")+
+          '<span class="ct mono">'+(pp>1?t("{n} pages",{n:pp}):"")+'</span></button>';
       }).join("");
       /* Only worth naming the groups once there is more than one of them. */
       return (groups.length>1
@@ -3759,7 +3779,7 @@ const ATTENTION=[
   ["interview_soon",   "Interview soon"],
   ["followup_due",     "Follow-up due"],
   ["interview_passed", "Interview, no outcome"],
-  ["silent",           "No reply"],
+  ["silent",           "No reply in 2 weeks"],
 ];
 
 async function loadAlerts(){
@@ -4649,7 +4669,9 @@ function drawJobs(){
     /* A row with a letter and no CV used to read "no CV yet" and drop the
        letter on the floor, which was wrong before and would now be worse: the
        offer to make one would be standing on top of a document that exists. */
-    const docs=cv?esc(cv)+(letter?" + "+esc(t("letter")):""):(letter?esc(letter):null);
+    /* What there is, not what the files are called: the names are in the
+       tooltip and one click away. */
+    const docs=cv?esc(t("CV"))+(letter?" + "+esc(t("letter")):""):(letter?esc(t("Letter only")):null);
     const openable=cv?j.cv_path:j.letter_path;
     const ap=appliedAt(j);
     const due=j.followup_date&&j.followup_date<=isoToday();
@@ -4661,7 +4683,7 @@ function drawJobs(){
       '<span class="role"><b>'+esc(j.title)+'</b>'+
         (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
       '</span>'+
-      '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'">'+docs+'</span>'
+      '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'" title="'+esc([cv,letter].filter(Boolean).join(" · "))+'">'+docs+'</span>'
                :S.tailoring.has(j.id)
                  ?'<span class="docs busy">Tailoring\u2026</span>'
                  /* The busy label is rendered from state rather than written
@@ -4950,7 +4972,7 @@ function drawJobInspector(){
     fact("Status",statusCtl)+
     fact("Follow-up",'<input data-j="followup_date" type="date" aria-label="Follow-up" value="'+esc(j.followup_date||"")+'">')+
     fact("Fit",fitCtl)+
-    fact("Found on",'<button class="ap-src" id="ap-src" aria-haspopup="listbox">'+sourceMark(j)+
+    fact("Found on",'<button class="ap-src" id="ap-src" aria-haspopup="listbox" title="'+esc(j.source||"")+'">'+sourceMark(j)+
       '<span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button>')+
     fact("Language",langCtl)+
     fact("Interview",interviewCtl(j))+'</div>';
@@ -5166,13 +5188,18 @@ function newJobSheet(seed){
     '<div class="fg w88">'+
       '<label>Company</label><input id="nj-company" autocomplete="off">'+
       '<label>Role</label><input id="nj-title" autocomplete="off">'+
+      '<label>Location</label><input id="nj-location" autocomplete="off">'+
+      '<label>Link</label><input id="nj-url" autocomplete="off" placeholder="https://">'+
       '<label>Status</label><select id="nj-status">'+S.statuses.map(s=>
         '<option value="'+s+'">'+esc(prettyStatus(s))+'</option>').join("")+'</select>'+
-      '<label>Found on</label><input id="nj-source" autocomplete="off" '+
-        'placeholder="LinkedIn, referral, careers page…">'+
+      /* The same places the application's own Found on menu offers. */
+      '<label>Found on</label><input id="nj-source" autocomplete="off" list="nj-sources" '+
+        'placeholder="LinkedIn, referral, careers page…"><datalist id="nj-sources">'+
+        SRC_FIRST.map(id=>BOARDS.find(b=>b.id===id)).filter(Boolean).concat(BOARDS.filter(b=>!SRC_FIRST.includes(b.id)))
+          .map(b=>'<option value="'+esc(b.label)+'">').join("")+
+        SRC_OTHER.map(([,l])=>'<option value="'+esc(l)+'">').join("")+'</datalist>'+
       '<label>Salary</label><input id="nj-salary" type="number" class="mono">'+
       '<label>Follow-up</label><input id="nj-followup" type="date">'+
-      '<label>Link</label><input id="nj-url" autocomplete="off" placeholder="https://">'+
       '<label>CV</label><select id="nj-cv"><option value="">Not linked</option>'+
         docs("My CVs").map(d=>'<option value="'+esc(d.path)+'"'+
           (d.path===seed.cv_path?" selected":"")+'>'+esc(d.label)+'</option>').join("")+
@@ -5191,6 +5218,7 @@ function newJobSheet(seed){
     try{
       const j=await post("/api/jobs",{
         company:v("nj-company"), title:v("nj-title"), status:$("#nj-status").value,
+        location:v("nj-location")||null,
         source:v("nj-source")||null, url:v("nj-url")||null,
         salary_expected:v("nj-salary")?Number(v("nj-salary")):null,
         followup_date:v("nj-followup")||null, notes:v("nj-notes")||null,
@@ -5362,7 +5390,7 @@ function drawFunnel(mode="still"){
   const live=fnJobs().filter(j=>["applied","interviewing","offer"].includes(j.status)).length;
   const first=fnJobs().map(j=>j.created_at).filter(Boolean).sort()[0];
   $("#fn-sub").textContent=t.total?t.total+" application"+(t.total===1?"":"s")+
-    (first&&!f.since?" since "+shortDate(first):"")+" · "+live+" still in play":"";
+    (first&&!f.since?" since "+shortDate(first):"")+" · "+live+" still open":"";
   if(!t.total){
     page.classList.remove("fx-in");
     $("#fn-body").hidden=true;
@@ -5433,7 +5461,8 @@ function drawJourney(mode,animate){
         '<span>'+conv[i-1][0]+(i===worst?'<br>lowest step':'')+'</span></div>';
     }
     const sub=i?(sent?Math.round(n/sent*100)+"% of sent":"–"):
-      (t.total?Math.round(n/t.total*100)+"% of "+t.total+" tracked":"");
+      /* What is left to do there: the drafts still to send. */
+      (t.total-n>0?(t.total-n)+" draft"+(t.total-n===1?"":"s")+" not sent yet":t.total?"every draft sent":"");
     const w=sent?Math.max(n?1.5:0,n/sent*100):0;
     h+='<div class="fj-stg fx-r" style="animation-delay:'+(.35+i*.18)+'s"><span class="sl">'+label+'</span>'+
       '<b data-to="'+n+'" data-from="'+(mode==="morph"&&prev[i]!=null?prev[i]:0)+'" data-delay="'+
@@ -5532,7 +5561,7 @@ function drawSankey(mode,animate){
       esc(n.id)+'" style="left:'+(n.x1+8)+'px;top:'+(cy-12)+'px;animation-delay:'+
       (1.2+n.depth*.28).toFixed(2)+'s"><i style="background:'+skCol(n.id)+'"></i>'+esc(n.label)+
       ' <b>'+n.count+'</b><span>'+Math.round(n.count/total*100)+'%</span>'+
-      (FN_LIVE.includes(n.id)?'<em>live</em>':'')+'</div>';
+      '</div>';
   }).join("");
 
   host.innerHTML='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" role="img" '+
@@ -5678,7 +5707,7 @@ function paintFunnelJobs(){
     const live=fnJobs().filter(j=>["applied","interviewing","offer"].includes(j.status))
       .sort((a,b)=>{ const r={offer:0,interviewing:1,applied:2};
         return r[a.status]-r[b.status]||String(b.updated_at).localeCompare(String(a.updated_at)) });
-    host.innerHTML='<div class="fn-ch"><h2>Still in play</h2><span>'+live.length+'</span></div>'+
+    host.innerHTML='<div class="fn-ch"><h2>Still open</h2><span>'+live.length+'</span></div>'+
       (live.length?live.slice(0,5).map(row).join("")
         :'<p class="note">Nothing is waiting on an answer. Everything here has an outcome.</p>')+
       (live.length>5?'<div class="fn-jfoot"><button class="obtn" id="fn-open">All '+live.length+
@@ -5690,7 +5719,7 @@ function paintFunnelJobs(){
     hint.innerHTML="Showing <b>"+esc(label)+"</b> · click it again to clear";
     host.innerHTML='<div class="fn-ch"><span class="sw" style="background:'+skCol(S.fnode)+
       '"></span><h2>'+esc(label)+'</h2><span>'+rows.length+'</span><span class="grow"></span>'+
-      '<button class="x" id="fn-clear" title="Back to still in play" aria-label="Clear">&#10005;</button></div>'+
+      '<button class="x" id="fn-clear" title="Back to the open applications" aria-label="Clear">&#10005;</button></div>'+
       (rows.length?'<div class="fn-jlist">'+rows.map(row).join("")+'</div>'
         :'<p class="note">Nothing sits at this stage yet.</p>')+
       '<div class="fn-jfoot"><button class="obtn" id="fn-open">Show in Applications</button></div>';
@@ -5842,7 +5871,6 @@ function drawRates(){
     '</p></div>').join("");
 }
 $("#ex-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
-$("#ex-json").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
 
 /* Re-lay on resize. Debounced, because a sankey layout on every pixel of a
    window drag is wasted work. */
@@ -6109,11 +6137,10 @@ function drawCalOverview(ev){
       el.innerHTML=(d?'<div><div class="n">'+d+'</div><div class="u">'+t(d===1?"day":"days")+'</div></div>':'')+
         '<div><div class="n">'+p(h)+'</div><div class="u">'+t("hours")+'</div></div>'+
         '<div><div class="n">'+p(m)+'</div><div class="u">'+t("min")+'</div></div>'+
-        '<div class="s"><div class="n">'+p(s)+'</div><div class="u">'+t("sec")+'</div></div>'+
         '<div class="when"><b>'+esc(fmtKey(next.day,{weekday:"long",day:"numeric",month:"long"}))+'</b><br>'+
         esc(hmIn(next.at,userTz()))+' '+t("your time")+'</div>';
     };
-    tick(); S.calTick=setInterval(tick,1000);
+    tick(); S.calTick=setInterval(tick,15000);
   }
 }
 function calMini(ev){
@@ -6133,7 +6160,7 @@ function calMini(ev){
   const acc=["var(--bd-inner)","color-mix(in srgb,var(--acc) 22%,var(--field))","color-mix(in srgb,var(--acc) 45%,var(--field))",
     "color-mix(in srgb,var(--acc) 75%,var(--field))"];
   return '<section class="cal-card cal-mini cal-r" style="animation-delay:.1s"><div class="cal-ch"><h2>'+
-    esc(fmtKey(first,{month:"long"}))+'</h2><span>'+t("how busy each day was")+'</span></div>'+
+    esc(fmtKey(first,{month:"long"}))+'</h2><span>'+t("how full each day is, past and planned")+'</span></div>'+
     '<div class="cal-mgrid">'+dows+cells+'</div><div class="cal-legend"><span style="display:flex;align-items:center;gap:4px">'+
     t("Quiet")+'<span class="ramp">'+acc.map(c=>'<i style="background:'+c+'"></i>').join("")+'</span>'+t("Busy")+
     '</span><span style="display:flex;align-items:center;gap:6px"><i class="dia"></i>'+t("Interview")+'</span></div></section>';
@@ -6141,11 +6168,13 @@ function calMini(ev){
 /* Every live application as a lane across eight weeks, three of them ahead: how long it has been
    waiting, when it moved to interviews or an offer, and what is ahead. */
 function calJourneys(ev){
-  const today=todayKey(), start=addDays(monday(today),-35), days=56, end=addDays(start,days-1);
+  /* Four weeks back and four ahead: today sits in the middle, so what is
+     coming has room for its label on the right of its mark. */
+  const today=todayKey(), start=addDays(monday(today),-28), days=56, end=addDays(start,days-1);
   const pct=k=>Math.max(0,Math.min(100,(dayDiff(start,k)+.5)/days*100));
-  /* Labels near the right edge go to the left of their mark, so none runs
-     off the card. */
-  const labAt=(p,gap)=>p>80?"right:calc("+(100-p)+"% + "+gap+"px)":"left:calc("+p+"% + "+gap+"px)";
+  /* Labels only turn to the left of their mark at the very edge, where they
+     would otherwise run off the card. */
+  const labAt=(p,gap)=>p>86?"right:calc("+(100-p)+"% + "+gap+"px)":"left:calc("+p+"% + "+gap+"px)";
   const recent=j=>{ const h=(j.status_history||[]).slice(-1)[0]; return h&&dayIn(new Date(String(h.at).slice(0,19)))>=start };
   const rank=j=>{ const at=interviewMoment(j); if(at&&at>new Date()) return 0;
     return {offer:1,interviewing:2,applied:3}[j.status]||4 };
@@ -6199,7 +6228,7 @@ function calJourneys(ev){
   }).join("");
   return '<section class="cal-card cal-jr cal-r" style="--jr-lx:236px;animation-delay:.2s"><div class="cal-ch" style="align-items:center">'+
     '<h2 style="font-size:15px">'+t("Journeys")+'</h2><span>'+t("each application from sent to where it is now, and what is ahead")+'</span>'+
-    '<div class="jr-legend"><span><i class="bar" style="background:color-mix(in srgb,var(--fn-wait) 40%,transparent)"></i>'+t("Waiting")+'</span>'+
+    '<div class="jr-legend"><span><i class="bar" style="background:color-mix(in srgb,var(--fn-wait) 40%,transparent)"></i>'+t("Awaiting reply")+'</span>'+
     '<span><i class="bar" style="background:color-mix(in srgb,var(--fn-positive) 55%,transparent)"></i>'+t("Interviewing")+'</span>'+
     '<span><i class="bar" style="background:color-mix(in srgb,var(--fn-offer) 55%,transparent)"></i>'+t("Offer")+'</span>'+
     '<span><i style="width:9px;height:9px;border-radius:2px;background:var(--fn-positive);transform:rotate(45deg)"></i>'+t("Interview")+'</span>'+
@@ -6212,7 +6241,9 @@ function calJourneys(ev){
 
 /* ---- month --------------------------------------------------------------- */
 function calChip(e){
-  const j=e.job, co=esc(j.company);
+  /* Two applications at one company are told apart by their role. */
+  const j=e.job, twin=(S.jobs||[]).some(x=>x!==j&&x.id!==j.id&&x.company===j.company&&!DEAD_ST.has(x.status));
+  const co=esc(j.company)+(twin?' · '+esc(j.title):'');
   const drag=(e.kind==="iv"||e.kind==="fu")?' draggable="true" data-drag="'+e.kind+':'+esc(j.id)+'"':'';
   if(e.kind==="iv") return '<button class="cal-chip iv" data-open-job="'+esc(j.id)+'"'+drag+' title="'+esc(interviewLine(j))+
     '"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
@@ -6238,7 +6269,7 @@ function drawCalMonth(ev){
       '<div class="d"><span>'+dnum+(dnum===1?" "+esc(fmtKey(k,{month:"short"})):"")+'</span></div>'+
       chips.slice(0,3).map(calChip).join("")+(chips.length>3?'<small style="font-size:11px;color:var(--t500)">+'+(chips.length-3)+'</small>':'')+
       ((sent||closed)?'<div class="act">'+(sent?'<span><i style="background:var(--fn-wait)"></i>'+esc(t("{n} sent",{n:sent}))+'</span>':'')+
-        (closed?'<span><i style="background:var(--bd-field)"></i>'+esc(t("{n} closed",{n:closed}))+'</span>':'')+'</div>':'')+'</div>';
+        (closed?'<span><i style="background:var(--bd-field)"></i>'+esc(t("{n} ended",{n:closed}))+'</span>':'')+'</div>':'')+'</div>';
   }
   const dows=Array.from({length:7},(_,i)=>'<div class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"short"}))+'</div>').join("");
   $("#cal-body").innerHTML='<div class="cal-month"><section class="cal-card cal-grid cal-r" style="grid-template-rows:auto repeat('+
@@ -6392,9 +6423,13 @@ function newDocumentSheet(){
   /* Basing a letter on a CV produces nonsense, so the list follows the kind.
      The document you have open is the obvious thing to duplicate. */
   const fillBase=()=>{
+    /* Tailoring starts from the base CV, so that is the default; the
+       document you have open wins when it is of the same kind. */
+    const list=forKind(kind), base=S.state&&S.state.base&&S.state.base.path;
+    const pick=list.some(d=>d.path===S.path)?S.path:kind==="cv"&&list.some(d=>d.path===base)?base:"";
     $("#nd-base").innerHTML='<option value="">A blank starter</option>'+
-      forKind(kind).map(d=>'<option value="'+esc(d.path)+'"'+
-        (d.path===S.path?" selected":"")+'>'+esc(d.label)+
+      list.map(d=>'<option value="'+esc(d.path)+'"'+
+        (d.path===pick?" selected":"")+'>'+esc(d.label)+
         (S.pages[d.path]?" · "+S.pages[d.path]+" page"+(S.pages[d.path]===1?"":"s"):"")+
         '</option>').join("");
   };
@@ -6889,7 +6924,7 @@ function paintDesignNav(){
   const items=[{k:"theme",t:"Theme",ct:themeLabel(cur||""),n:0}].concat(groups.map(g=>{
     const el=$('#dz-advanced [data-group="'+CSS.escape(g.name)+'"]');
     return {k:g.name,t:human(g.name),ct:g.name==="photo"
-      ?(!(S.state&&S.state.photo)?"None":photoOn()?"On":"Off"):String(g.fields.length),
+      ?(!(S.state&&S.state.photo)?"None":photoOn()?"On":"Off"):"",
       n:el?el.querySelectorAll(".dz-row.chg").length:0};
   }));
   $("#dz-nav").innerHTML=items.map(i=>
@@ -7100,7 +7135,6 @@ function fillSettings(){
   fillBackups();
   const st=S.state||{}, base=location.origin, pr=prefs();
   $("#s-ws").textContent=st.workspace||"";
-  $("#s-count").textContent=(st.documents||[]).length+" documents";
   $("#s-base").textContent=base;
   $("#s-spec").href=base+"/api/docs"+(st.api_token?"?token="+
     encodeURIComponent(st.api_token):"");
@@ -7143,6 +7177,7 @@ function fillSettings(){
   sb.textContent=st.sample?"Back to my workspace":"Open sample data";
   sb.onclick=()=>setSample(!st.sample,sb);
   $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
+  $("#s-exp-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
   /* Revealing is deliberate and one click; copying never needs it. */
   const key=$("#s-key");
   key.hidden=!(S.state&&S.state.api_token);
@@ -7420,6 +7455,7 @@ const palPlaces=()=>[
   {label:t("Documents"),icon:"doc",run:()=>setView("docs")},
   {label:t("Funnel"),icon:"funnel",run:()=>setView("funnel")},
   {label:t("Calendar"),icon:"cal",run:()=>setView("cal")},
+  {label:t("Follow-up due"),icon:"list",run:()=>{ S.jfilter={kind:"alert",value:"followup_due"}; S.fnode=null; setView("jobs"); drawJobs() }},
   ...[["workspace","Workspace"],["editor","Editor"],["region","Language & region"],["notify","Notifications"],["browser","Browser"],
       ["ai","AI clients"],["api","API"],["updates","Updates"],["about","About"]]
     .map(([k,l])=>({label:t("Settings")+" › "+t(l),icon:"gear",stay:true,run:()=>openSettings(k)})),
@@ -7475,7 +7511,7 @@ function palBuild(){
     if(recent.length) groups.push([t("Recent"),recent]);
     /* New application, New document, Calendar, Funnel, Settings › Notifications. */
     const pl=palPlaces();
-    groups.push([t("Go to"),[0,1,5,4,9].map(i=>pl[i])
+    groups.push([t("Go to"),[0,6,1,5,4].map(i=>pl[i])
       .map(p=>({html:palIcon(p.icon),title:esc(p.label),sub:p.sub?esc(p.sub):"",kind:"",stay:p.stay,run:p.run}))]);
   } else {
     const jobs=S.jobs||[], apps=[], inside=[];
@@ -7635,9 +7671,13 @@ const ppTint=n=>["#f3dfb8","#dbe6f2","#dcecd9","#f2dcdc","#e6dff2"][[...String(n
 function ppKind(j){
   const h=(j.status_history||[]).filter(x=>x.status==="interviewing").pop();
   const iv=j.interview_at&&new Date(j.interview_at)<new Date()?j.interview_at:(h&&h.at);
-  return iv&&(Date.now()-new Date(iv))<5*DAY?"thanks":"followup";
+  /* What there is to say depends on where the application is: an offer is
+     answered, a recent interview thanked for, an older one chased. */
+  if(j.status==="offer") return "offer";
+  if(iv&&(Date.now()-new Date(iv))<5*DAY) return "thanks";
+  return j.status==="interviewing"&&iv?"next":"followup";
 }
-const PP_KIND_LABEL={followup:"Follow-up email",thanks:"Thank-you note",next:"Ask about next steps"};
+const PP_KIND_LABEL={followup:"Follow-up email",thanks:"Thank-you note",next:"Ask about next steps",offer:"Reply to the offer"};
 function ppLast(p){
   if(!p.last) return t("not written to from here yet");
   const d=dayDiff(p.last,todayKey());
@@ -7711,6 +7751,8 @@ const PP_TPL={
       b:"Thank you for your time{met}. I enjoyed hearing about the team and the work, and it made me more keen on the {role} role.\n\n[One thing you talked about that stayed with you.]\n\nI look forward to hearing about the next steps."},
     next:{s:"{role}: next steps",
       b:"Thank you again for the conversation{met}. Could you tell me what the next steps are, and roughly when I might hear back?\n\nI remain very interested in the {role} role at {co}."},
+    offer:{s:"{role}: your offer",
+      b:"Thank you very much for the offer for the {role} role at {co}. I am delighted, and I would like to take a few days to look at it properly.\n\nCould you send me the full details in writing (salary, start date, benefits) and let me know by when you need my answer?\n\nI will come back to you shortly."},
     applied:d=>" on "+d, met:d=>" on "+d, duty:d=>", not least in this part of the role: “"+d+"”"},
   fr:{greet:n=>n?"Bonjour "+n+",":"Bonjour,", sign:"Bien cordialement,",
     followup:{s:"{role} : suivi de ma candidature",
@@ -7719,6 +7761,8 @@ const PP_TPL={
       b:"Merci pour le temps que vous m'avez accordé{met}. J'ai beaucoup apprécié d'en apprendre plus sur l'équipe et le travail, et le poste de {role} m'intéresse d'autant plus.\n\n[Un point de l'échange qui vous a marqué.]\n\nJe reste à votre disposition pour la suite."},
     next:{s:"{role} : prochaines étapes",
       b:"Merci encore pour notre échange{met}. Pourriez-vous m'indiquer les prochaines étapes, et à peu près quand je pourrai avoir un retour ?\n\nLe poste de {role} chez {co} m'intéresse toujours beaucoup."},
+    offer:{s:"{role} : votre proposition",
+      b:"Merci beaucoup pour votre proposition pour le poste de {role} chez {co}. J'en suis ravi(e), et je souhaiterais prendre quelques jours pour l'étudier sereinement.\n\nPourriez-vous m'envoyer le détail par écrit (salaire, date de début, avantages) et m'indiquer d'ici quand vous attendez ma réponse ?\n\nJe reviens vers vous très vite."},
     applied:d=>" le "+d, met:d=>" le "+d, duty:d=>", en particulier pour cette partie du poste : « "+d+" »"},
   es:{greet:n=>n?"Hola, "+n+":":"Hola:", sign:"Un saludo,",
     followup:{s:"{role}: seguimiento de mi candidatura",
@@ -7727,6 +7771,8 @@ const PP_TPL={
       b:"Gracias por tu tiempo{met}. Me gustó mucho conocer mejor el equipo y el trabajo, y el puesto de {role} me interesa todavía más.\n\n[Algo de la conversación que te quedó.]\n\nQuedo a la espera de los próximos pasos."},
     next:{s:"{role}: próximos pasos",
       b:"Gracias de nuevo por la conversación{met}. ¿Podrías decirme cuáles son los próximos pasos y cuándo podría tener noticias?\n\nEl puesto de {role} en {co} me sigue interesando mucho."},
+    offer:{s:"{role}: vuestra oferta",
+      b:"Muchas gracias por la oferta para el puesto de {role} en {co}. Me hace mucha ilusión y me gustaría tomarme unos días para estudiarla con calma.\n\n¿Podríais enviarme los detalles por escrito (salario, fecha de incorporación, beneficios) y decirme para cuándo necesitáis mi respuesta?\n\nOs respondo muy pronto."},
     applied:d=>" el "+d, met:d=>" el "+d, duty:d=>", sobre todo esta parte del puesto: «"+d+"»"},
   pt:{greet:n=>n?"Olá, "+n+",":"Olá,", sign:"Atenciosamente,",
     followup:{s:"{role}: acompanhamento da minha candidatura",
@@ -7735,6 +7781,8 @@ const PP_TPL={
       b:"Agradeço pelo seu tempo{met}. Gostei muito de conhecer melhor o time e o trabalho, e a vaga de {role} me interessa ainda mais.\n\n[Algo da conversa que ficou com você.]\n\nFico no aguardo dos próximos passos."},
     next:{s:"{role}: próximos passos",
       b:"Agradeço novamente pela conversa{met}. Poderia me dizer quais são os próximos passos e quando devo ter um retorno?\n\nA vaga de {role} na {co} continua me interessando muito."},
+    offer:{s:"{role}: sua proposta",
+      b:"Muito obrigado(a) pela proposta para a vaga de {role} na {co}. Fiquei muito feliz e gostaria de alguns dias para avaliá-la com calma.\n\nVocê poderia me enviar os detalhes por escrito (salário, data de início, benefícios) e me dizer até quando precisa da minha resposta?\n\nRetorno em breve."},
     applied:d=>" em "+d, met:d=>" em "+d, duty:d=>", principalmente esta parte da vaga: “"+d+"”"},
 };
 const PP_LOCALE={en:"en-GB",fr:"fr-FR",es:"es-ES",pt:"pt-BR"};
@@ -7752,12 +7800,17 @@ function ppDraft(kind,lang,j,p,ctx){
 function langName(code){
   try{ return new Intl.DisplayNames([uiLocale()],{type:"language"}).of(code) }catch(e){ return code }
 }
+/* A follow-up set for a Saturday or a Sunday moves to the Monday. */
+function workday(k){
+  const wd=keyDate(k).getUTCDay();
+  return wd===6?addDays(k,2):wd===0?addDays(k,1):k;
+}
 async function draftSheet(j,p,kind){
   let ctx={};
   try{ ctx=await api("/api/jobs/draft?id="+encodeURIComponent(j.id)) }catch(e){}
   const lang=PP_TPL[j.language]?j.language:(PP_TPL[UI_LANG]?UI_LANG:"en");
   openSheet('<h3>'+esc(t(PP_KIND_LABEL[kind]))+'</h3>'+
-    '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name||p.email,co:j.company}))+
+    '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name&&p.email?p.name+" <"+p.email+">":p.name||p.email,co:j.company}))+
       (lang!==UI_LANG?' '+esc(t("In {lang}, the application's language.",{lang:langName(lang)})):'')+'</p>'+
     '<div class="pp-kinds" role="radiogroup" aria-label="'+esc(t("Kind of email"))+'">'+
       Object.keys(PP_KIND_LABEL).map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
@@ -7793,7 +7846,7 @@ async function draftSheet(j,p,kind){
     if(window.__TAURI__) post("/api/open",{url}).catch(err=>toast(err.message,true));
     else location.href=url;
     const people=(j.people||[]).map(x=>x.id===p.id?Object.assign({},x,{last:todayKey()}):x);
-    await saveJob(j.id,Object.assign({people},move?{followup_date:addDays(todayKey(),7)}:{}));
+    await saveJob(j.id,Object.assign({people},move?{followup_date:workday(addDays(todayKey(),7))}:{}));
   };
 }
 

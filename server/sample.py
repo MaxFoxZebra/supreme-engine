@@ -406,7 +406,9 @@ def build(studio, applications: int = 64) -> dict:
             data["notes"] = R.choice(NOTES)
         if status == "applied" and R.random() < .6:
             # Some follow-ups already due, some coming.
-            data["followup_date"] = (now + dt.timedelta(days=R.randint(-6, 8))).date().isoformat()
+            day = (now + dt.timedelta(days=R.randint(-6, 8))).date()
+            day += dt.timedelta(days=(7 - day.weekday()) % 7 if day.weekday() >= 5 else 0)
+            data["followup_date"] = day.isoformat()
         if status == "interviewing" and R.random() < .7:
             data["interview_at"] = _iso((now + dt.timedelta(days=R.randint(1, 9))).replace(
                 hour=R.choice([10, 11, 14, 16]), minute=0, second=0))
