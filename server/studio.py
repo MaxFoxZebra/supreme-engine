@@ -35,6 +35,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import unicodedata
 import zipfile
 import webbrowser
@@ -2174,6 +2175,28 @@ def prefs_path() -> Path:
     return cjkfonts.cache_dir().parent / "prefs.json"
 
 
+def log_path() -> Path:
+    """Where the server writes what it would print, when there is no terminal
+    to print it to: the desktop app. Beside the preferences, never in the
+    workspace."""
+    return cjkfonts.cache_dir().parent / "logs" / "server.log"
+
+
+def log_to_file() -> None:
+    """Send stdout and stderr to the log. Kept under a megabyte: past that,
+    the old one becomes server.1.log and a new one starts."""
+    p = log_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if p.exists() and p.stat().st_size > 1_000_000:
+            p.replace(p.with_name("server.1.log"))
+        f = open(p, "a", encoding="utf-8", errors="replace", buffering=1)
+    except OSError:
+        return
+    f.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} CV Studio {VERSION} ---\n")
+    sys.stdout = sys.stderr = f
+
+
 def load_prefs() -> dict | None:
     """The saved preferences, or None before anything was ever saved."""
     try:
@@ -4165,6 +4188,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except FileNotFoundError:
             return self._json({"error": "file not found"}, 404)
         except Exception as exc:
+            traceback.print_exc()
             return self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def _cv_font(self, name: str):
@@ -4316,7 +4340,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/reveal":
                 target = WORKSPACE
                 sub_ = payload.get("path")
-                if sub_:
+                if payload.get("logs"):
+                    target = log_path().parent
+                    target.mkdir(parents=True, exist_ok=True)
+                elif sub_:
                     target = safe_path(sub_)
                 try:
                     if sys.platform == "win32":
@@ -4419,6 +4446,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except PermissionError as exc:
             return self._json({"error": str(exc)}, 403)
         except Exception as exc:
+            traceback.print_exc()
             return self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
 
 
@@ -5173,6 +5201,9 @@ const API_TOKEN=__API_TOKEN__;
           RenderCV font set and IBM Plex (SIL Open Font License), and d3-sankey (ISC).
           The Claude mark is a trademark of Anthropic, used here only to identify the
           Claude Desktop integration.</p>
+        <div class="srow"><div><b>Log</b><span>What the app noted while running, errors included. Useful
+          to attach if you report a problem; nothing in it leaves your computer on its own.</span></div>
+          <button class="sbtn" id="s-logs">Open the log folder</button></div>
       </section>
     </div>
   </div></div>
@@ -5212,6 +5243,10 @@ def main() -> int:
     if args.app_version:
         VERSION = args.app_version
     if args.parent_pid:
+        # Run by the desktop app, which shows no terminal: what would be
+        # printed goes to the log, so there is something to look at when a
+        # user reports a problem.
+        log_to_file()
         watch_parent(args.parent_pid)
 
     WORKSPACE = Path(args.workspace).resolve() if args.workspace else DEFAULT_WORKSPACE

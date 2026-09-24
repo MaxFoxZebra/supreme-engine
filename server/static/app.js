@@ -7056,6 +7056,7 @@ function showSettingsPane(which){
   if(which==="updates") checkUpdates(true);
   if(which==="ai") loadAI();
   if(which==="browser") fillClip();
+  if(which==="about") $("#s-logs").onclick=()=>post("/api/reveal",{logs:true}).catch(e=>toast(e.message,true));
 }
 /* Save to CV Studio: the bookmark is made by the server, for the port it
    listens on for it. Clicking it here, rather than dragging, would run it on

@@ -699,10 +699,15 @@ def export(workspace: Path, fmt: str = "json") -> str:
     rows = list_jobs(workspace)
     if fmt == "csv":
         buf = io.StringIO()
-        cols = ["id", *FIELDS, "created_at", "updated_at"]
+        cols = ["id", *FIELDS, "people", "created_at", "updated_at"]
         w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for r in rows:
+            # One cell a spreadsheet can show: "Name (Role) <email>; ...".
+            r = dict(r, people="; ".join(
+                " ".join(x for x in (p.get("name"), f"({p['role']})" if p.get("role") else "",
+                                     f"<{p['email']}>" if p.get("email") else "") if x)
+                for p in r.get("people") or []))
             w.writerow(r)
         return buf.getvalue()
     return json.dumps(rows, indent=2)

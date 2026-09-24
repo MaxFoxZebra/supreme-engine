@@ -67,7 +67,11 @@ and translations, in a folder of its own: your workspace is never touched, and
 
 ![Applications, with Next up above the list](docs/screenshots/applications.png)
 
-There are four tabs across the top.
+There are four tabs across the top, and beside them a search field: `Ctrl`/`⌘`
++ `K` from anywhere. It finds applications by company and role, documents by
+name and by what is written in them, the words inside postings and notes, and
+places in the app (Settings › Notifications is a few letters away). Before you
+type, it offers what you opened last.
 
 **Applications** is home, and it is `applications.db`. The list takes the
 middle: company and logo, role, where it was found, the documents written for
@@ -87,6 +91,14 @@ letter written for it, as pages; opposite, your notes and **the posting**, saved
 as text with its headings and lists, because adverts come down and a tailored
 CV and a letter are written against it. Not saved yet, that card is where you
 paste it.
+
+Under your notes, **People**: the recruiter, the hiring manager, whoever
+referred you, with their email and when you last wrote. A follow-up, a thank-you
+after an interview or a question about next steps is drafted from the
+application, in its language, and opens in your own mail app; sending a
+follow-up can move the reminder a week on. **Export both** puts the CV and the
+letter in one PDF (the CV first) for forms that take a single file, or in a zip,
+named for you, the company and the role.
 
 **Documents** is the base CV and everything written from it. The **base CV** is
 the one every tailored copy starts from: an application with no CV offers one,
@@ -154,6 +166,15 @@ in the calendar you already use.
 - **Editor.** Live preview, the theme for new documents, the accent colour, and
   light or dark. The rendered page stays white either way: it is a document,
   not a surface.
+- **Browser.** A *Save to CV Studio* button to drag to your bookmarks bar. On a
+  job page it opens a small CV Studio window with the role, the company, the
+  place, the salary and the posting already read from the page, and saves them
+  as an application; a link you already track gets its posting saved instead of
+  a duplicate. Nothing leaves your computer.
+- **Workspace.** Where your files are, backups (one a day, the last fourteen
+  kept, outside the workspace, with *Back up now* and *Restore…*), and exports of
+  your applications as JSON or CSV. A deleted application goes to a trash for
+  thirty days, and the toast that says so has *Undo*.
 - **AI clients.** Whether Claude, OpenAI, Hermes Agent and Mistral Vibe are wired
   up to this workspace, and a button to do it.
 

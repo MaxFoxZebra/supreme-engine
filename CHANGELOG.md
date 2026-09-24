@@ -18,6 +18,13 @@ tag, so a release is never published with nothing said about it.
   that is not CV Studio's own are now refused. Scripts and your AI client
   work as before.
 - **Hybrid, Remote and On-site** on a posting's tag are translated.
+- **A log, for when something goes wrong.** The desktop app now keeps what
+  the renderer notes while running, errors with their details included, in a
+  small file beside your settings (never over a megabyte). Settings › About
+  › Open the log folder finds it, to attach to a report.
+- **The CSV export includes people**, as "Name (Role) <email>" in one column.
+- **The README** describes search, People, Export both, the browser button,
+  backups and the trash.
 
 ## 0.23.0
 
