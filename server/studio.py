@@ -3678,8 +3678,8 @@ button{font:inherit;cursor:pointer}
     <span class="muted" id="k-line"></span>
   </div>
   <div class="grid" id="fields">
-    <label>Company<input id="f-company" autocomplete="off"></label>
-    <label>Role<input id="f-title" autocomplete="off"></label>
+    <label class="wide">Company<input id="f-company" autocomplete="off"></label>
+    <label class="wide">Role<input id="f-title" autocomplete="off"></label>
     <label>Location<input id="f-location" autocomplete="off"></label>
     <label>Found on<input id="f-source" autocomplete="off"></label>
     <label class="wide">Status<select id="f-status"><option value="pending">Draft</option>
