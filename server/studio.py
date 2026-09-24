@@ -509,7 +509,7 @@ AI_CLIENTS = {
         "manual": "Claude Desktop → Settings → Developer → Edit config.",
     },
     "openai": {
-        "label": "OpenAI",
+        "label": "ChatGPT / Codex",
         "path": _openai_config_path,
         "read": _toml_read, "write": _toml_write, "snippet": _toml_snippet,
         "restart": "Restart the ChatGPT app, or start a new Codex session.",
@@ -2049,6 +2049,14 @@ design:
     headline: rgb(70, 70, 70)
     connections: rgb(70, 70, 70)
     links: rgb(0, 60, 120)
+  # Set for applicant tracking systems: contact details as plain text rather
+  # than icon glyphs, the full profile links, and the phone with its country
+  # code. Design turns any of them back.
+  header:
+    connections:
+      show_icons: false
+      display_urls_instead_of_usernames: true
+      phone_number_format: international
   typography:
     line_spacing: 0.6em
     alignment: left

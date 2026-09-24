@@ -194,15 +194,15 @@ if __name__ == "__main__":
     check("nothing about any of it reached the YAML",
           "claude" not in text.lower() and "cvstudio" not in text.lower())
 
-    # The PDF an ATS receives, read back. The starter header draws its
-    # contact details with icon glyphs, which extract as private-use
-    # characters, so a working check has something to say about it.
+    # The PDF an ATS receives, read back.
     r = call("ats_check", {"path": doc})
     body = r["result"]["content"][0]["text"] if "result" in r else ""
     check("ats_check reads the rendered PDF",
           '"words"' in body and '"problems"' in body, body[:60])
-    check("and finds the icon glyphs in the starter header",
-          "unreadable characters" in body)
+    # The starter is set up for applicant tracking systems (no icon glyphs,
+    # full profile links), so the check has nothing to flag on it.
+    check("and finds nothing to fix in the starter",
+          '"problems": []' in body, body[body.find('"problems"'):][:80])
 
     r = call("design_options", {})
     check("design_options lists themes",

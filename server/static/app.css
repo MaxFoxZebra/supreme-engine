@@ -256,7 +256,7 @@ button:disabled{opacity:.4;cursor:default}
 .aic[data-state=elsewhere] .dot,
 .aic[data-state=other-workspace] .dot,
 .aic[data-state=unreadable] .dot{background:var(--bad)}
-.aic[data-state=absent] svg,.aic[data-state=unknown] svg{opacity:.45}
+.aic:not([data-state=connected]) svg{opacity:.45}
 .aic[data-state=absent] .dot,.aic[data-state=unknown] .dot{display:none}
 .pbtn{display:inline-flex;align-items:center;height:34px;padding:0 15px;border-radius:8px;
   font-size:13px;font-weight:600;color:var(--c800);background:var(--acc);white-space:nowrap}
@@ -1529,9 +1529,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 /* Above the full-screen overlays too: a sheet opened from Design or Settings
    has to land on top of them. */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:46}
-.sheet{position:fixed;left:50%;top:52px;transform:translateX(-50%);width:620px;
-  max-width:calc(100% - 40px);max-height:calc(100% - 66px);overflow-y:auto;
-  background:var(--app);border-radius:0 0 9px 9px;box-shadow:0 22px 48px rgba(0,0,0,.45);
+.sheet{position:fixed;left:50%;top:72px;transform:translateX(-50%);width:620px;
+  max-width:calc(100% - 40px);max-height:calc(100% - 96px);overflow-y:auto;
+  background:var(--app);border-radius:12px;box-shadow:0 22px 48px rgba(0,0,0,.45);
   padding:22px 24px;display:flex;flex-direction:column;gap:16px;z-index:47}
 .sheet h3{margin:0;font-size:15px;font-weight:600}
 .sheet p{margin:4px 0 0;font-size:12.5px;color:var(--t600);line-height:1.45}
@@ -2027,7 +2027,7 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 /* ---------- ATS check ------------------------------------------------------ */
 /* The sheet stays inside the window: its body scrolls, its buttons stay at
    the bottom. */
-.sheet.ats{width:980px;overflow:hidden;border-radius:0 0 12px 12px;padding-bottom:0}
+.sheet.ats{width:980px;overflow:hidden;padding-bottom:0}
 .sheet.ats .ats-body{flex:1 1 auto;overflow-y:auto;margin:0 -24px;padding:2px 24px 8px}
 .sheet.ats .foot{flex:none;margin:0 -24px;padding:12px 24px;border-top:1px solid var(--rule)}
 .ats-top{display:flex;gap:18px;align-items:flex-start;justify-content:space-between}
@@ -2766,14 +2766,14 @@ textarea{resize:vertical}
 .rd-due{font-size:12.5px;font-weight:600;white-space:nowrap;color:var(--t600)}
 .rd-due.ok{color:var(--fn-offer-text)} .rd-due.bad{color:var(--fn-lost-text)}
 .rd-due.soon{color:var(--acc-text)} .rd-due.ask{color:var(--acc-text)}
-.rd-ed{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;padding:2px 14px 14px 50px}
+.rd-ed{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:2px 14px 14px 50px}
 .rd-ed label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--t600);min-width:0}
-.rd-ed label:nth-child(3){grid-column:1/-1}
-.rd-ed input{width:100%;box-sizing:border-box;height:32px;padding:0 10px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
+.rd-ed input{width:100%;box-sizing:border-box;height:32px;padding:0 8px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
   color:var(--t900);font-size:13px;font-weight:400;min-width:0}
-.rd-when{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.rd-when{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px}
 .rd-when select{min-height:32px;border-radius:8px;font-size:13px}
-.rd-acts{grid-column:1/-1;display:flex;align-items:center;gap:6px}
+.rd-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.rd-acts .obtn{white-space:nowrap}
 .rd-acts .obtn{height:30px;padding:0 11px;border-radius:7px;font-size:12.5px}
 .rd-acts .obtn[aria-pressed=true]{background:var(--t900);color:var(--app);border-color:var(--t900)}
 .rd-acts .obtn.icon{width:30px;padding:0;display:grid;place-items:center}
@@ -2833,3 +2833,12 @@ textarea{resize:vertical}
   :root:not([data-theme=light]) .cal-md.l1{background:color-mix(in srgb,var(--acc) 18%,var(--field))}
   :root:not([data-theme=light]) .cal-md.l2{background:color-mix(in srgb,var(--acc) 45%,var(--field))}
   :root:not([data-theme=light]) .cal-md.l3{background:color-mix(in srgb,var(--acc) 85%,var(--field));color:#1b1a17}}
+.rd-cv{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;border-radius:10px;
+  background:var(--acc-wash);border:1px solid var(--acc-line);font-size:13px;color:var(--t900)}
+.rd-cv span{flex:1;min-width:0}
+.rd-cv .obtn{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;white-space:nowrap}
+/* The page behind a sheet or the palette goes further back in the dark. */
+:root[data-theme=dark] .scrim,:root[data-theme=dark] .pal-scrim{background:rgba(0,0,0,.58)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .scrim,:root:not([data-theme=light]) .pal-scrim{background:rgba(0,0,0,.58)}}
+:root[data-theme=dark] #ovl-settings{box-shadow:0 0 0 100vmax rgba(0,0,0,.62),0 24px 60px rgba(0,0,0,.5)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) #ovl-settings{box-shadow:0 0 0 100vmax rgba(0,0,0,.62),0 24px 60px rgba(0,0,0,.5)}}

@@ -38,6 +38,25 @@ A polish and safety release on the way to 1.0.
   end of a line, so an ATS reads "Post-" and "greSQL" and a keyword search
   misses both. The ATS check now says so, with a Fix that keeps the text
   justified without hyphenation.
+- **New CVs are ATS-safe from the start.** The starter CV (and the sample)
+  print contact details as plain text instead of icon glyphs, the full
+  LinkedIn and GitHub links instead of usernames, and the phone with its
+  country code (+33 6 12 34 56 78, not 06 12 34 56 78), and they never
+  split a word across lines. The ATS check has nothing to flag on them;
+  Design turns any of it back.
+- **Round three of the review:**
+  - An interview this week with no tailored CV says so on the application,
+    with *Tailor a CV*; the calendar's checklist offers the same.
+  - An offer's next step in the list is to answer it; the offer email
+    template only shows on an offer.
+  - The interview round editor stacks its fields, so dates and French labels
+    are no longer cut off.
+  - Sheets float below the top bar like Settings and search; in dark mode the
+    page behind them goes further back.
+  - Search names a document by its application ("CV · Qwant (FR)") and shows
+    the matching line without its YAML key.
+  - AI client marks in the top bar are dimmed until connected; the calendar's
+    Prepare is the orange primary like everywhere else.
 - **Round two of the review:**
   - The applications table shows the *next step* (the interview coming, or
     the follow-up, late in red) instead of a follow-up column of dashes.

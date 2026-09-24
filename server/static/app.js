@@ -4665,7 +4665,11 @@ function nextStep(j,due){
   const at=!DEAD_ST.has(j.status)&&interviewMoment(j);
   if(at&&at>new Date())
     return '<span class="when iv" title="'+esc(interviewLine(j))+'">'+esc(t("Interview"))+' · '+
-      esc(fmtKey(dayIn(at),{weekday:"short",day:"numeric",month:"short"}))+'</span>';
+      esc(fmtKey(dayIn(at),{weekday:"short",day:"numeric"}))+'</span>';
+  if(j.status==="offer"){
+    const h=(j.status_history||[]).filter(x=>x.status==="offer").pop();
+    return '<span class="when due">'+esc(t("Answer the offer"))+(h?' · '+esc(shortDate(String(h.at).slice(0,10))):'')+'</span>';
+  }
   if(j.followup_date&&!DEAD_ST.has(j.status))
     return '<span class="when'+(due?" due":"")+'">'+esc(t("Follow up"))+' · '+esc(shortDate(j.followup_date))+'</span>';
   return '<span class="when none">–</span>';
@@ -5084,8 +5088,7 @@ function drawJobInspector(){
       await loadJobs(true); openDoc(r.path) }
     catch(e){ wr.disabled=false; toast(e.message,true) }
   };
-  const th=body.querySelector("[data-tailor-here]");
-  if(th) th.onclick=()=>tailorFor(j.id);
+  body.querySelectorAll("[data-tailor-here]").forEach(th=>th.onclick=()=>tailorFor(j.id));
   const wirePaste=()=>{
     const sv=$("#ap-post-save"), ta=$("#ap-paste");
     if(sv) sv.onclick=()=>{ const v=ta.value.trim(); if(!v&&!j.description) return ta.focus();
@@ -5210,7 +5213,14 @@ function roundsHTML(j){
   };
   const last=rs.filter(r=>r.outcome).slice(-1)[0];
   const offer=last&&last.outcome==="failed"&&j.status==="interviewing";
-  return '<div class="block rounds" id="ap-rounds"><div class="bhead"><span class="blabel">'+esc(t("Interviews"))+'</span>'+
+  /* An interview this week with no CV written for it is the thing to fix
+     first, so it says so here, with the button. */
+  const nextAt=interviewMoment(j), soon=nextAt&&nextAt>new Date()&&nextAt-new Date()<7*864e5;
+  const needCv=soon&&!j.cv_path&&!(S.tailoring&&S.tailoring.has(j.id));
+  return '<div class="block rounds" id="ap-rounds">'+
+    (needCv?'<div class="rd-cv"><span>'+esc(t("No tailored CV yet for this interview."))+'</span>'+
+      '<button type="button" class="obtn" data-tailor-here>'+esc(t("Tailor a CV"))+'</button></div>':'')+
+    '<div class="bhead"><span class="blabel">'+esc(t("Interviews"))+'</span>'+
       '<span class="rd-sum">'+esc(sum)+'</span><span class="grow"></span>'+
       '<button class="obtn" data-rd-add>'+esc(t("+ Add a round"))+'</button></div>'+
     (rs.length?'<div class="rd-list">'+rs.map(row).join("")+'</div>':'')+
@@ -6118,7 +6128,7 @@ function drawNextUp(){
         esc(more>0?t("Show {n} more",{n:more}):t("Show fewer"))+'</button></div>':'')+'</div>'+
     '<div class="na-side"><div class="hd">'+esc(t("This week"))+'<button data-nu-cal>'+esc(t("Open calendar"))+' →</button></div>'+
       '<div class="days">'+days+'</div>'+
-      '<div class="na-stats">'+stat(t("Interviews this week"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups due this week"),dueWeek)+'</div></div>';
+      '<div class="na-stats">'+stat(t("Interviews this week"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups this week"),dueWeek)+'</div></div>';
   el.hidden=false;
   $$("#nextup [data-na]").forEach(b=>b.onclick=()=>shown[+b.dataset.na].run());
   const mb=$("#nextup [data-na-more]"); if(mb) mb.onclick=()=>{ S.naAll=!S.naAll; drawNextUp() };
@@ -6214,12 +6224,12 @@ function drawCalOverview(ev){
       '<div class="cal-cd" id="cal-cd"></div>'+
       '<div class="cal-checks">'+
         '<span class="cal-check"><i class="'+(cvName?"ok":"no")+'">'+(cvName?"✓":"")+'</i>'+
-          (cvName?t("CV tailored")+' · '+esc(cvName):t("No tailored CV yet"))+'</span>'+
+          (cvName?t("CV tailored")+' · '+esc(cvName):t("No tailored CV yet")+' · <button type="button" class="linkbtn" data-cal-tailor="'+esc(j.id)+'">'+t("Tailor a CV")+'</button>')+'</span>'+
         '<span class="cal-check"><i class="'+(words?"ok":"no")+'">'+(words?"✓":"")+'</i>'+
           (words?t("Posting saved"):t("Posting not saved"))+'</span>'+
         '<span class="cal-check"><i class="'+(j.notes?"ok":"no")+'">'+(j.notes?"✓":"")+'</i>'+
           (j.notes?t("Notes written"):t("Notes for this round"))+'</span></div>'+
-      '<div class="cal-acts"><button class="obtn dark" data-open-job="'+esc(j.id)+'">'+t("Prepare")+'</button>'+
+      '<div class="cal-acts"><button class="pbtn" data-open-job="'+esc(j.id)+'">'+t("Prepare")+'</button>'+
         '<button class="obtn" data-ics="'+esc(j.id)+'">'+t("Add to my calendar")+'</button></div></div>'+
       '<div class="cal-clocks"><div class="row">'+clockSVG(next.at,mine,t("Your time")+" · "+tzCity(mine),.5)+
         (two?clockSVG(next.at,theirs,t("In {city}",{city:tzCity(theirs)}),.7):'')+'</div>'+
@@ -6482,6 +6492,7 @@ function calPopHTML(ivs){
       '<button class="obtn" data-ics="'+esc(j.id)+'">'+t("Add to my calendar")+'</button></div></div>';
 }
 function wireCal(){
+  $$("[data-cal-tailor]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); tailorFor(b.dataset.calTailor) });
   $$("#cal-body [data-open-job]").forEach(el=>el.onclick=ev=>{ if(ev.target.closest("[data-pop]")) return; openJob(el.dataset.openJob) });
   $$("#cal-body [data-ics]").forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); window.open("/api/calendar.ics?id="+encodeURIComponent(el.dataset.ics)+tok()) });
   $$("#cal-body .cal-md[data-day]").forEach(el=>el.onclick=()=>{ if(el.classList.contains("out")) return;
@@ -7606,11 +7617,14 @@ function palRemember(item){
 function palBuild(){
   const q=PAL.q.trim(), words=palWords(q), groups=[];
   const docs=(S.state&&S.state.documents)||[];
-  const docItem=(d,sub,kind)=>({html:palIcon(isLetterPath(d.path)?"letter":"doc"),
-    title:esc(d.label||d.path), sub, kind:kind||t(isLetterPath(d.path)?"Letter":"CV"), run:()=>openDoc(d.path)});
+  /* A document written for an application is named by it: "CV · Qwant". */
+  const docJob=d=>(S.jobs||[]).find(x=>x.cv_path===d.path||x.letter_path===d.path);
+  const docItem=(d,sub,kind)=>{ const j=docJob(d), letter=isLetterPath(d.path);
+    return {html:palIcon(letter?"letter":"doc"),
+      title:j?esc(t(letter?"Cover letter":"CV"))+" · "+esc(j.company)+(d.lang?" ("+esc(d.lang.toUpperCase())+")":""):esc(d.label||d.path),
+      sub, kind:kind||t(letter?"Letter":"CV"), run:()=>openDoc(d.path)} };
   /* A document is described by what it is for, not by its path. */
-  const docSub=d=>{ const j=(S.jobs||[]).find(x=>x.cv_path===d.path||x.letter_path===d.path);
-    return esc(j?t("for {co}",{co:j.company}):d.lang?langName(d.lang):"") };
+  const docSub=d=>esc(docJob(d)?d.label:d.lang?langName(d.lang):"");
   const jobItem=(j,sub,kind,title)=>({html:'<span class="ic">'+companyMark(j)+'</span>',
     title:title||esc(j.company)+" · "+esc(j.title), sub:sub==null?esc(palJobLine(j)):sub,
     kind:kind==null?t("Application"):kind, run:()=>openJob(j.id)});
@@ -7640,7 +7654,8 @@ function palBuild(){
     const seen=new Set(), dl=[];
     docs.forEach(d=>{ if(palHas(d.label+" "+d.path,words)){ seen.add(d.path); dl.push(docItem(d,docSub(d))) } });
     (PAL.docs||[]).forEach(d=>{ if(seen.has(d.path)) return;
-      dl.push(docItem(d,palMark(d.line,words))) });
+      /* The line as it reads, without the YAML key or list dash in front. */
+      dl.push(docItem(d,palMark(String(d.line||"").replace(/^\s*(?:-\s+)?(?:[\w-]+:\s+)?/,""),words))) });
     if(dl.length) groups.push([t("Documents"),dl.slice(0,6),dl.length]);
     if(inside.length) groups.push([t("In postings and notes"),inside.slice(0,5),inside.length]);
     const places=palPlaces().filter(p=>palHas(p.label,words));
@@ -7748,7 +7763,7 @@ async function packSheet(id){
       esc(t("Add the posting, as Markdown"))+'</label>':'')+
     (draft?'<label class="pk-check"><input type="checkbox" id="pk-applied" checked>'+
       esc(t("Mark the application as applied today"))+'</label>':'')+
-    '<p class="pk-note">'+esc(t("Each is rendered from what is saved now."))+'</p>'+
+    '<p class="pk-note">'+esc(t("Rendered from what is saved now: unsaved edits are left out."))+'</p>'+
     '<div class="foot"><button class="sbtn" id="pk-cancel">'+esc(t("Cancel"))+'</button>'+
       '<button class="sbtn primary" id="pk-go">'+esc(t("Save PDF…"))+'</button></div>');
   const fmt=()=>($("#sheet [name=pk-f]:checked")||{}).value||"pdf";
@@ -7927,7 +7942,7 @@ async function draftSheet(j,p,kind){
     '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name&&p.email?p.name+" <"+p.email+">":p.name||p.email,co:j.company}))+
       (lang!==UI_LANG?' '+esc(t("In {lang}, the application's language.",{lang:langName(lang)})):'')+'</p>'+
     '<div class="pp-kinds" role="radiogroup" aria-label="'+esc(t("Kind of email"))+'">'+
-      Object.keys(PP_KIND_LABEL).map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
+      Object.keys(PP_KIND_LABEL).filter(k=>k!=="offer"||j.status==="offer"||kind==="offer").map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
         esc(t(PP_KIND_LABEL[k]))+'</button>').join("")+'</div>'+
     '<label class="pk-field">'+esc(t("Subject"))+'<input id="dr-sub" spellcheck="true"></label>'+
     '<label class="pk-field">'+esc(t("Message"))+'<textarea id="dr-body" rows="12" spellcheck="true"></textarea></label>'+
