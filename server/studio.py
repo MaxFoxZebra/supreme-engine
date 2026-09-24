@@ -5189,10 +5189,10 @@ const API_TOKEN=__API_TOKEN__;
         <div class="clip-steps">
           <div class="clip-step"><span class="clip-n">1</span><div><b>Drag this button to your bookmarks bar</b>
             <a class="clip-bm" id="s-clip-bm" href="#" draggable="true"><img src="/static/brand-mark.png"
-              alt="" width="18" height="18">Save to CV Studio</a>
+              alt="" width="18" height="18"><span><span class="vh" data-noi18n>💼 </span>Save to CV Studio</span></a>
             <span class="clip-hint">No bookmarks bar? Show it with Ctrl+Shift+B (⌘⇧B on a Mac).</span>
             <span class="clip-hint">Dragging does not work? <button class="linkbtn" id="s-clip-copy">Copy it</button>,
-              add a bookmark to any page, name it Save to CV Studio and paste it in place of the address.</span></div></div>
+              add a bookmark to any page, name it 💼 Save to CV Studio and paste it in place of the address.</span></div></div>
           <div class="clip-step"><span class="clip-n">2</span><div><b>On a job page, click it</b></div></div>
         </div>
         <div class="srow"><div><b>Works where the page describes the job</b><span>Most job boards and

@@ -2815,3 +2815,5 @@ textarea{resize:vertical}
 /* Floating surfaces keep an edge in the dark, where a shadow on a dark page
    hardly shows. */
 .sheet,.pal,#ovl-settings{outline:1px solid var(--edge,transparent);outline-offset:-1px}
+/* Part of the text (and of a dragged link's name), but not seen. */
+.vh{font-size:0;letter-spacing:0}

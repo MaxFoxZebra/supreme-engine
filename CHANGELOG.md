@@ -45,8 +45,9 @@ needs an account or leaves your machine.
 - **Save to CV Studio reads Indeed, LinkedIn and Glassdoor**, including
   their search pages: it takes the job you have selected in the side panel
   (its role, company, place and full description) and links to that job,
-  not to the search. Drag the button from Settings › Browser to your
-  bookmarks bar again to get this.
+  not to the search. Its name now starts with 💼, since a browser gives a
+  bookmark of this kind no icon. Drag the button from Settings › Browser to
+  your bookmarks bar again to get both.
 - **The sample data has people**: recruiters, hiring managers, interviewers
   and whoever referred you, on most applications that got that far.
 - **Hybrid, Remote and On-site** on a posting's tag are translated.
