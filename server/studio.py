@@ -1714,6 +1714,16 @@ def save_letter(path: Path, payload: dict, tool: str = "save") -> dict:
 
 def render_letter(path: Path) -> dict:
     meta, body = letters.parse(path.read_text(encoding="utf-8"))
+    # "today" on a letter already sent would redate it each export: once its
+    # application went out, the letter carries the day it was sent.
+    if meta.get("date") in (None, "", "today"):
+        try:
+            job = next((j for j in jobstore.list_jobs(WORKSPACE) if j.get("letter_path") == rel(path)), None)
+            sent = next((h["at"] for h in (job or {}).get("status_history") or [] if h.get("status") == "applied"), None)
+            if sent:
+                meta["date"] = str(sent)[:10]
+        except Exception:
+            pass
     head = letter_head(meta)
     cvp = letter_cv(meta)
     cjkfonts.ensure(path.read_text(encoding="utf-8") + head.get("name", ""))
@@ -3781,7 +3791,9 @@ if(window.ResizeObserver) new ResizeObserver(()=>{
 async function receive(d){
   PAGE=d; const j=d.job||{};
   const org=j.hiringOrganization; const company=typeof org==="string"?org:(org&&org.name)||"";
-  $("#f-title").value=(j.title||(!d.job&&d.title?d.title.split(/\s+[|–-]\s+/)[0]:"")||"").trim();
+  /* "(H/F)", "m/w/d" and the like say who may apply, not what the job is. */
+  $("#f-title").value=(j.title||(!d.job&&d.title?d.title.split(/\s+[|–-]\s+/)[0]:"")||"")
+    .replace(/\s*[([]?\b(?:[hfmwdx](?:\s*\/\s*[hfmwdx]){1,2}|all genders)\b[)\]]?/gi,"").replace(/\s*[-–|,]\s*$/,"").trim();
   $("#f-company").value=company.trim();
   $("#f-location").value=placeOf(j);
   $("#f-source").value=sourceOf(d);
@@ -5212,7 +5224,7 @@ const API_TOKEN=__API_TOKEN__;
           <div class="clip-step"><span class="clip-n">2</span><div><b>On a job page, click it</b></div></div>
         </div>
         <div class="srow"><div><b>Works where the page describes the job</b><span>Most job boards and
-          careers pages do, for search engines. Elsewhere, select the posting's text first and it takes
+          careers pages mark up the job for search engines. Elsewhere, select the posting's text first and it takes
           that.</span></div></div>
         <div class="srow"><div><b>CV Studio needs to be running</b><span id="s-clip-say">With the window
           closed it waits in the tray. Nothing leaves your computer: the page goes straight to the

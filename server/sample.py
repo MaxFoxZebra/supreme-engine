@@ -301,6 +301,11 @@ def _people(P, company: str, lang: str, source: str, reached: list[str], sent, n
     return out
 
 
+def _weekday(d: dt.datetime) -> dt.datetime:
+    """Interviews fall on working days: a Saturday or Sunday moves to Monday."""
+    return d + dt.timedelta(days=(7 - d.weekday()) % 7) if d.weekday() >= 5 else d
+
+
 def _rounds(status: str, hist: list[dict], interview_at: str | None, tz: str | None,
             people: list[dict]) -> list[dict]:
     """The interview rounds an application at this point would have had: a
@@ -311,13 +316,13 @@ def _rounds(status: str, hist: list[dict], interview_at: str | None, tz: str | N
         return []
     # History times carry the hour the sample was built; a screen is booked
     # in working hours.
-    iv = iv.replace(hour=15, minute=0, second=0)
+    iv = _weekday(iv.replace(hour=15, minute=0, second=0))
     who = {p["role"]: p["name"] for p in people}
     at = lambda d: _iso(d)[:16]
     # Past rounds are in your own time: that is the clock the history keeps.
     screen = {"id": "r1", "kind": "Recruiter screen", "at": at(iv), "tz": "",
               "with": who.get("Recruiter", ""), "outcome": "passed", "note": ""}
-    later = iv + dt.timedelta(days=6)
+    later = _weekday(iv + dt.timedelta(days=6))
     if status == "interviewing":
         nxt = {"id": "r2", "kind": "Technical", "at": (interview_at or "")[:16], "tz": tz or "",
                "with": who.get("Hiring manager", ""), "outcome": "", "note": ""}
@@ -328,7 +333,7 @@ def _rounds(status: str, hist: list[dict], interview_at: str | None, tz: str | N
                          "outcome": "failed" if status == "rejected_interviewing" else "", "note": ""}]
     return [screen, {"id": "r2", "kind": "Technical", "at": at(later), "tz": "",
                      "with": who.get("Hiring manager", ""), "outcome": "passed", "note": ""},
-            {"id": "r3", "kind": "Final", "at": at(later + dt.timedelta(days=5)), "tz": "",
+            {"id": "r3", "kind": "Final", "at": at(_weekday(later + dt.timedelta(days=5))), "tz": "",
              "with": "", "outcome": "passed", "note": ""}]
 
 
@@ -414,13 +419,15 @@ def build(studio, applications: int = 64) -> dict:
                         r = R.random()
                         if (now - iv).days > 10:
                             if r < .3:
-                                hist.append({"status": "offer", "at": iv + dt.timedelta(days=R.randint(7, 20))})
+                                hist.append({"status": "offer", "at": iv + dt.timedelta(days=R.randint(17, 24))})
                             elif r < .7:
                                 hist.append({"status": "rejected_interviewing",
-                                             "at": iv + dt.timedelta(days=R.randint(5, 15))})
+                                             "at": iv + dt.timedelta(days=R.randint(9, 16))})
                             elif r < .8:
                                 hist.append({"status": "ghosted_interviewing", "at": iv + dt.timedelta(days=21)})
-                        if hist[-1]["status"] == "offer" and R.random() < .6:
+                        # An offer is answered within a fortnight; only a recent one is
+                        # still open.
+                        if hist[-1]["status"] == "offer" and (R.random() < .6 or (now - hist[-1]["at"]).days > 12):
                             hist.append({"status": R.choice(["accepted", "refused", "refused"]),
                                          "at": hist[-1]["at"] + dt.timedelta(days=4)})
                 elif age > 6:
@@ -452,7 +459,7 @@ def build(studio, applications: int = 64) -> dict:
             day += dt.timedelta(days=(7 - day.weekday()) % 7 if day.weekday() >= 5 else 0)
             data["followup_date"] = day.isoformat()
         if status == "interviewing" and R.random() < .7:
-            data["interview_at"] = _iso((now + dt.timedelta(days=R.randint(1, 9))).replace(
+            data["interview_at"] = _iso(_weekday(now + dt.timedelta(days=R.randint(1, 9))).replace(
                 hour=R.choice([10, 11, 14, 16]), minute=0, second=0))
             # The time as the invitation gave it, in the employer's zone.
             data["interview_tz"] = ZONES.get(city)
@@ -487,7 +494,7 @@ def build(studio, applications: int = 64) -> dict:
             "company": company, "title": title, "location": city, "source": source,
             "status": "pending", "score": 4, "language": "pt" if city == "São Paulo" else "en",
             "description": POSTINGS["pt" if city == "São Paulo" else "sre"],
-            "interview_at": _iso((now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0)),
+            "interview_at": _iso(_weekday(now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0)),
             "interview_tz": ZONES[city], "logo": logos.get(company),
             "notes": "Second round: system design, 60 minutes, video call."})
         hist = [{"status": "pending", "at": _iso(sent - dt.timedelta(days=1))},
@@ -503,8 +510,8 @@ def build(studio, applications: int = 64) -> dict:
         con = sqlite3.connect(jobs.db_path(ws))
         # A screen with the recruiter, the round coming up with the manager,
         # and in London one more still to be set.
-        at_next = _iso((now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0))[:16]
-        rounds = [{"id": "r1", "kind": "Recruiter screen", "at": _iso(iv.replace(hour=15, minute=0))[:16], "tz": "",
+        at_next = _iso(_weekday(now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0))[:16]
+        rounds = [{"id": "r1", "kind": "Recruiter screen", "at": _iso(_weekday(iv).replace(hour=15, minute=0))[:16], "tz": "",
                    "with": people[0]["name"], "outcome": "passed", "note": ""},
                   {"id": "r2", "kind": "System design" if city == "London" else "Technical",
                    "at": at_next, "tz": ZONES[city], "with": people[1]["name"], "outcome": "", "note": ""}]

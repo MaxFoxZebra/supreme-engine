@@ -3772,8 +3772,8 @@ function statusCounts(){
   S.jobs.forEach(j=>{ c[j.status]=(c[j.status]||0)+1 });
   return c;
 }
-const NO_LETTER=j=>!j.letter_path;
-const SAVED={"No cover letter":NO_LETTER};
+const NO_LETTER=j=>!j.letter_path&&!DEAD_ST.has(j.status);
+const SAVED={"Open, no letter":NO_LETTER};
 
 /* Attention is computed by the server, not here. The same four rules answer
    the desktop notification and the digest an AI client reads out, and three
@@ -3999,8 +3999,9 @@ function visibleJobs(){
     const ids=new Set(((S.alerts&&S.alerts[f.value])||[]).map(x=>x.id));
     rows=rows.filter(j=>ids.has(j.id));
   }
-  if(q) rows=rows.filter(j=>(j.company+" "+j.title+" "+(j.notes||"")+" "+(j.source||""))
-    .toLowerCase().includes(q));
+  /* Word by word, accents aside, as the search palette matches. */
+  if(q){ const w=palWords(q);
+    rows=rows.filter(j=>palHas([j.company,j.title,j.location,j.notes,j.source].join(" "),w)) }
   return rows;
 }
 
@@ -4671,6 +4672,8 @@ function nextStep(j,due){
   if(j.status==="offer"){
     const h=(j.status_history||[]).filter(x=>x.status==="offer").pop();
     const days=h?dayDiff(String(h.at).slice(0,10),todayKey()):0;
+    /* After a month the offer was answered and the list was not told. */
+    if(days>30) return '<span class="when" title="'+esc(t("Offer since {d}",{d:shortDate(String(h.at).slice(0,10))}))+'">'+esc(t("Accepted or declined?"))+'</span>';
     return '<span class="when due" title="'+esc(t("Answer the offer"))+(h?' · '+esc(t("Offer since {d}",{d:shortDate(String(h.at).slice(0,10))})):'')+'">'+
       esc(t("Reply to offer"))+(days?' · '+esc(t("{n} d",{n:days})):'')+'</span>';
   }
@@ -5184,7 +5187,9 @@ function roundsHTML(j){
   const open=S.roundOpen==="__none"?null:S.roundOpen&&rs.some(r=>r.id===S.roundOpen)?S.roundOpen:(rs.find(r=>!r.outcome)||{}).id;
   const passed=rs.filter(r=>r.outcome==="passed").length, coming=rs.filter(r=>!r.outcome&&r.at).length,
     unset=rs.filter(r=>!r.outcome&&!r.at).length;
-  const sum=rs.length?[t("{n} round(s)",{n:rs.length}),passed?t("{n} passed",{n:passed}):"",
+  /* The parts add up to the total, so the total is not said. */
+  const failed=rs.filter(r=>r.outcome==="failed").length;
+  const sum=rs.length?[passed?t("{n} passed",{n:passed}):"",failed?t("{n} not passed",{n:failed}):"",
     coming?t("{n} coming",{n:coming}):"",unset?t("{n} to schedule",{n:unset}):""].filter(Boolean).join(" · "):t("None yet");
   const people=(j.people||[]).filter(p=>p.name);
   const row=(r,i)=>{
@@ -5574,10 +5579,11 @@ function drawJourney(mode,animate){
   st.forEach(([label,n],i)=>{
     if(i){
       const d=st[i-1][1], r=d?Math.round(n/d*100):null;
-      h+='<div class="fj-conv'+(i===worst?" acc":"")+'" style="animation-delay:'+(.55+i*.18)+'s">'+
+      /* Under ten, a rate is an anecdote: shown, but greyed and not ranked. */
+      h+='<div class="fj-conv'+(i===worst?" acc":d<10?" thin":"")+'" style="animation-delay:'+(.55+i*.18)+'s">'+
         '<svg width="26" height="12" viewBox="0 0 26 12" aria-hidden="true"><path d="M0 6h22M17 1l5 5-5 5" '+
         'fill="none" stroke="currentColor" stroke-width="1.6"/></svg><b>'+(r==null?"–":r+"%")+'</b>'+
-        '<span>'+conv[i-1][0]+(i===worst?'<br>lowest step':'')+'</span></div>';
+        '<span>'+conv[i-1][0]+(i===worst?'<br>lowest step':d<10&&d?'<br>too few to say':'')+'</span></div>';
     }
     const sub=i?(sent?Math.round(n/sent*100)+"% of sent":"–"):
       /* What is left to do there: the drafts still to send. */
@@ -5678,13 +5684,16 @@ function drawSankey(mode,animate){
 
   /* Past the first split, a share is of what was sent, as in the steps above. */
   const sentBase=((g.nodes.find(x=>x.id==="applied_s")||{}).count)||total;
+  /* One base on the chips and in the tooltip: past sending, a share of sent.
+     Before it (tracked, drafts, sent itself) there is nothing to divide by. */
+  const pct=n=>FN_OF_ALL.has(n.id)?null:Math.round(n.count/sentBase*100);
   const chips=g.nodes.map(n=>{
     const cy=(n.y0+n.y1)/2, off=S.fnode&&S.fnode!==n.id&&
       ![...lineage.get(S.fnode)].some(l=>l.sid===n.id||l.tid===n.id);
     return '<div class="sk-chip'+(n.id==="accepted"?" won":"")+(off?" sk-dim":"")+'" data-chip="'+
       esc(n.id)+'" style="left:'+(n.x1+8)+'px;top:'+(cy-12)+'px;animation-delay:'+
       (1.2+n.depth*.28).toFixed(2)+'s"><i style="background:'+skCol(n.id)+'"></i>'+esc(n.label)+
-      ' <b>'+n.count+'</b><span>'+Math.round(n.count/(FN_OF_ALL.has(n.id)?total:sentBase)*100)+'%</span>'+
+      ' <b>'+n.count+'</b>'+(pct(n)==null?'':'<span>'+pct(n)+'%</span>')+
       '</div>';
   }).join("");
 
@@ -5709,8 +5718,8 @@ function drawSankey(mode,animate){
     const who=names.slice(0,3).join(", ")+(names.length>3?" +"+(names.length-3):"");
     const tip=document.createElement("div");
     tip.className="sk-tip";
-    tip.innerHTML='<b>'+esc(n.label)+' · '+n.count+'</b><span>'+Math.round(n.count/total*100)+
-      '% of everything tracked</span>'+(who?'<span class="who">'+esc(who)+'</span>':'')+
+    tip.innerHTML='<b>'+esc(n.label)+' · '+n.count+'</b><span>'+(pct(n)==null?Math.round(n.count/total*100)+
+      '% of everything tracked':pct(n)+'% of sent')+'</span>'+(who?'<span class="who">'+esc(who)+'</span>':'')+
       '<span class="go">'+(S.fnode===id?"Click to clear":"Click to list them")+'</span>';
     host.append(tip);
     const x=Math.min(n.x1+30,W-tip.offsetWidth-4), y=Math.max(-8,n.y0-tip.offsetHeight-8);
@@ -6098,7 +6107,14 @@ function nextActions(){
     /* A follow-up late or due today. */
     if(j.followup_date&&j.followup_date<=today){
       const late=dayDiff(j.followup_date,today), lw=lastWrote(j), p=writer(j), ap=appliedAt(j);
-      out.push({j,rank:late?1:3,at:-late,dot:late?"late":"waiting",what:t("Follow up"),
+      const quiet=dayDiff(String(lw?lw.last:ap||today).slice(0,10),today);
+      /* Six weeks of silence on an application: chasing it again is rarely
+         worth it, and calling it ghosted keeps the list honest. */
+      if(j.status==="applied"&&quiet>42) out.push({j,rank:late?1:3,at:-late,dot:"late",what:t("Follow up or let it go"),
+        why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)}):t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}),
+        when:t("{n} weeks quiet",{n:Math.floor(quiet/7)}),
+        acts:[[t("Mark ghosted"),()=>saveJob(j.id,{status:"ghosted"})],[t("Write follow-up"),()=>p?draftSheet(j,p,"followup"):selectJob(j.id)]]});
+      else out.push({j,rank:late?1:3,at:-late,dot:late?"late":"waiting",what:t("Follow up"),
         why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)})
           :ap?t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}):"",
         when:late?t("{n} day(s) overdue",{n:late}):t("today"),hot:!!late,
@@ -6110,7 +6126,7 @@ function nextActions(){
       const p=writer(j), days=dayDiff(k,today);
       /* A week is a long time to leave an offer unanswered; after a month it
          was answered and the list was not told, so it asks which way. */
-      if(days>30) out.push({j,rank:3,at:-days,dot:"offer",what:t("Answer the offer"),
+      if(days>30) out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),
         why:t("Offer since {d}. Did you take it?",{d:dshort(k)}),when:t("{n} day(s) ago",{n:days}),
         acts:[[t("Accepted"),()=>saveJob(j.id,{status:"accepted"})],[t("Declined by me"),()=>saveJob(j.id,{status:"refused"})]]});
       else out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),why:t("Offer since {d}",{d:dshort(k)}),
@@ -6268,7 +6284,7 @@ function drawCalOverview(ev){
           (j.notes?t("Notes written"):t("Notes for this round"))+'</span></div>'+
       '<div class="cal-acts"><button class="pbtn" data-open-job="'+esc(j.id)+'">'+t("Prepare")+'</button>'+
         '<button class="obtn" data-ics="'+esc(j.id)+'">'+t("Add to my calendar")+'</button></div></div>'+
-      '<div class="cal-clocks"><div class="row">'+clockSVG(next.at,mine,t("Your time")+" · "+tzCity(mine),.5)+
+      '<div class="cal-clocks"><small class="cap">'+esc(t("At the interview"))+'</small><div class="row">'+clockSVG(next.at,mine,t("Your time")+" · "+tzCity(mine),.5)+
         (two?clockSVG(next.at,theirs,t("In {city}",{city:tzCity(theirs)}),.7):'')+'</div>'+
         (two?'<small>'+esc(diffH>0?t("{city} is {n} h behind you",{city:tzCity(theirs),n:diffH})
           :t("{city} is {n} h ahead of you",{city:tzCity(theirs),n:-diffH}))+'</small>':'')+'</div></section>';
@@ -6301,14 +6317,18 @@ function calMini(ev){
   const today=todayKey(), first=today.slice(0,8)+"01", start=monday(first);
   const month=first.slice(0,7);
   const busy={}, iv=new Set();
-  ev.forEach(e=>{ busy[e.day]=(busy[e.day]||0)+1; if(e.kind==="iv") iv.add(e.day) });
+  /* What you had to do that day: an interview counts double, a rejection
+     or a status someone else changed not at all. */
+  const W={iv:2,fu:1,sent:1,of:1};
+  const cnt={};
+  ev.forEach(e=>{ if(W[e.kind]){ busy[e.day]=(busy[e.day]||0)+W[e.kind]; cnt[e.day]=(cnt[e.day]||0)+1 } if(e.kind==="iv") iv.add(e.day) });
   let cells="";
   for(let i=0;i<42;i++){
     const k=addDays(start,i); if(i>=35&&k.slice(0,7)!==month) break;
     const inm=k.slice(0,7)===month, n=busy[k]||0, lv=!inm?"":n>=4?" l3":n>=2?" l2":n?" l1":"";
     cells+='<button class="cal-md'+(inm?"":" out")+lv+(k===today?" today":"")+'" data-day="'+k+'" style="animation-delay:'+
       (.4+i*.018).toFixed(3)+'s"'+(inm?'':' tabindex="-1"')+' aria-label="'+esc(fmtKey(k,{day:"numeric",month:"long"}))+
-      (iv.has(k)?', '+t("Interview"):'')+(inm&&n?', '+t("{n} thing(s) planned",{n}):'')+'">'+Number(k.slice(8))+(inm&&iv.has(k)?'<i></i>':'')+'</button>';
+      (iv.has(k)?', '+t("Interview"):'')+(inm&&n?', '+t("{n} thing(s) planned",{n:cnt[k]}):'')+'">'+Number(k.slice(8))+(inm&&iv.has(k)?'<i></i>':'')+'</button>';
   }
   const dows=Array.from({length:7},(_,i)=>'<span class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"narrow"}))+'</span>').join("");
   const acc=["var(--bd-inner)","color-mix(in srgb,var(--acc) 22%,var(--field))","color-mix(in srgb,var(--acc) 45%,var(--field))",
@@ -6394,17 +6414,27 @@ function calJourneys(ev){
 }
 
 /* ---- month --------------------------------------------------------------- */
+/* A word that tells one application apart from the others open at the same
+   company ("Backend", "Platform"), or nothing when the company is there once. */
+const SENIORITY=new Set(["senior","staff","lead","junior","principal","sr","jr","head","of","and","&","-"]);
+function roleTag(j){
+  const same=(S.jobs||[]).filter(x=>x.id!==j.id&&x.company===j.company&&!DEAD_ST.has(x.status));
+  if(!same.length) return "";
+  const other=new Set(same.flatMap(x=>String(x.title||"").toLowerCase().split(/\s+/)));
+  const ws=String(j.title||"").split(/\s+/).filter(w=>!other.has(w.toLowerCase()));
+  return ws.find(w=>!SENIORITY.has(w.toLowerCase()))||ws[0]||"";
+}
 function calChip(e){
-  /* The company on the chip, the role in its tooltip: two applications at
-     one company are told apart by hovering, not by a truncated label. */
-  const j=e.job, co=esc(j.company);
+  /* The company on the chip, the role in its tooltip; when the company is
+     there more than once, a word of the role tells them apart. */
+  const j=e.job, tag=e.kind==="iv"||e.kind==="fu"?roleTag(j):"", co=esc(j.company)+(tag?' <em class="rt">'+esc(tag)+'</em>':'');
   const drag=(e.kind==="iv"||e.kind==="fu")?' draggable="true" data-drag="'+e.kind+':'+esc(j.id)+'"':'';
   if(e.kind==="iv") return '<button class="cal-chip iv" data-open-job="'+esc(j.id)+'"'+drag+' title="'+esc(interviewLine(j))+
     '"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
   if(e.kind==="fu") return '<button class="cal-chip fu'+(e.late?" late":"")+'" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"'+drag+'><span>'+
     esc(e.late?t("Overdue"):t("Follow up"))+' · '+co+'</span></button>';
   if(e.kind==="of") return '<button class="cal-chip of" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"><span>'+t("Offer")+' · '+co+'</span></button>';
-  if(e.kind==="rp") return '<button class="cal-chip rp" data-open-job="'+esc(j.id)+'"><span>↗ '+co+' · '+t("interviews")+'</span></button>';
+  if(e.kind==="rp") return '<button class="cal-chip rp" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"><span>'+co+' → '+esc(t("Interviewing"))+'</span></button>';
   return "";
 }
 function drawCalMonth(ev){
@@ -7383,8 +7413,7 @@ function fillSettings(){
      and the key in it is live. Copy still copies the real thing. */
   const shown=st.api_token&&S.keyShown?st.api_token
     :st.api_token?"•".repeat(16):"";
-  const auth=st.api_token?' \
-  -H "X-API-Key: '+shown+'"':"";
+  const auth=st.api_token?' \\\n  -H "X-API-Key: '+shown+'"':"";
   $("#s-curl").textContent=
     "curl "+base+"/api/state"+auth+"\n\n"+
     "curl -X POST "+base+"/api/render"+auth+" \\\n"+
@@ -7485,6 +7514,7 @@ async function checkUpdates(loud){
   const st=$("#u-state"), act=$("#u-actions");
   if(!T||!T.updater){
     if(st) st.textContent="Updates are available in the desktop app only.";
+    const b=$("#s-check"); if(b) b.hidden=true;
     return;
   }
   if(st) st.innerHTML='<span class="spin"></span> Checking for updates…';
@@ -7691,7 +7721,10 @@ function palBuild(){
         }
       }
     });
-    if(apps.length) groups.push([t("Applications"),apps.slice(0,6),apps.length]);
+    /* The rest are one step away, in the table with the same words. */
+    if(apps.length>6) apps.splice(6,0,{html:palIcon("list"),title:esc(t("Show all {n} in Applications",{n:apps.length})),sub:"",kind:"",
+      run:()=>{ S.jfilter={kind:"all",value:""}; S.fnode=null; S.jsel=null; $("#jobq").value=PAL.q.trim(); setView("jobs"); drawJobs() }});
+    if(apps.length) groups.push([t("Applications"),apps.slice(0,7),apps.length>6?apps.length-1:apps.length]);
     const seen=new Set(), dl=[];
     docs.forEach(d=>{ if(palHas(d.label+" "+d.path,words)){ seen.add(d.path); dl.push(docItem(d,docSub(d))) } });
     (PAL.docs||[]).forEach(d=>{ if(seen.has(d.path)) return;
@@ -7724,7 +7757,7 @@ function palDraw(){
   PAL.sel=Math.min(PAL.sel,Math.max(0,PAL.items.length-1));
   /* The footer agrees with the group counts: each group lists its first few. */
   const n=PAL.items.length, total=groups.reduce((a,[,items,c])=>a+(c||items.length),0);
-  $("#pal-count").textContent=PAL.q.trim()?(total>n?t("{n} of {total} shown",{n,total}):t("{n} result(s)",{n})):(PAL_MAC?t("⌘K, from anywhere"):t("Ctrl K, from anywhere"));
+  $("#pal-count").textContent=PAL.q.trim()?t("{n} result(s)",{n:total}):(PAL_MAC?t("⌘K, from anywhere"):t("Ctrl K, from anywhere"));
   $("#pal-in").setAttribute("aria-activedescendant",n?"pal-o"+PAL.sel:"");
   $$("#pal-list .pal-it").forEach(b=>{
     b.onclick=()=>palRun(+b.dataset.i);
@@ -7842,19 +7875,23 @@ function ppKind(j,p){
   /* What there is to say depends on where the application is: an offer is
      answered; a round in the last two days is thanked for (by whoever was
      in it, or anyone when nobody is named); with the next round already
-     booked there is nothing to chase; with none booked, ask what is next. */
+     booked, it is confirmed; with none booked, ask what is next. */
   if(j.status==="offer") return "offer";
   const now=new Date(), rs=(j.rounds||[]).map(r=>({r,at:r.at&&interviewMoment({interview_at:r.at+":00",interview_tz:r.tz||null})}));
   const recent=rs.filter(x=>x.at&&x.at<now&&now-x.at<2*DAY).pop();
   if(recent&&(!recent.r.with||!p||recent.r.with===p.name)) return "thanks";
-  if(rs.some(x=>x.at&&x.at>now&&!x.r.outcome)) return "followup";
+  if(rs.some(x=>x.at&&x.at>now&&!x.r.outcome)) return "confirm";
   return j.status==="interviewing"&&rs.some(x=>x.at&&x.at<now)?"next":"followup";
 }
-const PP_KIND_LABEL={followup:"Follow-up email",thanks:"Thank-you note",next:"Ask about next steps",offer:"Reply to the offer"};
+const PP_KIND_LABEL={confirm:"Confirm the interview",followup:"Follow-up email",thanks:"Thank-you note",next:"Ask about next steps",offer:"Reply to the offer"};
 function ppLast(p){
   if(!p.last) return t("No emails yet");
   const d=dayDiff(p.last,todayKey());
-  return d<=0?t("last written to today"):t("last written to {d}, {n} day(s) ago",{d:fmtKey(p.last,{day:"numeric",month:"short"}),n:d});
+  return d<=0?t("Last email today"):t("Last email {d}",{d:fmtKey(p.last,{day:"numeric",month:"short"})});
+}
+function ppAgo(p){
+  const d=p.last?dayDiff(p.last,todayKey()):0;
+  return d>0?t("{n} day(s) ago",{n:d}):"";
 }
 function peopleHTML(j){
   const ps=j.people||[];
@@ -7866,7 +7903,7 @@ function peopleHTML(j){
         esc(ppInitials(p.name||p.email))+'</span>'+
         '<span class="pp-tx"><b><span data-noi18n>'+esc(p.name||p.email)+'</span>'+
           (p.role?' <span class="pp-role">· '+(PP_ROLES.includes(p.role)?esc(t(p.role)):'<span data-noi18n>'+esc(p.role)+'</span>')+'</span>':'')+'</b>'+
-        '<small>'+(p.email&&p.name?'<span data-noi18n>'+esc(p.email)+'</span> · ':'')+esc(ppLast(p))+'</small></span>'+
+        '<small>'+(p.email&&p.name?'<span data-noi18n>'+esc(p.email)+'</span> · ':'')+(ppAgo(p)?'<span title="'+esc(ppAgo(p))+'">'+esc(ppLast(p))+'</span>':esc(ppLast(p)))+'</small></span>'+
         '<span class="pp-acts"><button class="obtn" data-pp-write="'+esc(p.id)+'" data-kind="'+kind+'">'+esc(t(PP_KIND_LABEL[kind]))+'</button>'+
         '<button class="obtn icon" data-pp-edit="'+esc(p.id)+'" aria-label="'+esc(t("Edit {n}",{n:p.name||p.email}))+'">'+
           '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">'+
@@ -7918,6 +7955,8 @@ function personSheet(j,p){
    posting's first duty, {you}: your name. */
 const PP_TPL={
   en:{greet:n=>n?"Hi "+n+",":"Hello,", sign:"Best regards,",
+    confirm:{s:"{role}: confirming our interview",
+      b:"Thank you for setting up the next interview. I am writing to confirm it{next}.\n\nIs there anything I should prepare or read beforehand, and who will I be speaking with?\n\nI look forward to it."},
     followup:{s:"{role}: following up on my application",
       b:"I applied for the {role} role{applied} and wanted to check in on where things stand.\n\nI am still very interested{duty}.\n\nIs there anything else I can send you?"},
     thanks:{s:"Thank you: {role} interview",
@@ -7926,8 +7965,10 @@ const PP_TPL={
       b:"Thank you again for the conversation{met}. Could you tell me what the next steps are, and roughly when I might hear back?\n\nI remain very interested in the {role} role at {co}."},
     offer:{s:"{role}: your offer",
       b:"Thank you very much for the offer for the {role} role at {co}. I am delighted, and I would like to take a few days to look at it properly.\n\nCould you send me the full details in writing (salary, start date, benefits) and let me know by when you need my answer?\n\nI will come back to you shortly."},
-    applied:d=>" on "+d, met:d=>" on "+d, duty:d=>", not least in this part of the role: “"+d+"”"},
+    applied:d=>" on "+d, met:d=>" on "+d, next:d=>" on "+d, duty:d=>", not least in this part of the role: “"+d+"”"},
   fr:{greet:n=>n?"Bonjour "+n+",":"Bonjour,", sign:"Bien cordialement,",
+    confirm:{s:"{role} : confirmation de l'entretien",
+      b:"Merci pour l'organisation du prochain entretien. Je vous confirme ma présence{next}.\n\nY a-t-il quelque chose à préparer ou à lire en amont, et avec qui vais-je échanger ?\n\nAu plaisir d'échanger avec vous."},
     followup:{s:"{role} : suivi de ma candidature",
       b:"J'ai postulé au poste de {role}{applied} et je me permets de revenir vers vous pour savoir où en est le processus.\n\nLe poste m'intéresse toujours beaucoup{duty}.\n\nPuis-je vous transmettre autre chose ?"},
     thanks:{s:"Merci pour l'entretien : {role}",
@@ -7936,8 +7977,10 @@ const PP_TPL={
       b:"Merci encore pour notre échange{met}. Pourriez-vous m'indiquer les prochaines étapes, et à peu près quand je pourrai avoir un retour ?\n\nLe poste de {role} chez {co} m'intéresse toujours beaucoup."},
     offer:{s:"{role} : votre proposition",
       b:"Merci beaucoup pour votre proposition pour le poste de {role} chez {co}. J'en suis ravi(e), et je souhaiterais prendre quelques jours pour l'étudier sereinement.\n\nPourriez-vous m'envoyer le détail par écrit (salaire, date de début, avantages) et m'indiquer d'ici quand vous attendez ma réponse ?\n\nJe reviens vers vous très vite."},
-    applied:d=>" le "+d, met:d=>" le "+d, duty:d=>", en particulier pour cette partie du poste : « "+d+" »"},
+    applied:d=>" le "+d, met:d=>" le "+d, next:d=>" le "+d, duty:d=>", en particulier pour cette partie du poste : « "+d+" »"},
   es:{greet:n=>n?"Hola, "+n+":":"Hola:", sign:"Un saludo,",
+    confirm:{s:"{role}: confirmación de la entrevista",
+      b:"Gracias por organizar la próxima entrevista. Te confirmo mi asistencia{next}.\n\n¿Hay algo que deba preparar o leer antes, y con quién voy a hablar?\n\n¡Hasta entonces!"},
     followup:{s:"{role}: seguimiento de mi candidatura",
       b:"Presenté mi candidatura al puesto de {role}{applied} y quería saber en qué punto está el proceso.\n\nEl puesto me sigue interesando mucho{duty}.\n\n¿Puedo enviarte algo más?"},
     thanks:{s:"Gracias por la entrevista: {role}",
@@ -7946,8 +7989,10 @@ const PP_TPL={
       b:"Gracias de nuevo por la conversación{met}. ¿Podrías decirme cuáles son los próximos pasos y cuándo podría tener noticias?\n\nEl puesto de {role} en {co} me sigue interesando mucho."},
     offer:{s:"{role}: vuestra oferta",
       b:"Muchas gracias por la oferta para el puesto de {role} en {co}. Me hace mucha ilusión y me gustaría tomarme unos días para estudiarla con calma.\n\n¿Podríais enviarme los detalles por escrito (salario, fecha de incorporación, beneficios) y decirme para cuándo necesitáis mi respuesta?\n\nOs respondo muy pronto."},
-    applied:d=>" el "+d, met:d=>" el "+d, duty:d=>", sobre todo esta parte del puesto: «"+d+"»"},
+    applied:d=>" el "+d, met:d=>" el "+d, next:d=>" el "+d, duty:d=>", sobre todo esta parte del puesto: «"+d+"»"},
   pt:{greet:n=>n?"Olá, "+n+",":"Olá,", sign:"Atenciosamente,",
+    confirm:{s:"{role}: confirmação da entrevista",
+      b:"Obrigado(a) por agendar a próxima entrevista. Confirmo minha presença{next}.\n\nHá algo que eu deva preparar ou ler antes, e com quem vou conversar?\n\nAté lá!"},
     followup:{s:"{role}: acompanhamento da minha candidatura",
       b:"Candidatei-me à vaga de {role}{applied} e gostaria de saber em que ponto está o processo.\n\nA vaga continua me interessando muito{duty}.\n\nPosso enviar mais alguma coisa?"},
     thanks:{s:"Agradecimento pela entrevista: {role}",
@@ -7956,7 +8001,7 @@ const PP_TPL={
       b:"Agradeço novamente pela conversa{met}. Poderia me dizer quais são os próximos passos e quando devo ter um retorno?\n\nA vaga de {role} na {co} continua me interessando muito."},
     offer:{s:"{role}: sua proposta",
       b:"Muito obrigado(a) pela proposta para a vaga de {role} na {co}. Fiquei muito feliz e gostaria de alguns dias para avaliá-la com calma.\n\nVocê poderia me enviar os detalhes por escrito (salário, data de início, benefícios) e me dizer até quando precisa da minha resposta?\n\nRetorno em breve."},
-    applied:d=>" em "+d, met:d=>" em "+d, duty:d=>", principalmente esta parte da vaga: “"+d+"”"},
+    applied:d=>" em "+d, met:d=>" em "+d, next:d=>" em "+d, duty:d=>", principalmente esta parte da vaga: “"+d+"”"},
 };
 const PP_LOCALE={en:"en-GB",fr:"fr-FR",es:"es-ES",pt:"pt-BR"};
 function ppDraft(kind,lang,j,p,ctx){
@@ -7965,6 +8010,9 @@ function ppDraft(kind,lang,j,p,ctx){
   const fill=s=>s.replace(/\{role\}/g,j.title).replace(/\{co\}/g,j.company)
     .replace(/\{applied\}/g,ctx.applied?L.applied(day(ctx.applied)):"")
     .replace(/\{met\}/g,ctx.interviewed?L.met(day(ctx.interviewed)):"")
+    .replace(/\{next\}/g,()=>{ const at=interviewMoment(j); if(!(at>new Date())) return "";
+      try{ return L.next(DTF(PP_LOCALE[lang]||"en-GB",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit",
+        timeZone:j.interview_tz||userTz(),timeZoneName:j.interview_tz&&j.interview_tz!==userTz()?"short":undefined}).format(at)) }catch(e){ return "" } })
     .replace(/\{duty\}/g,ctx.duties&&ctx.duties[0]?L.duty(ctx.duties[0]):"");
   const first=String(p.name||"").trim().split(/\s+/)[0]||"";
   return {subject:fill(T.s), body:L.greet(first)+"\n\n"+fill(T.b)+"\n\n"+L.sign+(ctx.you?"\n"+ctx.you:"")};
@@ -7986,7 +8034,7 @@ async function draftSheet(j,p,kind){
     '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name&&p.email?p.name+" <"+p.email+">":p.name||p.email,co:j.company}))+
       (lang!==UI_LANG?' '+esc(t("In {lang}, the application's language.",{lang:langName(lang)})):'')+'</p>'+
     '<div class="pp-kinds" role="radiogroup" aria-label="'+esc(t("Kind of email"))+'">'+
-      Object.keys(PP_KIND_LABEL).filter(k=>k!=="offer"||j.status==="offer"||kind==="offer").map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
+      Object.keys(PP_KIND_LABEL).filter(k=>(k!=="offer"||j.status==="offer"||kind==="offer")&&(k!=="confirm"||interviewMoment(j)>new Date()||kind==="confirm")).map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
         esc(t(PP_KIND_LABEL[k]))+'</button>').join("")+'</div>'+
     '<label class="pk-field">'+esc(t("Subject"))+'<input id="dr-sub" spellcheck="true"></label>'+
     '<label class="pk-field">'+esc(t("Message"))+'<textarea id="dr-body" rows="12" spellcheck="true"></textarea></label>'+

@@ -58,6 +58,30 @@ A polish and safety release on the way to 1.0.
   - The base CV no longer offers to be linked to an application; Settings'
     Done is filled like Design's; the interview times on Journeys are calm
     in dark mode; French names the hiring manager "Manager du poste".
+- **Round six of the review:**
+  - An offer more than a month old reads "Accepted or declined?" in the
+    table too, and sits with the other offers in Next actions.
+  - An application silent for six weeks asks *Follow up or let it go*, with
+    *Mark ghosted* beside *Write follow-up*.
+  - With a round booked, the email to write is *Confirm the interview*
+    (date, time and zone filled in), in all four languages.
+  - Funnel: one base for every share (of sent, in the chips and on hover;
+    none on drafts); a step with fewer than ten behind it is greyed "too
+    few to say" and never called the lowest.
+  - Search: "Show all N in Applications" opens the table with the same
+    words; the table search now matches word by word, accents aside.
+  - The calendar tells two applications at one company apart with a word
+    of the role; "Company → Interviewing"; the clocks say they show the
+    interview's time; the month heatmap counts interviews double and
+    rejections not at all.
+  - A letter whose application was sent is dated the day it was sent, not
+    the day it is exported. The editor's word count is the ATS check's.
+  - Saving from the browser drops "(H/F)", "m/w/d" and the like from the
+    role. The saved view is "Open, no letter" and counts open applications.
+  - Sample: offers come after the final round and are answered within a
+    fortnight; interviews fall on weekdays. Smaller: rounds sum without a
+    total, "Last email 16 Sept", the API example's line break, no "Check
+    now" outside the desktop app, French wording.
 - **Round four of the review:**
   - The email a person's row suggests fits the moment: a thank-you after a
     round in the last two days (to whoever was in it), a plain follow-up

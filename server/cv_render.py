@@ -248,9 +248,15 @@ def _render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
     if not ok or not pdfs:
         return {"ok": False, "log": log}
 
+    # Counted the way the ATS check counts: the words in the PDF's text
+    # layer, so the editor and the check give one number.
     words = 0
-    if mds:
-        words = len(mds[0].read_text(encoding="utf-8", errors="replace").split())
+    try:
+        import ats
+        words = len("\n".join(ats.pdf_text(pdfs[0])).split())
+    except Exception:
+        if mds:
+            words = len(mds[0].read_text(encoding="utf-8", errors="replace").split())
 
     return {
         "ok": True,
