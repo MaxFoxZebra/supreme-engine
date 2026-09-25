@@ -2067,6 +2067,10 @@ design:
       show_icons: false
       display_urls_instead_of_usernames: true
       phone_number_format: international
+  # The dates stand on their own; "4 years 7 months" under each one is
+  # arithmetic the reader does not need, and an ATS reads it as text.
+  sections:
+    show_time_spans_in: []
   typography:
     line_spacing: 0.6em
     alignment: left
@@ -4774,9 +4778,9 @@ const API_TOKEN=__API_TOKEN__;
            that are late, and the week. Only there when something is. -->
       <section class="na" id="nextup" aria-label="Next actions" hidden></section>
       <div class="tcard">
-        <div class="thead"><span>Company</span><span>Role</span>
-          <span>Documents</span><span>Status</span>
-          <span>Applied</span><span>Next step</span></div>
+        <div class="thead"><button type="button" data-sort="company">Company</button><button type="button" data-sort="title">Role</button>
+          <span>Documents</span><button type="button" data-sort="status">Status</button>
+          <button type="button" data-sort="applied">Applied</button><button type="button" data-sort="next">Next step</button></div>
         <div class="tbody" id="jobrows"></div>
       </div>
     </div>

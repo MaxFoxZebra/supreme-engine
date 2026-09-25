@@ -2454,7 +2454,12 @@ function blankLike(list){
 const sectionLabel=n=>String(n).replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
 function entryTitle(it,i){
   if(it===null||typeof it!=="object")
-    return String(it||"").split(/\s+/).slice(0,4).join(" ")||("item "+(i+1));
+  { /* A paragraph by its first sentence, cut at a word with an ellipsis. */
+    const x=String(it||"").replace(/[*_`]/g,"").trim().split(/(?<=[.!?])\s/)[0];
+    if(!x) return "item "+(i+1);
+    if(x.length<=44) return x;
+    return x.slice(0,44).replace(/\s+\S*$/,"")+"…";
+  }
   /* Every RenderCV entry type keeps its headline under a different key, and
      a publication or a bullet reading "entry 3" in the outline is no use. */
   return it.company||it.institution||it.name||it.title||it.label||it.position||
@@ -4002,7 +4007,7 @@ function visibleJobs(){
   /* Word by word, accents aside, as the search palette matches. */
   if(q){ const w=palWords(q);
     rows=rows.filter(j=>palHas([j.company,j.title,j.location,j.notes,j.source].join(" "),w)) }
-  return rows;
+  return sortJobs(rows);
 }
 
 /* ---- the base CV --------------------------------------------------------
@@ -4662,6 +4667,49 @@ function filterTitle(){
   }
   return "All applications";
 }
+/* The order of the table. By default, what needs you first: an offer to
+   answer, a late follow-up, the interviews coming, the follow-ups coming,
+   rounds to book; the rest by last change. A header click sorts by that
+   column, a second click the other way. */
+function nextKey(j){
+  if(DEAD_ST.has(j.status)) return [9,0];
+  const today=todayKey(), at=interviewMoment(j);
+  if(j.status==="offer") return [0,0];
+  if(j.followup_date&&j.followup_date<today) return [1,j.followup_date];
+  if(at&&at>new Date()) return [2,+at];
+  if(j.followup_date) return [3,j.followup_date];
+  if(j.status==="interviewing") return [4,0];
+  return [5,0];
+}
+function sortJobs(rows){
+  const {key,dir}=S.jsort||{key:"next",dir:1};
+  const upd=j=>String(j.updated_at||"");
+  const by={
+    company:j=>String(j.company||"").toLowerCase(), title:j=>String(j.title||"").toLowerCase(),
+    status:j=>(S.statuses||[]).indexOf(j.status), applied:j=>String(appliedAt(j)||""),
+  };
+  const cmp=(a,b)=>a<b?-1:a>b?1:0;
+  return rows.slice().sort((a,b)=>{
+    if(key==="next"){ const x=nextKey(a), y=nextKey(b);
+      return dir*(cmp(x[0],y[0])||cmp(x[1],y[1]))||cmp(upd(b),upd(a)) }
+    return dir*cmp(by[key](a),by[key](b))||cmp(upd(b),upd(a));
+  });
+}
+function drawSortHead(){
+  const {key,dir}=S.jsort||{key:"next",dir:1};
+  $$(".thead [data-sort]").forEach(b=>{
+    const on=b.dataset.sort===key;
+    b.classList.toggle("on",on);
+    b.setAttribute("aria-sort",on?(dir>0?"ascending":"descending"):"none");
+    b.dataset.arrow=on?(dir>0?"↑":"↓"):"";
+  });
+}
+$$(".thead [data-sort]").forEach(b=>b.onclick=()=>{
+  const k=b.dataset.sort, cur=S.jsort||{key:"next",dir:1};
+  /* Dates read newest first on the first click. */
+  S.jsort={key:k,dir:cur.key===k?-cur.dir:(k==="applied"?-1:1)};
+  drawJobs();
+});
 /* The next dated thing on an application: an interview coming, else the
    follow-up, late in red. What a job seeker scans the list for. */
 function nextStep(j,due){
@@ -4674,8 +4722,9 @@ function nextStep(j,due){
     const days=h?dayDiff(String(h.at).slice(0,10),todayKey()):0;
     /* After a month the offer was answered and the list was not told. */
     if(days>30) return '<span class="when" title="'+esc(t("Offer since {d}",{d:shortDate(String(h.at).slice(0,10))}))+'">'+esc(t("Accepted or declined?"))+'</span>';
-    return '<span class="when due" title="'+esc(t("Answer the offer"))+(h?' · '+esc(t("Offer since {d}",{d:shortDate(String(h.at).slice(0,10))})):'')+'">'+
-      esc(t("Reply to offer"))+(days?' · '+esc(t("{n} d",{n:days})):'')+'</span>';
+    /* Days since the offer, not a countdown: red once it has waited a while. */
+    return '<span class="when'+(days>5?" due":"")+'" title="'+esc(t("Answer the offer"))+(h?' · '+esc(t("Offer since {d}",{d:shortDate(String(h.at).slice(0,10))})):'')+'">'+
+      esc(t("Reply to offer"))+' · '+esc(days?t("{n} d ago",{n:days}):t("today"))+'</span>';
   }
   if(j.followup_date&&!DEAD_ST.has(j.status))
     return '<span class="when'+(due?" due":"")+'">'+esc(t("Follow up"))+' · '+esc(shortDate(j.followup_date))+'</span>';
@@ -4684,6 +4733,7 @@ function nextStep(j,due){
 }
 function drawJobs(){
   drawRail();
+  drawSortHead();
   drawNextUp();
   const rows=visibleJobs();
   $("#jtitle").textContent=filterTitle();
@@ -6192,6 +6242,11 @@ function calEvents(){
   (S.jobs||[]).forEach(j=>{
     const at=interviewMoment(j);
     if(at) out.push({kind:"iv",day:dayIn(at),at,job:j});
+    /* The rounds already held stay on the calendar, where they happened. */
+    (j.rounds||[]).forEach(r=>{ if(!r.at) return;
+      const m=interviewMoment({interview_at:r.at+":00",interview_tz:r.tz||null});
+      if(m&&m<new Date()&&!(at&&+m===+at)) out.push({kind:"iv",day:dayIn(m),at:m,job:j,past:true,round:r});
+    });
     if(j.followup_date&&!DEAD_ST.has(j.status)){
       const d=String(j.followup_date).slice(0,10);
       out.push({kind:"fu",day:d,job:j,late:d<today});
@@ -6328,7 +6383,7 @@ function calMini(ev){
     const inm=k.slice(0,7)===month, n=busy[k]||0, lv=!inm?"":n>=4?" l3":n>=2?" l2":n?" l1":"";
     cells+='<button class="cal-md'+(inm?"":" out")+lv+(k===today?" today":"")+'" data-day="'+k+'" style="animation-delay:'+
       (.4+i*.018).toFixed(3)+'s"'+(inm?'':' tabindex="-1"')+' aria-label="'+esc(fmtKey(k,{day:"numeric",month:"long"}))+
-      (iv.has(k)?', '+t("Interview"):'')+(inm&&n?', '+t("{n} thing(s) planned",{n:cnt[k]}):'')+'">'+Number(k.slice(8))+(inm&&iv.has(k)?'<i></i>':'')+'</button>';
+      (iv.has(k)?', '+t("Interview"):'')+(inm&&n?', '+t("{n} thing(s) planned",{n:cnt[k]}):'')+'">'+Number(k.slice(8))+(iv.has(k)?'<i></i>':'')+'</button>';
   }
   const dows=Array.from({length:7},(_,i)=>'<span class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"narrow"}))+'</span>').join("");
   const acc=["var(--bd-inner)","color-mix(in srgb,var(--acc) 22%,var(--field))","color-mix(in srgb,var(--acc) 45%,var(--field))",
@@ -6428,6 +6483,8 @@ function calChip(e){
   /* The company on the chip, the role in its tooltip; when the company is
      there more than once, a word of the role tells them apart. */
   const j=e.job, tag=e.kind==="iv"||e.kind==="fu"?roleTag(j):"", co=esc(j.company)+(tag?' <em class="rt">'+esc(tag)+'</em>':'');
+  if(e.past) return '<button class="cal-chip iv past" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title+(e.round.kind?" · "+t(e.round.kind):"")+
+    (e.round.outcome?" · "+t(e.round.outcome==="passed"?"Passed":"Didn't pass"):""))+'"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span></button>';
   const drag=(e.kind==="iv"||e.kind==="fu")?' draggable="true" data-drag="'+e.kind+':'+esc(j.id)+'"':'';
   if(e.kind==="iv") return '<button class="cal-chip iv" data-open-job="'+esc(j.id)+'"'+drag+' title="'+esc(interviewLine(j))+
     '"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
@@ -6436,6 +6493,16 @@ function calChip(e){
   if(e.kind==="of") return '<button class="cal-chip of" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"><span>'+t("Offer")+' · '+co+'</span></button>';
   if(e.kind==="rp") return '<button class="cal-chip rp" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"><span>'+co+' → '+esc(t("Interviewing"))+'</span></button>';
   return "";
+}
+/* What was sent and what ended on a day, said as what happened. */
+function dayActs(list){
+  const sent=list.filter(e=>e.kind==="sent").length, closed=list.filter(e=>e.kind==="closed");
+  if(!sent&&!closed.length) return "";
+  const ends=closed.reduce((m,e)=>{ const st=e.job.status;
+    const k=/^rejected/.test(st)?"{n} rejected":/^ghosted/.test(st)?"{n} ghosted":"{n} declined"; m[k]=(m[k]||0)+1; return m },{});
+  return '<div class="act">'+(sent?'<span title="'+esc(list.filter(e=>e.kind==="sent").map(e=>e.job.company+" · "+e.job.title).join("\n"))+'"><i style="background:var(--fn-wait)"></i>'+esc(t("{n} sent",{n:sent}))+'</span>':'')+
+    (closed.length?'<span title="'+esc(closed.map(e=>e.job.company+" · "+t(prettyStatus(e.job.status))).join("\n"))+'"><i style="background:var(--bd-field)"></i>'+
+      esc(Object.entries(ends).map(([k,n])=>t(k,{n})).join(", "))+'</span>':'')+'</div>';
 }
 function drawCalMonth(ev){
   const today=todayKey(), first=S.calAnchor.slice(0,8)+"01", month=first.slice(0,7), start=monday(first);
@@ -6447,17 +6514,11 @@ function drawCalMonth(ev){
   for(let i=0;i<weeks*7;i++){
     const k=addDays(start,i), list=(by[k]||[]), inm=k.slice(0,7)===month;
     const chips=list.filter(e=>order[e.kind]!=null).sort((a,b)=>order[a.kind]-order[b.kind]||(a.at||0)-(b.at||0));
-    const sent=list.filter(e=>e.kind==="sent").length, closed=list.filter(e=>e.kind==="closed").length;
-    /* What ended, said as what happened: rejected, ghosted, declined. */
-    const ends=list.filter(e=>e.kind==="closed").reduce((m,e)=>{ const st=e.job.status;
-      const k=/^rejected/.test(st)?"{n} rejected":/^ghosted/.test(st)?"{n} ghosted":"{n} declined"; m[k]=(m[k]||0)+1; return m },{});
     const dnum=Number(k.slice(8));
     cells+='<div class="cal-cell'+(inm?"":" out")+(((i%7)>=5)?" wkend":"")+(k===today?" today":"")+'" data-drop="'+k+'">'+
       '<div class="d"><span>'+dnum+(dnum===1?" "+esc(fmtKey(k,{month:"short"})):"")+'</span></div>'+
       chips.slice(0,3).map(calChip).join("")+(chips.length>3?'<small style="font-size:11px;color:var(--t500)">+'+(chips.length-3)+'</small>':'')+
-      ((sent||closed)?'<div class="act">'+(sent?'<span><i style="background:var(--fn-wait)"></i>'+esc(t("{n} sent",{n:sent}))+'</span>':'')+
-        (closed?'<span title="'+esc(list.filter(e=>e.kind==="closed").map(e=>e.job.company+" · "+t(prettyStatus(e.job.status))).join("\n"))+'"><i style="background:var(--bd-field)"></i>'+
-          esc(Object.entries(ends).map(([k,n])=>t(k,{n})).join(", "))+'</span>':'')+'</div>':'')+'</div>';
+      dayActs(list)+'</div>';
   }
   const dows=Array.from({length:7},(_,i)=>'<div class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"short"}))+'</div>').join("");
   $("#cal-body").innerHTML='<div class="cal-month"><section class="cal-card cal-grid cal-r" style="grid-template-rows:auto repeat('+
@@ -6516,21 +6577,26 @@ function drawCalWeek(ev){
   $("#cal-title").textContent=fmtKey(start,{day:"numeric",month:"short"})+" – "+fmtKey(end,{day:"numeric",month:"short",year:"numeric"});
   const days=Array.from({length:7},(_,i)=>addDays(start,i));
   const ivs=ev.filter(e=>e.kind==="iv"&&e.day>=start&&e.day<=end);
-  const fus=ev.filter(e=>e.kind==="fu"&&e.day>=start&&e.day<=end);
+  const fus=ev.filter(e=>(e.kind==="fu"||e.kind==="of"||e.kind==="rp")&&e.day>=start&&e.day<=end);
+  const inWk=ev.filter(e=>e.day>=start&&e.day<=end);
   const hrs=ivs.map(e=>+hmIn(e.at,userTz()).slice(0,2));
   const h0=Math.min(9,...hrs), h1=Math.max(19,...hrs.map(h=>h+1)), HH=56;
   S.calH0=h0;
   const head='<div class="cal-wh"><div></div>'+days.map(k=>'<div'+(k===today?' class="today"':'')+'><small>'+
     esc(fmtKey(k,{weekday:"short"}))+'</small><b>'+Number(k.slice(8))+'</b></div>').join("")+'</div>';
-  const allday='<div class="cal-wa"><div>'+t("Follow-ups")+'</div>'+days.map(k=>'<div data-drop="'+k+'">'+
-    fus.filter(e=>e.day===k).map(calChip).join("")+'</div>').join("")+'</div>';
+  const allday='<div class="cal-wa"><div>'+t("All day")+'</div>'+days.map(k=>'<div data-drop="'+k+'">'+
+    fus.filter(e=>e.day===k).map(calChip).join("")+dayActs(inWk.filter(e=>e.day===k))+'</div>').join("")+'</div>';
   const hours=Array.from({length:h1-h0},(_,i)=>h0+i);
+  /* Two interviews in the same hour share the column side by side. */
+  const slot=e=>e.day+"|"+hmIn(e.at,userTz()).slice(0,2), bySlot={};
+  ivs.forEach(e=>(bySlot[slot(e)]=bySlot[slot(e)]||[]).push(e));
   const blocks=ivs.map(e=>{
     const [h,m]=hmIn(e.at,userTz()).split(":").map(Number), col=days.indexOf(e.day);
-    const top=(h-h0+m/60)*HH+2;
-    return '<button class="cal-blk'+(S.calPop===e.job.id?" on":"")+'" data-pop="'+esc(e.job.id)+'" style="left:calc('+col+
-      ' * (100% / 7) + 4px);width:calc(100% / 7 - 8px);top:'+top+'px;height:'+(HH-4)+'px"><b>'+hmIn(e.at,userTz())+' '+
-      esc(e.job.company)+'</b><span>'+esc(e.job.title)+'</span>'+(otherTz(e.job)?'<em>'+GLOBE+esc(hmIn(e.at,e.job.interview_tz)+
+    const top=(h-h0+m/60)*HH+2, grp=bySlot[slot(e)], n=grp.length, k=grp.indexOf(e);
+    const tz=!e.past&&otherTz(e.job);
+    return '<button class="cal-blk'+(e.past?" past":"")+(S.calPop===e.job.id&&!e.past?" on":"")+'" '+(e.past?'data-open-job':'data-pop')+'="'+esc(e.job.id)+'" style="left:calc('+col+
+      ' * (100% / 7) + '+k+' * (100% / 7 / '+n+') + 4px);width:calc(100% / 7 / '+n+' - 8px);top:'+top+'px;height:'+(HH-4)+'px"><b>'+hmIn(e.at,userTz())+' '+
+      esc(e.job.company)+'</b><span>'+esc(e.past&&e.round&&e.round.kind?t(e.round.kind):e.job.title)+'</span>'+(tz?'<em>'+GLOBE+esc(hmIn(e.at,e.job.interview_tz)+
       " "+t("in")+" "+tzCity(e.job.interview_tz))+'</em>':'')+'</button>';
   }).join("");
   let nowl="";
@@ -6546,7 +6612,7 @@ function drawCalWeek(ev){
   const x=$("#cal-pop-x"); if(x) x.onclick=()=>{ S.calPop=null; drawCalWeek(calEvents()) };
 }
 function calPopHTML(ivs){
-  const e=ivs.find(x=>x.job.id===S.calPop); if(!e) return "";
+  const e=ivs.find(x=>x.job.id===S.calPop&&!x.past)||ivs.find(x=>x.job.id===S.calPop); if(!e) return "";
   const j=e.job, two=otherTz(j);
   const col=((dayDiff(monday(e.day),e.day))+7)%7, [h,m]=hmIn(e.at,userTz()).split(":").map(Number);
   const top=Math.max(8,Math.min(360,110+(h-S.calH0+m/60)*56-40));

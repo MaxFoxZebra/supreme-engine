@@ -1026,6 +1026,12 @@ html.mono .langs,html.mono #langsw{display:none!important}
 .thead{height:38px;flex:none;background:var(--row-alt);border-bottom:1px solid var(--rule);
   font-size:12px;font-weight:600;color:var(--t500)}
 .thead>*,.trow>*{padding:0 14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thead button{all:unset;box-sizing:border-box;padding:0 14px;height:100%;display:flex;align-items:center;gap:4px;cursor:pointer;
+  font:inherit;color:inherit;overflow:hidden;white-space:nowrap}
+.thead button:hover{color:var(--t900)}
+.thead button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.thead button.on{color:var(--t900)}
+.thead button.on::after{content:attr(data-arrow);font-size:11px;color:var(--acc-text)}
 /* the company mark, and the column it leads */
 .co{display:flex;align-items:center;gap:9px;min-width:0}
 .con{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -1449,9 +1455,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .cal-cell .d{height:24px;display:flex;align-items:center;font-size:12.5px;font-weight:600;color:var(--t700)}
 .cal-cell.out .d{color:var(--t500)}
 .cal-cell.today .d span{width:24px;height:24px;border-radius:12px;background:var(--acc);color:#1b1a17;display:grid;place-items:center;font-weight:700}
-.cal-cell .act{margin-top:auto;display:flex;flex-wrap:wrap;gap:2px 8px;font-size:11px;color:var(--t500)}
-.cal-cell .act span{display:flex;align-items:center;gap:4px;white-space:nowrap}
-.cal-cell .act i{width:6px;height:6px;border-radius:50%}
+.cal-cell .act,.cal-wa .act{margin-top:auto;display:flex;flex-wrap:wrap;gap:2px 8px;font-size:11px;color:var(--t500)}
+.cal-cell .act span,.cal-wa .act span{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.cal-cell .act i,.cal-wa .act i{width:6px;height:6px;border-radius:50%}
 .cal-chip em.rt{font-style:normal;color:var(--t500);font-weight:400}
 .cal-chip{display:flex;align-items:center;gap:5px;height:22px;padding:0 7px;border-radius:6px;font-size:11.5px;white-space:nowrap;
   overflow:hidden;cursor:pointer;min-width:0;text-align:left;width:100%}
@@ -2851,3 +2857,8 @@ textarea{resize:vertical}
 /* Settings closes with the same filled Done as Design. */
 #ovl-settings .ovl-bar .cbtn{background:var(--acc);color:#1b1a17;border-color:var(--acc);font-weight:600}
 .cal-clocks small.cap{color:var(--t500);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+/* On a shorter window the base CV card shows the top of its page only, so
+   the whole card stays above the status bar. */
+@media (max-height:1040px){ .bstage{height:92px;padding-top:10px} .baserow{margin-top:10px} }
+.cal-chip.iv.past{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fn-positive) 35%,transparent);font-weight:500;color:var(--t500)}
+.cal-blk.past{background:transparent;box-shadow:inset 0 0 0 1px var(--bd-field)}.cal-blk.past b,.cal-blk.past span{color:var(--t500)}

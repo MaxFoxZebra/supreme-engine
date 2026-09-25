@@ -105,6 +105,10 @@ design:
       show_icons: false
       display_urls_instead_of_usernames: true
       phone_number_format: international
+  # The dates stand on their own; "4 years 7 months" under each one is
+  # arithmetic the reader does not need, and an ATS reads it as text.
+  sections:
+    show_time_spans_in: []
   typography:
     alignment: left
   page:
