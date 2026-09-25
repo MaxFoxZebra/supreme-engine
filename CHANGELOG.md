@@ -82,6 +82,21 @@ A polish and safety release on the way to 1.0.
     fortnight; interviews fall on weekdays. Smaller: rounds sum without a
     total, "Last email 16 Sept", the API example's line break, no "Check
     now" outside the desktop app, French wording.
+- **Round seven of the review:**
+  - The applications table sorts by any column; by default what needs you
+    first (offers, late follow-ups, interviews coming, follow-ups coming,
+    rounds to book), with an arrow on the column in use.
+  - The calendar keeps the rounds already held, muted, where they happened;
+    two in the same hour sit side by side in the week. The week's all-day
+    row shows offers, moves to interviews and what was sent or ended. The
+    month heatmap marks interviews in the days of the next month too.
+  - "Reply to offer · 3 d ago" says it counts since the offer, and turns red
+    only after five days.
+  - New CVs and the sample leave out "4 years 7 months" under each date;
+    the outline names a paragraph by its first sentence.
+  - The base CV card fits above the status bar on a shorter window.
+  - French: interview rounds are "étapes"; "Marquer sans nouvelles" matches
+    the status it sets; "19 sem. de silence".
 - **Round four of the review:**
   - The email a person's row suggests fits the moment: a thank-you after a
     round in the last two days (to whoever was in it), a plain follow-up
