@@ -5198,7 +5198,7 @@ const API_TOKEN=__API_TOKEN__;
       </section>
 
       <section class="sp" id="sp-browser" hidden>
-        <h3>Save postings from your browser</h3>
+        <h3>Save from the browser</h3>
         <p class="sp-lede">One button in your bookmarks bar. On a job page it opens a small CV Studio
           window with the role, the company and the posting already filled in, and saves them as an
           application.</p>

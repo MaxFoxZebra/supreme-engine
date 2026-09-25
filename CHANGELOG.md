@@ -44,6 +44,20 @@ A polish and safety release on the way to 1.0.
   country code (+33 6 12 34 56 78, not 06 12 34 56 78), and they never
   split a word across lines. The ATS check has nothing to flag on them;
   Design turns any of it back.
+- **Round five of the review:**
+  - "Interviews in 7 days" counts the same way everywhere (today and the
+    next seven days), so the sidebar and the week's count agree.
+  - Next actions puts an interview in the next three days first; an offer
+    left more than a month asks whether you took it, with *Accepted* and
+    *Declined by me* buttons.
+  - An application in interviews with no round booked shows "Book the next
+    round" as its next step; the email sheet leaves the follow-up date alone
+    when an interview is booked.
+  - The month says what ended ("1 rejected, 1 ghosted"); the funnel chart
+    fits the window, so every final stage is in view.
+  - The base CV no longer offers to be linked to an application; Settings'
+    Done is filled like Design's; the interview times on Journeys are calm
+    in dark mode; French names the hiring manager "Manager du poste".
 - **Round four of the review:**
   - The email a person's row suggests fits the moment: a thank-you after a
     round in the last two days (to whoever was in it), a plain follow-up

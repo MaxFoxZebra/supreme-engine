@@ -2842,3 +2842,9 @@ textarea{resize:vertical}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .scrim,:root:not([data-theme=light]) .pal-scrim{background:rgba(0,0,0,.58)}}
 :root[data-theme=dark] #ovl-settings{box-shadow:0 0 0 100vmax rgba(0,0,0,.62),0 24px 60px rgba(0,0,0,.5)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) #ovl-settings{box-shadow:0 0 0 100vmax rgba(0,0,0,.62),0 24px 60px rgba(0,0,0,.5)}}
+.na-acts{display:flex;gap:6px}
+/* In the dark an inked pill is a white one, the loudest thing on the page. */
+:root[data-theme=dark] .jr-lab.iv{background:var(--bar);color:var(--t900);box-shadow:inset 0 0 0 1px var(--bd-field)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .jr-lab.iv{background:var(--bar);color:var(--t900);box-shadow:inset 0 0 0 1px var(--bd-field)}}
+/* Settings closes with the same filled Done as Design. */
+#ovl-settings .ovl-bar .cbtn{background:var(--acc);color:#1b1a17;border-color:var(--acc);font-weight:600}

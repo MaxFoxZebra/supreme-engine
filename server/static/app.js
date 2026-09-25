@@ -771,7 +771,7 @@ function aiSay(c){
      it up when it is restarted, and until then nothing is connected. Promising
      one click and then putting the step that completes it in a toast -- the
      most disposable container in the app -- is most of why this felt clunky. */
-  if(c.state==="absent") return "Not set up yet. The steps are below.";
+  if(c.state==="absent") return "";
   if(c.state==="elsewhere") return "Pointing at another copy of CV Studio, so "+
     "it is editing CVs you are not looking at.";
   if(c.state==="other-workspace")
@@ -1051,6 +1051,8 @@ function paintLink(){
   paintBackLabel();
   paintBaseChip();
   if(!S.path||!S.jready){ chip.hidden=true; return }
+  /* The base CV is what tailored copies start from; it is not sent itself. */
+  if(!j&&isBase(S.path)){ chip.hidden=true; return }
   if(!j){
     chip.innerHTML='<span>Link to an application</span>';
     chip.title="Attach this document to the application it was written for.";
@@ -4674,6 +4676,7 @@ function nextStep(j,due){
   }
   if(j.followup_date&&!DEAD_ST.has(j.status))
     return '<span class="when'+(due?" due":"")+'">'+esc(t("Follow up"))+' · '+esc(shortDate(j.followup_date))+'</span>';
+  if(j.status==="interviewing") return '<span class="when">'+esc(t("Book the next round"))+'</span>';
   return '<span class="when none">–</span>';
 }
 function drawJobs(){
@@ -5610,7 +5613,10 @@ function drawSankey(mode,animate){
   if(!links.length){ host.innerHTML=""; return }
   const W=Math.max(560,host.clientWidth||900);
   const side=$(".fn-side").offsetHeight;
-  const H=Math.max(380,Math.min(640,side>200&&innerWidth>1180?side-86:nodes.length*42));
+  /* Every final stage in view without scrolling: the chart stops at the
+     bottom of the window rather than matching the column beside it. */
+  const room=innerHeight-Math.max(0,host.getBoundingClientRect().top)-56;
+  const H=Math.max(340,Math.min(640,room,side>200&&innerWidth>1180?side-86:nodes.length*42));
   /* The right-hand pad is where the last column's labels sit. */
   const PAD=Math.max(170,Math.min(220,W*0.22));
   const layout=d3.sankey().nodeWidth(10).nodePadding(22).nodeAlign(d3.sankeyLeft)
@@ -6041,6 +6047,12 @@ const GLOBE='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke=
    that does it: an interview coming, a follow-up late, an offer to answer, a
    thank-you after yesterday's interview, a draft left sitting. Beside it,
    this week in seven days and three counts. It shows on the whole list only. */
+/* An interview today or in the next seven days, counted by day: the rule
+   the server's "Interview in 7 days" uses, so the two numbers agree. */
+function ivSoon(j){
+  const at=interviewMoment(j); if(!at) return false;
+  const d=dayDiff(todayKey(),dayIn(at)); return d>=0&&d<=7;
+}
 function nextActions(){
   const now=new Date(), today=todayKey(), out=[];
   const dshort=k=>fmtKey(k,{day:"numeric",month:"short"});
@@ -6060,11 +6072,11 @@ function nextActions(){
     if(DEAD_ST.has(j.status)) return;
     const rs=j.rounds||[], at=interviewMoment(j);
     /* An interview this week. */
-    if(at&&at>now&&at-now<7*864e5){
+    if(at&&at>now&&ivSoon(j)){
       const n=rs.findIndex(r=>!r.outcome&&r.at), r=rs[n]||{};
       const why=[rs.length>1&&n>=0?t("Round {n} of {m}",{n:n+1,m:rs.length}):"",r.kind?t(r.kind):"",
         r.with?t("with {n}",{n:r.with}):"",!j.cv_path?t("no tailored CV yet"):""].filter(Boolean).join(" · ");
-      out.push({j,rank:at-now<2*864e5?0:5,at:+at,dot:"live",what:t("Interview"),why,when:when(at),
+      out.push({j,rank:at-now<3*864e5?0:5,at:+at,dot:"live",what:t("Interview"),why,when:when(at),
         hot:at-now<3*36e5,act:t("Prepare"),run:()=>selectJob(j.id)});
     }
     /* An interview that has happened and has no outcome yet. */
@@ -6096,8 +6108,12 @@ function nextActions(){
     if(j.status==="offer"){
       const h=(j.status_history||[]).filter(x=>x.status==="offer").pop(), k=h?dayIn(new Date(String(h.at).slice(0,19))):today;
       const p=writer(j), days=dayDiff(k,today);
-      /* A week is a long time to leave an offer unanswered. */
-      out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),why:t("Offer since {d}",{d:dshort(k)}),
+      /* A week is a long time to leave an offer unanswered; after a month it
+         was answered and the list was not told, so it asks which way. */
+      if(days>30) out.push({j,rank:3,at:-days,dot:"offer",what:t("Answer the offer"),
+        why:t("Offer since {d}. Did you take it?",{d:dshort(k)}),when:t("{n} day(s) ago",{n:days}),
+        acts:[[t("Accepted"),()=>saveJob(j.id,{status:"accepted"})],[t("Declined by me"),()=>saveJob(j.id,{status:"refused"})]]});
+      else out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),why:t("Offer since {d}",{d:dshort(k)}),
         when:days?t("{n} day(s) ago",{n:days}):t("today"),hot:days>7,act:t("Reply to the offer"),run:()=>p?draftSheet(j,p,"offer"):selectJob(j.id)});
     }
     /* A draft left for more than three days; after a month it is not a
@@ -6122,7 +6138,8 @@ function drawNextUp(){
       '<span class="na-tx"><b>'+esc(a.what)+' <span>· '+esc(a.j.company)+', '+esc(a.j.title)+'</span></b>'+
         (a.why?'<small>'+esc(a.why)+'</small>':'')+'</span>'+
       '<span class="na-when'+(a.hot?" hot":"")+'">'+esc(a.when)+'</span>'+
-      '<button type="button" class="obtn" data-na="'+i+'">'+esc(a.act)+'</button></div>').join("");
+      (a.acts?'<span class="na-acts">'+a.acts.map((x,k)=>'<button type="button" class="obtn" data-na="'+i+'" data-k="'+k+'">'+esc(x[0])+'</button>').join("")+'</span>'
+        :'<button type="button" class="obtn" data-na="'+i+'">'+esc(a.act)+'</button>')+'</div>').join("");
   const days=Array.from({length:7},(_,i)=>{
     const k=addDays(mon,i), iv=ev.filter(e=>e.kind==="iv"&&e.day===k), fu=ev.filter(e=>e.kind==="fu"&&e.day===k), lt=fu.some(e=>e.late);
     const tip=[iv.length?t("Interview")+" · "+iv.map(e=>e.job.company).join(", "):"",
@@ -6132,8 +6149,7 @@ function drawNextUp(){
       '<span class="mk">'+(iv.length?'<span class="d"></span>':'')+(fu.length?'<span class="r'+(lt?" late":"")+'"></span>':'')+'</span></button>';
   }).join("");
   const end=addDays(mon,6), inWeek=k=>k>=mon&&k<=end;
-  /* The same seven days as Attention's "Interview in 7 days". */
-  const ivWeek=(S.jobs||[]).filter(j=>{ const at=interviewMoment(j); return at&&at>new Date()&&at-new Date()<7*864e5&&!DEAD_ST.has(j.status) }).length;
+  const ivWeek=(S.jobs||[]).filter(j=>!DEAD_ST.has(j.status)&&ivSoon(j)).length;
   const sentWeek=(S.jobs||[]).filter(j=>(j.status_history||[]).some(h=>h.status==="applied"&&inWeek(String(h.at).slice(0,10)))).length;
   const dueWeek=(S.jobs||[]).filter(j=>j.followup_date&&!DEAD_ST.has(j.status)&&inWeek(j.followup_date)).length;
   const stat=(label,n)=>'<span class="na-stat"><span>'+esc(label)+'</span><b>'+n+'</b></span>';
@@ -6147,7 +6163,8 @@ function drawNextUp(){
       '<div class="days">'+days+'</div>'+
       '<div class="na-stats">'+stat(t("Interviews in 7 days"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups this week"),dueWeek)+'</div></div>';
   el.hidden=false;
-  $$("#nextup [data-na]").forEach(b=>b.onclick=()=>shown[+b.dataset.na].run());
+  $$("#nextup [data-na]").forEach(b=>b.onclick=()=>{ const a=shown[+b.dataset.na];
+    b.dataset.k!=null&&a.acts?a.acts[+b.dataset.k][1]():a.run() });
   const mb=$("#nextup [data-na-more]"); if(mb) mb.onclick=()=>{ S.naAll=!S.naAll; drawNextUp() };
   const cal=$("#nextup [data-nu-cal]"); if(cal) cal.onclick=()=>{ S.calView="overview"; setView("cal") };
   $$("#nextup [data-nu-day]").forEach(b=>b.onclick=()=>{ S.calView="week"; S.calAnchor=b.dataset.nuDay; setView("cal") });
@@ -6401,12 +6418,16 @@ function drawCalMonth(ev){
     const k=addDays(start,i), list=(by[k]||[]), inm=k.slice(0,7)===month;
     const chips=list.filter(e=>order[e.kind]!=null).sort((a,b)=>order[a.kind]-order[b.kind]||(a.at||0)-(b.at||0));
     const sent=list.filter(e=>e.kind==="sent").length, closed=list.filter(e=>e.kind==="closed").length;
+    /* What ended, said as what happened: rejected, ghosted, declined. */
+    const ends=list.filter(e=>e.kind==="closed").reduce((m,e)=>{ const st=e.job.status;
+      const k=/^rejected/.test(st)?"{n} rejected":/^ghosted/.test(st)?"{n} ghosted":"{n} declined"; m[k]=(m[k]||0)+1; return m },{});
     const dnum=Number(k.slice(8));
     cells+='<div class="cal-cell'+(inm?"":" out")+(((i%7)>=5)?" wkend":"")+(k===today?" today":"")+'" data-drop="'+k+'">'+
       '<div class="d"><span>'+dnum+(dnum===1?" "+esc(fmtKey(k,{month:"short"})):"")+'</span></div>'+
       chips.slice(0,3).map(calChip).join("")+(chips.length>3?'<small style="font-size:11px;color:var(--t500)">+'+(chips.length-3)+'</small>':'')+
       ((sent||closed)?'<div class="act">'+(sent?'<span><i style="background:var(--fn-wait)"></i>'+esc(t("{n} sent",{n:sent}))+'</span>':'')+
-        (closed?'<span title="'+esc(list.filter(e=>e.kind==="closed").map(e=>e.job.company+" · "+t(prettyStatus(e.job.status))).join("\n"))+'"><i style="background:var(--bd-field)"></i>'+esc(t("{n} ended",{n:closed}))+'</span>':'')+'</div>':'')+'</div>';
+        (closed?'<span title="'+esc(list.filter(e=>e.kind==="closed").map(e=>e.job.company+" · "+t(prettyStatus(e.job.status))).join("\n"))+'"><i style="background:var(--bd-field)"></i>'+
+          esc(Object.entries(ends).map(([k,n])=>t(k,{n})).join(", "))+'</span>':'')+'</div>':'')+'</div>';
   }
   const dows=Array.from({length:7},(_,i)=>'<div class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"short"}))+'</div>').join("");
   $("#cal-body").innerHTML='<div class="cal-month"><section class="cal-card cal-grid cal-r" style="grid-template-rows:auto repeat('+
@@ -7969,7 +7990,8 @@ async function draftSheet(j,p,kind){
         esc(t(PP_KIND_LABEL[k]))+'</button>').join("")+'</div>'+
     '<label class="pk-field">'+esc(t("Subject"))+'<input id="dr-sub" spellcheck="true"></label>'+
     '<label class="pk-field">'+esc(t("Message"))+'<textarea id="dr-body" rows="12" spellcheck="true"></textarea></label>'+
-    '<label class="pk-check" id="dr-move-row"><input type="checkbox" id="dr-move" checked>'+
+    /* With an interview booked, that date is the next step, not a follow-up. */
+    '<label class="pk-check" id="dr-move-row"><input type="checkbox" id="dr-move"'+(interviewMoment(j)>new Date()?'':' checked')+'>'+
       esc(t("Afterwards, move the follow-up to a week from today"))+'</label>'+
     '<div class="foot"><button class="sbtn" id="dr-cancel">'+esc(t("Cancel"))+'</button>'+
       '<button class="sbtn" id="dr-copy">'+esc(t("Copy"))+'</button>'+
