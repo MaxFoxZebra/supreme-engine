@@ -98,14 +98,15 @@ design:
   theme: classic
   # Set for applicant tracking systems: contact details as plain text rather
   # than icon glyphs, the full profile links, the phone with its country
-  # code, and no words broken at the end of a line. Design turns any back.
+  # code, and ragged-right text, which never breaks a word at a line end and
+  # leaves no wide gaps between words. Design turns any back.
   header:
     connections:
       show_icons: false
       display_urls_instead_of_usernames: true
       phone_number_format: international
   typography:
-    alignment: justified-with-no-hyphenation
+    alignment: left
   page:
     size: a4
 """

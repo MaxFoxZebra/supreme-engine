@@ -1021,7 +1021,7 @@ html.mono .langs,html.mono #langsw{display:none!important}
   .bhero .bthumb{width:150px}
 }
 .thead,.trow{display:grid;
-  grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,.8fr) 176px 80px 168px;
+  grid-template-columns:minmax(0,1.25fr) minmax(0,1.5fr) minmax(0,.6fr) 170px 80px 178px;
   align-items:center}
 .thead{height:38px;flex:none;background:var(--row-alt);border-bottom:1px solid var(--rule);
   font-size:12px;font-weight:600;color:var(--t500)}

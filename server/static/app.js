@@ -4106,7 +4106,7 @@ function baseHeroHTML(b){
         '<div><b>'+sent+'</b><span>attached to applications</span></div>'+
         (!m.source&&behind(m.path)?'<div><b>'+behind(m.path)+'</b><span>changes in '+
           esc(src.english)+' to carry over</span></div>':'')+'</div>'+
-      '<div class="bacts"><button class="pbtn" data-base-open>Open</button>'+
+      '<div class="bacts"><button class="obtn" data-base-open>Open</button>'+
         (!m.source&&behind(m.path)?'<button class="obtn" data-base-drift>What changed</button>':'')+
         '<button class="obtn" data-base-design>Design</button>'+
         (m.source?'<button class="obtn" data-base-pick>Change base&#8230;</button>':'')+'</div>'+
@@ -4668,7 +4668,9 @@ function nextStep(j,due){
       esc(fmtKey(dayIn(at),{weekday:"short",day:"numeric"}))+'</span>';
   if(j.status==="offer"){
     const h=(j.status_history||[]).filter(x=>x.status==="offer").pop();
-    return '<span class="when due">'+esc(t("Answer the offer"))+(h?' · '+esc(shortDate(String(h.at).slice(0,10))):'')+'</span>';
+    const days=h?dayDiff(String(h.at).slice(0,10),todayKey()):0;
+    return '<span class="when due" title="'+esc(t("Answer the offer"))+(h?' · '+esc(t("Offer since {d}",{d:shortDate(String(h.at).slice(0,10))})):'')+'">'+
+      esc(t("Reply to offer"))+(days?' · '+esc(t("{n} d",{n:days})):'')+'</span>';
   }
   if(j.followup_date&&!DEAD_ST.has(j.status))
     return '<span class="when'+(due?" due":"")+'">'+esc(t("Follow up"))+' · '+esc(shortDate(j.followup_date))+'</span>';
@@ -5234,6 +5236,17 @@ function wireRounds(j){
   const rs=()=>(j.rounds||[]).map(r=>Object.assign({},r));
   const save=(list,extra)=>{
     const patch=Object.assign({rounds:list},extra||{});
+    /* Reminders are off until asked for; the first interview time is the
+       moment to offer them, once. */
+    if(list.some(r=>r.at)&&!notifyOn()&&!prefs().notify_offered&&notifyApi()){
+      setPref("notify_offered",true);
+      toast(t("Want a reminder before your interviews?"),false,{label:t("Turn on"),fn:async()=>{
+        const A=notifyApi(); let g=await A.granted().catch(()=>false);
+        if(!g) g=await A.ask().catch(()=>false);
+        if(!g) return toast(t("Notifications are blocked for CV Studio in your system settings."),true);
+        setPref("notify",true); notifyTick(); toast(t("Reminders on: 1 hour and 10 minutes before each interview."))
+      }});
+    }
     /* A first time for an application still waiting moves it to interviewing. */
     if(list.some(r=>r.at)&&(j.status==="applied"||j.status==="pending")) patch.status="interviewing";
     return saveJob(j.id,patch);
@@ -5450,6 +5463,7 @@ const skCol=id=>"var(--sk-"+skTone(id)+")";
 /* Where an application can still change. These are the stages the lights
    travel to: what is in motion is what is still in play. */
 const FN_LIVE=["awaiting","still_iv","deciding"];
+const FN_OF_ALL=new Set(["all","pending","applied_s"]);
 const IV_STATUSES=new Set(["interviewing","offer","accepted","refused",
   "rejected_interviewing","ghosted_interviewing"]);
 const reduceMotion=()=>matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -5656,13 +5670,15 @@ function drawSankey(mode,animate){
         (n.x1-n.x0+6)+'" height="'+(h+6)+'" rx="4" style="stroke:'+skCol(n.id)+'"/>':"")+'</g>';
   }).join("");
 
+  /* Past the first split, a share is of what was sent, as in the steps above. */
+  const sentBase=((g.nodes.find(x=>x.id==="applied_s")||{}).count)||total;
   const chips=g.nodes.map(n=>{
     const cy=(n.y0+n.y1)/2, off=S.fnode&&S.fnode!==n.id&&
       ![...lineage.get(S.fnode)].some(l=>l.sid===n.id||l.tid===n.id);
     return '<div class="sk-chip'+(n.id==="accepted"?" won":"")+(off?" sk-dim":"")+'" data-chip="'+
       esc(n.id)+'" style="left:'+(n.x1+8)+'px;top:'+(cy-12)+'px;animation-delay:'+
       (1.2+n.depth*.28).toFixed(2)+'s"><i style="background:'+skCol(n.id)+'"></i>'+esc(n.label)+
-      ' <b>'+n.count+'</b><span>'+Math.round(n.count/total*100)+'%</span>'+
+      ' <b>'+n.count+'</b><span>'+Math.round(n.count/(FN_OF_ALL.has(n.id)?total:sentBase)*100)+'%</span>'+
       '</div>';
   }).join("");
 
@@ -6073,7 +6089,7 @@ function nextActions(){
       out.push({j,rank:late?1:3,at:-late,dot:late?"late":"waiting",what:t("Follow up"),
         why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)})
           :ap?t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}):"",
-        when:late?t("{n} day(s) late",{n:late}):t("today"),hot:!!late,
+        when:late?t("{n} day(s) overdue",{n:late}):t("today"),hot:!!late,
         act:t("Write follow-up"),run:()=>p?draftSheet(j,p,"followup"):selectJob(j.id)});
     }
     /* An offer to answer. */
@@ -6116,7 +6132,8 @@ function drawNextUp(){
       '<span class="mk">'+(iv.length?'<span class="d"></span>':'')+(fu.length?'<span class="r'+(lt?" late":"")+'"></span>':'')+'</span></button>';
   }).join("");
   const end=addDays(mon,6), inWeek=k=>k>=mon&&k<=end;
-  const ivWeek=ev.filter(e=>e.kind==="iv"&&inWeek(e.day)).length;
+  /* The same seven days as Attention's "Interview in 7 days". */
+  const ivWeek=(S.jobs||[]).filter(j=>{ const at=interviewMoment(j); return at&&at>new Date()&&at-new Date()<7*864e5&&!DEAD_ST.has(j.status) }).length;
   const sentWeek=(S.jobs||[]).filter(j=>(j.status_history||[]).some(h=>h.status==="applied"&&inWeek(String(h.at).slice(0,10)))).length;
   const dueWeek=(S.jobs||[]).filter(j=>j.followup_date&&!DEAD_ST.has(j.status)&&inWeek(j.followup_date)).length;
   const stat=(label,n)=>'<span class="na-stat"><span>'+esc(label)+'</span><b>'+n+'</b></span>';
@@ -6128,7 +6145,7 @@ function drawNextUp(){
         esc(more>0?t("Show {n} more",{n:more}):t("Show fewer"))+'</button></div>':'')+'</div>'+
     '<div class="na-side"><div class="hd">'+esc(t("This week"))+'<button data-nu-cal>'+esc(t("Open calendar"))+' →</button></div>'+
       '<div class="days">'+days+'</div>'+
-      '<div class="na-stats">'+stat(t("Interviews this week"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups this week"),dueWeek)+'</div></div>';
+      '<div class="na-stats">'+stat(t("Interviews in 7 days"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups this week"),dueWeek)+'</div></div>';
   el.hidden=false;
   $$("#nextup [data-na]").forEach(b=>b.onclick=()=>shown[+b.dataset.na].run());
   const mb=$("#nextup [data-na-more]"); if(mb) mb.onclick=()=>{ S.naAll=!S.naAll; drawNextUp() };
@@ -6174,8 +6191,11 @@ function drawCalendar(animate){
   const wkEnd=addDays(monday(today),6);
   const ivs=ev.filter(e=>e.kind==="iv"&&e.day>=today&&e.day<=wkEnd).length;
   const late=ev.filter(e=>e.kind==="fu"&&e.late).length;
-  $("#cal-sub").textContent=[ivs?t(ivs===1?"1 interview this week":"{n} interviews this week",{n:ivs}):"",
-    late?t(late===1?"1 follow-up overdue":"{n} follow-ups overdue",{n:late}):""].filter(Boolean).join(" · ");
+  /* The overdue count is a way in: it opens those applications. */
+  $("#cal-sub").innerHTML=[ivs?esc(t(ivs===1?"1 interview this week":"{n} interviews this week",{n:ivs})):"",
+    late?'<button type="button" class="linkbtn" id="cal-late">'+esc(t(late===1?"1 follow-up overdue":"{n} follow-ups overdue",{n:late}))+'</button>':""]
+    .filter(Boolean).join(" · ");
+  const cl=$("#cal-late"); if(cl) cl.onclick=()=>{ S.jfilter={kind:"alert",value:"followup_due"}; S.fnode=null; setView("jobs"); drawJobs() };
   clearInterval(S.calTick);
   if(animate&&!reduceMotion()){ page.classList.remove("cal-in"); void page.offsetWidth; page.classList.add("cal-in");
     setTimeout(()=>page.classList.remove("cal-in"),3200) }
@@ -7575,7 +7595,7 @@ const palPlaces=()=>[
   {label:t("Funnel"),icon:"funnel",run:()=>setView("funnel")},
   {label:t("Calendar"),icon:"cal",run:()=>setView("cal")},
   {label:t("Follow-up due"),icon:"list",run:()=>{ S.jfilter={kind:"alert",value:"followup_due"}; S.fnode=null; setView("jobs"); drawJobs() }},
-  ...[["workspace","Workspace"],["editor","Editor"],["region","Language & region"],["notify","Notifications"],["browser","Browser"],
+  ...[["workspace","Workspace"],["editor","Editor"],["region","Language & region"],["notify","Notifications"],["browser","Save from the browser"],
       ["ai","AI clients"],["api","API"],["updates","Updates"],["about","About"]]
     .map(([k,l])=>({label:t("Settings")+" › "+t(l),icon:"gear",stay:true,run:()=>openSettings(k)})),
 ];
@@ -7798,17 +7818,20 @@ function ppKind(j,p){
   /* The person who referred you is kept posted, not sent an offer reply or
      a thank-you for an interview they were not in. */
   if(p&&p.role==="Referral") return "followup";
-  const h=(j.status_history||[]).filter(x=>x.status==="interviewing").pop();
-  const iv=j.interview_at&&new Date(j.interview_at)<new Date()?j.interview_at:(h&&h.at);
   /* What there is to say depends on where the application is: an offer is
-     answered, a recent interview thanked for, an older one chased. */
+     answered; a round in the last two days is thanked for (by whoever was
+     in it, or anyone when nobody is named); with the next round already
+     booked there is nothing to chase; with none booked, ask what is next. */
   if(j.status==="offer") return "offer";
-  if(iv&&(Date.now()-new Date(iv))<5*DAY) return "thanks";
-  return j.status==="interviewing"&&iv?"next":"followup";
+  const now=new Date(), rs=(j.rounds||[]).map(r=>({r,at:r.at&&interviewMoment({interview_at:r.at+":00",interview_tz:r.tz||null})}));
+  const recent=rs.filter(x=>x.at&&x.at<now&&now-x.at<2*DAY).pop();
+  if(recent&&(!recent.r.with||!p||recent.r.with===p.name)) return "thanks";
+  if(rs.some(x=>x.at&&x.at>now&&!x.r.outcome)) return "followup";
+  return j.status==="interviewing"&&rs.some(x=>x.at&&x.at<now)?"next":"followup";
 }
 const PP_KIND_LABEL={followup:"Follow-up email",thanks:"Thank-you note",next:"Ask about next steps",offer:"Reply to the offer"};
 function ppLast(p){
-  if(!p.last) return t("not written to from here yet");
+  if(!p.last) return t("No emails yet");
   const d=dayDiff(p.last,todayKey());
   return d<=0?t("last written to today"):t("last written to {d}, {n} day(s) ago",{d:fmtKey(p.last,{day:"numeric",month:"short"}),n:d});
 }

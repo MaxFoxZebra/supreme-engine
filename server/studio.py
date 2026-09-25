@@ -4964,7 +4964,7 @@ const API_TOKEN=__API_TOKEN__;
       <button data-s="editor" aria-selected="false">Editor</button>
       <button data-s="region" aria-selected="false">Language &amp; region</button>
       <button data-s="notify" aria-selected="false">Notifications</button>
-      <button data-s="browser" aria-selected="false">Browser</button>
+      <button data-s="browser" aria-selected="false">Save from the browser</button>
       <button data-s="ai" aria-selected="false">AI clients</button>
       <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
@@ -4973,9 +4973,9 @@ const API_TOKEN=__API_TOKEN__;
     <div>
       <section class="sp" id="sp-workspace">
         <h3>Workspace</h3>
-        <p class="sp-lede">Everything lives in one folder you own. CVs and letters are
-          plain YAML; applications are a single SQLite file. Copy the folder and you
-          have copied everything.</p>
+        <p class="sp-lede">Everything lives in one folder you own. CVs are plain YAML,
+          letters plain Markdown, and applications a single SQLite file. Copy the folder
+          and you have copied everything.</p>
         <div class="srow"><div><b>Setup</b><span>The welcome and the steps from the
           first launch: import a CV from a PDF or LinkedIn, your name at the top of the
           base CV, how it prints, and an AI client.</span></div>
@@ -5235,8 +5235,8 @@ const API_TOKEN=__API_TOKEN__;
           connect one. Built on RenderCV and Typst.</p>
         <p class="sp-lede">Everything runs on your machine. No account, no server, no
           telemetry, which matters more, not less, once an AI is editing the files:
-          your CVs stay plain YAML in a folder you own, and both halves only ever touch
-          that folder.</p>
+          your CVs and letters stay plain text in a folder you own, and the app and
+          your AI client only ever touch that folder.</p>
         <p class="sp-note">MIT licensed. Bundles RenderCV (MIT), Typst (Apache-2.0), the
           RenderCV font set and IBM Plex (SIL Open Font License), and d3-sankey (ISC).
           The Claude mark is a trademark of Anthropic, used here only to identify the

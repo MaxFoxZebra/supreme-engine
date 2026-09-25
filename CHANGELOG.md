@@ -44,6 +44,19 @@ A polish and safety release on the way to 1.0.
   country code (+33 6 12 34 56 78, not 06 12 34 56 78), and they never
   split a word across lines. The ATS check has nothing to flag on them;
   Design turns any of it back.
+- **Round four of the review:**
+  - The email a person's row suggests fits the moment: a thank-you after a
+    round in the last two days (to whoever was in it), a plain follow-up
+    while the next round is booked, a question about next steps only when
+    nothing is.
+  - Reminders are offered, once, the first time you give an interview a time.
+  - "Overdue" everywhere for a follow-up past its date; the calendar's
+    overdue count opens those applications; the week's interview count uses
+    the same seven days as the sidebar.
+  - The list's next step for an offer is short enough to read ("Reply to
+    offer · 78 d"); the funnel's shares past the first split are of what was
+    sent, as in the steps above it; "Offer pending" beside "Offers".
+  - The sample CV is left-aligned, with no wide gaps between words.
 - **Round three of the review:**
   - An interview this week with no tailored CV says so on the application,
     with *Tailor a CV*; the calendar's checklist offers the same.
