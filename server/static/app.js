@@ -677,11 +677,17 @@ function paintStatus(){
     L.textContent=n+" document"+(n===1?"":"s");
     R.textContent=shortPath((S.state&&S.state.workspace)||"");
     R.title=(S.state&&S.state.workspace)||"";
+  }else if(S.view==="letter"){
+    L.className="mono"+(LT.dirty?" warn":"");
+    L.textContent=LT.dirty?t("unsaved changes"):t("all saved");
+    R.textContent=shortPath((S.state&&S.state.workspace)||"");
+    R.title=(S.state&&S.state.workspace)||"";
   }else{
-    /* The chart says how to use it, in its own header; the footer only says
-       which applications it is drawn from. */
+    /* The funnel and the calendar are drawn from the applications: the
+       footer says how many, and how many are still open. */
+    const js=S.jobs||[], open=js.filter(j=>LIVE_ST.has(j.status)).length;
     L.className="mono";
-    L.textContent=S.funnel?S.funnel.totals.total+" applications":"";
+    L.textContent=js.length?t("{n} applications · {m} open",{n:js.length,m:open}):"";
     R.textContent=""; R.title="";
   }
 }
@@ -1534,7 +1540,11 @@ async function atsRun(fix){
 /* Private-use characters are what icon fonts extract as. Shown as a box, the
    way a parser that keeps them would print them, so the finding above can be
    seen in the text below. */
-const atsReadable=t=>esc(t).replace(/[-]/g,'<i class="pua" title="An icon, read as an unreadable character">□</i>');
+/* The PDF's lines are joined inside a paragraph, so the text reads as
+   parsed rather than as wrapped on the page; bullets and headings keep
+   their own lines. */
+const atsReflow=t=>String(t||"").replace(/([^\n])\n(?=[a-zà-ÿ(,;])/g,"$1 ");
+const atsReadable=t=>esc(atsReflow(t)).replace(/[-]/g,'<i class="pua" title="An icon, read as an unreadable character">□</i>');
 function atsPaint(r){
   const body=$("#ats-body");
   if(!r.ok){ body.innerHTML='<p class="note">'+esc(r.error||"The check could not run.")+'</p>'; return }
@@ -2156,7 +2166,7 @@ function ltPaint(){
     const ta=$("#lt-md");
     ta.value=text!=null?text:"Saving…";
     if(text==null) ltSave().then(()=>{ ta.value=LT.doc.text });
-    ta.oninput=()=>{ LT.mdText=ta.value; LT.dirty=true; $("#lt-save").disabled=false };
+    ta.oninput=()=>{ LT.mdText=ta.value; LT.dirty=true; $("#lt-save").disabled=false; paintStatus() };
   }else{
     ltFont(h.font); ltFont(h.name_font);
     const [wmm,hmm]=LT_PAPER[h.paper]||LT_PAPER.a4;
@@ -5901,7 +5911,9 @@ function paintFunnelJobs(){
     const rows=fnJobs().filter(j=>want.has(j.status));
     const label=(S.labels&&S.labels[S.fnode])||S.fnode;
     hint.innerHTML="Showing <b>"+esc(label)+"</b> · click it again to clear";
-    host.innerHTML='<div class="fn-ch"><span class="fsw" style="background:'+skCol(S.fnode)+
+    /* The chart's palette lives on its stage; the swatch borrows the colour. */
+    const stage=$(".fn-stage"), sw=stage?getComputedStyle(stage).getPropertyValue("--sk-"+skTone(S.fnode)).trim():"";
+    host.innerHTML='<div class="fn-ch">'+(sw?'<span class="fsw" style="background:'+sw:'<span hidden style="')+
       '"></span><h2>'+esc(label)+'</h2><span>'+rows.length+'</span><span class="grow"></span>'+
       '<button class="x" id="fn-clear" title="Back to the open applications" aria-label="Clear">&#10005;</button></div>'+
       (rows.length?'<div class="fn-jlist">'+rows.map(row).join("")+'</div>'
@@ -6412,7 +6424,7 @@ function calJourneys(ev){
       String(b.updated_at).localeCompare(String(a.updated_at)));
   const shown=jobs.slice(0,14);
   let ticks="";
-  for(let w=0;w<=8;w++){ const k=addDays(start,7*w); if(Math.abs(dayDiff(k,today))<4||dayDiff(start,k)>=days) continue;
+  for(let w=0;w<=8;w++){ const k=addDays(start,7*w); if(Math.abs(dayDiff(k,today))<6||dayDiff(start,k)>=days) continue;
     ticks+='<span class="jr-tick" style="left:'+pct(k)+'%">'+esc(fmtKey(k,{day:"numeric",month:"short"}))+'</span>' }
   let wk=""; for(let i=5;i<days;i+=7) wk+='<span class="jr-wkend" style="left:'+(i/days*100)+'%;width:'+(2/days*100)+'%"></span>';
   const lanes=shown.map((j,i)=>{
@@ -6488,10 +6500,12 @@ function calChip(e){
   const drag=(e.kind==="iv"||e.kind==="fu")?' draggable="true" data-drag="'+e.kind+':'+esc(j.id)+'"':'';
   if(e.kind==="iv") return '<button class="cal-chip iv" data-open-job="'+esc(j.id)+'"'+drag+' title="'+esc(interviewLine(j))+
     '"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
-  if(e.kind==="fu") return '<button class="cal-chip fu'+(e.late?" late":"")+'" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"'+drag+'><span>'+
-    esc(e.late?t("Overdue"):t("Follow up"))+' · '+co+'</span></button>';
+  /* The chip's colour says follow-up; the words left for the company. */
+  if(e.kind==="fu") return '<button class="cal-chip fu'+(e.late?" late":"")+'" data-open-job="'+esc(j.id)+'" title="'+
+    esc((e.late?t("Overdue"):t("Follow up"))+" · "+j.company+" · "+j.title)+'"'+drag+'><span>'+
+    (e.late?esc(t("Overdue"))+' · ':'↩ ')+co+'</span></button>';
   if(e.kind==="of") return '<button class="cal-chip of" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"><span>'+t("Offer")+' · '+co+'</span></button>';
-  if(e.kind==="rp") return '<button class="cal-chip rp" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title)+'"><span>'+co+' → '+esc(t("Interviewing"))+'</span></button>';
+  if(e.kind==="rp") return '<button class="cal-chip rp" data-open-job="'+esc(j.id)+'" title="'+esc(t("{co} moved to interviews",{co:j.company})+" · "+j.title)+'"><span>'+co+' · '+esc(t("invited"))+'</span></button>';
   return "";
 }
 /* What was sent and what ended on a day, said as what happened. */
@@ -6517,7 +6531,8 @@ function drawCalMonth(ev){
     const dnum=Number(k.slice(8));
     cells+='<div class="cal-cell'+(inm?"":" out")+(((i%7)>=5)?" wkend":"")+(k===today?" today":"")+'" data-drop="'+k+'">'+
       '<div class="d"><span>'+dnum+(dnum===1?" "+esc(fmtKey(k,{month:"short"})):"")+'</span></div>'+
-      chips.slice(0,3).map(calChip).join("")+(chips.length>3?'<small style="font-size:11px;color:var(--t500)">+'+(chips.length-3)+'</small>':'')+
+      /* Room for three: past three, two and a count of the rest. */
+      chips.slice(0,chips.length>3?2:3).map(calChip).join("")+(chips.length>3?'<small style="font-size:11px;color:var(--t500)">+'+(chips.length-2)+'</small>':'')+
       dayActs(list)+'</div>';
   }
   const dows=Array.from({length:7},(_,i)=>'<div class="dw">'+esc(fmtKey(addDays("2026-09-21",i),{weekday:"short"}))+'</div>').join("");

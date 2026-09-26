@@ -97,6 +97,20 @@ A polish and safety release on the way to 1.0.
   - The base CV card fits above the status bar on a shorter window.
   - French: interview rounds are "étapes"; "Marquer sans nouvelles" matches
     the status it sets; "19 sem. de silence".
+- **Polish after the review:**
+  - The status bar says something on every screen: applications and how
+    many are open on the funnel and calendar, saved or not in a letter.
+  - Calendar month: follow-ups read "↩ Company", a move to interviews
+    "Company · invited", with the full line on hover; a crowded day shows
+    two and a count, so its sent and ended line stays in view.
+  - The funnel's stage list shows its stage colour again, aligned with the
+    other lists. The dark heatmap's quiet days stand apart from the card.
+  - The ATS check's "What it reads" joins the PDF's lines into paragraphs.
+  - Next actions lets a long role take a second line; the table's next
+    step may wrap rather than cut. The base CV tag no longer covers the
+    name on the page. French: the Journeys axis leaves room for
+    "Aujourd'hui".
+  - Sample letters match the CV (four years at Northwind).
 - **Round four of the review:**
   - The email a person's row suggests fits the moment: a thank-you after a
     round in the last two days (to whoever was in it), a plain follow-up

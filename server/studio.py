@@ -81,7 +81,8 @@ STATIC_DIR = Path(getattr(sys, "_MEIPASS", str(_HERE))) / "static"
 if not STATIC_DIR.is_dir():
     STATIC_DIR = _HERE / "static"
 
-THEMES = ["engineeringclassic", "engineeringresumes", "classic", "sb2nov", "moderncv"]
+THEMES = ["classic", "ember", "engineeringclassic", "engineeringresumes", "harvard", "ink",
+          "moderncv", "opal", "sb2nov"]
 PAGE_SIZES = ["a4", "us-letter"]
 DEFAULT_WORKSPACE = Path.home() / "Documents" / "CV Studio"
 

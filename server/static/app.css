@@ -2799,7 +2799,7 @@ textarea{resize:vertical}
 .na-row .colog{width:28px;height:28px;border-radius:7px;font-size:10px}
 .na-row .dot{width:8px;height:8px}
 .na-tx{display:flex;flex-direction:column;gap:1px;min-width:0}
-.na-tx b{font-size:13.5px;font-weight:600;color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.na-tx b{font-size:13.5px;font-weight:600;color:var(--t900);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .na-tx b span{font-weight:400;color:var(--t600)}
 .na-tx small{font-size:12.5px;color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .na-when{font-size:12.5px;color:var(--t700);white-space:nowrap}
@@ -2834,12 +2834,12 @@ textarea{resize:vertical}
 /* A date and zone that fit the longest reminder choice. */
 #s-notify-iv{min-width:260px}
 /* In the dark the busy steps need more room between them to be told apart. */
-:root[data-theme=dark] .cal-md.l1{background:color-mix(in srgb,var(--acc) 18%,var(--field))}
-:root[data-theme=dark] .cal-md.l2{background:color-mix(in srgb,var(--acc) 45%,var(--field))}
+:root[data-theme=dark] .cal-md.l1{background:color-mix(in srgb,var(--acc) 30%,var(--field))}
+:root[data-theme=dark] .cal-md.l2{background:color-mix(in srgb,var(--acc) 55%,var(--field))}
 :root[data-theme=dark] .cal-md.l3{background:color-mix(in srgb,var(--acc) 85%,var(--field));color:#1b1a17}
 @media(prefers-color-scheme:dark){
-  :root:not([data-theme=light]) .cal-md.l1{background:color-mix(in srgb,var(--acc) 18%,var(--field))}
-  :root:not([data-theme=light]) .cal-md.l2{background:color-mix(in srgb,var(--acc) 45%,var(--field))}
+  :root:not([data-theme=light]) .cal-md.l1{background:color-mix(in srgb,var(--acc) 30%,var(--field))}
+  :root:not([data-theme=light]) .cal-md.l2{background:color-mix(in srgb,var(--acc) 55%,var(--field))}
   :root:not([data-theme=light]) .cal-md.l3{background:color-mix(in srgb,var(--acc) 85%,var(--field));color:#1b1a17}}
 .rd-cv{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;border-radius:10px;
   background:var(--acc-wash);border:1px solid var(--acc-line);font-size:13px;color:var(--t900)}
@@ -2862,3 +2862,10 @@ textarea{resize:vertical}
 @media (max-height:1040px){ .bstage{height:92px;padding-top:10px} .baserow{margin-top:10px} }
 .cal-chip.iv.past{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fn-positive) 35%,transparent);font-weight:500;color:var(--t500)}
 .cal-blk.past{background:transparent;box-shadow:inset 0 0 0 1px var(--bd-field)}.cal-blk.past b,.cal-blk.past span{color:var(--t500)}
+
+/* The base CV's tag sits at the foot of the stage, clear of the name at the top of the page. */
+.bstage .btag{top:auto;bottom:8px}
+/* A day with more than fits keeps each chip whole; the rest go to "+n". */
+.cal-chip{flex:none}
+/* The next step may take two lines in a longer language rather than cut. */
+.trow>.when{white-space:normal;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}

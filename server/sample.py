@@ -554,21 +554,21 @@ def build(studio, applications: int = 64) -> dict:
 
     BODIES = {
         "fr": ("Madame, Monsieur,\n\nVotre annonce pour le poste de {title} m'a tout de suite parlé : "
-               "depuis trois ans, je fais exactement ce travail chez Northwind Logistics, où j'ai migré "
+               "depuis quatre ans, je fais exactement ce travail chez Northwind Logistics, où j'ai migré "
                "140 services vers Kubernetes sans interruption de service.\n\nCe qui m'attire chez vous, "
                "c'est **l'ampleur du chantier** et l'attention portée à la qualité des astreintes.\n\n"
                "Je serais ravi d'en parler lors d'un entretien.\n\nJe vous prie d'agréer, Madame, "
                "Monsieur, mes salutations distinguées."),
         "es": ("Estimado equipo:\n\nMe dirijo a ustedes para optar al puesto de {title} en {company}. "
-               "Durante los últimos tres años he hecho este trabajo en Northwind Logistics, donde migré "
+               "Durante los últimos cuatro años he hecho este trabajo en Northwind Logistics, donde migré "
                "140 servicios a Kubernetes sin interrupciones.\n\nMe atrae **la escala de su plataforma** "
                "y cómo cuidan las guardias.\n\nQuedo a su disposición para una entrevista.\n\n"
                "Atentamente,"),
         "pt": ("Prezada equipe,\n\nGostaria de me candidatar à vaga de {title} na {company}. Nos últimos "
-               "três anos fiz exatamente esse trabalho na Northwind Logistics, onde migrei 140 serviços "
+               "quatro anos fiz exatamente esse trabalho na Northwind Logistics, onde migrei 140 serviços "
                "para Kubernetes sem indisponibilidade.\n\nO que me atrai é **a escala da plataforma** e "
                "o cuidado com os plantões.\n\nFico à disposição para uma conversa.\n\nAtenciosamente,"),
-        "en": ("Dear Hiring Team,\n\nI am applying for the {title} role at {company}. For the last three "
+        "en": ("Dear Hiring Team,\n\nI am applying for the {title} role at {company}. For the last four "
                "years I have done this job at Northwind Logistics, where I moved 140 services to "
                "Kubernetes with no downtime and cut deploy time from three hours to eleven minutes.\n\n"
                "What draws me to your team is **the scale of the platform** and the way you write about "
