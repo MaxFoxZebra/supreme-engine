@@ -30,6 +30,8 @@ one rendered by clicking Save.
 | `set_job_status` | Move one along the funnel |
 | `update_job_tracking` | Interview time, follow-up date, who is writing to you, which CV or letter was sent, and the posting (link, text, place, source) |
 | `save_person` | Record someone you are talking to about an application (recruiter, hiring manager, interviewer, referral), from an email thread or an invitation. Completes someone already listed, never removes anyone |
+| `get_interview_prep` | The prep for an application's next round as the user sees it: likely questions (with where each comes from and the user's notes), stories that back the posting's asks, questions to ask. `local` means the app made it from the posting alone |
+| `save_interview_prep` | Write better questions, stories and asks for that round. The user's notes, rehearsal marks and own questions are kept |
 | `ats_check` | Reads a CV's PDF the way an applicant tracking system does: what fails to parse, and which of the posting's keywords it uses |
 | `add_job` | Add one, refusing a likely duplicate unless you confirm. Given the company's website, it fetches the company's logo too |
 | `set_company_logo` | Give a company a logo, from its website or an image on disk, and use it on every application to that company |
@@ -146,6 +148,15 @@ already recorded.
 A status change appends to the permanent history the funnel is drawn from, and
 this app has no undo. The model is told to show you every change and wait for
 you. That one is a rule in prose, not a lock in the code.
+
+### Interview prep, as a skill
+
+`skills/cv-studio-interview-prep/SKILL.md` is how a coach would prepare a round:
+read the posting and the CV that was actually sent, write the questions this
+round will bring, match every ask of the posting to a line of the CV (or say it
+is a gap), and suggest questions to ask back, all saved with
+`save_interview_prep` so the user rehearses them in the app. Copy it into
+`~/.claude/skills/` and ask "prepare my Monzo interview".
 
 ### The sweep, as a skill
 

@@ -32,6 +32,13 @@ Interview prep.
   stay on any question it asks again, and your own questions are kept.
 - See all questions (with your answer notes) and the questions to ask, both
   editable, and your own added.
+- **The AI client does the real prep.** A new skill,
+  `skills/cv-studio-interview-prep`, walks it through a round: the posting,
+  the CV that was sent, the company, then questions, strict stories (a gap
+  said plainly beats a stretch) and asks, saved for you to rehearse. The
+  MCP server's own instructions carry the same rule for clients without the
+  skill. With a client connected, the card says the questions it shows come
+  from the posting alone and gives the words to ask for the real ones.
 
 ## 0.25.0
 

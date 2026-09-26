@@ -8043,9 +8043,12 @@ async function drawPrep(j){
         '<span class="lede">'+esc(t("Two minutes each. The ones you mark “needs work” come back first next time."))+'</span>'+
         '<span class="acts"><button type="button" class="pp-go" id="pp-go">'+esc(t("Start rehearsing"))+'</button>'+
           '<button type="button" class="linkbtn" id="pp-all">'+esc(t("See all questions"))+'</button></span></div></div>'+
+    /* An AI client does this properly: say so first, with the words to use. */
+    (d.local&&aiOn?'<div class="pp-ask"><span>'+esc(t("These come from the posting's words alone. Your AI client can write the real ones, from the posting, the CV you sent and the company."))+
+      '</span><code data-noi18n>'+esc(t("prepare my {co} interview",{co:j.company}))+'</code><button type="button" class="obtn" id="pp-copy">'+esc(t("Copy"))+'</button></div>':'')+
     '<div class="pp-foot">'+(by?esc(t("Prepared by {who} from the posting and your CV · {d}",{who:by,d:d.at?fmtKey(d.at,{day:"numeric",month:"short"}):""}))
         :esc(t("Made on this computer from the posting, the CV you sent and the kind of round."))+
-          (aiOn?' '+esc(t("Ask your AI client for better ones: “prepare my {co} interview”.",{co:j.company}))
+          (aiOn?''
             :' <button type="button" class="linkbtn" id="pp-ai">'+esc(t("Connect an AI client for better questions"))+'</button>'))+
       '<span class="grow"></span><button type="button" class="linkbtn" id="pp-askl">'+
         esc(r.with?t("Questions to ask {who}",{who:r.with.split(" ")[0]}):t("Questions to ask them"))+'</button></div>'+
@@ -8055,6 +8058,7 @@ async function drawPrep(j){
   $("#pp-all").onclick=()=>prepSheet(j,"q");
   $("#pp-askl").onclick=()=>prepSheet(j,"a");
   const ai=$("#pp-ai"); if(ai) ai.onclick=()=>openSettings("ai");
+  const cp=$("#pp-copy"); if(cp) cp.onclick=()=>{ navigator.clipboard.writeText(t("prepare my {co} interview",{co:j.company})).then(()=>toast(t("Copied"))) };
   $$("#ap-prep [data-pp-cv]").forEach(b=>b.onclick=()=>{ prepSave(j,{...PREP.data,cv_read:true}); openDoc(j.cv_path) });
   $$("#ap-prep [data-pp-story]").forEach(b=>b.onclick=()=>{
     const s=st[+b.dataset.ppStory], q={id:Math.random().toString(36).slice(2,10),q:t("Tell us about a time you showed this: “{req}”.",{req:s.req}),
