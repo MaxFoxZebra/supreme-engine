@@ -109,8 +109,8 @@ DEFAULTS: dict[str, dict] = {
                                        "section_titles": "Open Sauce Sans"},
                        "font_size": {"body": "9.5pt", "name": "28pt", "section_titles": "0.9em"},
                        "alignment": "left", "line_spacing": "0.55em"},
-        "section_titles": {"type": "moderncv", "line_thickness": "0pt", "space_above": "0.45cm",
-                           "space_below": "0.2cm"},
+        "section_titles": {"type": "moderncv", "line_thickness": "0pt", "space_above": "0.75cm",
+                           "space_below": "0.1cm"},
         "entries": {"date_and_location_width": "3.9cm", "space_between_columns": "0.45cm"},
         "header": {"alignment": "left",
                    "connections": {"show_icons": False, "display_urls_instead_of_usernames": True,
@@ -140,6 +140,58 @@ DEFAULTS: dict[str, dict] = {
 SIDEBAR_SECTIONS = ["skills", "languages", "certifications", "interests", "awards",
                     "technologies", "tools", "hobbies", "competences", "compétences",
                     "langues", "idiomas", "habilidades", "certificações", "certificaciones"]
+
+
+# Themes that render but are not offered in the picker until they are
+# ready: Sidebar cannot yet carry more than a page one column holds.
+HIDDEN = {"sidebar"}
+
+
+def _lum(rgb) -> float:
+    """WCAG relative luminance of an (r, g, b) in 0..255."""
+    def ch(c):
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb[:3]
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def _contrast(a, b) -> float:
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _rgb(color) -> tuple:
+    t = color.as_rgb_tuple() if hasattr(color, "as_rgb_tuple") else color
+    return tuple(int(x) for x in t[:3])
+
+
+def band_ink(color) -> str:
+    """Text on a band of this colour: white where it reads, near-black else."""
+    rgb = _rgb(color)
+    return "rgb(255, 255, 255)" if _contrast(rgb, (255, 255, 255)) >= 3.2 else "rgb(24, 24, 27)"
+
+
+def readable(color, on=(255, 255, 255), target: float = 3.2) -> str:
+    """The colour itself if text in it reads on white, else darkened until it
+    does: a yellow accent still gives yellow bands, but brown-gold titles."""
+    r, g, b = _rgb(color)
+    for _ in range(40):
+        if _contrast((r, g, b), on) >= target:
+            break
+        r, g, b = int(r * 0.9), int(g * 0.9), int(b * 0.9)
+    return f"rgb({r}, {g}, {b})"
+
+
+def swap(text: str, key: str, value: str) -> str:
+    """Set one of the parameters RenderCV's preamble passes to its template,
+    or fail loudly: a silent miss would render with the wrong colour or
+    margin and nobody would know why."""
+    import re
+    pat = re.compile(rf"^(\s*{re.escape(key)}:\s*).+?,\s*$", re.M)
+    if not pat.search(text):
+        raise ValueError(f"CV Studio themes: RenderCV's preamble has no '{key}' to set")
+    return pat.sub(lambda m: f"{m.group(1)}{value},", text, count=1)
 
 
 def merge(base: dict, over: dict) -> dict:
@@ -194,6 +246,15 @@ def design_for(design: dict):
     return theme_classes()[name](**merge(DEFAULTS[name], design))
 
 
+@functools.cache
+def _builtin() -> frozenset:
+    try:
+        from rendercv.schema.models.design.built_in_design import available_themes
+        return frozenset(available_themes)
+    except Exception:
+        return frozenset()
+
+
 def _loader():
     import jinja2
 
@@ -201,7 +262,9 @@ def _loader():
 
     def load(name: str):
         theme, _, rest = name.partition("/")
-        if rest == "Preamble.j2.typ" and theme != "typst":
+        # RenderCV's own themes and ours get this preamble; a theme folder
+        # of your own keeps its own.
+        if rest == "Preamble.j2.typ" and (theme in DEFAULTS or theme in _builtin()):
             return preamble, None, lambda: True
         if theme in DEFAULTS:
             f = HERE / theme / rest
@@ -242,6 +305,9 @@ def install() -> None:
         if not getattr(env, "_cvstudio", False):
             env.loader = jinja2.ChoiceLoader([ours, env.loader])
             env.globals["cvstudio_icon"] = icon_svg
+            env.globals["cvstudio_band_ink"] = band_ink
+            env.globals["cvstudio_readable"] = readable
+            env.globals["cvstudio_swap"] = swap
             env.globals["cvstudio_sidebar_default"] = SIDEBAR_SECTIONS
             # SectionEnding is not told which section it ends; the sidebar's
             # SectionBeginning leaves a note here for it. Renders run one at

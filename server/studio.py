@@ -3381,7 +3381,7 @@ def available_themes() -> list[str]:
     except Exception:
         builtin = list(THEMES)
     # CV Studio's own themes first: they are the ones made to look finished.
-    return [t for t in themes.DEFAULTS if t not in builtin] + builtin
+    return [t for t in themes.DEFAULTS if t not in builtin and t not in themes.HIDDEN] + builtin
 
 
 def _unwrap(spec: dict) -> dict:

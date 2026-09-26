@@ -6927,8 +6927,8 @@ const SWATCHES=[["Navy","rgb(0, 79, 144)"],["Teal","rgb(0, 100, 90)"],
 const INK_KEYS=["name","headline","connections","section_titles","links"];
 /* Studio's name sits white on the colour band, so its colour is the band's:
    the section titles. The others keep a dark name beside the accent. */
-const inkKeys=t=>["studio","ledger","aurora"].includes(t)?["section_titles","links"]
-  :["sidebar","editorial","timeline"].includes(t)?["headline","section_titles","links"]:INK_KEYS;
+const inkKeys=t=>["studio","aurora"].includes(t)?["section_titles","links"]
+  :["sidebar","editorial","timeline","ledger"].includes(t)?["headline","section_titles","links"]:INK_KEYS;
 const rgbOf=v=>(/(\d+)\D+(\d+)\D+(\d+)/.exec(v||"")||[0,0,0,0]).slice(1).map(Number);
 const near=(a,b)=>{ const x=rgbOf(a),y=rgbOf(b); return Math.max(...x.map((v,i)=>Math.abs(v-y[i])))<40 };
 /* What an ATS reads cleanly, applied to a theme you switch to unless the
@@ -6979,8 +6979,10 @@ function paintThemes(){
       (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
       '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
       (t==="sidebar"
-        ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some, Workday among them, may mix the sidebar into your experience")+'">ATS ~</b>'
-        :'<b class="th-ats" title="'+esc("Reads in order in every ATS reader we test: text only, no icon characters")+'">ATS ✓</b>')+
+        ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some may mix the sidebar into your experience")+'">ATS ~</b>'
+        :t==="ledger"
+        ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some read the column of dates on its own, apart from each job")+'">ATS ~</b>'
+        :'<b class="th-ats" title="'+esc("Read in order by both kinds of PDF reader ATS use, in our tests; no icon characters in the text")+'">ATS ✓</b>')+
       '<em>'+(pp?pp+" page"+(pp===1?"":"s"):"")+'</em></span>'+
       (TH_SUITS[t]?'<span class="th-suits">'+esc(TH_SUITS[t])+'</span>':"")+'</button>'+
       '<div class="th-sw" role="group" aria-label="'+esc("Colour")+'">'+

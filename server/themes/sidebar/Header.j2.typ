@@ -17,7 +17,7 @@
   set align(start)
   set par(justify: false, leading: 0.6em, spacing: 0.9em)
 {% if cv.photo %}
-  align(center, box(clip: true, radius: 50%, image("{{ cv.photo|string }}", width: {{ design.header.photo_width }})))
+  align(center, box(clip: true, radius: 50%, image("{{ cv.photo.name }}", width: {{ design.header.photo_width }})))
   v(0.3cm)
 {% endif %}
   context { for c in cvstudio-side.final() { c } }

@@ -18,7 +18,7 @@
   let was = rendercv-config.get()
   rendercv-config.update(c => { c.insert("entries-date-and-location-width", 1.7cm); c.insert("entries-space-between-columns", 0.2cm); c.insert("entries-side-space", 0cm); c })
   block(above: 0.55cm, below: 0.25cm, {
-    set text(font: "{{ design.typography.font_family.section_titles }}", size: {{ design.typography.font_size.section_titles }}, fill: {{ acc }})
+    set text(font: "{{ design.typography.font_family.section_titles }}", size: {{ design.typography.font_size.section_titles }}, fill: {{ cvstudio_readable(design.colors.section_titles) }})
     cvstudio-title(title)
   })
   content-area(body)

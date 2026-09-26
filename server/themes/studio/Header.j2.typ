@@ -19,7 +19,7 @@
     )
 {% if cv.photo %}
     ],
-    [#box(clip: true, radius: 50%, image("{{ cv.photo|string }}", width: {{ design.header.photo_width }}))])
+    [#box(clip: true, radius: 50%, image("{{ cv.photo.name }}", width: {{ design.header.photo_width }}))])
 {% endif %}
   ]
 ]

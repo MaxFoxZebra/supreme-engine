@@ -10,23 +10,24 @@ tag, so a release is never published with nothing said about it.
 
 ## 0.29.0
 
-- **Six themes of CV Studio's own**, first in Design:
+- **Five themes of CV Studio's own**, first in Design:
   - **Aurora**: your name on a band that turns from the accent into a
     neighbouring hue, with section titles as tinted labels.
   - **Editorial**: a large book-face name, the headline in italics, a slim
-    accent stripe down the left edge, section titles in small capitals.
-  - **Timeline**: your jobs and schooling hang from a line down the left,
+    accent stripe down the edge, section titles in small capitals.
+  - **Timeline**: your jobs and schooling hang from a line down the side,
     a dot for each.
   - **Studio**: your name, headline and contact line on a band of colour
     across the top, section titles over an accent rule.
-  - **Ledger**: a left rail carries the section titles and each job's dates
-    and place, the content runs beside it. It looks like two columns and
-    reads in order in every ATS reader we test.
-  - **Sidebar**: skills, languages, certifications and interests in a tinted
-    column on the right. Marked ATS ~: most ATS read it in order, some
-    (Workday among them) may mix the column into your experience.
+  - **Ledger**: a rail carries the section titles and each job's dates and
+    place, the content runs beside it. Marked ATS ~: some readers take the
+    rail as a column of its own.
   Each is RenderCV's classic theme underneath, so every Design setting and
-  colour works on it; nothing is copied into your CV Studio folder.
+  colour works on it; nothing is copied into your CV Studio folder. All of
+  them take a photo, flow onto as many pages as the CV needs, and mirror for
+  right-to-left languages. The text on a band and the section titles pick
+  dark or light by contrast, so a pale accent stays readable. A sixth,
+  Sidebar, waits until its column carries onto later pages.
 - **Contact icons that an ATS does not read.** Turning icons on (Design >
   Header) now draws them as small pictures in the header's colour. RenderCV's
   own icons are characters of an icon font, which an ATS reads as junk in
