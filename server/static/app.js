@@ -4769,6 +4769,9 @@ function drawJobs(){
         (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
       '</span>'+
       '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'" title="'+esc([cv,letter].filter(Boolean).join(" · "))+'">'+docs+'</span>'
+               /* Sent without a CV linked: nothing to tailor any more, only
+                  a CV to name, on the application. */
+               :j.status!=="pending"?'<span class="docs none" title="'+esc(t("No CV linked"))+'">–</span>'
                :S.tailoring.has(j.id)
                  ?'<span class="docs busy">Tailoring\u2026</span>'
                  /* The busy label is rendered from state rather than written
@@ -5064,12 +5067,21 @@ function drawJobInspector(){
   const cvName=j.cv_path?j.cv_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
   const ltName=j.letter_path?j.letter_path.split("/").pop().replace(/\.(ya?ml|md)$/,""):null;
   const tailoring=S.tailoring&&S.tailoring.has(j.id);
+  /* A draft is where a CV is tailored; once the application is sent, the CV
+     is the one they have, and the question is which one that was. */
+  const sent=j.status!=="pending";
+  const cvOpts=((S.state&&S.state.documents)||[]).filter(d=>d.group==="My CVs");
   const cvCard=j.cv_path
     ? '<div class="ap-doc"><div class="pg" data-open-doc="'+esc(j.cv_path)+'" data-thumb="'+esc(j.cv_path)+
         '" role="button" tabindex="0" aria-label="Open the CV"><span>Rendering…</span></div>'+
-      '<div class="t"><b>CV</b><span>'+esc(cvName)+'</span></div>'+
+      '<div class="t"><b>'+esc(sent?t("The CV you sent"):t("CV"))+'</b><span>'+esc(cvName)+'</span></div>'+
       '<div class="a"><button class="obtn" data-open-doc="'+esc(j.cv_path)+'">Open</button>'+
         '<button class="obtn" id="job-ats" title="ATS check: what an applicant tracking system reads">ATS</button></div></div>'
+    : sent
+    ? '<div class="ap-doc"><div class="pg none"><label for="ap-cv-link">'+esc(t("Which CV did you send?"))+'</label>'+
+        '<select id="ap-cv-link"><option value="">'+esc(t("Choose…"))+'</option>'+
+        cvOpts.map(d=>'<option value="'+esc(d.path)+'">'+esc(d.label)+'</option>').join("")+'</select></div>'+
+      '<div class="t"><b>'+esc(t("The CV you sent"))+'</b><span>'+esc(t("Linked, it is there to re-read before an interview"))+'</span></div></div>'
     : '<div class="ap-doc"><div class="pg none"><span>No CV for this one yet</span>'+
         '<button class="obtn" data-tailor-here'+(tailoring?" disabled":"")+'>'+(tailoring?"Tailoring…":"Tailor a CV")+'</button></div>'+
       '<div class="t"><b>CV</b><span>Copied from your base CV</span></div></div>';
@@ -5157,6 +5169,8 @@ function drawJobInspector(){
     catch(e){ wr.disabled=false; toast(e.message,true) }
   };
   body.querySelectorAll("[data-tailor-here]").forEach(th=>th.onclick=()=>tailorFor(j.id));
+  const cvl=body.querySelector("#ap-cv-link");
+  if(cvl) cvl.onchange=()=>{ if(cvl.value) saveJob(j.id,{cv_path:cvl.value}) };
   const wirePaste=()=>{
     const sv=$("#ap-post-save"), ta=$("#ap-paste");
     if(sv) sv.onclick=()=>{ const v=ta.value.trim(); if(!v&&!j.description) return ta.focus();
@@ -5283,13 +5297,9 @@ function roundsHTML(j){
   };
   const last=rs.filter(r=>r.outcome).slice(-1)[0];
   const offer=last&&last.outcome==="failed"&&j.status==="interviewing";
-  /* An interview this week with no CV written for it is the thing to fix
-     first, so it says so here, with the button. */
-  const nextAt=interviewMoment(j), soon=nextAt&&nextAt>new Date()&&nextAt-new Date()<7*864e5;
-  const needCv=soon&&!j.cv_path&&!(S.tailoring&&S.tailoring.has(j.id));
+  /* No "tailor a CV" here: by the time there is an interview the CV went out
+     with the application. Which one it was is asked on the CV card. */
   return '<div class="block rounds" id="ap-rounds">'+
-    (needCv?'<div class="rd-cv"><span>'+esc(t("No tailored CV yet for this interview."))+'</span>'+
-      '<button type="button" class="obtn" data-tailor-here>'+esc(t("Tailor a CV"))+'</button></div>':'')+
     '<div class="bhead"><span class="blabel">'+esc(t("Interviews"))+'</span>'+
       '<span class="rd-sum">'+esc(sum)+'</span><span class="grow"></span>'+
       '<button class="obtn" data-rd-add>'+esc(t("+ Add a round"))+'</button></div>'+
@@ -6146,7 +6156,7 @@ function nextActions(){
     if(at&&at>now&&ivSoon(j)){
       const n=rs.findIndex(r=>!r.outcome&&r.at), r=rs[n]||{};
       const why=[rs.length>1&&n>=0?t("Round {n} of {m}",{n:n+1,m:rs.length}):"",r.kind?t(r.kind):"",
-        r.with?t("with {n}",{n:r.with}):"",!j.cv_path?t("no tailored CV yet"):""].filter(Boolean).join(" · ");
+        r.with?t("with {n}",{n:r.with}):""].filter(Boolean).join(" · ");
       out.push({j,rank:at-now<3*864e5?0:5,at:+at,dot:"live",what:t("Interview"),why,when:when(at),
         hot:at-now<3*36e5,act:t("Prepare"),run:()=>selectJob(j.id)});
     }
@@ -6343,8 +6353,10 @@ function drawCalOverview(ev){
         (j.location?' · '+esc(j.location):'')+'</span></div></div>'+
       '<div class="cal-cd" id="cal-cd"></div>'+
       '<div class="cal-checks">'+
+        /* They will ask about what is on the CV they have: re-read it. */
         '<span class="cal-check"><i class="'+(cvName?"ok":"no")+'">'+(cvName?"✓":"")+'</i>'+
-          (cvName?t("CV tailored")+' · '+esc(cvName):t("No tailored CV yet")+' · <button type="button" class="linkbtn" data-cal-tailor="'+esc(j.id)+'">'+t("Tailor a CV")+'</button>')+'</span>'+
+          (cvName?t("Re-read the CV you sent")+' · <button type="button" class="linkbtn" data-open-doc="'+esc(j.cv_path)+'">'+esc(cvName)+'</button>'
+            :t("Which CV did you send?")+' · <button type="button" class="linkbtn" data-open-job="'+esc(j.id)+'">'+t("Link it")+'</button>')+'</span>'+
         '<span class="cal-check"><i class="'+(words?"ok":"no")+'">'+(words?"✓":"")+'</i>'+
           (words?t("Posting saved"):t("Posting not saved"))+'</span>'+
         '<span class="cal-check"><i class="'+(j.notes?"ok":"no")+'">'+(j.notes?"✓":"")+'</i>'+
@@ -6644,8 +6656,9 @@ function calPopHTML(ivs){
       '<button class="obtn" data-ics="'+esc(j.id)+'">'+t("Add to my calendar")+'</button></div></div>';
 }
 function wireCal(){
-  $$("[data-cal-tailor]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); tailorFor(b.dataset.calTailor) });
+
   $$("#cal-body [data-open-job]").forEach(el=>el.onclick=ev=>{ if(ev.target.closest("[data-pop]")) return; openJob(el.dataset.openJob) });
+  $$("#cal-body [data-open-doc]").forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); openDoc(el.dataset.openDoc) });
   $$("#cal-body [data-ics]").forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); window.open("/api/calendar.ics?id="+encodeURIComponent(el.dataset.ics)+tok()) });
   $$("#cal-body .cal-md[data-day]").forEach(el=>el.onclick=()=>{ if(el.classList.contains("out")) return;
     S.calView="month"; S.calAnchor=el.dataset.day; drawCalendar(false) });

@@ -111,6 +111,13 @@ A polish and safety release on the way to 1.0.
     name on the page. French: the Journeys axis leaves room for
     "Aujourd'hui".
   - Sample letters match the CV (four years at Northwind).
+- **The CV follows the application:** tailoring is for drafts. Once an
+  application is sent, its CV is "the CV you sent": the application page
+  asks which one it was (a picker, not "Tailor a CV"), the table shows a
+  dash instead of "Not tailored", and interview time says "Re-read the CV
+  you sent" in the calendar instead of asking for a new one. The prompt to
+  tailor a CV before an interview is gone. In the sample, every application
+  that reached an interview has the CV it was sent with.
 - **Round four of the review:**
   - The email a person's row suggests fits the moment: a thank-you after a
     round in the last two days (to whoever was in it), a plain follow-up

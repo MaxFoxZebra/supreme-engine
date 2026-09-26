@@ -530,16 +530,23 @@ def build(studio, applications: int = 64) -> dict:
         made.append({**j, "status": "interviewing", "lang": j["language"]})
 
     # Tailored CVs for the applications furthest along, and letters for some.
-    order = {"offer": 0, "accepted": 1, "interviewing": 2, "refused": 3, "applied": 4}
+    # Every application that reached an interview was sent with a CV, so each
+    # of those has one; a few that are only awaiting a reply have one too.
+    order = {"offer": 0, "accepted": 1, "interviewing": 2, "refused": 3,
+             "rejected_interviewing": 3, "ghosted_interviewing": 3, "applied": 4}
     live = sorted((m for m in made if m["status"] in order), key=lambda m: order[m["status"]])
-    seen, tailored = set(), []
+    seen, tailored = {}, []
     # One per language first, so every flag has a CV behind it.
     firsts = [next((m for m in live if m["lang"] == c), None) for c in ("en", "fr", "es", "pt")]
     live = [m for m in firsts if m] + [m for m in live if m not in firsts]
     for m in live:
-        if m["company"] in seen or len(tailored) >= 5:
+        if m["company"] in seen:
+            # Two roles at one company: the CV made for the first went to both.
+            if m["status"] != "applied":
+                jobs.update_job(ws, m["id"], {"cv_path": seen[m["company"]]})
             continue
-        seen.add(m["company"])
+        if m["status"] == "applied" and len(tailored) >= 5:
+            continue
         slug = m["company"].lower().replace(" ", "-")
         src = bases.get(m["lang"], base)
         suffix = "" if m["lang"] == "en" or src is base else "." + m["lang"]
@@ -550,6 +557,7 @@ def build(studio, applications: int = 64) -> dict:
             studio.apply_patches(dest, [{"path": ["cv", "headline"],
                                          "value": f"Platform Engineer for {m['company']}"}])
         jobs.update_job(ws, m["id"], {"cv_path": studio.rel(dest)})
+        seen[m["company"]] = studio.rel(dest)
         tailored.append(m)
 
     BODIES = {
