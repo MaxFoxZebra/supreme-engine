@@ -3057,3 +3057,14 @@ textarea{resize:vertical}
 .pp-ask code{font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:4px 8px;border-radius:6px;background:var(--pp-trk);color:var(--pp-fg)}
 /* Found on in a new application: the same picker as on the application. */
 .nj-src{justify-self:start;min-width:220px}
+
+.rd-ready{display:block;margin-top:1px;font-size:12px;font-weight:600;color:var(--acc-text)}
+#pp-print{display:none}
+@media print{
+  body.pp-printing>*:not(#pp-print){display:none!important}
+  body.pp-printing #pp-print{display:block;color:#000;background:#fff;font:11pt/1.45 'IBM Plex Sans',sans-serif;padding:0}
+  #pp-print h1{font-size:18pt;margin:0 0 4pt}#pp-print .when{margin:0 0 14pt;color:#444}
+  #pp-print h2{font-size:12pt;margin:16pt 0 6pt;border-bottom:1px solid #999;padding-bottom:2pt}
+  #pp-print li{margin:0 0 8pt;break-inside:avoid}#pp-print li p{margin:3pt 0 0;color:#333}
+  #pp-print li p.blank{height:34pt;border-bottom:1px dotted #aaa}
+}

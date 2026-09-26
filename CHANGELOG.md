@@ -32,6 +32,10 @@ Interview prep.
   stay on any question it asks again, and your own questions are kept.
 - See all questions (with your answer notes) and the questions to ask, both
   editable, and your own added.
+- The round's row under Interviews says how ready you are ("Prep: 60%
+  ready"), and **Print a sheet** gives one page for the day: when and with
+  whom, the questions with your notes (or room to write), what backs each
+  ask of the posting, and the questions to ask.
 - **Documents by name, not file name.** A document written for an
   application reads "CV · Monzo" or "Letter · iFood", the others as words
   ("My CV"), in Documents, the editor's list and every picker; the file name

@@ -5305,7 +5305,9 @@ function roundsHTML(j){
         '<span class="rd-n '+(r.outcome||(r.at?"":"unset"))+'" aria-hidden="true">'+mark+'</span>'+
         '<span class="rd-tx"><b>'+esc(r.kind?t(r.kind):t("Interview"))+
           (r.with?' <span>· '+esc(t("with {n}",{n:r.with}))+'</span>':'')+'</b>'+
-          '<small>'+esc(roundWhen(j,r))+'</small></span>'+
+          '<small>'+esc(roundWhen(j,r))+'</small>'+
+          /* Filled in by the prep card once it knows how ready you are. */
+          (!r.outcome&&r.at?'<small class="rd-ready" data-rd-ready="'+esc(r.id)+'" hidden></small>':'')+'</span>'+
         (label?'<span class="rd-due '+tone+'">'+esc(label)+'</span>':'')+'</button>';
     if(isOpen){
       const zone=r.tz||"", guess=guessTz(j);
@@ -8076,13 +8078,17 @@ async function drawPrep(j){
         :esc(t("Made on this computer from the posting, the CV you sent and the kind of round."))+
           (aiOn?''
             :' <button type="button" class="linkbtn" id="pp-ai">'+esc(t("Connect an AI client for better questions"))+'</button>'))+
-      '<span class="grow"></span><button type="button" class="linkbtn" id="pp-askl">'+
+      '<span class="grow"></span><button type="button" class="linkbtn" id="pp-print">'+esc(t("Print a sheet"))+'</button>'+
+      '<button type="button" class="linkbtn" id="pp-askl">'+
         esc(r.with?t("Questions to ask {who}",{who:r.with.split(" ")[0]}):t("Questions to ask them"))+'</button></div>'+
   '</section>';
+  const rr=document.querySelector('[data-rd-ready="'+CSS.escape(r.id)+'"]');
+  if(rr){ rr.hidden=false; rr.textContent=t("Prep: {n}% ready",{n:pct}) }
   PREP.tick=setInterval(()=>{ const el=$("#pp-cd"); if(el) el.innerHTML=cd(); else clearInterval(PREP.tick) },30000);
   $("#pp-go").onclick=()=>rehearse(j);
   $("#pp-all").onclick=()=>prepSheet(j,"q");
   $("#pp-askl").onclick=()=>prepSheet(j,"a");
+  $("#pp-print").onclick=()=>prepPrint(j);
   const ai=$("#pp-ai"); if(ai) ai.onclick=()=>openSettings("ai");
   const cp=$("#pp-copy"); if(cp) cp.onclick=()=>{ navigator.clipboard.writeText(t("prepare my {co} interview",{co:j.company})).then(()=>toast(t("Copied"))) };
   $$("#ap-prep [data-pp-cv]").forEach(b=>b.onclick=()=>{ prepSave(j,{...PREP.data,cv_read:true}); openDoc(j.cv_path) });
@@ -8098,6 +8104,26 @@ async function prepSave(j,data){
   try{ const r=await post("/api/jobs/prep",{id:j.id,prep:data}); if(PREP.job===j.id) PREP.data=r }
   catch(e){ toast(e.message,true) }
   if(S.jsel===j.id&&!$("#rh")) drawPrep(j);
+}
+/* One page for the day: when and with whom, the questions with your notes,
+   what backs each ask of the posting, and what to ask them. Printed from
+   this window, with everything else hidden. */
+function prepPrint(j){
+  const d=PREP.data, nr=prepRound(j)||{}, r=nr.r||{};
+  const el=document.createElement("div"); el.id="pp-print";
+  el.innerHTML='<h1>'+esc(j.company)+' · '+esc(j.title)+'</h1>'+
+    '<p class="when">'+esc([t("Round {n} of {m}",{n:nr.n||1,m:nr.m||1}),r.kind?t(r.kind):"",r.with?t("with {n}",{n:r.with}):"",
+      nr.at?fmtKey(dayIn(nr.at),{weekday:"long",day:"numeric",month:"long"})+", "+hmIn(nr.at,userTz()):""].filter(Boolean).join(" · "))+'</p>'+
+    '<h2>'+esc(t("Likely questions"))+'</h2><ol>'+(d.questions||[]).map(q=>'<li><b>'+esc(q.q)+'</b>'+
+      (q.note?'<p>'+esc(q.note)+'</p>':'<p class="blank"></p>')+'</li>').join("")+'</ol>'+
+    ((d.stories||[]).length?'<h2>'+esc(t("What they ask for"))+'</h2><ul>'+d.stories.map(s=>'<li><b>'+esc(s.req)+'</b> — '+
+      (s.proof?esc(s.proof):'<em>'+esc(t("Nothing in your CV proves it yet"))+'</em>')+'</li>').join("")+'</ul>':'')+
+    '<h2>'+esc(t("Questions to ask them"))+'</h2><ul>'+(d.asks||[]).filter(a=>a.keep).map(a=>'<li>'+esc(a.q)+'</li>').join("")+'</ul>';
+  document.body.append(el); document.body.classList.add("pp-printing");
+  const done=()=>{ el.remove(); document.body.classList.remove("pp-printing"); removeEventListener("afterprint",done) };
+  addEventListener("afterprint",done);
+  window.print();
+  setTimeout(()=>{ if(document.body.contains(el)&&!matchMedia("print").matches) done() },1500);
 }
 /* Every question with its notes, your own added, and the questions to ask. */
 function prepSheet(j,focus){
