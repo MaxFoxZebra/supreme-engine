@@ -1853,9 +1853,9 @@ function obStep(){
     lede="Bring the CV you already have, or start from a blank one. Either way you get a "+
       "base CV every tailored copy starts from.";
     const srcs=[
-      ["pdf","PDF","Import a PDF of your CV","Contact details come out exactly. Jobs, "+
-        "education and skills are sorted into sections, and a connected AI client can tidy "+
-        "what the rules miss."],
+      ["pdf","PDF","Import your CV","A PDF, or an export from Reactive Resume or JSON "+
+        "Resume. Exports come across field by field; from a PDF, jobs, education and skills "+
+        "are sorted into sections, and a connected AI client can tidy what the rules miss."],
       ["linkedin",'<svg viewBox="0 0 448 512" aria-hidden="true"><use href="#board-linkedin"/></svg>',
         "Import from LinkedIn","Your data archive or your profile saved as PDF."],
       ["blank","+","Start from a blank CV","The starter layout, filled in as you go."]];
@@ -1877,12 +1877,12 @@ function obStep(){
       '<b>'+(OB.importing?"Reading it…":"Drop your "+(OB.src==="linkedin"?"LinkedIn file":"CV")+
         " here")+'</b>'+
       '<span>'+(OB.src==="linkedin"?"Your LinkedIn data archive (.zip), or your profile "+
-        "saved as PDF.":"A PDF of your CV, your LinkedIn profile saved as PDF, or your "+
-        "LinkedIn data archive (.zip).")+'</span>'+
+        "saved as PDF.":"A PDF of your CV, a Reactive Resume or JSON Resume export (.json), "+
+        "or your LinkedIn profile as a PDF or data archive (.zip).")+'</span>'+
       (OB.impErr?'<span class="err" role="alert">'+esc(OB.impErr)+'</span>':'')+
       '<button class="onb-btn" id="onb-pick"'+(OB.importing?" disabled":"")+'>Choose a file…</button>'+
       '<small>Read on this machine. Nothing is uploaded.</small>'+
-      '<input type="file" id="onb-file" accept=".pdf,.zip,application/pdf,application/zip" hidden>'+
+      '<input type="file" id="onb-file" accept=".pdf,.zip,.json,application/pdf,application/zip,application/json" hidden>'+
     '</div>';
     if(OB.src!=="blank") say="No file? Next starts from the blank CV.";
   }else if(i===2){

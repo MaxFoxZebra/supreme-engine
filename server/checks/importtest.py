@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import sys
 import tempfile
 import zipfile
@@ -184,13 +185,81 @@ def main() -> int:
         edu = cv["sections"]["education"][0]
         check("the degree is split from the subject",
               (edu.get("degree"), edu["area"], edu.get("start_date")) ==
-              ("Master's degree".replace("'", "’"), "Computer Science", "2012")
+              ("Master's degree".replace("'", "’"), "Computer Science", 2012)
               or (edu.get("degree"), edu["area"]) == ("Master's degree", "Computer Science"),
               repr(edu))
         ok, log = renders(cv)
         check("RenderCV renders it", ok, "" if ok else log)
     except ImportError:
         print("  skip  typst is not installed, so the PDF fixture cannot be built")
+
+    print("Reactive Resume export")
+    rr = {"basics": {"name": "Jo Rivera", "headline": "Platform Engineer", "email": "jo@example.com",
+                     "phone": "+33612345678", "location": "Lyon, France",
+                     "customFields": [{"link": "https://www.linkedin.com/in/jo-rivera"}]},
+          "summary": {"content": "<p>Builds <strong>boring</strong> platforms.</p>"},
+          "picture": {"url": "https://example.com/p.jpg", "hidden": False},
+          "sections": {
+              "experience": {"items": [
+                  {"company": "Northwind", "position": "Staff Engineer", "location": "Lyon",
+                   "period": "April 24 - Present",
+                   "description": "<ul><li><p>Moved 140 services to Kubernetes.</p></li>"
+                                  "<li><p>Cut the cloud bill by 31%.</p></li></ul>"},
+                  {"company": "Contoso", "position": "Engineer", "period": "Nov 19 - Sept 24",
+                   "description": "<p>Owned the deploy pipeline.</p>"},
+                  {"company": "Hidden Co", "position": "x", "period": "2010", "hidden": True}]},
+              "education": {"items": [{"school": "INSA Lyon", "area": "Computer Science",
+                                       "period": "2013-2018", "description": "<p>Majors in IT</p>"}]},
+              "skills": {"items": [{"name": "Infra", "keywords": ["Kubernetes", "Terraform"]}]},
+              "languages": {"items": [{"language": "French", "fluency": "Native"}]},
+              "certifications": {"items": [{"title": "Cloud Practitioner", "issuer": "AWS",
+                                            "date": "Oct 24"}]},
+              "interests": {"items": [{"name": "Motion Design", "keywords": []}]}},
+          "metadata": {"template": "ditto"}}
+    r = importer.import_file("resume.json", json.dumps(rr).encode())
+    cv = r["cv"]
+    exp = cv["sections"]["experience"]
+    check("recognised as Reactive Resume", r["source"] == "Reactive Resume", r["source"])
+    check("two-digit years and month names read as dates",
+          [(e["start_date"], e.get("end_date")) for e in exp] == [("2024-04", "present"), ("2019-11", "2024-09")],
+          repr([(e.get("start_date"), e.get("end_date")) for e in exp]))
+    check("list items become highlights, bold kept",
+          exp[0]["highlights"] == ["Moved 140 services to Kubernetes.", "Cut the cloud bill by 31%."]
+          and cv["sections"]["summary"] == ["Builds **boring** platforms."], repr(exp[0].get("highlights")))
+    check("hidden items stay out", len(exp) == 2)
+    check("a year alone is a number, so it prints as the year",
+          (cv["sections"]["education"][0]["start_date"], cv["sections"]["education"][0]["end_date"]) == (2013, 2018))
+    check("the LinkedIn link becomes a social network",
+          cv.get("social_networks") == [{"network": "LinkedIn", "username": "jo-rivera"}])
+    check("the photo is mentioned, not fetched", any("photo" in n for n in r["notes"]), repr(r["notes"]))
+    ok, log = renders(cv)
+    check("RenderCV renders it", ok, "" if ok else log)
+
+    print("JSON Resume")
+    jr = {"basics": {"name": "Sam Lee", "label": "Data Engineer", "email": "sam@example.com",
+                     "location": {"city": "Berlin", "countryCode": "DE"},
+                     "profiles": [{"network": "GitHub", "username": "samlee", "url": "https://github.com/samlee"}],
+                     "summary": "Moves data."},
+          "work": [{"name": "Acme", "position": "Data Engineer", "startDate": "2021-03-01",
+                    "highlights": ["Built the lakehouse."]}],
+          "education": [{"institution": "TU Berlin", "area": "Informatics", "studyType": "MSc",
+                         "startDate": "2016", "endDate": "2018"}],
+          "skills": [{"name": "Data", "keywords": ["Spark", "dbt"]}],
+          "languages": [{"language": "German", "fluency": "Native"}]}
+    r = importer.import_file("resume.json", json.dumps(jr).encode())
+    cv = r["cv"]
+    check("recognised as JSON Resume", r["source"] == "JSON Resume", r["source"])
+    check("work, education and profiles come across",
+          cv["sections"]["experience"][0]["end_date"] == "present"
+          and cv["sections"]["education"][0]["degree"] == "MSc"
+          and cv["social_networks"] == [{"network": "GitHub", "username": "samlee"}])
+    ok, log = renders(cv)
+    check("RenderCV renders it", ok, "" if ok else log)
+    try:
+        importer.import_file("x.json", b'{"name": 1}')
+        check("a JSON that is neither is refused", False)
+    except importer.ImportError_ as exc:
+        check("a JSON that is neither is refused", True, str(exc)[:60])
 
     print("Refusals")
     for name, data, why in (("notes.txt", b"hello", "an unsupported file"),

@@ -4914,7 +4914,7 @@ const API_TOKEN=__API_TOKEN__;
           <div class="grow"></div>
           <div class="dfilter" id="dfilter" role="group" aria-label="Language" hidden></div>
           <button class="obtn" id="btn-importdoc" title="A PDF of a CV, or your LinkedIn profile or data archive">Import&#8230;</button>
-          <input type="file" id="importdoc-file" accept=".pdf,.zip,application/pdf,application/zip" hidden>
+          <input type="file" id="importdoc-file" accept=".pdf,.zip,.json,application/pdf,application/zip,application/json" hidden>
           <button class="pbtn" id="btn-newdoc">New document&#8230;</button>
         </div>
         <div id="docbase"></div>

@@ -1,6 +1,6 @@
 """Bring a CV you already have into CV Studio.
 
-Two sources, read on this machine and nowhere else:
+Three sources, read on this machine and nowhere else:
 
 - LinkedIn's data archive (Settings > Data privacy > Get a copy of your data).
   It is a zip of CSV files -- Profile, Positions, Education, Skills and so on --
@@ -9,6 +9,8 @@ Two sources, read on this machine and nowhere else:
   More > Save to PDF. Only the text layer is available, so contact details are
   matched exactly and the rest is sorted into sections by their headings and
   dated lines. What could not be placed is reported rather than dropped.
+- A JSON export from another builder: Reactive Resume (rxresu.me) or the
+  JSON Resume standard. Fields map to fields, like the LinkedIn archive.
 
 The result is RenderCV's own `cv` block plus a summary of what was found, for
 the caller to preview and, once the person agrees, write. Nothing here signs
@@ -18,7 +20,9 @@ in anywhere or writes a file.
 from __future__ import annotations
 
 import csv
+import html
 import io
+import json
 import re
 import zipfile
 
@@ -79,8 +83,18 @@ def _phone(cv: dict, notes: list[str]) -> None:
                 num, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
             return
     except Exception:
-        pass
+        num = None
     del cv["phone"]
+    if num is not None:
+        # It has its country code, but the numbering plan RenderCV checks
+        # against does not know the range. Printed as text it still reaches
+        # the page, just without the validation.
+        shown = phonenumbers.format_number(num, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+        cv.setdefault("custom_connections", []).insert(
+            0, {"placeholder": shown, "url": None, "fontawesome_icon": "phone"})
+        notes.append(f"The phone number {shown} is not in the numbering plan RenderCV checks "
+                     "against, so it is shown as plain text in the header instead.")
+        return
     notes.append(f"The phone number {raw} has no country code, so it was left out. "
                  "Add it with its code, like +33 6 12 34 56 78.")
 
@@ -88,6 +102,14 @@ def _phone(cv: dict, notes: list[str]) -> None:
 def _found(cv: dict, source: str, notes: list[str]) -> dict:
     """What came across, counted, for the person to check before it is written."""
     _phone(cv, notes)
+    # A year alone has to reach RenderCV as a number: written as text,
+    # "2013" prints as "Jan 2013".
+    for items in (cv.get("sections") or {}).values():
+        for e in items if isinstance(items, list) else []:
+            if isinstance(e, dict):
+                for k in ("start_date", "end_date", "date"):
+                    if isinstance(e.get(k), str) and re.fullmatch(r"\d{4}", e[k]):
+                        e[k] = int(e[k])
     sec = cv.get("sections") or {}
     contact = [k for k in ("name", "headline", "location", "email", "phone", "website")
                if cv.get(k)] + (["social networks"] if cv.get("social_networks") else [])
@@ -625,6 +647,321 @@ def from_pdf(data: bytes) -> dict:
     return _found(cv, "PDF", notes)
 
 
+# ---------------------------------------------------------------------- JSON
+def _html_text(fragment: str | None) -> tuple[list[str], list[str]]:
+    """(paragraphs, bullets) out of a rich-text field: list items become
+    highlights, paragraphs stay text, bold stays bold."""
+    frag = fragment or ""
+    if "<" not in frag:
+        lines = [ln.strip(" \t•-*") for ln in html.unescape(frag).splitlines()]
+        lines = [ln for ln in lines if ln]
+        return (lines, []) if len(lines) < 2 else ([], lines)
+    frag = re.sub(r"(?is)<(strong|b)>(.*?)</\1>", r"**\2**", frag)
+    bullets = [re.sub(r"<[^>]+>", " ", li) for li in re.findall(r"(?is)<li[^>]*>(.*?)</li>", frag)]
+    rest = re.sub(r"(?is)<(ul|ol)[^>]*>.*?</\1>", "\n", frag)
+    paras = [re.sub(r"<[^>]+>", " ", p) for p in re.split(r"(?i)</p>|<br\s*/?>|</div>", rest)]
+    tidy = lambda t: re.sub(r"\s+", " ", html.unescape(t)).strip()
+    return [t for t in map(tidy, paras) if t], [t for t in map(tidy, bullets) if t]
+
+
+def _period(s: str | None) -> tuple[str | None, str | None]:
+    """'April 24 - Present', 'Nov 22 - Sept 24', '2013-2018', 'Jan 2020 – Mar 2021'."""
+    s = (s or "").strip()
+    if not s:
+        return None, None
+    parts = [p.strip() for p in re.split(r"\s+[-–—]\s+|(?<=\d)[-–—](?=\d)|\s+to\s+", s) if p.strip()]
+
+    def one(p: str) -> str | None:
+        got = _date(p)
+        if got:
+            return got
+        m = re.fullmatch(r"([A-Za-z]{3,})\.?\s+'?(\d{2})", p)
+        if m and m.group(1)[:3].lower() in MONTHS:
+            return f"20{m.group(2)}-{MONTHS[m.group(1)[:3].lower()]:02d}"
+        return None
+    start = one(parts[0]) if parts else None
+    end = one(parts[1]) if len(parts) > 1 else None
+    return start, end
+
+
+def _dated(entry: dict, start: str | None, end: str | None, raw: str | None, notes: list[str],
+           what: str) -> None:
+    if start:
+        entry["start_date"] = start
+        if end:
+            entry["end_date"] = end
+    elif raw:
+        notes.append(f"The dates of {what} ({raw}) could not be read; add them in the editor.")
+
+
+def _described(entry: dict, fragment: str | None) -> None:
+    paras, bullets = _html_text(fragment)
+    if paras:
+        entry["summary"] = " ".join(paras)
+    if bullets:
+        entry["highlights"] = bullets
+
+
+def _network(url: str, label: str = "") -> dict | None:
+    for net, pat in (("LinkedIn", r"linkedin\.com/in/([^/?#]+)"), ("GitHub", r"github\.com/([^/?#]+)"),
+                     ("GitLab", r"gitlab\.com/([^/?#]+)"), ("X", r"(?:twitter|x)\.com/([^/?#]+)")):
+        m = re.search(pat, url or "", re.I)
+        if m:
+            return {"network": net, "username": m.group(1)}
+    return None
+
+
+def from_reactive_resume(d: dict) -> dict:
+    notes: list[str] = []
+    b = d.get("basics") or {}
+    cv: dict = {k: str(b[k]).strip() for k in ("name", "headline", "email", "phone", "location")
+                if str(b.get(k) or "").strip()}
+    site = b.get("website") or b.get("url") or {}
+    site = site.get("url") or site.get("href") if isinstance(site, dict) else site
+    if site:
+        cv["website"] = site if str(site).startswith("http") else "https://" + site
+    sec_all = d.get("sections") or {}
+    nets = []
+    for f in b.get("customFields") or []:
+        n = _network(f.get("link") or f.get("text") or "")
+        if n:
+            nets.append(n)
+    prof = (sec_all.get("profiles") or {})
+    for it in prof.get("items") or []:
+        if it.get("hidden"):
+            continue
+        url = (it.get("url") or {}).get("href") if isinstance(it.get("url"), dict) else it.get("url")
+        n = _network(url or "") or ({"network": it.get("network"), "username": it.get("username")}
+                                    if it.get("network") and it.get("username") else None)
+        if n and n not in nets:
+            nets.append(n)
+    if nets:
+        cv["social_networks"] = nets
+
+    sections: dict = {}
+    summ = d.get("summary") or sec_all.get("summary") or {}
+    if not summ.get("hidden"):
+        paras, bullets = _html_text(summ.get("content"))
+        if paras or bullets:
+            sections["summary"] = paras + bullets
+
+    def items(key: str) -> list[dict]:
+        s = sec_all.get(key) or {}
+        if s.get("hidden") or s.get("visible") is False:
+            return []
+        return [i for i in s.get("items") or [] if not i.get("hidden") and i.get("visible", True)]
+
+    exp = []
+    for it in items("experience"):
+        entry = {"company": it.get("company") or "", "position": it.get("position") or ""}
+        if it.get("location"):
+            entry["location"] = it["location"]
+        raw = it.get("period") or it.get("date")
+        _dated(entry, *_period(raw), raw, notes, entry["company"] or "a role")
+        _described(entry, it.get("description") or it.get("summary"))
+        exp.append(entry)
+    if exp:
+        sections["experience"] = exp
+
+    edu = []
+    for it in items("education"):
+        entry = {"institution": it.get("school") or it.get("institution") or "",
+                 "area": it.get("area") or it.get("studyType") or ""}
+        if it.get("degree"):
+            entry["degree"] = it["degree"]
+        if it.get("location"):
+            entry["location"] = it["location"]
+        raw = it.get("period") or it.get("date")
+        _dated(entry, *_period(raw), raw, notes, entry["institution"] or "a school")
+        _described(entry, it.get("description") or it.get("summary"))
+        if it.get("grade") or it.get("score"):
+            entry.setdefault("highlights", []).append(f"Grade: {it.get('grade') or it.get('score')}")
+        edu.append(entry)
+    if edu:
+        sections["education"] = edu
+
+    for key, title in (("projects", "projects"), ("volunteer", "volunteering"),
+                       ("awards", "awards"), ("publications", "publications")):
+        out = []
+        for it in items(key):
+            name = it.get("name") or it.get("title") or it.get("organization") or ""
+            if not name:
+                continue
+            entry = {"name": name}
+            by = it.get("awarder") or it.get("publisher") or it.get("position")
+            raw = it.get("period") or it.get("date")
+            start, end = _period(raw)
+            if start and end:
+                entry["start_date"], entry["end_date"] = start, end
+            elif start:
+                entry["date"] = start
+            _described(entry, it.get("description") or it.get("summary"))
+            if by:
+                entry["summary"] = by + (". " + entry["summary"] if entry.get("summary") else "")
+            out.append(entry)
+        if out:
+            sections[title] = out
+
+    skills = [{"label": it.get("name") or "",
+               "details": ", ".join(it.get("keywords") or []) or it.get("description") or it.get("proficiency") or ""}
+              for it in items("skills") if it.get("name")]
+    skills = [s for s in skills if s["details"]] + [s for s in skills if not s["details"]]
+    if skills:
+        sections["skills"] = [s if s["details"] else s["label"] for s in skills]
+    langs = [{"label": it.get("language") or it.get("name") or "",
+              "details": it.get("fluency") or it.get("description") or ""}
+             for it in items("languages") if it.get("language") or it.get("name")]
+    if langs:
+        sections["languages"] = [l if l["details"] else l["label"] for l in langs]
+    certs = []
+    for it in items("certifications"):
+        name = it.get("title") or it.get("name")
+        if not name:
+            continue
+        entry = {"name": name + (f", {it['issuer']}" if it.get("issuer") else "")}
+        start, _ = _period(it.get("date"))
+        if start:
+            entry["date"] = start
+        certs.append(entry)
+    if certs:
+        sections["certifications"] = certs
+    interests = []
+    for it in items("interests"):
+        kw = ", ".join(it.get("keywords") or [])
+        if it.get("name"):
+            interests.append(f"{it['name']}: {kw}" if kw else it["name"])
+    if interests:
+        sections["interests"] = interests
+    for cs in d.get("customSections") or []:
+        if cs.get("hidden") or not cs.get("items"):
+            continue
+        notes.append(f"The custom section “{cs.get('title') or 'Custom'}” was left out; "
+                     "copy it over in the editor if you need it.")
+    if sections:
+        cv["sections"] = sections
+    pic = d.get("picture") or b.get("picture") or {}
+    if isinstance(pic, dict) and pic.get("url") and not pic.get("hidden"):
+        notes.append("Your photo stays on Reactive Resume's site. Add it under Design > Photo; "
+                     "CV Studio keeps it on this computer.")
+    if not cv.get("name"):
+        notes.append("No name was found in the file.")
+    return _found(cv, "Reactive Resume", notes)
+
+
+def from_json_resume(d: dict) -> dict:
+    notes: list[str] = []
+    b = d.get("basics") or {}
+    cv: dict = {}
+    for src, dst in (("name", "name"), ("label", "headline"), ("email", "email"),
+                     ("phone", "phone")):
+        if str(b.get(src) or "").strip():
+            cv[dst] = str(b[src]).strip()
+    loc = b.get("location") or {}
+    place = ", ".join(x for x in (loc.get("city"), loc.get("region"), loc.get("countryCode")) if x)
+    if place:
+        cv["location"] = place
+    if b.get("url"):
+        cv["website"] = b["url"]
+    nets = []
+    for p in b.get("profiles") or []:
+        n = _network(p.get("url") or "") or ({"network": p["network"], "username": p["username"]}
+                                            if p.get("network") and p.get("username") else None)
+        if n:
+            nets.append(n)
+    if nets:
+        cv["social_networks"] = nets
+    sections: dict = {}
+    if b.get("summary"):
+        sections["summary"] = [p.strip() for p in re.split(r"\n\s*\n", b["summary"]) if p.strip()]
+    exp = []
+    for w in d.get("work") or []:
+        entry = {"company": w.get("name") or w.get("company") or "", "position": w.get("position") or ""}
+        if w.get("location"):
+            entry["location"] = w["location"]
+        start, end = _date(w.get("startDate")), _date(w.get("endDate"))
+        if start:
+            entry["start_date"], entry["end_date"] = start, end or "present"
+        if w.get("summary"):
+            entry["summary"] = w["summary"]
+        if w.get("highlights"):
+            entry["highlights"] = list(w["highlights"])
+        exp.append(entry)
+    if exp:
+        sections["experience"] = exp
+    edu = []
+    for e in d.get("education") or []:
+        entry = {"institution": e.get("institution") or "", "area": e.get("area") or ""}
+        if e.get("studyType"):
+            entry["degree"] = e["studyType"]
+        start, end = _date(e.get("startDate")), _date(e.get("endDate"))
+        if start:
+            entry["start_date"] = start
+        if end:
+            entry["end_date"] = end
+        if e.get("courses"):
+            entry["highlights"] = list(e["courses"])
+        edu.append(entry)
+    if edu:
+        sections["education"] = edu
+    proj = []
+    for p in d.get("projects") or []:
+        if not p.get("name"):
+            continue
+        entry = {"name": p["name"]}
+        if p.get("description"):
+            entry["summary"] = p["description"]
+        if p.get("highlights"):
+            entry["highlights"] = list(p["highlights"])
+        start, end = _date(p.get("startDate")), _date(p.get("endDate"))
+        if start and end:
+            entry["start_date"], entry["end_date"] = start, end
+        elif start:
+            entry["date"] = start
+        proj.append(entry)
+    if proj:
+        sections["projects"] = proj
+    skills = [{"label": s["name"], "details": ", ".join(s.get("keywords") or []) or s.get("level") or ""}
+              for s in d.get("skills") or [] if s.get("name")]
+    if skills:
+        sections["skills"] = [s if s["details"] else s["label"] for s in skills]
+    langs = [{"label": l["language"], "details": l.get("fluency") or ""}
+             for l in d.get("languages") or [] if l.get("language")]
+    if langs:
+        sections["languages"] = [l if l["details"] else l["label"] for l in langs]
+    certs = []
+    for c in d.get("certificates") or []:
+        if not c.get("name"):
+            continue
+        entry = {"name": c["name"] + (f", {c['issuer']}" if c.get("issuer") else "")}
+        if _date(c.get("date")):
+            entry["date"] = _date(c.get("date"))
+        certs.append(entry)
+    if certs:
+        sections["certifications"] = certs
+    interests = [i["name"] + (": " + ", ".join(i["keywords"]) if i.get("keywords") else "")
+                 for i in d.get("interests") or [] if i.get("name")]
+    if interests:
+        sections["interests"] = interests
+    if sections:
+        cv["sections"] = sections
+    if not cv.get("name"):
+        notes.append("No name was found in basics.")
+    return _found(cv, "JSON Resume", notes)
+
+
+def from_json(data: bytes) -> dict:
+    try:
+        d = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ImportError_("That file is not valid JSON.") from exc
+    if not isinstance(d, dict) or not isinstance(d.get("basics"), dict):
+        raise ImportError_("This JSON is neither a Reactive Resume export nor a JSON Resume "
+                           "file: it has no “basics”.")
+    if isinstance(d.get("sections"), dict):
+        return from_reactive_resume(d)
+    return from_json_resume(d)
+
+
 def import_file(filename: str, data: bytes) -> dict:
     """Route a file to the reader for its kind."""
     name = (filename or "").lower()
@@ -632,4 +969,7 @@ def import_file(filename: str, data: bytes) -> dict:
         return from_linkedin_zip(data)
     if name.endswith(".pdf") or data[:4] == b"%PDF":
         return from_pdf(data)
-    raise ImportError_("CV Studio can import a PDF, or LinkedIn's data archive (.zip).")
+    if name.endswith(".json") or data.lstrip()[:1] == b"{":
+        return from_json(data)
+    raise ImportError_("CV Studio can import a PDF, LinkedIn's data archive (.zip), "
+                       "or a Reactive Resume or JSON Resume file (.json).")

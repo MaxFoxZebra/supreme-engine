@@ -8,6 +8,21 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.28.0
+
+- **Import from Reactive Resume and JSON Resume.** A `.json` export from
+  Reactive Resume (rxresu.me) or a JSON Resume file comes across field by
+  field, in Setup and under Documents > Import: contact details and profiles,
+  summary, jobs with their bullet points, education, skills with their
+  keywords, languages, certifications, projects and interests. Hidden items
+  stay out; the photo stays on their site, and the import says so.
+- **Years print as years.** An imported date with only a year (2013–2018)
+  printed as "Jan 2013 – Jan 2018"; every import now writes it the way
+  RenderCV prints it as the year.
+- **A phone number RenderCV does not recognise is kept.** One with its
+  country code that the numbering plan does not know yet is shown in the
+  header as text instead of being dropped.
+
 ## 0.27.0
 
 - **Postings read from the job board itself.** An AI client adding an
