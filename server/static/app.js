@@ -6842,7 +6842,7 @@ const DZ_GROUPS={
   colors:"Every colour on the page. Links and section titles are the ones people notice.",
   typography:"Fonts, sizes and weight for each part of the page.",
   links:"How links look on the page and in the PDF.",
-  header:"Your name, headline and contact line at the top of page one.",
+  header:"Your name, headline and contact line at the top of page one. Icons are drawn as pictures, so an ATS reads only the text beside them.",
   section_titles:"How each section heading is drawn.",
   sections:"Spacing between entries, and whether a section may break across pages.",
   entries:"The layout inside each entry: the date column, bullets and spacing.",
@@ -6911,16 +6911,22 @@ async function fillThemePreviews(){
    first, then four that read well on paper. A colour sets the name, headline,
    contact line, section titles and links together; the wheel opens Colors for
    anything else. "Suits" is a hint about where a theme is usually seen. */
-const TH_INK={classic:"rgb(0, 79, 144)",engineeringclassic:"rgb(0, 79, 144)",moderncv:"rgb(0, 79, 144)",
+const TH_INK={studio:"rgb(31, 78, 121)",ledger:"rgb(176, 74, 44)",sidebar:"rgb(31, 111, 107)",
+  classic:"rgb(0, 79, 144)",engineeringclassic:"rgb(0, 79, 144)",moderncv:"rgb(0, 79, 144)",
   ember:"rgb(155, 35, 25)",opal:"rgb(0, 100, 90)",ink:"rgb(42, 24, 82)",
   harvard:"rgb(0, 0, 0)",sb2nov:"rgb(0, 0, 0)",engineeringresumes:"rgb(0, 0, 0)"};
-const TH_SUITS={classic:"Almost anywhere",ember:"Education, health, non-profits",
+const TH_SUITS={studio:"Almost anywhere, with presence",ledger:"Consulting, product, design",
+  sidebar:"Read by people: referrals, small companies",classic:"Almost anywhere",ember:"Education, health, non-profits",
   engineeringclassic:"Engineering, science",engineeringresumes:"A long career on one page",
   harvard:"Finance, law, consulting",ink:"Design, media, writing",moderncv:"Academia, research",
   opal:"Tech, product, startups",sb2nov:"Software, US style"};
 const SWATCHES=[["Navy","rgb(0, 79, 144)"],["Teal","rgb(0, 100, 90)"],
   ["Burgundy","rgb(122, 31, 43)"],["Graphite","rgb(40, 40, 40)"]];
 const INK_KEYS=["name","headline","connections","section_titles","links"];
+/* Studio's name sits white on the colour band, so its colour is the band's:
+   the section titles. The others keep a dark name beside the accent. */
+const inkKeys=t=>t==="studio"||t==="ledger"?["section_titles","links"]
+  :t==="sidebar"?["headline","section_titles","links"]:INK_KEYS;
 const rgbOf=v=>(/(\d+)\D+(\d+)\D+(\d+)/.exec(v||"")||[0,0,0,0]).slice(1).map(Number);
 const near=(a,b)=>{ const x=rgbOf(a),y=rgbOf(b); return Math.max(...x.map((v,i)=>Math.abs(v-y[i])))<40 };
 /* What an ATS reads cleanly, applied to a theme you switch to unless the
@@ -6939,7 +6945,7 @@ function setRow(row,v){
   else el.value=v==null?"":v;
 }
 function inkNow(theme){
-  const r=dzRow(["colors","name"]);
+  const r=dzRow(["colors","section_titles"]);
   return r&&S.schemaTheme===theme?rowValue(r):TH_INK[theme]||"";
 }
 async function pickTheme(theme,ink){
@@ -6951,7 +6957,7 @@ async function pickTheme(theme,ink){
     ATS_SAFE.forEach(([p,v])=>{ const r=dzRow(p); if(r&&getAt(saved,p)===undefined) setRow(r,v) });
     setTimeout(fillThemePreviews,0);
   }
-  if(ink!==undefined) INK_KEYS.forEach(k=>{ const r=dzRow(["colors",k]);
+  if(ink!==undefined) inkKeys(theme).forEach(k=>{ const r=dzRow(["colors",k]);
     if(r) ink?setRow(r,ink):resetRow(r) });
   markChanged(); paintDesignNav(); paintThemes(); touch();
 }
@@ -6970,7 +6976,9 @@ function paintThemes(){
       '<button class="thumbwrap" role="radio" aria-checked="'+String(t===cur)+'" data-theme="'+esc(t)+'">'+
       (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
       '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
-      '<b class="th-ats" title="'+esc("Contact details as text, links written out, no icons")+'">ATS ✓</b>'+
+      (t==="sidebar"
+        ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some, Workday among them, may mix the sidebar into your experience")+'">ATS ~</b>'
+        :'<b class="th-ats" title="'+esc("Reads in order in every ATS reader we test: text only, no icon characters")+'">ATS ✓</b>')+
       '<em>'+(pp?pp+" page"+(pp===1?"":"s"):"")+'</em></span>'+
       (TH_SUITS[t]?'<span class="th-suits">'+esc(TH_SUITS[t])+'</span>':"")+'</button>'+
       '<div class="th-sw" role="group" aria-label="'+esc("Colour")+'">'+

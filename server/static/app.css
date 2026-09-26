@@ -2254,7 +2254,9 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .th-ats{font-size:10.5px;font-weight:600;line-height:18px;padding:0 6px;border-radius:9px;white-space:nowrap;
   background:color-mix(in srgb,#3f9f7f 16%,transparent);color:#235c47}
 :root[data-theme="dark"] .th-ats{color:#8fd4b6}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .th-ats{color:#8fd4b6}}
+.th-ats.warn{background:color-mix(in srgb,#c08a3e 18%,transparent);color:#7a4a12}
+:root[data-theme="dark"] .th-ats.warn{color:#e8bc7c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .th-ats{color:#8fd4b6}:root:not([data-theme="light"]) .th-ats.warn{color:#e8bc7c}}
 .th-suits{padding:0 3px;font-size:12px;line-height:1.35;color:var(--t600)}
 .th-sw{display:flex;align-items:center;gap:8px;padding:2px 3px 0}
 .th-sw .sw{width:16px;height:16px;padding:0;border:0;border-radius:50%;background:var(--c);flex:none;

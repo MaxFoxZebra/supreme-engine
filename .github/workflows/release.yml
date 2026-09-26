@@ -175,10 +175,13 @@ jobs:
           # which the server reads from _MEIPASS at runtime. Without --add-data
           # they are simply absent from the bundle: the funnel chart fails to
           # load its scripts and the interface falls back to a system face.
+          # server/themes holds CV Studio's own theme templates (.typ), read
+          # the same way.
           SEP=":"; [ "$RUNNER_OS" = "Windows" ] && SEP=";"
           PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
             --name cv-studio-server \
             --add-data "static${SEP}static" \
+            --add-data "themes${SEP}themes" \
             --collect-all rendercv \
             --collect-all rendercv_fonts \
             --collect-all typst \
@@ -197,6 +200,9 @@ jobs:
             --hidden-import cjkfonts \
             --hidden-import sample \
             --hidden-import backups \
+            --hidden-import themes \
+            --hidden-import posting \
+            --hidden-import prep \
             --exclude-module PIL \
             --paths . \
             server_main.py

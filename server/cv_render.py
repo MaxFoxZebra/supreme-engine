@@ -113,6 +113,13 @@ def _render_in_process_locked(yaml_path: Path, out_dir: Path) -> tuple[bool, str
     entry_point = rendercv_cli()
     if entry_point is None:
         return False, "rendercv is installed but its CLI could not be found"
+    # CV Studio's own themes and its SVG contact icons, taught to RenderCV
+    # before its first render. A failure here leaves RenderCV as it ships.
+    try:
+        import themes
+        themes.install()
+    except Exception:
+        pass
 
     argv, cwd = sys.argv, Path.cwd()
     buf = io.StringIO()

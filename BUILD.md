@@ -166,6 +166,7 @@ SEP=";"   # ":" on macOS and Linux
 PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
   --name cv-studio-server \
   --add-data "static${SEP}static" \
+  --add-data "themes${SEP}themes" \
   --collect-all rendercv \
   --collect-all rendercv_fonts \
   --collect-all typst \
@@ -177,6 +178,7 @@ PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
   --hidden-import studio \
   --hidden-import mcp_server \
   --hidden-import ats \
+  --hidden-import themes \
   --paths . \
   server_main.py
 

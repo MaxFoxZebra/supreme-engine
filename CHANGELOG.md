@@ -8,6 +8,24 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.29.0
+
+- **Three themes of CV Studio's own**, first in Design:
+  - **Studio**: your name, headline and contact line on a band of colour
+    across the top, section titles over an accent rule.
+  - **Ledger**: a left rail carries the section titles and each job's dates
+    and place, the content runs beside it. It looks like two columns and
+    reads in order in every ATS reader we test.
+  - **Sidebar**: skills, languages, certifications and interests in a tinted
+    column on the right. Marked ATS ~: most ATS read it in order, some
+    (Workday among them) may mix the column into your experience.
+  Each is RenderCV's classic theme underneath, so every Design setting and
+  colour works on it; nothing is copied into your CV Studio folder.
+- **Contact icons that an ATS does not read.** Turning icons on (Design >
+  Header) now draws them as small pictures in the header's colour. RenderCV's
+  own icons are characters of an icon font, which an ATS reads as junk in
+  front of your email and phone; these leave only the text. Off by default.
+
 ## 0.28.0
 
 - **Import from Reactive Resume and JSON Resume.** A `.json` export from

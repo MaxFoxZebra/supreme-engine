@@ -74,6 +74,7 @@ import languages  # noqa: E402
 import letters  # noqa: E402
 import backups  # noqa: E402
 import posting  # noqa: E402
+import themes  # noqa: E402
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -3376,9 +3377,11 @@ def available_themes() -> list[str]:
     """
     try:
         from rendercv.schema.models.design.built_in_design import available_themes as at
-        return list(at)
+        builtin = list(at)
     except Exception:
-        return THEMES
+        builtin = list(THEMES)
+    # CV Studio's own themes first: they are the ones made to look finished.
+    return [t for t in themes.DEFAULTS if t not in builtin] + builtin
 
 
 def _unwrap(spec: dict) -> dict:
@@ -3426,14 +3429,19 @@ def _describe(spec: dict, defs: dict, path: list, group: str, depth: int = 0) ->
 def design_schema(theme: str) -> dict:
     """Every design option for a theme, described well enough to build a UI from."""
     try:
-        from rendercv.schema.models.design.built_in_design import built_in_design_adapter
-        sch = built_in_design_adapter.json_schema()
+        if theme in themes.DEFAULTS:
+            # One of CV Studio's: classic's options, with the theme's own
+            # defaults, so they do not read as changes you made.
+            sch = themes.theme_classes()[theme].model_json_schema()
+        else:
+            from rendercv.schema.models.design.built_in_design import built_in_design_adapter
+            sch = built_in_design_adapter.json_schema()
     except Exception as exc:
         return {"groups": [], "themes": available_themes(), "error": str(exc)}
 
     defs = sch.get("$defs", {})
-    branch = None
-    for b in sch.get("oneOf", []):
+    branch = sch if theme in themes.DEFAULTS else None
+    for b in sch.get("oneOf", []) if branch is None else []:
         model = defs.get(b.get("$ref", "").split("/")[-1], {})
         if (model.get("properties", {}).get("theme", {}) or {}).get("const") == theme:
             branch = model
@@ -3454,6 +3462,13 @@ def design_schema(theme: str) -> dict:
         # Forced off at render time (cv_render.FORCED), so a switch for it
         # would be a control that does nothing.
         fields = [f for f in fields if f["path"] != ["page", "show_top_note"]]
+        own = themes.DEFAULTS.get(theme)
+        for f in fields if own else []:
+            node = own
+            for k in f["path"]:
+                node = node.get(k) if isinstance(node, dict) else None
+            if node is not None and not isinstance(node, dict):
+                f["default"] = node
         if fields:
             groups.append({"name": gname, "fields": fields})
     return {"groups": groups, "themes": available_themes()}
