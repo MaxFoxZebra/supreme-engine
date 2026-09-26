@@ -101,6 +101,9 @@ jobs:
       - name: Interview prep
         run: python checks/preptest.py
 
+      - name: Posting from a link
+        run: python checks/postingtest.py
+
       - name: Save to CV Studio
         run: python checks/cliptest.py
 

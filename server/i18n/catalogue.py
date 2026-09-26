@@ -663,6 +663,8 @@ C = {
     "Remove this entry": ("Supprimer cette entrée", "Eliminar esta entrada", "Remover esta entrada"),
     "Remove this round": ("Supprimer cette étape", "Quitar esta ronda", "Remover esta etapa"),
     "Rename": ("Renommer", "Renombrar", "Renomear"),
+    "Rename it": ("Le renommer", "Renombrarla", "Renomear"),
+    "Rename it to “{role}”, as the page says": ("Le renommer « {role} », comme sur la page", "Renombrarla «{role}», como dice la página", "Renomear para “{role}”, como diz a página"),
     "Rename or delete": ("Renommer ou supprimer", "Renombrar o eliminar", "Renomear ou excluir"),
     "Rename or delete this document": ("Renommer ou supprimer ce document", "Renombrar o eliminar este documento", "Renomear ou excluir este documento"),
     "Rename or delete {name}": ("Renommer ou supprimer {name}", "Renombrar o eliminar {name}", "Renomear ou excluir {name}"),

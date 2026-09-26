@@ -100,18 +100,19 @@ if __name__ == "__main__":
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
                     "get_interview_prep", "save_interview_prep",
-                    "set_company_logo"}
+                    "set_company_logo", "read_posting"}
     check("every tool is advertised", set(tools) == documents | applications,
           ",".join(sorted(set(tools) ^ (documents | applications))) or "exact match")
     check("no delete tool reaches the applications",
           not any("delete" in t or "remove" in t for t in tools),
           ",".join(sorted(tools)))
     # Structural, not advisory: a model cannot rename a company because no
-    # parameter exists to do it with.
+    # parameter exists to do it with. A title can only be set to the one its
+    # posting gives, which the next checks try.
     writers = ("set_job_status", "update_job_tracking")
     params = {p for t in writers for p in tools[t]["inputSchema"]["properties"]}
     check("no write tool can rename or overwrite",
-          not ({"company", "title", "notes"} & params), ",".join(sorted(params)))
+          not ({"company", "notes"} & params), ",".join(sorted(params)))
     check("tool descriptions survived the decorator",
           all(tools[t].get("description") for t in tools))
     check("render_cv still declares its path argument",
@@ -233,6 +234,11 @@ if __name__ == "__main__":
     check("add_job creates an application", f'"company": "{co}"' in text(r),
           text(r)[:60].replace("\n", " "))
     job_id = json.loads(text(r))["id"]
+    r = call("update_job_tracking", {"job_id": job_id, "title": "Anything I like"})
+    check("a title is not set without a posting to check it against", errored(r),
+          text(r)[:80].replace("\n", " "))
+    r = call("read_posting", {"url": "file:///etc/passwd"})
+    check("read_posting reads web links only", errored(r), text(r)[:80].replace("\n", " "))
 
     r = call("add_job", {"company": co, "title": "Other Role"})
     check("add_job refuses a likely duplicate", errored(r),

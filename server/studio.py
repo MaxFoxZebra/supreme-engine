@@ -73,6 +73,7 @@ import importer  # noqa: E402
 import languages  # noqa: E402
 import letters  # noqa: E402
 import backups  # noqa: E402
+import posting  # noqa: E402
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -3756,6 +3757,8 @@ button{font:inherit;cursor:pointer}
 .alt{height:40px;padding:0 14px;border:1px solid var(--bd);border-radius:8px;background:var(--field);color:var(--t900);font-size:13.5px}
 .link{align-self:flex-start;border:0;background:none;padding:0;color:var(--acc-text);font-size:12.5px;font-weight:500}
 .err{color:var(--bad);font-size:12.5px}
+label.rn{display:flex;flex-direction:row;align-items:flex-start;gap:8px;margin-top:6px;font-size:13px;font-weight:400;line-height:1.4;color:var(--t900)}
+label.rn input{width:15px;height:15px;min-height:0;padding:0;margin:2px 0 0;flex:none;accent-color:var(--acc)}
 [hidden]{display:none!important}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 </style></head><body>
@@ -3766,6 +3769,7 @@ button{font:inherit;cursor:pointer}
   <div id="known" class="card" hidden>
     <b id="k-name" data-noi18n></b>
     <span class="muted" id="k-line"></span>
+    <label class="rn" id="k-rename" hidden><input type="checkbox" id="k-rn" checked><span id="k-rn-say"></span></label>
   </div>
   <div class="grid" id="fields">
     <label class="wide">Company<input id="f-company" autocomplete="off"></label>
@@ -3852,7 +3856,7 @@ const clean=u=>{ try{ const x=new URL(u); [...x.searchParams.keys()].forEach(k=>
 const norm=u=>{ try{ const x=new URL(clean(u));
   return (x.host.replace(/^www\./,"")+x.pathname.replace(/\/+$/,"")+(x.search||"")).toLowerCase() }catch(e){ return String(u||"").toLowerCase() } };
 
-let PAGE=null, KNOWN=null, POST="";
+let PAGE=null, KNOWN=null, POST="", RENAME="";
 function show(id){ ["wait","form","done"].forEach(k=>$("#"+k).hidden=k!==id) }
 /* The window is as tall as what it shows, not the size it was opened at. */
 if(window.ResizeObserver) new ResizeObserver(()=>{
@@ -3898,8 +3902,15 @@ async function receive(d){
     $("#k-name").textContent=KNOWN.company+" · "+KNOWN.title;
     const has=(KNOWN.description||"").trim();
     $("#k-line").textContent=has?t("Its posting is saved already."):t("Its posting was never saved: this page has it.");
+    /* The page's own title wins over one typed or guessed when the row was
+       added: offered, ticked, never done silently. */
+    const pt=$("#f-title").value.trim();
+    RENAME=pt&&pt.toLowerCase()!==String(KNOWN.title||"").trim().toLowerCase()?pt:"";
+    $("#k-rename").hidden=!RENAME;
+    if(RENAME) $("#k-rn-say").textContent=t("Rename it to “{role}”, as the page says",{role:RENAME});
     $("#f-save").textContent=has?t("Replace the saved posting"):t("Save the posting to it");
-    $("#f-save").disabled=!words;
+    if(RENAME&&has&&!words) $("#f-save").textContent=t("Rename it");
+    $("#f-save").disabled=!words&&!RENAME;
     $("#f-new").hidden=false;
   }
 }
@@ -3913,8 +3924,12 @@ $("#f-save").onclick=async()=>{
   try{
     const url=clean((PAGE.job&&PAGE.job.url)||PAGE.url);
     if(KNOWN){
-      await api("/api/jobs/update",{method:"POST",body:JSON.stringify({id:KNOWN.id,description:POST,url:KNOWN.url||url})});
-      $("#d-say").textContent=t("The posting is saved with {co}, {role}.",{co:KNOWN.company,role:KNOWN.title});
+      const upd={id:KNOWN.id,url:KNOWN.url||url};
+      if(POST) upd.description=POST;
+      const rn=RENAME&&$("#k-rn").checked;
+      if(rn) upd.title=RENAME;
+      await api("/api/jobs/update",{method:"POST",body:JSON.stringify(upd)});
+      $("#d-say").textContent=t("The posting is saved with {co}, {role}.",{co:KNOWN.company,role:rn?RENAME:KNOWN.title});
     }else{
       const title=$("#f-title").value.trim(), company=$("#f-company").value.trim();
       if(!title||!company) throw new Error(t("A job needs at least a title and a company."));

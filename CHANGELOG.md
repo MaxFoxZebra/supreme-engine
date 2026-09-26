@@ -8,6 +8,19 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.27.0
+
+- **Postings read from the job board itself.** An AI client adding an
+  application from a link now gets the title and the full text from the board
+  that published it (Lever, Greenhouse, Ashby, SmartRecruiters, or the job a
+  page describes for search engines), read on your computer, instead of a
+  summary of the page, which could name the job wrongly. A new MCP tool,
+  `read_posting`, does the same on its own.
+- **A wrong title can be put right.** When an application's title does not
+  match its posting, an AI client can correct it to the posting's own title,
+  and only to that. Save to CV Studio does the same on a job you already
+  track: it offers to rename it to the title on the page.
+
 ## 0.26.0
 
 Interview prep.

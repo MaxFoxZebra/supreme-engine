@@ -60,6 +60,11 @@ mcp = MCPServer(
         "When a thread or an invitation names the recruiter, the hiring "
         "manager or an interviewer, record them with save_person: the app "
         "drafts follow-ups and thank-you notes to them.\n\n"
+        "Never type a job's title or posting yourself when you have its link: "
+        "a summary of a page is not the page. Pass the link to add_job, which "
+        "reads the title and the full text from the job board itself, or call "
+        "read_posting first. If it cannot read it, ask the user to paste the "
+        "posting rather than writing one from memory.\n\n"
         "When you add an application, pass company_website: the company's own "
         "domain, found from the posting or its careers page, not the job "
         "board's. Its logo is fetched from there and shown on the row.\n\n"
@@ -354,11 +359,16 @@ def set_company_logo(company: str, website: str | None = None,
 # with a mailbox, which is work only something that can read the mail can do.
 #
 # What is still out of reach is structural rather than advisory. There is no
-# delete tool, and no tool takes `company`, `title` or `notes`, so a model
-# cannot destroy a record, rename the row the user finds things by, or paint
-# over notes they typed. Those cannot be got wrong by a model misreading its
-# instructions, because the parameters do not exist. Everything else, above
-# all the status change itself, rests on the rules in the server instructions.
+# delete tool, and no tool takes `company` or `notes`, so a model cannot
+# destroy a record or paint over notes they typed. Those cannot be got wrong
+# by a model misreading its instructions, because the parameters do not
+# exist. Everything else, above all the status change itself, rests on the
+# rules in the server instructions.
+#
+# `title` is the one exception, and it is checked rather than trusted: it can
+# only be set to the title the posting itself gives, read from its link here.
+# A model that had typed a wrong title (from a summary of the page) could
+# otherwise not undo its own mistake, and the row kept the wrong name.
 #
 # Attaching a document is inside the line rather than outside it. It adds a
 # reference and destroys nothing: the worst a wrong one does is show the wrong
@@ -611,6 +621,7 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                         location: str | None = None,
                         source: str | None = None,
                         replace_posting: bool = False,
+                        title: str | None = None,
                         append_note: str | None = None) -> dict:
     """Record dates, contacts and which documents were sent, without moving it.
 
@@ -657,8 +668,22 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     and a letter are written against it. A posting already saved is the
     user's, who may have edited it; replacing it takes `replace_posting=True`,
     and only when they asked.
+
+    `title` corrects the application's title, and only to the title its
+    posting gives: CV Studio reads the posting at the application's link and
+    refuses any other. The user's own renames are theirs to make.
     """
     data: dict = {}
+    if title is not None:
+        link = url or read_job(job_id).get("url")
+        if not link:
+            raise ValueError("This application has no link, so its title cannot be "
+                             "checked. Ask the user to rename it in the app.")
+        read = studio.posting.read(link)
+        if read["title"].casefold() != title.strip().casefold():
+            raise ValueError(f"The posting's title is {read['title']!r}, not {title!r}. "
+                             f"Only the posting's own title can be set here.")
+        data["title"] = read["title"]
     for field, value in (("interview_at", interview_at), ("interview_tz", interview_tz),
                          ("followup_date", followup_date),
                          ("last_contact_at", last_contact_at),
@@ -791,6 +816,11 @@ def add_job(company: str, title: str, status: str = "pending",
 
     `language` is the language the posting is written in, as a code such as
     "fr". Left out, it is read from the description.
+
+    With a `url`, CV Studio reads the posting itself from the job board
+    (Lever, Greenhouse, Ashby, SmartRecruiters, or the job the page describes
+    for search engines), and its title, full text and location win over what
+    you pass: `title_note` and `posting_note` in the result say what it used.
     """
     if not confirmed_new:
         existing = _candidates(company, title)
@@ -800,6 +830,22 @@ def add_job(company: str, title: str, status: str = "pending",
                 f"{company} already has: {listed}. If this is genuinely a "
                 f"different application, ask the user, then call again with "
                 f"confirmed_new=True.")
+    notes: dict = {}
+    if url:
+        try:
+            read = studio.posting.read(url)
+        except Exception as exc:  # the application matters, the reading does not
+            notes["posting_note"] = (f"Could not read the posting from its link ({exc}). "
+                                     f"The title and text are the ones you passed.")
+        else:
+            if read["title"].casefold() != (title or "").strip().casefold():
+                notes["title_note"] = (f"The posting's own title is {read['title']!r}; "
+                                       f"used instead of {title!r}.")
+            title = read["title"]
+            if read.get("description"):
+                description = read["description"]
+                notes["posting_note"] = f"Posting text read from {read['via']}."
+            location = location or read.get("location")
     job = studio.jobstore.add_job(_ws(), {
         "company": company, "title": title, "status": status, "url": url,
         "location": location, "source": source, "description": description,
@@ -822,7 +868,25 @@ def add_job(company: str, title: str, status: str = "pending",
     else:
         job["logo_note"] = ("No logo. Call set_company_logo with the company's "
                             "website to add one.")
+    job.update(notes)
     return job
+
+
+@tool
+def read_posting(url: str) -> dict:
+    """Read a job posting from its link, exactly as the company published it.
+
+    CV Studio fetches it on this machine from the job board's own data
+    (Lever, Greenhouse, Ashby, SmartRecruiters) or from the job the page
+    describes for search engines. Returns {title, company, location,
+    description (Markdown), via, url}. `company` is empty when the board does
+    not say it.
+
+    Use it instead of a web page fetch that summarises: titles and wording
+    matter on a CV written against them. If it raises, ask the user to paste
+    the posting; never fill the gap from memory.
+    """
+    return studio.posting.read(url)
 
 
 @tool

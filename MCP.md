@@ -33,7 +33,8 @@ one rendered by clicking Save.
 | `get_interview_prep` | The prep for an application's next round as the user sees it: likely questions (with where each comes from and the user's notes), stories that back the posting's asks, questions to ask. `local` means the app made it from the posting alone |
 | `save_interview_prep` | Write better questions, stories and asks for that round. The user's notes, rehearsal marks and own questions are kept |
 | `ats_check` | Reads a CV's PDF the way an applicant tracking system does: what fails to parse, and which of the posting's keywords it uses |
-| `add_job` | Add one, refusing a likely duplicate unless you confirm. Given the company's website, it fetches the company's logo too |
+| `add_job` | Add one, refusing a likely duplicate unless you confirm. Given the posting's link, it reads the title and full text from the job board itself; given the company's website, it fetches the company's logo too |
+| `read_posting` | Read a posting from its link exactly as published: Lever, Greenhouse, Ashby and SmartRecruiters from their public feeds, any other page from the job it describes for search engines |
 | `set_company_logo` | Give a company a logo, from its website or an image on disk, and use it on every application to that company |
 
 `render_cv` returning an image is the point of the whole thing. The model can
@@ -95,6 +96,13 @@ when the model finds the link a week on or you ask it to "save the posting".
 A posting already saved is treated as yours, since you may have edited it:
 replacing it takes `replace_posting=True`, which the model should only pass
 when you asked for it. A link has to be `http://` or `https://`.
+
+**Titles come from the posting.** A model reading a web page often gets a
+summary of it, and a summary can name the job wrongly. So `add_job` with a
+link reads the posting itself and uses its title and text, saying so when they
+differ from what the model passed. `update_job_tracking` takes a `title` only
+to correct a row to the title its posting gives, checked against the link;
+any other rename is yours, in the app.
 
 **It cannot see the funnel or export.** The rates, the drop-off, the CSV and
 JSON exports are app-side only. It can list the applications and count them
