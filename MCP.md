@@ -157,6 +157,17 @@ A status change appends to the permanent history the funnel is drawn from, and
 this app has no undo. The model is told to show you every change and wait for
 you. That one is a rule in prose, not a lock in the code.
 
+### Applying, as a skill
+
+`skills/cv-studio-apply/SKILL.md` takes a job link to an application ready to
+send: it adds the job with the posting read from the board, copies the base CV
+in the posting's language and tailors it (never adding experience), checks it
+renders and passes the ATS check, attaches it, then writes and attaches a
+cover letter. Adding a job without the skill gets the same steps from the
+server's instructions and from `add_job`'s `next`, but the skill carries the
+judgement: what to reorder, what to cut, what a letter says. Copy the folder
+into `~/.claude/skills/`, or package it for Claude Desktop under Settings.
+
 ### Interview prep, as a skill
 
 `skills/cv-studio-interview-prep/SKILL.md` is how a coach would prepare a round:

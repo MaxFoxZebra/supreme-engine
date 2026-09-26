@@ -20,6 +20,15 @@ tag, so a release is never published with nothing said about it.
   match its posting, an AI client can correct it to the posting's own title,
   and only to that. Save to CV Studio does the same on a job you already
   track: it offers to rename it to the title on the page.
+- **Adding a job starts the application.** An AI client adding a job now
+  goes on to tailor a CV to it and write a cover letter, both attached, unless
+  you said only to track it. A new skill, `skills/cv-studio-apply`, walks it
+  through: the posting read exactly, the base CV in the posting's language,
+  tailored without adding experience, rendered and ATS-checked, then the
+  letter.
+- **A summary is not a posting.** A posting saved with fewer than 150 words
+  comes back to the AI client flagged as a likely summary, with what to do
+  instead, so it does not tailor against it.
 
 ## 0.26.0
 

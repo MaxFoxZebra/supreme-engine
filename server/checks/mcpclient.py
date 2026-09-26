@@ -234,6 +234,11 @@ if __name__ == "__main__":
     check("add_job creates an application", f'"company": "{co}"' in text(r),
           text(r)[:60].replace("\n", " "))
     job_id = json.loads(text(r))["id"]
+    added = json.loads(text(r))
+    check("add_job says what comes next: the CV and the letter",
+          "create_cv" in (added.get("next") or "") and "create_letter" in added["next"])
+    check("a posting of a few words is flagged as a summary",
+          "summary" in (added.get("posting_note") or ""), added.get("posting_note", "")[:60])
     r = call("update_job_tracking", {"job_id": job_id, "title": "Anything I like"})
     check("a title is not set without a posting to check it against", errored(r),
           text(r)[:80].replace("\n", " "))

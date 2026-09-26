@@ -65,6 +65,13 @@ mcp = MCPServer(
         "reads the title and the full text from the job board itself, or call "
         "read_posting first. If it cannot read it, ask the user to paste the "
         "posting rather than writing one from memory.\n\n"
+        "Adding a job is the start of applying to it. Unless the user said to "
+        "only track it, follow each add_job with a CV tailored to the posting "
+        "(create_cv copying the base CV in the posting's language, "
+        "edit_cv_fields, render_cv, ats_check, then update_job_tracking with "
+        "cv_path) and a cover letter (create_letter, write_letter, render_cv). "
+        "add_job's `next` says the same. Never tailor against a summary of "
+        "the posting, and never add experience the base CV does not have.\n\n"
         "When you add an application, pass company_website: the company's own "
         "domain, found from the posting or its careers page, not the job "
         "board's. Its logo is fetched from there and shown on the row.\n\n"
@@ -711,7 +718,10 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
         append_note = (append_note or
                        "Interview time cleared, no matching calendar event.")
     data["append_note"] = append_note
-    return studio.jobstore.update_job(_ws(), job_id, data)
+    out = studio.jobstore.update_job(_ws(), job_id, data)
+    if description is not None and description.strip() and len(description.split()) < THIN_POSTING:
+        out["posting_note"] = _thin_note(len(description.split()))
+    return out
 
 
 @tool
@@ -868,8 +878,27 @@ def add_job(company: str, title: str, status: str = "pending",
     else:
         job["logo_note"] = ("No logo. Call set_company_logo with the company's "
                             "website to add one.")
+    words = len((description or "").split())
+    if description and words < THIN_POSTING and "posting_note" not in notes:
+        notes["posting_note"] = _thin_note(words)
     job.update(notes)
+    job["next"] = ("Unless the user asked only to track it: tailor a CV for it "
+                   "(create_cv copying the base CV in the posting's language, "
+                   "edit_cv_fields, render_cv, ats_check with this job_id, then "
+                   "update_job_tracking with cv_path), then create_letter and "
+                   "write_letter. Report what you wrote and any gap.")
     return job
+
+
+# A posting runs to a few hundred words. Far fewer is usually a summary a web
+# fetch made of the page, which is no base for a tailored CV.
+THIN_POSTING = 150
+
+
+def _thin_note(words: int) -> str:
+    return (f"The posting saved is only {words} words, which looks like a summary rather "
+            f"than the posting. Read the real one with read_posting on its link, or ask "
+            f"the user to paste it, before tailoring anything to it.")
 
 
 @tool
