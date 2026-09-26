@@ -6820,7 +6820,7 @@ function thumbHTML(theme){
     '</div>';
 }
 const themeLabel=t=>t.replace(/^engineeringclassic$/,"Engineering")
-  .replace(/^engineeringresumes$/,"Engineering résumés")
+  .replace(/^engineeringresumes$/,"Compact")
   .replace(/^(.)/,c=>c.toUpperCase());
 
 /* One design for every language of a CV, kept on the source: a design edited
@@ -6907,25 +6907,88 @@ async function fillThemePreviews(){
     }catch(e){ return }
   }
 }
+/* Each tile is a theme and, under it, colours to try it in: the theme's own
+   first, then four that read well on paper. A colour sets the name, headline,
+   contact line, section titles and links together; the wheel opens Colors for
+   anything else. "Suits" is a hint about where a theme is usually seen. */
+const TH_INK={classic:"rgb(0, 79, 144)",engineeringclassic:"rgb(0, 79, 144)",moderncv:"rgb(0, 79, 144)",
+  ember:"rgb(155, 35, 25)",opal:"rgb(0, 100, 90)",ink:"rgb(42, 24, 82)",
+  harvard:"rgb(0, 0, 0)",sb2nov:"rgb(0, 0, 0)",engineeringresumes:"rgb(0, 0, 0)"};
+const TH_SUITS={classic:"Almost anywhere",ember:"Education, health, non-profits",
+  engineeringclassic:"Engineering, science",engineeringresumes:"A long career on one page",
+  harvard:"Finance, law, consulting",ink:"Design, media, writing",moderncv:"Academia, research",
+  opal:"Tech, product, startups",sb2nov:"Software, US style"};
+const SWATCHES=[["Navy","rgb(0, 79, 144)"],["Teal","rgb(0, 100, 90)"],
+  ["Burgundy","rgb(122, 31, 43)"],["Graphite","rgb(40, 40, 40)"]];
+const INK_KEYS=["name","headline","connections","section_titles","links"];
+const rgbOf=v=>(/(\d+)\D+(\d+)\D+(\d+)/.exec(v||"")||[0,0,0,0]).slice(1).map(Number);
+const near=(a,b)=>{ const x=rgbOf(a),y=rgbOf(b); return Math.max(...x.map((v,i)=>Math.abs(v-y[i])))<40 };
+/* What an ATS reads cleanly, applied to a theme you switch to unless the
+   document already says otherwise: new CVs carry these already. */
+const ATS_SAFE=[[["header","connections","show_icons"],false],
+  [["header","connections","display_urls_instead_of_usernames"],true],
+  [["sections","show_time_spans_in"],[]],[["typography","alignment"],"left"],
+  [["page","show_top_note"],false],[["page","show_footer"],false]];
+const dzRow=path=>$$("#dz-advanced .dz-row").find(r=>
+  r.querySelector("[data-d]").dataset.d===JSON.stringify(path));
+function setRow(row,v){
+  const el=row.querySelector("[data-d]"), kind=el.dataset.kind;
+  if(kind==="color"){ el.value=rgb2hex(v); const sp=row.querySelector(".hex"); if(sp) sp.textContent=v }
+  else if(kind==="bool") el.checked=!!v;
+  else if(kind==="list") el.value=(v||[]).join(", ");
+  else el.value=v==null?"":v;
+}
+function inkNow(theme){
+  const r=dzRow(["colors","name"]);
+  return r&&S.schemaTheme===theme?rowValue(r):TH_INK[theme]||"";
+}
+async function pickTheme(theme,ink){
+  const cur=DZ.theme||(S.state.themes||[])[0];
+  if(theme!==cur){
+    DZ.theme=theme; S.schema=null;
+    await ensureSchema(); paintAdvanced();
+    const saved=(S.data&&S.data.design)||{};
+    ATS_SAFE.forEach(([p,v])=>{ const r=dzRow(p); if(r&&getAt(saved,p)===undefined) setRow(r,v) });
+    setTimeout(fillThemePreviews,0);
+  }
+  if(ink!==undefined) INK_KEYS.forEach(k=>{ const r=dzRow(["colors",k]);
+    if(r) ink?setRow(r,ink):resetRow(r) });
+  markChanged(); paintDesignNav(); paintThemes(); touch();
+}
 function paintThemes(){
   const themes=(S.state&&S.state.themes)||[];
   const cur=DZ.theme||themes[0];
   const by=(S.thumbs&&S.thumbs.by)||{};
   const live=S.render&&S.render.pngs&&S.render.pngs[0];
+  const ink=inkNow(cur);
   $("#themegrid").innerHTML=themes.map(t=>{
     const img=t===cur&&live?live+tok():(by[t]?by[t].png+tok():null);
-    const pp=S.themePages[t];
-    return '<button class="thumbwrap'+(t===cur?" sel":"")+'" role="radio" aria-checked="'+
-      String(t===cur)+'" data-theme="'+esc(t)+'">'+
+    const pp=S.themePages[t], own=TH_INK[t];
+    const sw=(own?[[t==="harvard"||own==="rgb(0, 0, 0)"?"Black":"Theme colour","",own]]:[])
+      .concat(SWATCHES.filter(([,c])=>!own||!near(c,own)).map(([n,c])=>[n,c,c]));
+    return '<div class="thcard'+(t===cur?" sel":"")+'">'+
+      '<button class="thumbwrap" role="radio" aria-checked="'+String(t===cur)+'" data-theme="'+esc(t)+'">'+
       (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
       '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
-      '<em>'+(pp?pp+" page"+(pp===1?"":"s"):"")+'</em></span></button>';
+      '<b class="th-ats" title="'+esc("Contact details as text, links written out, no icons")+'">ATS ✓</b>'+
+      '<em>'+(pp?pp+" page"+(pp===1?"":"s"):"")+'</em></span>'+
+      (TH_SUITS[t]?'<span class="th-suits">'+esc(TH_SUITS[t])+'</span>':"")+'</button>'+
+      '<div class="th-sw" role="group" aria-label="'+esc("Colour")+'">'+
+      sw.map(([n,v,c])=>'<button class="sw'+(t===cur&&ink&&near(ink,c)?" on":"")+'" data-t="'+esc(t)+
+        '" data-ink="'+esc(v)+'" style="--c:'+c+'" title="'+esc(n)+'" aria-label="'+
+        esc(n)+'"></button>').join("")+
+      '<button class="sw any" data-t="'+esc(t)+'" data-any="1" title="'+esc("Any colour")+
+        '" aria-label="'+"Any colour"+'"></button></div></div>';
   }).join("");
   $$("#themegrid [data-theme]").forEach(b=>b.onclick=()=>{
-    if(b.dataset.theme===cur) return;
-    DZ.theme=b.dataset.theme; S.schema=null;
-    paintThemes(); touch();
-    ensureSchema().then(()=>{ paintAdvanced(); paintDesignNav() });
+    if(b.dataset.theme!==cur) pickTheme(b.dataset.theme);
+  });
+  $$("#themegrid .sw").forEach(b=>b.onclick=async()=>{
+    if(b.dataset.any){
+      if(b.dataset.t!==cur) await pickTheme(b.dataset.t);
+      DZ.section="colors"; paintDesignNav(); showDesignSection(); return;
+    }
+    pickTheme(b.dataset.t,b.dataset.ink||null);
   });
 }
 
@@ -7266,7 +7329,7 @@ function showDesignSection(){
   if(k==="photo") paintPhoto();
   $("#dz-h").textContent=theme?"Theme":human(k);
   $("#dz-desc").textContent=theme
-    ? "The starting point for every other setting. Each tile is this document in that theme."
+    ? "Each tile is this document in that theme. Pick a colour under it to try it in that colour."
     : (DZ_GROUPS[k]||"");
   const grp=$('#dz-advanced [data-group="'+CSS.escape(k)+'"]');
   $("#dz-reset").hidden=theme||!grp||!grp.querySelector(".dz-row.chg");

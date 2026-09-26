@@ -2232,10 +2232,12 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .dz-effect .sep{color:var(--t400)}
 .dz-effect .why{color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .themegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.thumbwrap{display:flex;flex-direction:column;gap:7px;padding:6px 6px 9px;border-radius:9px;
-  border:1px solid var(--bd-inner);text-align:left;width:100%}
-.thumbwrap:hover{border-color:var(--bd-field)}
-.thumbwrap.sel{background:var(--field);border:2px solid var(--acc);padding:5px 5px 8px}
+.thcard{display:flex;flex-direction:column;gap:7px;padding:6px 6px 9px;border-radius:9px;
+  border:1px solid var(--bd-inner)}
+.thcard:hover{border-color:var(--bd-field)}
+.thcard.sel{background:var(--field);border:2px solid var(--acc);padding:5px 5px 8px}
+.thumbwrap{display:flex;flex-direction:column;gap:6px;padding:0;border:0;background:none;
+  text-align:left;width:100%;color:inherit}
 .thumbwrap img{width:100%;aspect-ratio:360/223;object-fit:cover;object-position:top;
   display:block;border-radius:4px;box-shadow:0 0 0 1px var(--bd-inner);background:var(--page)}
 /* The drawn sketch stands in while the real render of this document arrives. */
@@ -2247,7 +2249,19 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .thumbcap{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:0 3px}
 .thumbcap span{font-size:13px;color:var(--t800)}
 .thumbcap em{font-size:11.5px;font-style:normal;color:var(--t500)}
-.thumbwrap.sel .thumbcap span{color:var(--t900);font-weight:600}
+.thcard.sel .thumbcap span{color:var(--t900);font-weight:600}
+.thumbcap span{flex-grow:1}
+.th-ats{font-size:10.5px;font-weight:600;line-height:18px;padding:0 6px;border-radius:9px;white-space:nowrap;
+  background:color-mix(in srgb,#3f9f7f 16%,transparent);color:#235c47}
+:root[data-theme="dark"] .th-ats{color:#8fd4b6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .th-ats{color:#8fd4b6}}
+.th-suits{padding:0 3px;font-size:12px;line-height:1.35;color:var(--t600)}
+.th-sw{display:flex;align-items:center;gap:8px;padding:2px 3px 0}
+.th-sw .sw{width:16px;height:16px;padding:0;border:0;border-radius:50%;background:var(--c);flex:none;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.14);cursor:pointer}
+.th-sw .sw:hover{transform:scale(1.15)}
+.th-sw .sw.on{box-shadow:0 0 0 2px var(--field),0 0 0 3.5px var(--t900)}
+.th-sw .sw.any{background:conic-gradient(#e0533d,#e6b422,#3fa34d,#2b7bd6,#8a4fd1,#e0533d);opacity:.8}
 
 .dctl{display:flex;align-items:center;gap:7px;min-width:0}
 /* background-COLOR: the shorthand would strip the select's chevron. */

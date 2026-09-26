@@ -53,6 +53,16 @@ Interview prep.
   MCP server's own instructions carry the same rule for clients without the
   skill. With a client connected, the card says the questions it shows come
   from the posting alone and gives the words to ask for the real ones.
+- **A theme and its colour in one click.** Each theme tile in Design has
+  colours under it: the theme's own, navy, teal, burgundy and graphite, and
+  a wheel that opens Colors for any other. A colour sets the name, headline,
+  contact line, section titles and links together. Each tile also says what
+  the theme usually suits ("Finance, law, consulting"), and Engineering
+  Resumes is called Compact.
+- **Every theme stays readable by an ATS.** Switching theme keeps contact
+  details as text without icons, links written out, dates without time
+  spans, text aligned left and no top note or footer, unless the CV already
+  says otherwise; the tiles carry an ATS ✓ that says so.
 
 ## 0.25.0
 
