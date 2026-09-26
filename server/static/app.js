@@ -2528,7 +2528,7 @@ function renderDocs(docs){
       const rows=inG.map(d=>{
         const tr=famAt.get(d.path)>0;
         const other=(d.lang||"en")!==srcLang;
-        const label=tr?langOf(d.lang).native:docTitle(d);
+        const label=tr?langOf(d.lang).native:docTitle(d,true);
         const pp=S.pages[d.path];
         const job=S.jobs.find(j=>j.cv_path===d.path||j.letter_path===d.path);
         return '<button class="row'+(tr?" tr":"")+(d.path===S.path?" sel":"")+
@@ -4050,11 +4050,13 @@ function humanSlug(s){
   return String(s||"").replace(/\.[a-z]{2}(-[a-z]{2})?$/i,"").replace(/[-_]+/g," ").trim()
     .replace(/\bcv\b/gi,"CV").replace(/^./,c=>c.toUpperCase());
 }
-function docTitle(d){
+/* bare: under a "CVs" or "Cover letters" heading the kind is already said. */
+function docTitle(d,bare){
   if(!d) return "";
   const letter=d.letter||d.group==="Cover letters";
   const j=(S.jobs||[]).find(j=>(letter?j.letter_path:j.cv_path)===d.path);
-  return j?(letter?t("Letter"):t("CV"))+" · "+j.company:humanSlug(d.label);
+  if(!j) return humanSlug(d.label);
+  return bare?j.company:(letter?t("Letter"):t("CV"))+" · "+j.company;
 }
 /* The band above the applications and the card on the Documents screen are the
    same statement about the same document, so it is written once and mounted
