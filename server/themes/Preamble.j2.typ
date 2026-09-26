@@ -4,6 +4,10 @@
 #show: doc => { set page(background: place(right + top, rect(width: {{ design.page.right_margin }} + 5.8cm, height: 100%, fill: {{ design.colors.section_titles.as_rgb() }}.lighten(91%)))); doc }
 {% set cvs_pre %}{% include "typst/Preamble.j2.typ" %}{% endset %}
 {{ cvs_pre|replace("page-right-margin: " ~ design.page.right_margin ~ ",", "page-right-margin: " ~ design.page.right_margin ~ " + 6.2cm,") }}
+{% elif design.theme == "editorial" %}
+// Editorial: a slim accent stripe down the left edge of every page.
+#show: doc => { set page(background: place(left + top, rect(width: 0.55cm, height: 100%, fill: {{ design.colors.section_titles.as_rgb() }}))); doc }
+{% include "typst/Preamble.j2.typ" %}
 {% else %}
 {% include "typst/Preamble.j2.typ" %}
 {% endif %}
@@ -19,6 +23,6 @@
 #let connection-with-icon(icon-name, body) = [
   #box(baseline: 0.13em, image(cvstudio-icons.at(icon-name, default: cvstudio-icons.at("link")), format: "svg", height: 0.85em))#h(0.12cm)#box[#body]
 ]
-{% if design.theme in ["studio", "ledger", "sidebar"] %}
+{% if design.theme in ["studio", "ledger", "sidebar", "aurora", "editorial", "timeline"] %}
 {% include design.theme ~ "/Theme.j2.typ" %}
 {% endif %}

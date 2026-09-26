@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover
 
 fails = 0
 SECTIONS = ["summary", "experience", "education", "skills", "languages"]
-ATS_SAFE = {"studio", "ledger"}
+ATS_SAFE = {"studio", "ledger", "aurora", "editorial", "timeline"}
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -50,8 +50,9 @@ def order(text: str) -> list[str]:
 def main() -> int:
     y = YAML()
     cv = y.load(sample.BASE_CV)["cv"]
-    check("the themes are offered first", studio.available_themes()[:3] == list(themes.DEFAULTS),
-          ", ".join(studio.available_themes()[:4]))
+    n = len(themes.DEFAULTS)
+    check("the themes are offered first", studio.available_themes()[:n] == list(themes.DEFAULTS),
+          ", ".join(studio.available_themes()[:n + 1]))
     for name in themes.DEFAULTS:
         schema = studio.design_schema(name)
         colors = next((g for g in schema["groups"] if g["name"] == "colors"), {"fields": []})

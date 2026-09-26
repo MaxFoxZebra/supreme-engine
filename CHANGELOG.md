@@ -10,7 +10,13 @@ tag, so a release is never published with nothing said about it.
 
 ## 0.29.0
 
-- **Three themes of CV Studio's own**, first in Design:
+- **Six themes of CV Studio's own**, first in Design:
+  - **Aurora**: your name on a band that turns from the accent into a
+    neighbouring hue, with section titles as tinted labels.
+  - **Editorial**: a large book-face name, the headline in italics, a slim
+    accent stripe down the left edge, section titles in small capitals.
+  - **Timeline**: your jobs and schooling hang from a line down the left,
+    a dot for each.
   - **Studio**: your name, headline and contact line on a band of colour
     across the top, section titles over an accent rule.
   - **Ledger**: a left rail carries the section titles and each job's dates
