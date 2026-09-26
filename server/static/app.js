@@ -1544,7 +1544,7 @@ async function atsRun(fix){
    parsed rather than as wrapped on the page; bullets and headings keep
    their own lines. */
 const atsReflow=t=>String(t||"").replace(/([^\n])\n(?=[a-zà-ÿ(,;])/g,"$1 ");
-const atsReadable=t=>esc(atsReflow(t)).replace(/[-]/g,'<i class="pua" title="An icon, read as an unreadable character">□</i>');
+const atsReadable=t=>esc(atsReflow(t).replace(/ {2,}/g," ")).replace(/[-]/g,'<i class="pua" title="An icon, read as an unreadable character">□</i>');
 function atsPaint(r){
   const body=$("#ats-body");
   if(!r.ok){ body.innerHTML='<p class="note">'+esc(r.error||"The check could not run.")+'</p>'; return }
@@ -2267,7 +2267,8 @@ function ltPanel(){
         '<option value="'+l.code+'"'+(l.code===lang?" selected":"")+'>'+esc(l.native)+'</option>').join("")+'</select>'+
       '<label for="lt-place">Written from</label><input id="lt-place" value="'+esc(m.place||"")+'" placeholder="City">'+
       '<label for="lt-date">Date</label><span class="today"><label style="display:flex;gap:5px;align-items:center;color:var(--t800)">'+
-        '<input type="checkbox" id="lt-today"'+(today?" checked":"")+'>Today</label>'+
+        /* Sent, "today" means the day it went out, as the export prints it. */
+        '<input type="checkbox" id="lt-today"'+(today?" checked":"")+'>'+(LT.doc.sent_on?esc(t("Sent date")):"Today")+'</label>'+
         '<input type="date" id="lt-date" value="'+(today?"":esc(String(m.date)))+'"'+(today?" hidden":"")+'></span>'+
       '<label for="lt-to">Addressed to</label><textarea id="lt-to" placeholder="Optional. Printed above the date.">'+
         esc(Array.isArray(m.to)?m.to.join("\n"):(m.to||""))+'</textarea>'+

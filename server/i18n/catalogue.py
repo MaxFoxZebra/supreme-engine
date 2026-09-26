@@ -687,6 +687,7 @@ C = {
     "Send it": ("L'envoyer", "Enviarla", "Enviar"),
     "Sends one now, so you can see where they appear.": ("En envoie une maintenant, pour voir où elles s'affichent.", "Envía una ahora para ver dónde aparecen.", "Envia uma agora, para você ver onde aparecem."),
     "Sent": ("Envoyées", "Enviadas", "Enviadas"),
+    "Sent date": ("Date d'envoi", "Fecha de envío", "Data de envio"),
     "Sent this week": ("Envoyées cette semaine", "Enviadas esta semana", "Enviadas nesta semana"),
     "Sent today": ("Envoyée aujourd'hui", "Enviada hoy", "Enviada hoje"),
     "Separate files, for forms with one field each, or for your records.": ("Des fichiers séparés, pour les formulaires à un champ par document, ou pour vos archives.", "Archivos separados, para formularios con un campo por documento, o para tu archivo.", "Arquivos separados, para formulários com um campo para cada, ou para seus registros."),

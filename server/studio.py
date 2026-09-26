@@ -94,7 +94,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.24.0"
+VERSION = "0.25.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -1697,7 +1697,8 @@ def load_letter(path: Path) -> dict:
     meta, body = letters.parse(text)
     head = letter_head(meta)
     return {"letter": True, "path": rel(path), "text": text, "meta": meta,
-            "body": body, "head": head, "date_line": letters.date_line(meta),
+            "body": body, "head": head, "date_line": letters.date_line(dated(meta, path)),
+            "sent_on": letter_sent_on(path),
             "words": letters.word_count(body), "target": letters.WORD_TARGET,
             "mtime": path.stat().st_mtime}
 
@@ -1713,18 +1714,29 @@ def save_letter(path: Path, payload: dict, tool: str = "save") -> dict:
     return load_letter(path)
 
 
+def letter_sent_on(path: Path) -> str | None:
+    """The day the letter's application was sent, if it was."""
+    try:
+        job = next((j for j in jobstore.list_jobs(WORKSPACE) if j.get("letter_path") == rel(path)), None)
+        sent = next((h["at"] for h in (job or {}).get("status_history") or [] if h.get("status") == "applied"), None)
+        return str(sent)[:10] if sent else None
+    except Exception:
+        return None
+
+
+def dated(meta: dict, path: Path) -> dict:
+    """"today" on a letter already sent would redate it each export: once its
+    application went out, the letter carries the day it was sent."""
+    if meta.get("date") in (None, "", "today"):
+        sent = letter_sent_on(path)
+        if sent:
+            return {**meta, "date": sent}
+    return meta
+
+
 def render_letter(path: Path) -> dict:
     meta, body = letters.parse(path.read_text(encoding="utf-8"))
-    # "today" on a letter already sent would redate it each export: once its
-    # application went out, the letter carries the day it was sent.
-    if meta.get("date") in (None, "", "today"):
-        try:
-            job = next((j for j in jobstore.list_jobs(WORKSPACE) if j.get("letter_path") == rel(path)), None)
-            sent = next((h["at"] for h in (job or {}).get("status_history") or [] if h.get("status") == "applied"), None)
-            if sent:
-                meta["date"] = str(sent)[:10]
-        except Exception:
-            pass
+    meta = dated(meta, path)
     head = letter_head(meta)
     cvp = letter_cv(meta)
     cjkfonts.ensure(path.read_text(encoding="utf-8") + head.get("name", ""))

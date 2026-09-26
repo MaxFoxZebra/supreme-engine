@@ -8,17 +8,11 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## 0.24.0
+## 0.25.0
 
-A polish and safety release on the way to 1.0.
+Seven rounds of review, applied: what to do next, interview rounds, and a CV
+that follows the application from draft to interview.
 
-- **Other websites cannot reach CV Studio through your browser.** The app
-  answers only on your own machine, but a page you had open elsewhere could
-  still send it requests, and since 0.23.0 knew where to find it: the Save
-  to CV Studio button's address is fixed. Requests that do not name this
-  machine (a site pointing its own domain at it) and writes from any page
-  that is not CV Studio's own are now refused. Scripts and your AI client
-  work as before.
 - **Next actions** replaces Next up on the applications list: one row per
   thing to do, most urgent first, each with its button. An interview coming
   (*Prepare*), a follow-up late (*Write follow-up*, drafted to the person you
@@ -189,6 +183,22 @@ A polish and safety release on the way to 1.0.
   - Journeys keeps today in the middle, so labels no longer sit on the
     Today line; calendar entries name the role when a company has two
     applications; French says Londres, Adéquation and Déclinée par moi.
+- **A last look over the whole app:** the letter editor shows the date a
+  sent letter will carry ("Sent date"), as the export prints it; the posting
+  card lets a long "Open on …" button wrap under its title; the ATS check's
+  "What it reads" drops the PDF's double spaces.
+
+## 0.24.0
+
+A polish and safety release on the way to 1.0.
+
+- **Other websites cannot reach CV Studio through your browser.** The app
+  answers only on your own machine, but a page you had open elsewhere could
+  still send it requests, and since 0.23.0 knew where to find it: the Save
+  to CV Studio button's address is fixed. Requests that do not name this
+  machine (a site pointing its own domain at it) and writes from any page
+  that is not CV Studio's own are now refused. Scripts and your AI client
+  work as before.
 - **A polish pass over every screen**, after a review of each one:
   - Nothing that matters is cut off any more: the next interview, the
     overdue follow-ups (their "Show them" link was hidden in French), the
