@@ -95,7 +95,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.26.0"
+VERSION = "0.27.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
