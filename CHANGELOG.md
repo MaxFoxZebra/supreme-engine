@@ -32,6 +32,16 @@ Interview prep.
   stay on any question it asks again, and your own questions are kept.
 - See all questions (with your answer notes) and the questions to ask, both
   editable, and your own added.
+- **Documents by name, not file name.** A document written for an
+  application reads "CV · Monzo" or "Letter · iFood", the others as words
+  ("My CV"), in Documents, the editor's list and every picker; the file name
+  stays in the tooltip and the editor's path.
+- **Found on, picked.** New application offers the same list of job boards,
+  with their marks, as the application itself, instead of a text box. A long
+  board name shortens where room is short (Welcome to the Jungle is WTTJ).
+- **The CV they have.** A CV whose application was sent says so beside the
+  application ("sent 8 Sept"), and the first edit to it says the company has
+  the version you sent: your edits change your copy, not theirs.
 - **The AI client does the real prep.** A new skill,
   `skills/cv-studio-interview-prep`, walks it through a round: the posting,
   the CV that was sent, the company, then questions, strict stories (a gap

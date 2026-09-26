@@ -494,7 +494,7 @@ const BOARDS=[
    host:/(^|\.)greenhouse\.io$/,word:/greenhouse/i},
   {id:"wellfound",label:"Wellfound",bg:"#000",fg:"#fff",
    host:/(^|\.)(wellfound\.com|angel\.co)$/,word:/wellfound|angel\.?list/i},
-  {id:"welcometothejungle",label:"Welcome to the Jungle",bg:"#FFCD00",fg:"#000",
+  {id:"welcometothejungle",label:"Welcome to the Jungle",short:"WTTJ",bg:"#FFCD00",fg:"#000",
    host:/(^|\.)welcometothejungle\.com$/,word:/welcome to the jungle|\bwttj\b/i},
   {id:"xing",label:"XING",bg:"#006567",fg:"#fff",host:/(^|\.)xing\.com$/,word:/\bxing\b/i},
   {id:"monster",label:"Monster",bg:"#6D4C9F",fg:"#fff",host:/(^|\.)monster\./,
@@ -1068,7 +1068,8 @@ function paintLink(){
   }
   chip.innerHTML='<span class="dot '+statusTone(j.status)+'"></span>'+
     '<span>for <b>'+esc(j.company)+'</b></span>'+
-    '<span class="dot"></span><span>'+esc(prettyStatus(j.status))+'</span>';
+    '<span class="dot"></span><span>'+esc(prettyStatus(j.status))+'</span>'+
+    (sentAt(j)?'<span class="dot"></span><span>'+esc(t("sent {d}",{d:shortDate(sentAt(j))}))+'</span>':'');
   chip.title="Linked to an application. Click to open it, move it or unlink.";
   chip.hidden=false;
   chip.onclick=()=>linkJobSheet();
@@ -2262,7 +2263,7 @@ function ltPanel(){
       '<label>For</label><span>'+(j?'<b style="font-weight:600">'+esc(j.company)+'</b> · '+esc(j.title)
         :'<span class="muted2">No application</span>')+'</span>'+
       '<label for="lt-cv">Letterhead from</label><select id="lt-cv">'+cvs.map(d=>'<option value="'+esc(d.path)+'"'+
-        (d.path===(m.looks_like||(LT.doc.head||{}).cv)?" selected":"")+'>'+esc(d.label)+'</option>').join("")+'</select>'+
+        (d.path===(m.looks_like||(LT.doc.head||{}).cv)?" selected":"")+'>'+esc(docTitle(d))+'</option>').join("")+'</select>'+
       '<label for="lt-lang">Language</label><select id="lt-lang">'+((S.state&&S.state.languages)||[]).map(l=>
         '<option value="'+l.code+'"'+(l.code===lang?" selected":"")+'>'+esc(l.native)+'</option>').join("")+'</select>'+
       '<label for="lt-place">Written from</label><input id="lt-place" value="'+esc(m.place||"")+'" placeholder="City">'+
@@ -2527,7 +2528,7 @@ function renderDocs(docs){
       const rows=inG.map(d=>{
         const tr=famAt.get(d.path)>0;
         const other=(d.lang||"en")!==srcLang;
-        const label=tr?langOf(d.lang).native:other?String(d.label).replace(/\.[a-z]{2}(-[a-z]{2})?$/i,""):d.label;
+        const label=tr?langOf(d.lang).native:docTitle(d);
         const pp=S.pages[d.path];
         const job=S.jobs.find(j=>j.cv_path===d.path||j.letter_path===d.path);
         return '<button class="row'+(tr?" tr":"")+(d.path===S.path?" sel":"")+
@@ -2902,7 +2903,18 @@ function bindFields(root){
   });
 }
 function autoGrow(el){ el.style.height="0"; el.style.height=el.scrollHeight+"px" }
-const touch=()=>{ S.dirty=true; paintStatus(); scheduleLive() };
+const touch=()=>{ if(!S.dirty) warnSent(); S.dirty=true; paintStatus(); scheduleLive() };
+/* The day a CV's application went out, if it did: then the company has it. */
+const sentAt=j=>j&&j.status!=="pending"?String(appliedAt(j)||"").slice(0,10)||null:null;
+/* Once, the first time you change a CV a company already has: your edits
+   change your copy, not theirs, and the CV to re-read before an interview. */
+function warnSent(){
+  const j=(S.jobs||[]).find(x=>x.cv_path===S.path), d=sentAt(j);
+  S.warned=S.warned||new Set();
+  if(!d||S.warned.has(S.path)) return;
+  S.warned.add(S.path);
+  toast(t("{co} has the version you sent on {d}. These edits change your copy, not theirs.",{co:j.company,d:shortDate(d)}));
+}
 
 /* ---- inspector ----------------------------------------------------------- */
 function buildInspector(){
@@ -3058,7 +3070,7 @@ function linkJobSheet(){
 }
 const docLabel=p=>{
   const d=(S.state.documents||[]).find(x=>x.path===p);
-  return d?d.label:String(p||"").split("/").pop();
+  return d?docTitle(d):String(p||"").split("/").pop();
 };
 
 /* The application this document was written for. Knowing it here is what
@@ -4030,7 +4042,20 @@ function visibleJobs(){
    from" a few hundred lines up, and two answers to one name is how the two
    ideas get confused in the first place. */
 function baseLabel(){ const b=S.state&&S.state.base;
-  return b?b.path.split("/").pop().replace(/\.ya?ml$/,""):null }
+  return b?humanSlug(b.path.split("/").pop().replace(/\.ya?ml$/,"")):null }
+/* A document by what it is, not its file name: the one written for an
+   application is "CV · Monzo" or "Letter · iFood"; any other reads as words
+   ("my-cv" is "My CV"). The file name stays in the tooltip and the path. */
+function humanSlug(s){
+  return String(s||"").replace(/\.[a-z]{2}(-[a-z]{2})?$/i,"").replace(/[-_]+/g," ").trim()
+    .replace(/\bcv\b/gi,"CV").replace(/^./,c=>c.toUpperCase());
+}
+function docTitle(d){
+  if(!d) return "";
+  const letter=d.letter||d.group==="Cover letters";
+  const j=(S.jobs||[]).find(j=>(letter?j.letter_path:j.cv_path)===d.path);
+  return j?(letter?t("Letter"):t("CV"))+" · "+j.company:humanSlug(d.label);
+}
 /* The band above the applications and the card on the Documents screen are the
    same statement about the same document, so it is written once and mounted
    twice. The handlers hang off data attributes rather than ids: both elements
@@ -4472,10 +4497,10 @@ function drawDocuments(){
         :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
         ((d.lang||"en")!==srcLang?'<span class="langs">'+lchip(d.lang,true)+'</span>':'')+
         (letter?'<span class="tag">Letter</span>':'')+'</span>'+
-      '<span class="meta"><b>'+esc(d.label)+'</b><span>'+about+'</span>'+
+      '<span class="meta"><b>'+esc(docTitle(d))+'</b><span>'+about+'</span>'+
         '<em>'+esc(mtimeLabel(d.mtime))+(S.pages[d.path]?" \u00b7 "+S.pages[d.path]+
           " page"+(S.pages[d.path]===1?"":"s"):"")+'</em></span></button>'+
-      '<button class="dmore" data-more="'+esc(d.path)+'" aria-label="'+esc(t("Rename or delete {name}",{name:d.label}))+
+      '<button class="dmore" data-more="'+esc(d.path)+'" aria-label="'+esc(t("Rename or delete {name}",{name:docTitle(d)}))+
         '" title="'+esc(t("Rename or delete"))+'">&#8943;</button></div>';
   };
   const lane=(title,list,why,empty)=>
@@ -4573,7 +4598,7 @@ function baseSheet(){
     'they were made from.</p></div>'+
     '<div class="fg w88"><label>Use</label><select id="bs-doc">'+
       docs.map(d=>'<option value="'+esc(d.path)+'"'+
-        (b&&b.path===d.path?" selected":"")+'>'+esc(d.label)+'</option>').join("")+
+        (b&&b.path===d.path?" selected":"")+'>'+esc(docTitle(d))+'</option>').join("")+
     '</select></div>'+
     '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
     '<button class="sbtn primary" id="bs-go">Set as base</button></div>');
@@ -4947,12 +4972,14 @@ const SRC_OTHER=[["careers","Company’s careers page","↗"],["referral","Refer
   ["recruiter","Recruiter","☎"]];
 function sourceMark(j){
   const b=jobBoard(j);
-  if(b) return boardMark(b)+'<span class="nm">'+esc(b.label)+'</span>';
+  /* A long name shortens where the fact has only a little room; hover says it all. */
+  if(b) return boardMark(b)+'<span class="nm" data-noi18n title="'+esc(b.label)+'">'+esc(b.short||b.label)+'</span>';
   const o=SRC_OTHER.find(x=>x[1]===j.source);
   if(j.source) return (o?'<span class="gl">'+o[2]+'</span>':'')+'<span class="nm">'+esc(j.source)+'</span>';
   return '<span class="nm" style="color:var(--t500)">Not set</span>';
 }
-function sourceMenu(j,btn){
+function sourceMenu(j,btn,pick){
+  pick=pick||(v=>saveJob(j.id,{source:v}));
   let m=$("#ap-menu"); if(m){ m.remove(); return }
   const cur=(jobBoard(j)||{}).id, said=String(j.source||"");
   const boards=SRC_FIRST.map(id=>BOARDS.find(b=>b.id===id)).filter(Boolean)
@@ -4970,8 +4997,8 @@ function sourceMenu(j,btn){
   m.style.top=Math.min(r.bottom+6,innerHeight-370)+"px";
   m.onclick=e=>{ const o=e.target.closest("[data-src]"); if(!o) return; m.remove();
     let v=o.dataset.src;
-    if(!v){ v=(prompt("Where did you find it?",jobBoard(j)?"":said)||"").trim(); if(!v) return }
-    saveJob(j.id,{source:v}) };
+    if(!v){ v=(prompt(t("Where did you find it?"),jobBoard(j)?"":said)||"").trim(); if(!v) return }
+    pick(v) };
   setTimeout(()=>document.addEventListener("pointerdown",function off(ev){
     if(!m.contains(ev.target)){ m.remove(); document.removeEventListener("pointerdown",off,true) } },true),0);
 }
@@ -5036,7 +5063,7 @@ function drawJobInspector(){
       '<option value="">'+(key==="cv_path"?"no CV yet":"no cover letter")+'</option>'+
       ((S.state&&S.state.documents||[]).filter(d=>d.group===group).map(d=>
         '<option value="'+esc(d.path)+'"'+(d.path===linked?" selected":"")+'>'+
-        esc(d.label)+'</option>').join(""))+'</select>'+
+        esc(docTitle(d))+'</option>').join(""))+'</select>'+
       (linked?'<button class="alink" data-open-doc="'+esc(linked)+'">Open</button>':"")+
       '</div>';
   };
@@ -5081,7 +5108,7 @@ function drawJobInspector(){
     : sent
     ? '<div class="ap-doc"><div class="pg none"><label for="ap-cv-link">'+esc(t("Which CV did you send?"))+'</label>'+
         '<select id="ap-cv-link"><option value="">'+esc(t("Choose…"))+'</option>'+
-        cvOpts.map(d=>'<option value="'+esc(d.path)+'">'+esc(d.label)+'</option>').join("")+'</select></div>'+
+        cvOpts.map(d=>'<option value="'+esc(d.path)+'">'+esc(docTitle(d))+'</option>').join("")+'</select></div>'+
       '<div class="t"><b>'+esc(t("The CV you sent"))+'</b><span>'+esc(t("Linked, it is there to re-read before an interview"))+'</span></div></div>'
     : '<div class="ap-doc"><div class="pg none"><span>No CV for this one yet</span>'+
         '<button class="obtn" data-tailor-here'+(tailoring?" disabled":"")+'>'+(tailoring?"Tailoring…":"Tailor a CV")+'</button></div>'+
@@ -5390,25 +5417,24 @@ function newJobSheet(seed){
       '<label>Status</label><select id="nj-status">'+S.statuses.map(s=>
         '<option value="'+s+'">'+esc(prettyStatus(s))+'</option>').join("")+'</select>'+
       /* The same places the application's own Found on menu offers. */
-      '<label>Found on</label><input id="nj-source" autocomplete="off" list="nj-sources" '+
-        'placeholder="LinkedIn, referral, careers page…"><datalist id="nj-sources">'+
-        SRC_FIRST.map(id=>BOARDS.find(b=>b.id===id)).filter(Boolean).concat(BOARDS.filter(b=>!SRC_FIRST.includes(b.id)))
-          .map(b=>'<option value="'+esc(b.label)+'">').join("")+
-        SRC_OTHER.map(([,l])=>'<option value="'+esc(l)+'">').join("")+'</datalist>'+
+      '<label>Found on</label><button type="button" class="ap-src nj-src" id="nj-source" data-v="'+esc(seed.source||"")+'" aria-haspopup="listbox">'+
+        sourceMark({source:seed.source||""})+'</button>'+
       '<label>Salary</label><input id="nj-salary" type="number" class="mono">'+
       '<label>Follow-up</label><input id="nj-followup" type="date">'+
       '<label>CV</label><select id="nj-cv"><option value="">Not linked</option>'+
         docs("My CVs").map(d=>'<option value="'+esc(d.path)+'"'+
-          (d.path===seed.cv_path?" selected":"")+'>'+esc(d.label)+'</option>').join("")+
+          (d.path===seed.cv_path?" selected":"")+'>'+esc(docTitle(d))+'</option>').join("")+
         '</select>'+
       '<label>Cover letter</label><select id="nj-letter"><option value="">Not linked</option>'+
-        docs("Cover letters").map(d=>'<option value="'+esc(d.path)+'">'+esc(d.label)+
+        docs("Cover letters").map(d=>'<option value="'+esc(d.path)+'">'+esc(docTitle(d))+
           '</option>').join("")+'</select>'+
       '<label>Notes</label><textarea id="nj-notes" rows="3"></textarea>'+
     '</div>'+
     '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
     '<button class="sbtn primary" id="nj-go">Add</button></div>');
   $("#sheet [data-cancel]").onclick=closeSheet;
+  const src=$("#nj-source");
+  src.onclick=e=>{ e.stopPropagation(); sourceMenu({source:src.dataset.v},src,v=>{ src.dataset.v=v; src.innerHTML=sourceMark({source:v}) }) };
   $("#nj-go").onclick=async()=>{
     const v=id=>$("#"+id).value.trim();
     if(!v("nj-company")||!v("nj-title")) return toast("Company and role are required",true);
@@ -5416,7 +5442,7 @@ function newJobSheet(seed){
       const j=await post("/api/jobs",{
         company:v("nj-company"), title:v("nj-title"), status:$("#nj-status").value,
         location:v("nj-location")||null,
-        source:v("nj-source")||null, url:v("nj-url")||null,
+        source:$("#nj-source").dataset.v||null, url:v("nj-url")||null,
         salary_expected:v("nj-salary")?Number(v("nj-salary")):null,
         followup_date:v("nj-followup")||null, notes:v("nj-notes")||null,
         cv_path:$("#nj-cv").value||null, letter_path:$("#nj-letter").value||null});
@@ -6717,7 +6743,7 @@ function newDocumentSheet(){
     const pick=list.some(d=>d.path===S.path)?S.path:kind==="cv"&&list.some(d=>d.path===base)?base:"";
     $("#nd-base").innerHTML='<option value="">A blank starter</option>'+
       list.map(d=>'<option value="'+esc(d.path)+'"'+
-        (d.path===pick?" selected":"")+'>'+esc(d.label)+
+        (d.path===pick?" selected":"")+'>'+esc(docTitle(d))+
         (S.pages[d.path]?" · "+S.pages[d.path]+" page"+(S.pages[d.path]===1?"":"s"):"")+
         '</option>').join("");
   };

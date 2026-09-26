@@ -3055,3 +3055,5 @@ textarea{resize:vertical}
   background:var(--pp-soft);box-shadow:inset 0 0 0 1px var(--pp-rule);font-size:13px;line-height:1.45;color:var(--pp-2)}
 .pp-ask span{flex:1 1 320px}
 .pp-ask code{font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:4px 8px;border-radius:6px;background:var(--pp-trk);color:var(--pp-fg)}
+/* Found on in a new application: the same picker as on the application. */
+.nj-src{justify-self:start;min-width:220px}
