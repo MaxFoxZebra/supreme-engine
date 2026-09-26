@@ -715,6 +715,51 @@ def save_person(job_id: str, name: str | None = None, email: str | None = None,
 
 
 @tool
+def get_interview_prep(job_id: str) -> dict:
+    """The interview prep for an application's next round, as the user sees
+    it: the likely questions (each with `src` posting, cv, round or you, the
+    posting line or CV line it comes from, the user's notes, and `state`
+    work or got from rehearsing), the stories (`req` from the posting, `proof`
+    from the CV, empty when nothing backs it) and the questions to ask them.
+
+    `local` true means the app made it from the posting and the CV alone:
+    read the posting (read_job) and the CV sent (read_cv on its cv_path),
+    then write better ones with save_interview_prep.
+    """
+    return studio.interview_prep(job_id)
+
+
+@tool
+def save_interview_prep(job_id: str, questions: list[dict],
+                        stories: list[dict] | None = None,
+                        asks: list[str] | None = None) -> dict:
+    """Write the interview prep for an application's next round.
+
+    `questions`: 6 to 10 likely questions, each {"q", "src", "why", "cv"}:
+    `src` is "posting" (a requirement turned into a question: put the posting
+    line in `why`), "cv" (a claim on the CV they will test: put the CV line in
+    `cv`) or "round" (what this kind of round asks). Write them in the
+    application's language, as the interviewer would say them.
+    `stories`: what the posting asks for, each {"req", "proof", "where"}:
+    the CV line that shows it and where it is from, or "" in proof when
+    nothing does, which the user sees as a gap to prepare.
+    `asks`: 3 to 5 questions for the user to ask the person in this round.
+
+    The user's notes and rehearsal marks stay on any question you ask again,
+    and their own questions are kept. Read what is there first with
+    get_interview_prep.
+    """
+    q = [{"q": x.get("q"), "src": x.get("src") or "round", "why": x.get("why") or "",
+          "cv": x.get("cv") or "", "note": "", "state": ""} for x in questions if isinstance(x, dict)]
+    data = {"questions": q}
+    if stories is not None:
+        data["stories"] = stories
+    if asks is not None:
+        data["asks"] = [{"q": a, "keep": True} for a in asks if isinstance(a, str)]
+    return studio.save_interview_prep(job_id, data, by=studio.CLIENT_ID or "ai")
+
+
+@tool
 def add_job(company: str, title: str, status: str = "pending",
             url: str | None = None, location: str | None = None,
             source: str | None = None, description: str | None = None,

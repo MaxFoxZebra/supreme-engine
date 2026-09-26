@@ -5134,6 +5134,7 @@ function drawJobInspector(){
       : pasteBox("",true))+'</div></article>';
 
   body.innerHTML=
+    '<div id="ap-prep" hidden></div>'+
     '<div class="peek-grid">'+
       '<div class="col">'+
         facts+roundsHTML(j)+
@@ -5160,6 +5161,8 @@ function drawJobInspector(){
       '</div>'+
     '</div>';
   body.querySelectorAll("[data-thumb]").forEach(el=>apThumb(el,el.dataset.thumb));
+  if(PREP.job!==j.id) PREP.data=null;
+  drawPrep(j);
   $("#ap-src").onclick=e=>{ e.stopPropagation(); sourceMenu(j,$("#ap-src")) };
   const wr=$("#ap-write");
   if(wr) wr.onclick=async()=>{
@@ -7954,6 +7957,204 @@ async function packSheet(id){
   };
 }
 
+
+/* ---- Interview prep ------------------------------------------------------
+   On the application while a round is booked: how ready you are, what the
+   posting asks for next to what your CV proves, and the likely questions to
+   rehearse one at a time, out loud. Made here from the posting, the CV you
+   sent and the kind of round; an AI client can write better ones, and your
+   notes stay. */
+const PREP={job:null,data:null,tick:null};
+const prepRound=j=>{
+  if(DEAD_ST.has(j.status)) return null;
+  const rs=j.rounds||[], i=rs.findIndex(r=>!r.outcome&&r.at);
+  if(i<0) return null;
+  const at=interviewMoment({interview_at:rs[i].at+":00",interview_tz:rs[i].tz||null});
+  return at&&at>new Date()?{r:rs[i],n:i+1,m:rs.length,at}:null;
+};
+function prepParts(d,j){
+  const qs=d.questions||[], got=qs.filter(q=>q.state==="got").length;
+  const st=d.stories||[], proved=st.filter(s=>s.proof).length;
+  const keep=(d.asks||[]).filter(a=>a.keep).length;
+  const parts=[
+    {k:"q",label:t("Questions rehearsed"),val:t("{n} of {m}",{n:got,m:qs.length}),f:qs.length?got/qs.length:0},
+    {k:"s",label:t("Stories with proof"),val:t("{n} of {m}",{n:proved,m:st.length}),f:st.length?proved/st.length:1},
+    {k:"a",label:t("Questions to ask"),val:t("{n} ready",{n:keep}),f:Math.min(1,keep/2)},
+    {k:"c",label:t("The CV you sent"),val:j.cv_path?(d.cv_read?t("re-read"):""):t("not linked"),f:d.cv_read?1:0,
+      act:j.cv_path&&!d.cv_read?t("Re-read →"):""},
+  ];
+  return {parts,pct:Math.round(parts.reduce((a,p)=>a+p.f,0)/parts.length*100)};
+}
+async function drawPrep(j){
+  const host=$("#ap-prep"); if(!host) return;
+  clearInterval(PREP.tick);
+  const nr=prepRound(j);
+  if(!nr){ host.innerHTML=""; host.hidden=true; return }
+  host.hidden=false;
+  if(PREP.job!==j.id||!PREP.data){
+    PREP.job=j.id; PREP.data=null;
+    host.innerHTML='<section class="pp-stage pp-wait"><span class="spin"></span></section>';
+    try{ PREP.data=await api("/api/jobs/prep?id="+encodeURIComponent(j.id)) }
+    catch(e){ host.innerHTML=""; host.hidden=true; return }
+    if(S.jsel!==j.id) return;
+  }
+  const d=PREP.data, r=nr.r, {parts,pct}=prepParts(d,j);
+  const who=(j.people||[]).find(p=>p.name&&p.name===r.with);
+  const two=r.tz&&r.tz!==userTz();
+  const when=fmtKey(dayIn(nr.at),{weekday:"long"})+", "+hmIn(nr.at,userTz());
+  const sub=[two?t("{t} in {city}",{t:hmIn(nr.at,r.tz),city:tzCity(r.tz)}):"",
+    who&&who.role?t(who.role):""].filter(Boolean).join(" · ");
+  const ring=415, off=Math.round(ring*(1-pct/100));
+  const cd=()=>{ const left=Math.max(0,nr.at-new Date()), D=Math.floor(left/864e5), H=Math.floor(left/36e5)%24, M=Math.floor(left/6e4)%60;
+    return [[D,t("days")],[String(H).padStart(2,"0"),t("hours")],[String(M).padStart(2,"0"),t("min")]]
+      .map(([n,u])=>'<span><b>'+n+'</b><small>'+esc(u)+'</small></span>').join("") };
+  const st=d.stories||[], qs=d.questions||[], proved=st.filter(s=>s.proof).length;
+  const by=d.by&&!d.local?(aiClient(d.by)||{}).label||t("your AI client"):"";
+  const aiOn=(S.ai||[]).some(c=>c.state==="connected");
+  const deck=qs.slice(0,3).reverse();
+  host.innerHTML='<section class="pp-stage" aria-labelledby="pp-h">'+
+    '<div class="pp-top">'+
+      '<div class="pp-when"><span class="pp-kick"><i></i>'+esc(t("Round {n} of {m}",{n:nr.n,m:nr.m})+(r.kind?" · "+t(r.kind):""))+'</span>'+
+        '<h2 id="pp-h">'+esc(r.with?t("{when} with {who}",{when,who:r.with}):when)+'</h2>'+
+        (sub?'<span class="pp-sub">'+esc(sub)+'</span>':'')+
+        '<span class="pp-cd" id="pp-cd">'+cd()+'</span></div>'+
+      '<div class="pp-ready"><div class="pp-ring" role="img" aria-label="'+esc(t("{n}% ready",{n:pct}))+'">'+
+        '<svg viewBox="0 0 168 168" aria-hidden="true"><defs><linearGradient id="pp-rg" x1="0" y1="0" x2="1" y2="1">'+
+          '<stop offset="0" stop-color="var(--pp-ring-a)"/><stop offset="1" stop-color="var(--pp-ring-b)"/></linearGradient></defs>'+
+          '<circle cx="84" cy="84" r="66" class="trk"/><circle cx="84" cy="84" r="66" class="val" style="--off:'+off+'"/></svg>'+
+        '<span class="pp-pct"><b>'+pct+'<i>%</i></b><small>'+esc(t("ready"))+'</small></span></div>'+
+        '<div class="pp-parts">'+parts.map(p=>'<div class="pp-part"><span><span>'+esc(p.label)+'</span><b>'+esc(p.val)+
+          (p.act?' <button type="button" class="linkbtn" data-pp-cv>'+esc(p.act)+'</button>':'')+'</b></span>'+
+          '<i><i class="'+(p.f>=1?"done":"")+'" style="width:'+Math.max(3,Math.round(p.f*100))+'%"></i></i></div>').join("")+'</div></div>'+
+    '</div>'+
+    (st.length?'<div class="pp-asks"><div class="pp-h3"><h3>'+esc(t("What they ask for"))+'</h3><span>'+
+        esc(t("{n} of {m} backed by a line of your CV",{n:proved,m:st.length}))+'</span></div>'+
+      st.map((s,i)=>'<div class="pp-row'+(s.proof?"":" gap")+'">'+
+        (s.proof?'<i class="ok" aria-hidden="true">✓</i>':'<i class="dot" aria-hidden="true"></i>')+
+        '<span class="rq" data-noi18n>'+esc(s.req)+'</span>'+
+        (s.proof?'<span class="pf" data-noi18n>'+esc(s.proof)+(s.where?' <em>· '+esc(s.where)+'</em>':'')+'</span>'
+          :'<span class="pf miss"><b>'+esc(t("Nothing in your CV proves it yet"))+'</b> <button type="button" class="linkbtn" data-pp-story="'+i+'">'+
+            esc(t("Write the story →"))+'</button></span>')+'</div>').join("")+'</div>':'')+
+    '<div class="pp-deck"><div class="cards" aria-hidden="true">'+deck.map((q,i)=>'<div class="pp-card" data-i="'+(deck.length-1-i)+'">'+
+        '<span class="pp-src" data-src="'+q.src+'">'+esc(prepSrc(q.src,r))+'</span><b data-noi18n>'+esc(q.q)+'</b>'+
+        (i===deck.length-1?'<small>'+esc(t("Question {n} of {m}",{n:1,m:qs.length}))+'</small>':'')+'</div>').join("")+'</div>'+
+      '<div class="cta"><span class="kick">'+esc(t("Rehearse"))+'</span>'+
+        '<b>'+esc(t("{n} questions they are likely to ask, one at a time, out loud.",{n:qs.length}))+'</b>'+
+        '<span class="lede">'+esc(t("Two minutes each. The ones you mark “needs work” come back first next time."))+'</span>'+
+        '<span class="acts"><button type="button" class="pp-go" id="pp-go">'+esc(t("Start rehearsing"))+'</button>'+
+          '<button type="button" class="linkbtn" id="pp-all">'+esc(t("See all questions"))+'</button></span></div></div>'+
+    '<div class="pp-foot">'+(by?esc(t("Prepared by {who} from the posting and your CV · {d}",{who:by,d:d.at?fmtKey(d.at,{day:"numeric",month:"short"}):""}))
+        :esc(t("Made on this computer from the posting, the CV you sent and the kind of round."))+
+          (aiOn?' '+esc(t("Ask your AI client for better ones: “prepare my {co} interview”.",{co:j.company}))
+            :' <button type="button" class="linkbtn" id="pp-ai">'+esc(t("Connect an AI client for better questions"))+'</button>'))+
+      '<span class="grow"></span><button type="button" class="linkbtn" id="pp-askl">'+
+        esc(r.with?t("Questions to ask {who}",{who:r.with.split(" ")[0]}):t("Questions to ask them"))+'</button></div>'+
+  '</section>';
+  PREP.tick=setInterval(()=>{ const el=$("#pp-cd"); if(el) el.innerHTML=cd(); else clearInterval(PREP.tick) },30000);
+  $("#pp-go").onclick=()=>rehearse(j);
+  $("#pp-all").onclick=()=>prepSheet(j,"q");
+  $("#pp-askl").onclick=()=>prepSheet(j,"a");
+  const ai=$("#pp-ai"); if(ai) ai.onclick=()=>openSettings("ai");
+  $$("#ap-prep [data-pp-cv]").forEach(b=>b.onclick=()=>{ prepSave(j,{...PREP.data,cv_read:true}); openDoc(j.cv_path) });
+  $$("#ap-prep [data-pp-story]").forEach(b=>b.onclick=()=>{
+    const s=st[+b.dataset.ppStory], q={id:Math.random().toString(36).slice(2,10),q:t("Tell us about a time you showed this: “{req}”.",{req:s.req}),
+      src:"posting",why:s.req,cv:"",note:"",state:"work"};
+    prepSave(j,{...PREP.data,questions:[q,...(PREP.data.questions||[])]}).then(()=>rehearse(j,q.id));
+  });
+}
+const prepSrc=(src,r)=>src==="posting"?t("From the posting"):src==="cv"?t("From your CV"):src==="you"?t("Yours"):(r&&r.kind?t(r.kind):t("This round"));
+async function prepSave(j,data){
+  PREP.data={...data};
+  try{ const r=await post("/api/jobs/prep",{id:j.id,prep:data}); if(PREP.job===j.id) PREP.data=r }
+  catch(e){ toast(e.message,true) }
+  if(S.jsel===j.id&&!$("#rh")) drawPrep(j);
+}
+/* Every question with its notes, your own added, and the questions to ask. */
+function prepSheet(j,focus){
+  const d=PREP.data, r=(prepRound(j)||{}).r;
+  const qrow=(q,i)=>'<details class="pp-q"'+(i===0&&focus==="q"?' open':'')+'><summary><span class="pp-src" data-src="'+q.src+'">'+esc(prepSrc(q.src,r))+'</span>'+
+    '<span class="tx" data-noi18n>'+esc(q.q)+'</span>'+(q.state==="got"?'<span class="st got">'+esc(t("Got it"))+'</span>':q.state==="work"?'<span class="st work">'+esc(t("Needs work"))+'</span>':'')+'</summary>'+
+    (q.why?'<p class="why">'+esc(t("The posting"))+': “'+esc(q.why)+'”</p>':'')+(q.cv?'<p class="why">'+esc(t("Your CV"))+': '+esc(q.cv)+'</p>':'')+
+    '<label class="pk-field">'+esc(t("Your answer, in a few lines"))+'<textarea rows="3" data-note="'+esc(q.id)+'" placeholder="'+
+      esc(t("What was going on, what you did, the number that shows it worked."))+'">'+esc(q.note||"")+'</textarea></label></details>';
+  openSheet('<h3>'+esc(focus==="a"?t("Questions to ask them"):t("Likely questions"))+'</h3>'+
+    (focus==="a"?'<div class="pp-asklist">'+(d.asks||[]).map(a=>'<label class="pk-check"><input type="checkbox" data-ask="'+esc(a.id)+'"'+(a.keep?' checked':'')+'>'+esc(a.q)+'</label>').join("")+
+        '<div class="pp-add"><input id="pp-newa" placeholder="'+esc(t("A question of your own"))+'"><button class="sbtn" id="pp-adda">'+esc(t("Add"))+'</button></div></div>'
+      :'<div class="pp-qlist">'+(d.questions||[]).map(qrow).join("")+
+        '<div class="pp-add"><input id="pp-newq" placeholder="'+esc(t("A question you expect"))+'"><button class="sbtn" id="pp-addq">'+esc(t("Add"))+'</button></div></div>')+
+    '<div class="foot"><button class="sbtn primary" id="pp-done">'+esc(t("Done"))+'</button></div>');
+  const cur=()=>JSON.parse(JSON.stringify(PREP.data));
+  $$("#sheet [data-note]").forEach(ta=>ta.onchange=()=>{ const x=cur(); const q=x.questions.find(q=>q.id===ta.dataset.note); if(q){ q.note=ta.value; prepSave(j,x) } });
+  $$("#sheet [data-ask]").forEach(cb=>cb.onchange=()=>{ const x=cur(); const a=x.asks.find(a=>a.id===cb.dataset.ask); if(a){ a.keep=cb.checked; prepSave(j,x) } });
+  const addq=$("#pp-addq"); if(addq) addq.onclick=()=>{ const v=$("#pp-newq").value.trim(); if(!v) return;
+    const x=cur(); x.questions.push({id:Math.random().toString(36).slice(2,10),q:v,src:"you",why:"",cv:"",note:"",state:""}); prepSave(j,x).then(()=>prepSheet(j,"q")) };
+  const adda=$("#pp-adda"); if(adda) adda.onclick=()=>{ const v=$("#pp-newa").value.trim(); if(!v) return;
+    const x=cur(); x.asks.push({id:Math.random().toString(36).slice(2,10),q:v,keep:true}); prepSave(j,x).then(()=>prepSheet(j,"a")) };
+  $("#pp-done").onclick=()=>{ closeSheet(); drawPrep(j) };
+}
+/* Rehearse: one question at a time, full screen, two minutes each, out loud.
+   The ones that need work come first; your notes stay hidden until you have
+   answered. */
+function rehearse(j,first){
+  const d=PREP.data; if(!d||!(d.questions||[]).length) return;
+  const nr=prepRound(j)||{}, r=nr.r||{};
+  const rank={work:0,"":1,got:2};
+  let order=[...d.questions].sort((a,b)=>rank[a.state||""]-rank[b.state||""]);
+  if(first) order=[order.find(q=>q.id===first),...order.filter(q=>q.id!==first)].filter(Boolean);
+  let i=0, t0=Date.now(), shown=false, timer=null;
+  const el=document.createElement("div"); el.id="rh"; el.setAttribute("role","dialog"); el.setAttribute("aria-modal","true");
+  el.setAttribute("aria-label",t("Rehearsing"));
+  document.body.append(el);
+  const close=()=>{ clearInterval(timer); document.removeEventListener("keydown",keys,true); el.remove(); drawPrep(j) };
+  const mark=state=>{ const x=JSON.parse(JSON.stringify(PREP.data)); const q=x.questions.find(q=>q.id===order[i].id);
+    if(q&&state!=null) q.state=state; prepSave(j,x); order[i]={...order[i],state:state==null?order[i].state:state};
+    if(i<order.length-1){ i++; draw() } else done() };
+  const done=()=>{ clearInterval(timer); const got=order.filter(q=>q.state==="got").length;
+    el.innerHTML='<div class="rh-done"><b>'+esc(t("{n} of {m} you have got",{n:got,m:order.length}))+'</b><span>'+
+      esc(t("The ones that need work come back first next time."))+'</span><button type="button" class="pp-go" id="rh-x">'+esc(t("Back to the application"))+'</button></div>';
+    $("#rh-x").onclick=close; $("#rh-x").focus() };
+  const draw=()=>{
+    const q=order[i]; t0=Date.now(); shown=false;
+    const segs=order.map((x,k)=>'<i class="'+(k===i?"now":x.state||"")+'"></i>').join("");
+    const work=order.filter(x=>x.state==="work").length;
+    el.innerHTML='<header class="rh-top">'+companyMark(j)+'<span class="rh-who"><b>'+esc(t("Rehearsing · {co}, round {n}",{co:j.company,n:nr.n||1}))+'</b>'+
+        '<small>'+esc([r.kind?t(r.kind):"",r.with?t("with {n}",{n:r.with}):""].filter(Boolean).join(" · "))+'</small></span><span class="grow"></span>'+
+        '<span class="rh-prog"><small>'+esc(t("Question {n} of {m}",{n:i+1,m:order.length})+(work?" · "+t("{n} need(s) work",{n:work}):""))+'</small><span>'+segs+'</span></span>'+
+        '<button type="button" class="rh-close" id="rh-close">'+esc(t("Done for now"))+' <kbd>Esc</kbd></button></header>'+
+      '<main class="rh-main"><div class="rh-col"><div class="rh-card"><span class="rh-src"><span class="pp-src" data-src="'+q.src+'">'+esc(prepSrc(q.src,r))+'</span></span>'+
+          '<b class="rh-q" data-noi18n>'+esc(q.q)+'</b>'+
+          /* Where the question comes from: the CV line they will test, or
+             the posting's; your line against a posting ask is for the notes. */
+          (q.src==="cv"&&q.cv?'<span class="rh-line"><span>'+esc(t("The line"))+'</span>'+esc(q.cv)+'</span>'
+            :q.why?'<span class="rh-line"><span>'+esc(t("The posting"))+'</span>'+esc(q.why)+'</span>':'')+'</div>'+
+        '<div class="rh-notes"><button type="button" id="rh-nt" aria-expanded="false">'+esc(t("My notes for this one"))+
+          ' <small>'+esc(q.note?t("hidden until you have answered"):t("none yet"))+'</small><kbd>N</kbd></button>'+
+          '<textarea id="rh-ta" rows="3" hidden placeholder="'+esc(t("What was going on, what you did, the number that shows it worked."))+'">'+esc(q.note||"")+'</textarea></div>'+
+        '<div class="rh-acts"><button type="button" class="rh-work" id="rh-w"><kbd>←</kbd>'+esc(t("Needs work"))+'</button>'+
+          '<button type="button" class="rh-skip" id="rh-s">'+esc(t("Skip"))+'</button>'+
+          '<button type="button" class="rh-got" id="rh-g">'+esc(t("I've got it"))+'<kbd>→</kbd></button></div></div>'+
+        '<aside class="rh-side"><div class="rh-timer"><svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="86" class="trk"/>'+
+            '<circle cx="100" cy="100" r="86" class="val" id="rh-arc"/></svg><span><b id="rh-t">2:00</b><small>'+esc(t("out loud"))+'</small></span></div>'+
+          '<div class="rh-next"><small>'+esc(t("Up next"))+'</small>'+order.slice(i+1,i+4).map(x=>'<span data-noi18n>'+esc(x.q)+'</span>').join("")+'</div>'+
+          '<div class="rh-tip"><b>'+esc(t("Say it in this order"))+'</b><span>'+esc(t("What was going on · what you did · the number that shows it worked."))+'</span></div></aside></main>';
+    $("#rh-close").onclick=close; $("#rh-w").onclick=()=>mark("work"); $("#rh-g").onclick=()=>mark("got"); $("#rh-s").onclick=()=>mark(null);
+    const ta=$("#rh-ta");
+    $("#rh-nt").onclick=()=>{ shown=!shown; ta.hidden=!shown; $("#rh-nt").setAttribute("aria-expanded",String(shown)); if(shown) ta.focus() };
+    ta.onchange=()=>{ const x=JSON.parse(JSON.stringify(PREP.data)); const qq=x.questions.find(z=>z.id===q.id); if(qq){ qq.note=ta.value; order[i].note=ta.value; prepSave(j,x) } };
+    $("#rh-g").focus();
+  };
+  timer=setInterval(()=>{ const left=Math.max(0,120-(Date.now()-t0)/1000), tt=$("#rh-t"), arc=$("#rh-arc");
+    if(tt) tt.textContent=Math.floor(left/60)+":"+String(Math.floor(left%60)).padStart(2,"0");
+    if(arc) arc.style.strokeDashoffset=String(540*(1-left/120)); if(arc) arc.classList.toggle("over",left===0) },250);
+  const keys=e=>{ if(!$("#rh")) return;
+    if(e.target&&e.target.id==="rh-ta"){ if(e.key==="Escape"){ e.preventDefault(); e.target.blur() } return }
+    if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); close() }
+    else if(e.key==="ArrowLeft"&&$("#rh-w")){ e.preventDefault(); mark("work") }
+    else if(e.key==="ArrowRight"&&$("#rh-g")){ e.preventDefault(); mark("got") }
+    else if((e.key==="n"||e.key==="N")&&$("#rh-nt")){ e.preventDefault(); $("#rh-nt").click() } };
+  document.addEventListener("keydown",keys,true);
+  draw();
+}
 
 /* ---- People on an application, and what to write them --------------------
    A recruiter, a manager, whoever referred you: kept with the application,

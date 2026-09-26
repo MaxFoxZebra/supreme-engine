@@ -99,6 +99,7 @@ if __name__ == "__main__":
                  "mark_translation_current", "create_letter", "write_letter"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
+                    "get_interview_prep", "save_interview_prep",
                     "set_company_logo"}
     check("every tool is advertised", set(tools) == documents | applications,
           ",".join(sorted(set(tools) ^ (documents | applications))) or "exact match")
@@ -278,6 +279,19 @@ if __name__ == "__main__":
     check("clearing an interview also records that it happened",
           row["interview_at"] is None and "cleared" in (row["notes"] or "").lower(),
           (row["notes"] or "").splitlines()[-1] if row["notes"] else "no note")
+
+    # Interview prep: made here until a client writes it, notes kept after.
+    r = call("get_interview_prep", {"job_id": job_id})
+    prep = json.loads(text(r))
+    check("get_interview_prep makes prep here", prep.get("local") is True and prep.get("questions"),
+          text(r)[:200])
+    r = call("save_interview_prep", {"job_id": job_id, "questions": [
+        {"q": "How would you run this across two regions?", "src": "posting", "why": "Two regions"}],
+        "asks": ["What does a hard week look like?"]})
+    prep = json.loads(text(r))
+    check("save_interview_prep stores the client's questions",
+          prep.get("local") is False and prep["questions"][0]["q"].startswith("How would you")
+          and prep["asks"][0]["keep"], text(r)[:200])
 
     # The posting after the fact: a link found a week later, and the text,
     # which is not replaced unasked once one is saved (add_job saved one).

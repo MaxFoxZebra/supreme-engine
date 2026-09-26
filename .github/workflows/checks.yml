@@ -98,6 +98,9 @@ jobs:
       - name: Interview rounds
         run: python checks/roundstest.py
 
+      - name: Interview prep
+        run: python checks/preptest.py
+
       - name: Save to CV Studio
         run: python checks/cliptest.py
 

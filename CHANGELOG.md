@@ -8,6 +8,31 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.26.0
+
+Interview prep.
+
+- **Prepare for the next round, on the application.** Once a round is
+  booked, the application opens on a prep card (dark in dark mode, warm
+  paper in light): the round, who, when in both time zones and a countdown;
+  a readiness ring made of questions rehearsed, stories with proof,
+  questions to ask and the CV you sent re-read; what the posting asks for,
+  each next to the line of your CV that shows it, with the ones nothing
+  proves in red and "Write the story →"; and the likely questions as a deck.
+- **Rehearse**, full screen: one question at a time, where it comes from
+  (the posting's line or the CV line they will test), a two-minute timer to
+  answer out loud, your notes hidden until you have answered. Needs work (←)
+  or I've got it (→); the ones that need work come back first next time.
+- **Made here, better with an AI client.** Without one, the questions come
+  from the posting's requirement lines, the claims with numbers on the CV
+  you sent and the kind of round, in the application's language, and the
+  stories match the posting to your CV by its words and names. With one,
+  two new MCP tools, get_interview_prep and save_interview_prep, let it
+  write better questions, stories and asks; your notes and rehearsal marks
+  stay on any question it asks again, and your own questions are kept.
+- See all questions (with your answer notes) and the questions to ask, both
+  editable, and your own added.
+
 ## 0.25.0
 
 Seven rounds of review, applied: what to do next, interview rounds, and a CV

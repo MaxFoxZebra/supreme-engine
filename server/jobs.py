@@ -190,7 +190,7 @@ def connect(workspace: Path) -> sqlite3.Connection:
                       ("logo", "TEXT"), ("interview_at", "TEXT"),
                       ("contact_email", "TEXT"), ("last_contact_at", "TEXT"),
                       ("language", "TEXT"), ("interview_tz", "TEXT"),
-                      ("people", "TEXT"), ("rounds", "TEXT")):
+                      ("people", "TEXT"), ("rounds", "TEXT"), ("prep", "TEXT")):
         if col not in have:
             con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
     con.commit()
@@ -220,6 +220,10 @@ def _row(r: sqlite3.Row) -> dict:
         d["rounds"] = json.loads(d.get("rounds") or "[]")
     except json.JSONDecodeError:
         d["rounds"] = []
+    try:
+        d["prep"] = json.loads(d.get("prep") or "null")
+    except json.JSONDecodeError:
+        d["prep"] = None
     # Before rounds, an application had one interview time. It is the first
     # round until the rounds are written.
     if not d["rounds"] and d.get("interview_at"):
@@ -263,6 +267,39 @@ def interview_of(rounds: list[dict]) -> tuple[str | None, str | None]:
     timed = [r for r in rounds if r.get("at")]
     nxt = next((r for r in timed if not r.get("outcome")), None) or (timed[-1] if timed else None)
     return (nxt["at"] + ":00", nxt.get("tz") or None) if nxt else (None, None)
+
+
+# Interview prep: the likely questions (each with where it comes from and
+# your notes), the stories that back the posting's asks, and the questions to
+# ask them. Stored whole, as the app or an AI client last wrote it.
+PREP_SOURCES = ("posting", "cv", "round", "you")
+
+
+def clean_prep(prep) -> dict | None:
+    if not isinstance(prep, dict):
+        return None
+    cut = lambda v, n: str(v or "").strip()[:n]
+    qs = []
+    for q in (prep.get("questions") or [])[:40]:
+        if not isinstance(q, dict) or not cut(q.get("q"), 400):
+            continue
+        qs.append({"id": cut(q.get("id"), 16) or uuid.uuid4().hex[:8], "q": cut(q.get("q"), 400),
+                   "src": q.get("src") if q.get("src") in PREP_SOURCES else "you",
+                   "why": cut(q.get("why"), 400), "cv": cut(q.get("cv"), 400),
+                   "note": cut(q.get("note"), 2000),
+                   "state": q.get("state") if q.get("state") in ("work", "got") else ""})
+    stories = []
+    for st in (prep.get("stories") or [])[:20]:
+        if isinstance(st, dict) and cut(st.get("req"), 200):
+            stories.append({"req": cut(st.get("req"), 200), "proof": cut(st.get("proof"), 300),
+                            "where": cut(st.get("where"), 80)})
+    asks = []
+    for a in (prep.get("asks") or [])[:12]:
+        if isinstance(a, dict) and cut(a.get("q"), 300):
+            asks.append({"id": cut(a.get("id"), 16) or uuid.uuid4().hex[:8], "q": cut(a.get("q"), 300),
+                         "keep": bool(a.get("keep"))})
+    return {"questions": qs, "stories": stories, "asks": asks, "by": cut(prep.get("by"), 60),
+            "at": cut(prep.get("at"), 10), "cv_read": bool(prep.get("cv_read"))}
 
 
 PERSON_FIELDS = {"name": 120, "role": 80, "email": 200, "link": 400, "last": 10}
@@ -386,6 +423,12 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
             if f in data and data[f] != cur[f]:
                 sets.append(f"{f}=?")
                 args.append(data[f])
+        if "prep" in data:
+            prep = clean_prep(data["prep"])
+            stored = json.dumps(prep, ensure_ascii=False) if prep else None
+            if stored != cur["prep"]:
+                sets.append("prep=?")
+                args.append(stored)
         if "people" in data:
             people = clean_people(data["people"])
             stored = json.dumps(people, ensure_ascii=False)

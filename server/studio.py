@@ -1876,6 +1876,52 @@ def draft_context(job_id: str) -> dict:
             "duties": duties}
 
 
+def next_round(job: dict) -> dict | None:
+    """The round being prepared for: the first one without an outcome."""
+    return next((r for r in job.get("rounds") or [] if not r.get("outcome")), None)
+
+
+def interview_prep(job_id: str) -> dict:
+    """The prep for an application's next round: what was saved (by you or an
+    AI client), else made here from the posting, the CV sent and the round."""
+    import prep as prepmod
+    job = next((j for j in jobstore.list_jobs(WORKSPACE) if j["id"] == job_id), None) \
+        if jobstore is not None else None
+    if job is None:
+        raise ValueError("No such job.")
+    rnd = next_round(job) or {}
+    stored = job.get("prep")
+    if stored and stored.get("questions"):
+        return {**stored, "local": False, "round": rnd}
+    cv = None
+    for p in (job.get("cv_path"), (base_cv() or {}).get("path")):
+        if not p:
+            continue
+        try:
+            cv = (to_plain(yaml_rt.load(safe_path(p).read_text(encoding="utf-8"))) or {}).get("cv")
+            break
+        except Exception:
+            continue
+    who = next((x for x in job.get("people") or [] if x.get("name") and x.get("name") == rnd.get("with")), {})
+    made = prepmod.build(job, cv, rnd.get("kind") or "", who.get("role") or "")
+    # What you already did with it (notes, the CV re-read) survives a rebuild.
+    if stored:
+        made = prepmod.merge(stored, {k: made[k] for k in ("questions", "stories", "asks")})
+    return {**made, "local": True, "round": rnd}
+
+
+def save_interview_prep(job_id: str, prep_data: dict, by: str = "") -> dict:
+    """Store the prep whole: the app saving your notes, or an AI client its
+    questions (merged so your notes stay)."""
+    import prep as prepmod
+    if by:
+        cur = interview_prep(job_id)
+        prep_data = prepmod.merge({k: v for k, v in cur.items() if k not in ("local", "round")},
+                                  {**prep_data, "by": by, "at": time.strftime("%Y-%m-%d")})
+    jobstore.update_job(WORKSPACE, job_id, {"prep": prep_data})
+    return interview_prep(job_id)
+
+
 def application_pack(job_id: str, fmt: str = "pdf", name: str | None = None,
                      posting: bool = False) -> tuple[bytes, str, str]:
     """The CV and the letter for one application as one PDF (CV first) or a
@@ -3541,6 +3587,14 @@ def openapi_spec() -> dict:
                 "Save to CV Studio, the bookmark: the fixed port its window is "
                 "served on, whether it is listening, and the bookmarklet itself",
                 "responses": ok}},
+            "/api/jobs/prep": {"get": {"summary":
+                "Interview prep for an application's next round: likely questions "
+                "(each with its source and your notes), stories that back the "
+                "posting's asks, and questions to ask them; made here from the "
+                "posting and the CV sent until an AI client writes better ones",
+                "parameters": [{"name": "id", "in": "query", "schema": {"type": "string"}}],
+                "responses": ok},
+                "post": {"summary": "Save the prep whole: {id, prep}", "responses": ok}},
             "/api/jobs/draft": {"get": {"summary":
                 "What an email about an application can be written from: your "
                 "name (from its CV, else the base CV), the dates you applied and "
@@ -4205,6 +4259,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/clip":
                 return self._json({"port": CLIP_PORT, "ok": CLIP_STATE["ok"],
                                    "why": CLIP_STATE["why"], "bookmarklet": bookmarklet()})
+            if u.path == "/api/jobs/prep":
+                try:
+                    return self._json(interview_prep((q.get("id") or [""])[0]))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 404)
             if u.path == "/api/jobs/draft":
                 try:
                     return self._json(draft_context((q.get("id") or [""])[0]))
@@ -4386,6 +4445,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not payload.get("logo") and payload.get("company"):
                     payload["logo"] = stored_logo(payload["company"])
                 return self._json(jobstore.add_job(WORKSPACE, payload))
+            if u.path == "/api/jobs/prep":
+                try:
+                    return self._json(save_interview_prep(payload.get("id", ""), payload.get("prep") or {}))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 404)
             if u.path == "/api/jobs/update":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
