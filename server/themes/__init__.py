@@ -250,11 +250,9 @@ SIDEBAR_SECTIONS = ["skills", "languages", "certifications", "interests", "award
                     "langues", "idiomas", "habilidades", "certificações", "certificaciones"]
 
 
-# Themes that render, for the CVs that use them, but are not offered in the
-# picker: Sidebar cannot yet carry more than a page one column holds, and
-# the first designs of our own gave way to the three after well-known
-# templates above.
-HIDDEN = {"sidebar", "aurora", "editorial", "timeline", "studio", "ledger"}
+# Themes that render but are not offered in the picker until they are
+# ready: Sidebar cannot yet carry more than a page one column holds.
+HIDDEN = {"sidebar"}
 
 
 def _lum(rgb) -> float:

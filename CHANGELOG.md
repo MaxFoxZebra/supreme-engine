@@ -22,8 +22,7 @@ tag, so a release is never published with nothing said about it.
   - **Crisp**, after Enhancv's single column: section titles in capitals
     over a heavy rule, each role in bold with its company in the accent,
     then the dates and place with small calendar and pin pictures.
-- Aurora, Editorial, Timeline, Studio and Ledger are no longer offered in
-  Design. A CV that uses one still renders as before.
+  Aurora, Editorial, Timeline, Studio and Ledger follow them in the picker.
 - Switching theme no longer turns contact icons off: they are pictures, not
   text, in every theme, so each theme keeps its own choice.
 
