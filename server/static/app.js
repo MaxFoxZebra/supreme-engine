@@ -6911,12 +6911,13 @@ async function fillThemePreviews(){
    first, then four that read well on paper. A colour sets the name, headline,
    contact line, section titles and links together; the wheel opens Colors for
    anything else. "Suits" is a hint about where a theme is usually seen. */
-const TH_INK={aurora:"rgb(79, 70, 229)",editorial:"rgb(122, 31, 43)",timeline:"rgb(13, 148, 136)",
+const TH_INK={vivid:"rgb(220, 53, 34)",swiss:"rgb(255, 94, 14)",crisp:"rgb(0, 116, 217)",aurora:"rgb(79, 70, 229)",editorial:"rgb(122, 31, 43)",timeline:"rgb(13, 148, 136)",
   studio:"rgb(31, 78, 121)",ledger:"rgb(176, 74, 44)",sidebar:"rgb(31, 111, 107)",
   classic:"rgb(0, 79, 144)",engineeringclassic:"rgb(0, 79, 144)",moderncv:"rgb(0, 79, 144)",
   ember:"rgb(155, 35, 25)",opal:"rgb(0, 100, 90)",ink:"rgb(42, 24, 82)",
   harvard:"rgb(0, 0, 0)",sb2nov:"rgb(0, 0, 0)",engineeringresumes:"rgb(0, 0, 0)"};
-const TH_SUITS={aurora:"Tech, product, startups",editorial:"Consulting, law, publishing",
+const TH_SUITS={vivid:"Tech, engineering, data",swiss:"Almost anywhere, clean and plain",
+  crisp:"Product, sales, operations",aurora:"Tech, product, startups",editorial:"Consulting, law, publishing",
   timeline:"A career with a clear story",studio:"Almost anywhere, with presence",ledger:"Consulting, product, design",
   sidebar:"Read by people: referrals, small companies",classic:"Almost anywhere",ember:"Education, health, non-profits",
   engineeringclassic:"Engineering, science",engineeringresumes:"A long career on one page",
@@ -6928,13 +6929,13 @@ const INK_KEYS=["name","headline","connections","section_titles","links"];
 /* Studio's name sits white on the colour band, so its colour is the band's:
    the section titles. The others keep a dark name beside the accent. */
 const inkKeys=t=>["studio","aurora"].includes(t)?["section_titles","links"]
-  :["sidebar","editorial","timeline","ledger"].includes(t)?["headline","section_titles","links"]:INK_KEYS;
+  :["sidebar","editorial","timeline","ledger","vivid","swiss","crisp"].includes(t)?["headline","section_titles","links"]:INK_KEYS;
 const rgbOf=v=>(/(\d+)\D+(\d+)\D+(\d+)/.exec(v||"")||[0,0,0,0]).slice(1).map(Number);
 const near=(a,b)=>{ const x=rgbOf(a),y=rgbOf(b); return Math.max(...x.map((v,i)=>Math.abs(v-y[i])))<40 };
 /* What an ATS reads cleanly, applied to a theme you switch to unless the
-   document already says otherwise: new CVs carry these already. */
-const ATS_SAFE=[[["header","connections","show_icons"],false],
-  [["header","connections","display_urls_instead_of_usernames"],true],
+   document already says otherwise: new CVs carry these already. Icons are
+   pictures in every theme, not text, so each theme keeps its own choice. */
+const ATS_SAFE=[[["header","connections","display_urls_instead_of_usernames"],true],
   [["sections","show_time_spans_in"],[]],[["typography","alignment"],"left"],
   [["page","show_top_note"],false],[["page","show_footer"],false]];
 const dzRow=path=>$$("#dz-advanced .dz-row").find(r=>

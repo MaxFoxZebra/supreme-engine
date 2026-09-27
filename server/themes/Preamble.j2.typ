@@ -1,6 +1,6 @@
-{% set cvs_ours = design.theme in ["studio", "ledger", "sidebar", "aurora", "editorial", "timeline"] %}
+{% set cvs_ours = design.theme in cvstudio_ours %}
 {% set cvs_band = design.theme in ["studio", "aurora"] %}
-{% set cvs_accent_head = design.theme in ["editorial", "timeline", "sidebar", "ledger"] %}
+{% set cvs_accent_head = design.theme in ["editorial", "timeline", "sidebar", "ledger", "vivid", "swiss", "crisp"] %}
 {% set cvs_pre %}{% include "typst/Preamble.j2.typ" %}{% endset %}
 {% if cvs_ours %}
 {#- Text in the accent colour darkened until it reads on white; on a band,
@@ -33,13 +33,23 @@
 // ATS reads only the text beside them.
 {% set cvs_ic = (cvstudio_band_ink(design.colors.section_titles) if cvs_band else design.colors.connections.as_hex()) %}
 #let cvstudio-icons = (
-{% for name in ["envelope", "phone", "location-dot", "link", "linkedin", "github", "x-twitter"] %}
+{% for name in ["envelope", "phone", "location-dot", "link", "linkedin", "github", "x-twitter", "calendar"] %}
   "{{ name }}": bytes("{{ cvstudio_icon(name, cvs_ic)|replace('"', '\\"') }}"),
 {% endfor %}
 )
 #let connection-with-icon(icon-name, body) = [
   #box(baseline: 0.13em, image(cvstudio-icons.at(icon-name, default: cvstudio-icons.at("link")), format: "svg", height: 0.85em))#h(0.12cm)#box[#body]
 ]
-{% if design.theme in ["studio", "ledger", "sidebar", "aurora", "editorial", "timeline"] %}
+{% if cvs_ours %}
+// A field passed as #f[ FIELD ] (spaced, so RenderCV can drop a missing
+// field without eating the call): without its spaces, or none if empty.
+#let cvx-trim(b) = {
+  if b == [ ] or b == [] { return none }
+  if not b.has("children") { return b }
+  let c = b.children
+  while c.len() > 0 and c.first() == [ ] { c = c.slice(1) }
+  while c.len() > 0 and c.last() == [ ] { c = c.slice(0, -1) }
+  if c.len() == 0 { none } else { c.join() }
+}
 {% include design.theme ~ "/Theme.j2.typ" %}
 {% endif %}

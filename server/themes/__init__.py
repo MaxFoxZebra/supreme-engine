@@ -26,6 +26,114 @@ HERE = Path(__file__).resolve().parent
 # What each theme changes from classic. Kept as data so the Design panel
 # can show these as the theme's own defaults rather than as your changes.
 DEFAULTS: dict[str, dict] = {
+    # After Awesome-CV (posquit0): the first name light and the last bold,
+    # section titles whose first letters take the accent before a grey rule,
+    # the place in the accent and the dates in grey italics on the right.
+    "vivid": {
+        "page": {"top_margin": "1.1cm", "bottom_margin": "1.3cm", "left_margin": "1.4cm",
+                 "right_margin": "1.4cm", "show_top_note": False, "show_footer": False},
+        "colors": {"name": "rgb(51, 51, 51)", "headline": "rgb(220, 53, 34)",
+                   "connections": "rgb(51, 51, 51)", "section_titles": "rgb(220, 53, 34)",
+                   "links": "rgb(51, 51, 51)", "body": "rgb(65, 65, 65)"},
+        "typography": {"font_family": {"body": "Source Sans 3", "name": "Roboto",
+                                       "headline": "Source Sans 3", "connections": "Roboto",
+                                       "section_titles": "Source Sans 3"},
+                       "font_size": {"body": "9.5pt", "name": "32pt", "headline": "8.5pt",
+                                     "connections": "7.8pt", "section_titles": "1.65em"},
+                       "small_caps": {"headline": True},
+                       "alignment": "justified", "line_spacing": "0.55em"},
+        "header": {"alignment": "center", "space_below_name": "0.35cm",
+                   "space_below_headline": "0.3cm", "space_below_connections": "0.45cm",
+                   "connections": {"show_icons": True, "display_urls_instead_of_usernames": False,
+                                   "phone_number_format": "international", "separator": "|",
+                                   "space_between_connections": "0.35cm"}},
+        "section_titles": {"type": "without_line", "space_above": "0.45cm", "space_below": "0.2cm"},
+        "sections": {"show_time_spans_in": [], "space_between_regular_entries": "0.9em"},
+        "entries": {"date_and_location_width": "4.2cm", "degree_width": "0cm",
+                    "highlights": {"space_left": "0.1cm", "space_between_items": "0.1em"}},
+        "templates": {
+            "single_date": "MONTH_ABBREVIATION. YEAR",
+            "experience_entry": {"main_column": "#cvx-org[ COMPANY ]\n#cvx-role[ POSITION ]\nSUMMARY\nHIGHLIGHTS",
+                                 "date_and_location_column": "#cvx-place[ LOCATION ]\n#cvx-when[ DATE ]"},
+            "education_entry": {"main_column": "#cvx-org[ INSTITUTION ]\n#cvx-role[ DEGREE_WITH_AREA ]\nSUMMARY\nHIGHLIGHTS",
+                                "degree_column": "",
+                                "date_and_location_column": "#cvx-place[ LOCATION ]\n#cvx-when[ DATE ]"},
+            "normal_entry": {"main_column": "#cvx-org[ NAME ]\nSUMMARY\nHIGHLIGHTS",
+                             "date_and_location_column": "#cvx-place[ LOCATION ]\n#cvx-when[ DATE ]"},
+            "one_line_entry": {"main_column": "#cvx-label[ LABEL ]DETAILS"},
+        },
+    },
+    # After Google Docs' Swiss: a Raleway name, section titles in orange,
+    # "Company \u2014 Role" with the dates and place in small capitals beneath:
+    # one column all the way down, dates included.
+    "swiss": {
+        "page": {"top_margin": "1.5cm", "bottom_margin": "1.4cm", "left_margin": "1.9cm",
+                 "right_margin": "1.9cm", "show_top_note": False, "show_footer": False},
+        "colors": {"name": "rgb(0, 0, 0)", "headline": "rgb(255, 94, 14)",
+                   "connections": "rgb(102, 102, 102)", "section_titles": "rgb(255, 94, 14)",
+                   "links": "rgb(102, 102, 102)", "body": "rgb(51, 51, 51)"},
+        "typography": {"font_family": {"body": "Lato", "name": "Raleway", "headline": "Raleway",
+                                       "connections": "Lato", "section_titles": "Raleway"},
+                       "font_size": {"body": "9.8pt", "name": "30pt", "headline": "12pt",
+                                     "connections": "9pt", "section_titles": "1.05em"},
+                       "alignment": "left", "line_spacing": "0.6em"},
+        "header": {"alignment": "left", "space_below_name": "0.3cm",
+                   "space_below_headline": "0.25cm", "space_below_connections": "0.55cm",
+                   "connections": {"show_icons": False, "display_urls_instead_of_usernames": True,
+                                   "phone_number_format": "international", "separator": "\u00b7",
+                                   "space_between_connections": "0.25cm"}},
+        "section_titles": {"type": "without_line", "space_above": "0.6cm", "space_below": "0.2cm"},
+        "sections": {"show_time_spans_in": [], "space_between_regular_entries": "1em"},
+        "entries": {"date_and_location_width": "0cm", "side_space": "0cm", "space_between_columns": "0cm",
+                    "degree_width": "0cm",
+                    "highlights": {"space_left": "0.1cm", "space_between_items": "0.15em"}},
+        "templates": {
+            "single_date": "MONTH_NAME YEAR",
+            "experience_entry": {"main_column": "**COMPANY** \u2014 #cvx-it[ POSITION ]\n#cvx-when[ DATE ] #cvx-where[ LOCATION ]\nSUMMARY\nHIGHLIGHTS",
+                                 "date_and_location_column": ""},
+            "education_entry": {"main_column": "**INSTITUTION** \u2014 #cvx-it[ DEGREE_WITH_AREA ]\n#cvx-when[ DATE ] #cvx-where[ LOCATION ]\nSUMMARY\nHIGHLIGHTS",
+                                "degree_column": "", "date_and_location_column": ""},
+            "normal_entry": {"main_column": "**NAME**\n#cvx-when[ DATE ] #cvx-where[ LOCATION ]\nSUMMARY\nHIGHLIGHTS",
+                             "date_and_location_column": ""},
+            "publication_entry": {"main_column": "**TITLE**\n#cvx-when[ DATE ]\nSUMMARY\nAUTHORS\nURL (JOURNAL)",
+                                  "date_and_location_column": ""},
+        },
+    },
+    # After Enhancv's single column: a bold name, the role in the accent,
+    # section titles in capitals over a heavy rule, each job's title then
+    # its company in the accent, then the dates and place with small icons.
+    "crisp": {
+        "page": {"top_margin": "1.3cm", "bottom_margin": "1.3cm", "left_margin": "1.5cm",
+                 "right_margin": "1.5cm", "show_top_note": False, "show_footer": False},
+        "colors": {"name": "rgb(17, 17, 17)", "headline": "rgb(0, 116, 217)",
+                   "connections": "rgb(55, 55, 55)", "section_titles": "rgb(0, 116, 217)",
+                   "links": "rgb(55, 55, 55)", "body": "rgb(34, 34, 34)"},
+        "typography": {"font_family": {"body": "Lato", "name": "Poppins", "headline": "Poppins",
+                                       "connections": "Lato", "section_titles": "Poppins"},
+                       "font_size": {"body": "9.6pt", "name": "27pt", "headline": "12pt",
+                                     "connections": "9pt", "section_titles": "1.12em"},
+                       "alignment": "left", "line_spacing": "0.55em"},
+        "header": {"alignment": "left", "space_below_name": "0.25cm",
+                   "space_below_headline": "0.3cm", "space_below_connections": "0.4cm",
+                   "connections": {"show_icons": True, "display_urls_instead_of_usernames": True,
+                                   "phone_number_format": "international",
+                                   "space_between_connections": "0.45cm"}},
+        "section_titles": {"type": "without_line", "space_above": "0.5cm", "space_below": "0.25cm"},
+        "sections": {"show_time_spans_in": [], "space_between_regular_entries": "0.95em"},
+        "entries": {"date_and_location_width": "0cm", "side_space": "0cm", "space_between_columns": "0cm",
+                    "degree_width": "0cm",
+                    "highlights": {"space_left": "0.1cm", "space_between_items": "0.12em"}},
+        "templates": {
+            "experience_entry": {"main_column": "#cvx-role[ POSITION ]\n#cvx-org[ COMPANY ]\n#cvx-when[ DATE ] #cvx-where[ LOCATION ]\nSUMMARY\nHIGHLIGHTS",
+                                 "date_and_location_column": ""},
+            "education_entry": {"main_column": "#cvx-role[ DEGREE_WITH_AREA ]\n#cvx-org[ INSTITUTION ]\n#cvx-when[ DATE ] #cvx-where[ LOCATION ]\nSUMMARY\nHIGHLIGHTS",
+                                "degree_column": "", "date_and_location_column": ""},
+            "normal_entry": {"main_column": "#cvx-role[ NAME ]\n#cvx-when[ DATE ] #cvx-where[ LOCATION ]\nSUMMARY\nHIGHLIGHTS",
+                             "date_and_location_column": ""},
+            "publication_entry": {"main_column": "#cvx-role[ TITLE ]\n#cvx-when[ DATE ]\nSUMMARY\nAUTHORS\nURL (JOURNAL)",
+                                  "date_and_location_column": ""},
+        },
+    },
     "aurora": {
         "page": {"top_margin": "1.3cm", "bottom_margin": "1.3cm", "left_margin": "1.6cm",
                  "right_margin": "1.6cm", "show_top_note": False, "show_footer": False},
@@ -142,9 +250,11 @@ SIDEBAR_SECTIONS = ["skills", "languages", "certifications", "interests", "award
                     "langues", "idiomas", "habilidades", "certificações", "certificaciones"]
 
 
-# Themes that render but are not offered in the picker until they are
-# ready: Sidebar cannot yet carry more than a page one column holds.
-HIDDEN = {"sidebar"}
+# Themes that render, for the CVs that use them, but are not offered in the
+# picker: Sidebar cannot yet carry more than a page one column holds, and
+# the first designs of our own gave way to the three after well-known
+# templates above.
+HIDDEN = {"sidebar", "aurora", "editorial", "timeline", "studio", "ledger"}
 
 
 def _lum(rgb) -> float:
@@ -211,6 +321,7 @@ ICON_PATHS = {
     "link": "M12 1.5a10.5 10.5 0 1 1 0 21 10.5 10.5 0 0 1 0-21zm-2.1 2.4a8.6 8.6 0 0 0-6.1 7.2h3.9c.1-2.6.9-5.1 2.2-7.2zm4.2 0c1.3 2.1 2.1 4.6 2.2 7.2h3.9a8.6 8.6 0 0 0-6.1-7.2zM12 4.2c-1.4 1.9-2.2 4.3-2.4 6.9h4.8c-.2-2.6-1-5-2.4-6.9zM3.8 12.9a8.6 8.6 0 0 0 6.1 7.2 14.8 14.8 0 0 1-2.2-7.2zm5.8 0c.2 2.6 1 5 2.4 6.9 1.4-1.9 2.2-4.3 2.4-6.9zm6.7 0c-.1 2.6-.9 5.1-2.2 7.2a8.6 8.6 0 0 0 6.1-7.2z",
     "linkedin": "M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z",
     "github": "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12",
+    "calendar": "M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zM5 10v10h14V10zm0-2h14V6H5z",
     "x-twitter": "M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z",
 }
 ICON_FALLBACK = "link"
@@ -308,6 +419,7 @@ def install() -> None:
             env.globals["cvstudio_band_ink"] = band_ink
             env.globals["cvstudio_readable"] = readable
             env.globals["cvstudio_swap"] = swap
+            env.globals["cvstudio_ours"] = list(DEFAULTS)
             env.globals["cvstudio_sidebar_default"] = SIDEBAR_SECTIONS
             # SectionEnding is not told which section it ends; the sidebar's
             # SectionBeginning leaves a note here for it. Renders run one at

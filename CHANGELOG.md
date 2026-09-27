@@ -8,6 +8,25 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.30.0
+
+- **Three themes after templates people already trust**, first in Design,
+  all one column and read in order by every ATS reader we test:
+  - **Vivid**, after Awesome-CV: your first name light and your last name
+    bold, section titles whose first letters take the accent before a grey
+    rule, each job's place in the accent and its dates in grey on the right,
+    skills in two neat columns.
+  - **Swiss**, after the Google Docs template: a Raleway name, orange
+    section titles, "Company — Role" with the dates and place in small
+    capitals beneath.
+  - **Crisp**, after Enhancv's single column: section titles in capitals
+    over a heavy rule, each role in bold with its company in the accent,
+    then the dates and place with small calendar and pin pictures.
+- Aurora, Editorial, Timeline, Studio and Ledger are no longer offered in
+  Design. A CV that uses one still renders as before.
+- Switching theme no longer turns contact icons off: they are pictures, not
+  text, in every theme, so each theme keeps its own choice.
+
 ## 0.29.0
 
 - **Five themes of CV Studio's own**, first in Design:

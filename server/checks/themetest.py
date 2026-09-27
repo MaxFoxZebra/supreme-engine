@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover
 fails = 0
 SECTIONS = ["summary", "experience", "education", "skills", "languages"]
 # What the Design panel labels ATS ✓; the others say ATS ~.
-ATS_SAFE = {"aurora", "editorial", "timeline", "studio"}
+ATS_SAFE = {"vivid", "swiss", "crisp", "aurora", "editorial", "timeline", "studio"}
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
