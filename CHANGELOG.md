@@ -19,6 +19,13 @@ tag, so a release is never published with nothing said about it.
 - **Sidebar is back in Design.** A two-column page now carries a right-hand
   column longer than the page: what does not fit beside page one continues
   in the main column, in order, instead of running off the page.
+- **Save to CV Studio reads postings the page does not hand over.** Some
+  job boards (Greenhouse's new pages among them) draw the posting with
+  script and describe nothing a bookmark can read, so the job was saved
+  with no posting. When the page gives little or nothing, the window now
+  reads the posting from the board's own record at that link: the title,
+  company, place and text exactly as published. On a job you already saved
+  without its posting, click the bookmark again on its page to add it.
 - **Every colour in Design paints what it names.** In Crisp, Section titles
   now colours the titles and their rule, and the accent on companies follows
   Headline. In the other themes, Headline is no longer overridden by the

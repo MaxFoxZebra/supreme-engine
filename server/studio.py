@@ -3599,6 +3599,10 @@ def openapi_spec() -> dict:
             "/api/funnel": {"get": {"summary":
                 "Application funnel: node counts, flows and conversion rates",
                 "responses": ok}},
+            "/api/posting": {"get": {"summary":
+                "The posting at a link (?url=), read from its job board's own "
+                "record: title, company, location, description as Markdown",
+                "responses": ok}},
             "/api/clip": {"get": {"summary":
                 "Save to CV Studio, the bookmark: the fixed port its window is "
                 "served on, whether it is listening, and the bookmarklet itself",
@@ -3871,7 +3875,7 @@ const clean=u=>{ try{ const x=new URL(u); [...x.searchParams.keys()].forEach(k=>
 const norm=u=>{ try{ const x=new URL(clean(u));
   return (x.host.replace(/^www\./,"")+x.pathname.replace(/\/+$/,"")+(x.search||"")).toLowerCase() }catch(e){ return String(u||"").toLowerCase() } };
 
-let PAGE=null, KNOWN=null, POST="", RENAME="";
+let PAGE=null, KNOWN=null, POST="", RENAME="", VIA="";
 function show(id){ ["wait","form","done"].forEach(k=>$("#"+k).hidden=k!==id) }
 /* The window is as tall as what it shows, not the size it was opened at. */
 if(window.ResizeObserver) new ResizeObserver(()=>{
@@ -3890,7 +3894,25 @@ async function receive(d){
   const pay=payOf(j);
   POST=d.job?toMd(j.description||""):(d.selection||"").trim();
   if(POST&&pay&&!POST.includes(pay)) POST="**Salary:** "+pay+"\n\n"+POST;
-  const words=POST?POST.split(/\s+/).filter(Boolean).length:0;
+  let words=POST?POST.split(/\s+/).filter(Boolean).length:0;
+  VIA="";
+  /* Little or nothing on the page (a board that draws its posting with
+     script, like Greenhouse's): CV Studio reads it from the board's own
+     record at this link, which gives the text exactly as published. */
+  if(words<120){
+    $("#post-line").innerHTML="<b></b>"; $("#post-line b").textContent=t("Reading the posting from its link…");
+    show("form");
+    try{
+      const r=await api("/api/posting?url="+encodeURIComponent((d.job&&d.job.url)||d.url));
+      const n=(r.description||"").split(/\s+/).filter(Boolean).length;
+      if(!r.error&&n>words){
+        POST=r.description; words=n; VIA=r.via||"";
+        if(r.title&&(!d.job||!$("#f-title").value.trim()||!j.title)) $("#f-title").value=r.title;
+        if(r.company&&!$("#f-company").value.trim()) $("#f-company").value=r.company;
+        if(r.location&&!$("#f-location").value.trim()) $("#f-location").value=r.location;
+      }
+    }catch(e){}
+  }
   const heads=(POST.match(/^## .+$/gm)||[]).map(h=>h.slice(3)).slice(0,4);
   /* A real posting runs to a few hundred words; a few dozen is a page that
      only showed its first lines, and saying "done" would be wrong. */
@@ -3902,7 +3924,7 @@ async function receive(d){
   $("#post-card").classList.toggle("warn",thin);
   $("#post-line b").textContent=thin?t("Only {n} words of the posting",{n:words})
     :words?t("The posting, {n} words",{n:words}):t("No posting found on this page");
-  if(words&&!thin) $("#post-line .muted").textContent=d.job?t("headings and lists kept"):t("the text you selected");
+  if(words&&!thin) $("#post-line .muted").textContent=VIA?t("read from {via}",{via:VIA}):d.job?t("headings and lists kept"):t("the text you selected");
   $("#post-heads").textContent=words&&!thin?[...heads,pay].filter(Boolean).join(" · ")
     :t("Select the posting's text on the page, then click the button again.");
   show("form");
@@ -4286,6 +4308,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "__API_TOKEN__", json.dumps(API_TOKEN)).replace(
                     "__PREFS__", json.dumps(load_prefs()).replace("</", "<\\/"))
                 return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            if u.path == "/api/posting":
+                # The posting at a link, read from its job board: the bookmark's
+                # window asks when the page itself gave little or nothing.
+                try:
+                    return self._json(posting.read((q.get("url") or [""])[0]))
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 422)
             if u.path == "/api/clip":
                 return self._json({"port": CLIP_PORT, "ok": CLIP_STATE["ok"],
                                    "why": CLIP_STATE["why"], "bookmarklet": bookmarklet()})

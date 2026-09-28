@@ -41,6 +41,8 @@ def main() -> int:
     page = urllib.request.urlopen("http://127.0.0.1:47899/clip", timeout=5).read().decode()
     check("and serves the bookmark's window", "Save to CV Studio" in page and "cvstudio-clip-ready" in page)
     check("with nothing left to fill in", "__API_TOKEN__" not in page and "__PREFS__" not in page)
+    check("which reads the posting from its link when the page gives little",
+          "/api/posting?url=" in page and "words<120" in page)
     studio.start_clip_listener()
     check("a second copy says the port is taken", not studio.CLIP_STATE["ok"]
           and "in use" in studio.CLIP_STATE["why"], studio.CLIP_STATE["why"])
