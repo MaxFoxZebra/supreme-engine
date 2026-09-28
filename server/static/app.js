@@ -6917,7 +6917,7 @@ const TH_INK={vivid:"rgb(220, 53, 34)",swiss:"rgb(255, 94, 14)",crisp:"rgb(0, 11
   ember:"rgb(155, 35, 25)",opal:"rgb(0, 100, 90)",ink:"rgb(42, 24, 82)",
   harvard:"rgb(0, 0, 0)",sb2nov:"rgb(0, 0, 0)",engineeringresumes:"rgb(0, 0, 0)"};
 const TH_SUITS={vivid:"Tech, engineering, data",swiss:"Almost anywhere, clean and plain",
-  crisp:"Product, sales, operations",duo:"A lot on one page: skills, tools, languages",aurora:"Tech, product, startups",editorial:"Consulting, law, publishing",
+  crisp:"Product, sales, operations",duo:"Read by people first: referrals, a hiring manager, small companies",aurora:"Tech, product, startups",editorial:"Consulting, law, publishing",
   timeline:"A career with a clear story",studio:"Almost anywhere, with presence",ledger:"Consulting, product, design",
   sidebar:"Read by people: referrals, small companies",classic:"Almost anywhere",ember:"Education, health, non-profits",
   engineeringclassic:"Engineering, science",engineeringresumes:"A long career on one page",
@@ -6984,7 +6984,7 @@ function paintThemes(){
       (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
       '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
       (t==="sidebar"||t==="duo"
-        ?'<b class="th-ats warn" title="'+esc("Two columns: most ATS read them in order, some may mix the right-hand column into your experience")+'">ATS ~</b>'
+        ?'<b class="th-ats warn" title="'+esc("Two columns: most ATS read them in order, some (Workday among them) may mix the right-hand column into your experience. Best when a person reads it first: a referral, an email to a hiring manager, a small company. For a big company's job portal, pick a one-column theme.")+'">ATS ~</b>'
         :t==="ledger"
         ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some read the column of dates on its own, apart from each job")+'">ATS ~</b>'
         :'<b class="th-ats" title="'+esc("Read in order by both kinds of PDF reader ATS use, in our tests; no icon characters in the text")+'">ATS ✓</b>')+

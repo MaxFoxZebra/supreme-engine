@@ -44,7 +44,10 @@ back.
    A gap stays a gap; say it in your report instead.
 3. `render_cv` and look at the page: one or two pages, nothing cut off.
    `ats_check(path, job_id)` and work in a missing keyword only where it is
-   true.
+   true. A two-column theme (Duo, Sidebar) is for a CV a person reads first:
+   a referral, an email to a hiring manager, a small company. If the
+   application goes through a big company's job portal (Workday above all),
+   say so in your report and suggest a one-column theme.
 4. `update_job_tracking(job_id, cv_path=<the copy>)`.
 
 ## 3. The letter

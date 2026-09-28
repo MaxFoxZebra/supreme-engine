@@ -12,7 +12,10 @@ tag, so a release is never published with nothing said about it.
 
 - **Duo, a two-column theme** after Enhancv's Double Column: Crisp's type,
   with your summary, skills, education, languages and the other short
-  sections in a column on the right. Marked ATS ~, as two columns are.
+  sections in a column on the right. Marked ATS ~, as two columns are:
+  its tile and badge say when it is the right choice (a referral, an email
+  to a hiring manager, a small company) and when to pick a one-column
+  theme instead (a big company's job portal, Workday above all).
 - **Sidebar is back in Design.** A two-column page now carries a right-hand
   column longer than the page: what does not fit beside page one continues
   in the main column, in order, instead of running off the page.
