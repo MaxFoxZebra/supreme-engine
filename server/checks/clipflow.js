@@ -76,6 +76,8 @@ async function main() {
   async function clip(url, select) {
     await tab.send("Page.navigate", { url });
     for (let i = 0; i < 40; i++) { await sleep(150); if (await tab.ev("document.readyState") === "complete") break }
+    const where = await tab.ev("location.href");
+    if (!where.startsWith(url.split("?")[0])) throw new Error(`the page did not open (${where}): a browser that forces HTTPS for this address?`);
     if (select) await tab.ev(`(()=>{const r=document.createRange();r.selectNodeContents(document.querySelector(${JSON.stringify(select)}));getSelection().removeAllRanges();getSelection().addRange(r)})()`);
     await tab.ev(code, true);
     let win = null;
@@ -143,8 +145,8 @@ async function main() {
       const d = (await job(url)).description || "";
       check("its lists included", d.includes("## Requirements") && d.includes("- AI evangelist mindset"), d.slice(-120));
     }],
-    ["Ashby, nothing on the page and no company in the feed", async () => {
-      const url = "http://jobs.ashbyhq.com/acme/0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b";
+    ["Nothing on the page, and no company in the board's record", async () => {
+      const url = "http://jobs.eu.lever.co/acme/0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b";
       const { read, win } = await clip(url);
       check("title and place from the feed", read.title === "Staff Platform Engineer" && read.location === "Remote, Europe", JSON.stringify(read));
       check("the company left for you to type", read.company === "");

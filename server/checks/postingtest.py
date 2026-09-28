@@ -51,6 +51,13 @@ PAGE_LD = """<html><head><title>Chef de projet | Valtech</title>
 </head><body>AI evangelist mindset appears in the text, not the title.</body></html>"""
 PAGE_EMBED = """<html><body><div id="grnhse_app"></div>
 <script src="https://boards.greenhouse.io/embed/job_board/js?for=valtech"></script></body></html>"""
+ASHBY = {"jobs": [{"id": "0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b", "title": "Staff Platform Engineer (m/w/d)",
+                   "location": "Remote, Europe",
+                   "descriptionHtml": "<h2>About the role</h2><p>Own the developer platform.</p><ul><li>Go</li></ul>"}]}
+SMART = {"name": "Customer Success Manager", "company": {"name": "Visma"},
+         "location": {"city": "Amsterdam", "country": "nl"},
+         "jobAd": {"sections": {"jobDescription": {"title": "The job", "text": "<p>Help customers grow.</p>"},
+                                "qualifications": {"title": "You bring", "text": "<ul><li>Five years in SaaS</li></ul>"}}}}
 PAGE_NOTHING = "<html><head><title>Careers</title></head><body>Join us</body></html>"
 
 ROUTES = {
@@ -61,6 +68,8 @@ ROUTES = {
     "https://www.valtech.com/fr-fr/carrieres/4670848101/": PAGE_LD,
     "https://www.valtech.com/career/jobs/4765692101/": PAGE_EMBED,
     "https://example.com/careers/1": PAGE_NOTHING,
+    "https://api.ashbyhq.com/posting-api/job-board/acme": json.dumps(ASHBY),
+    "https://api.smartrecruiters.com/v1/companies/Visma/postings/744000012345678": json.dumps(SMART),
 }
 asked: list[str] = []
 
@@ -102,6 +111,18 @@ def main() -> int:
     p = posting.read("https://www.valtech.com/career/jobs/4765692101/")
     check("a page embedding a Greenhouse board: that board's record",
           p["title"] == "Retail IT Delivery Domain Manager" and p["via"] == "Greenhouse", p["title"])
+
+    p = posting.read("https://jobs.ashbyhq.com/acme/0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b")
+    check("Ashby: the job picked from the board by its id", p["title"] == "Staff Platform Engineer"
+          and p["location"] == "Remote, Europe", f"{p['title']} / {p['location']}")
+    check("Ashby: its description as Markdown", p["description"].startswith("## About the role")
+          and "- Go" in p["description"], p["description"])
+
+    p = posting.read("https://jobs.smartrecruiters.com/Visma/744000012345678-customer-success-manager")
+    check("SmartRecruiters: title, company, place", (p["title"], p["company"], p["location"]) ==
+          ("Customer Success Manager", "Visma", "Amsterdam, nl"), f"{p['title']} / {p['company']} / {p['location']}")
+    check("SmartRecruiters: each section under its heading", "## The job" in p["description"]
+          and "## You bring" in p["description"] and "- Five years in SaaS" in p["description"], p["description"])
 
     for bad, why in (("https://example.com/careers/1", "a page with no job data"),
                      ("ftp://example.com/x", "a link that is not the web"),

@@ -57,7 +57,7 @@ VTEX_HTML = (
     "<li>Advanced English and Portuguese; Spanish is a plus.</li></ul>")
 LEVER_BODY = ("<div>Scaleway builds a sovereign European cloud. " + "We ship infrastructure people trust. " * 30
               + "</div>")
-ASHBY_BODY = ("<h2>About the role</h2><p>" + "You will own the developer platform end to end. " * 25 + "</p>"
+EU_BODY = ("<h2>About the role</h2><p>" + "You will own the developer platform end to end. " * 25 + "</p>"
               "<h2>What you bring</h2><ul><li>Five years with Kubernetes</li><li>Go or Rust</li></ul>")
 
 FEEDS = {
@@ -68,9 +68,10 @@ FEEDS = {
         "text": "Internal AI Lead", "categories": {"location": "Paris"}, "description": LEVER_BODY,
         "lists": [{"text": "Requirements", "content": "<li>MCP and n8n</li><li>AI evangelist mindset</li>"}],
         "additional": ""},
-    "https://api.ashbyhq.com/posting-api/job-board/acme": {"jobs": [{
-        "id": "0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b", "title": "Staff Platform Engineer",
-        "location": "Remote, Europe", "descriptionHtml": ASHBY_BODY}]},
+    # Lever's EU board, whose record names no company.
+    "https://api.eu.lever.co/v0/postings/acme/0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b": {
+        "text": "Staff Platform Engineer", "categories": {"location": "Remote, Europe"},
+        "description": EU_BODY, "lists": [], "additional": ""},
 }
 
 
@@ -116,8 +117,9 @@ PAGES = {
             "title": "Internal AI Lead", "hiringOrganization": {"name": "Scaleway"},
             "description": "<p>Scaleway builds a sovereign European cloud.</p>"}) +
         "</head><body></body></html>",
-    # Ashby: no job data on the page.
-    ("jobs.ashbyhq.com", "/acme/0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b"):
+    # A board page with no job data at all. (Not Ashby's own address: browsers
+    # only ever open jobs.ashbyhq.com over HTTPS, which this proxy cannot serve.)
+    ("jobs.eu.lever.co", "/acme/0f7c1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b"):
         "<html><head><title>Staff Platform Engineer @ Acme</title></head><body><div id=root></div></body></html>",
     # Indeed: read from the page itself.
     ("fr.indeed.com", "/viewjob"):
