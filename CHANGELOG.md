@@ -8,6 +8,19 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.31.0
+
+- **Duo, a two-column theme** after Enhancv's Double Column: Crisp's type,
+  with your summary, skills, education, languages and the other short
+  sections in a column on the right. Marked ATS ~, as two columns are.
+- **Sidebar is back in Design.** A two-column page now carries a right-hand
+  column longer than the page: what does not fit beside page one continues
+  in the main column, in order, instead of running off the page.
+- **Every colour in Design paints what it names.** In Crisp, Section titles
+  now colours the titles and their rule, and the accent on companies follows
+  Headline. In the other themes, Headline is no longer overridden by the
+  section title colour.
+
 ## 0.30.0
 
 - **Three themes after templates people already trust**, first in Design,

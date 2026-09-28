@@ -1,11 +1,10 @@
 {% set cvs_ours = design.theme in cvstudio_ours %}
 {% set cvs_band = design.theme in ["studio", "aurora"] %}
-{% set cvs_accent_head = design.theme in ["editorial", "timeline", "sidebar", "ledger", "vivid", "swiss", "crisp"] %}
 {% set cvs_pre %}{% include "typst/Preamble.j2.typ" %}{% endset %}
 {% if cvs_ours %}
 {#- Text in the accent colour darkened until it reads on white; on a band,
     the name and contact line in whichever of white or black reads on it;
-    the headline following the accent. Set in RenderCV's own parameters,
+    the headline, if coloured, readable too. Set in RenderCV's own parameters,
     which its headings read. -#}
 {% set cvs_pre = cvstudio_swap(cvs_pre, "colors-section-titles", cvstudio_readable(design.colors.section_titles)) %}
 {% set cvs_pre = cvstudio_swap(cvs_pre, "colors-links", cvstudio_readable(design.colors.links)) %}
@@ -14,8 +13,8 @@
 {% set cvs_pre = cvstudio_swap(cvs_pre, "colors-name", cvs_ink) %}
 {% set cvs_pre = cvstudio_swap(cvs_pre, "colors-headline", cvs_ink) %}
 {% set cvs_pre = cvstudio_swap(cvs_pre, "colors-connections", cvs_ink) %}
-{% elif cvs_accent_head %}
-{% set cvs_pre = cvstudio_swap(cvs_pre, "colors-headline", cvstudio_readable(design.colors.section_titles)) %}
+{% else %}
+{% set cvs_pre = cvstudio_swap(cvs_pre, "colors-headline", cvstudio_readable(design.colors.headline)) %}
 {% endif %}
 {% endif %}
 {% if design.theme == "sidebar" %}
@@ -23,6 +22,9 @@
 // RenderCV's own page setup, which then makes room for it.
 #show: doc => { set page(background: place(right + top, rect(width: {{ design.page.right_margin }} + 5.8cm, height: 100%, fill: {{ design.colors.section_titles.as_rgb() }}.lighten(91%)))); doc }
 {% set cvs_pre = cvstudio_swap(cvs_pre, "page-right-margin", design.page.right_margin ~ " + 6.2cm") %}
+{% elif design.theme == "duo" %}
+{#- Duo: no tint, the right-hand column beside the main one. -#}
+{% set cvs_pre = cvstudio_swap(cvs_pre, "page-right-margin", design.page.right_margin ~ " + 7cm") %}
 {% elif design.theme == "editorial" %}
 // Editorial: a slim accent stripe down the left edge of every page.
 #show: doc => { set page(background: place({{ "right" if locale.is_rtl else "left" }} + top, rect(width: 0.55cm, height: 100%, fill: {{ design.colors.section_titles.as_rgb() }}))); doc }

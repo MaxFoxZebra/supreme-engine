@@ -106,7 +106,7 @@ DEFAULTS: dict[str, dict] = {
         "page": {"top_margin": "1.3cm", "bottom_margin": "1.3cm", "left_margin": "1.5cm",
                  "right_margin": "1.5cm", "show_top_note": False, "show_footer": False},
         "colors": {"name": "rgb(17, 17, 17)", "headline": "rgb(0, 116, 217)",
-                   "connections": "rgb(55, 55, 55)", "section_titles": "rgb(0, 116, 217)",
+                   "connections": "rgb(55, 55, 55)", "section_titles": "rgb(28, 28, 28)",
                    "links": "rgb(55, 55, 55)", "body": "rgb(34, 34, 34)"},
         "typography": {"font_family": {"body": "Lato", "name": "Poppins", "headline": "Poppins",
                                        "connections": "Lato", "section_titles": "Poppins"},
@@ -134,6 +134,11 @@ DEFAULTS: dict[str, dict] = {
                                   "date_and_location_column": ""},
         },
     },
+    # After Enhancv's Double Column: Crisp's type, with the summary, skills,
+    # education and the other short sections in a column on the right.
+    "duo": {"_like": "crisp",
+            "page": {"top_margin": "1.3cm", "bottom_margin": "1.3cm", "left_margin": "1.4cm",
+                     "right_margin": "1.4cm", "show_top_note": False, "show_footer": False}},
     "aurora": {
         "page": {"top_margin": "1.3cm", "bottom_margin": "1.3cm", "left_margin": "1.6cm",
                  "right_margin": "1.6cm", "show_top_note": False, "show_footer": False},
@@ -209,7 +214,7 @@ DEFAULTS: dict[str, dict] = {
     "ledger": {
         "page": {"top_margin": "1.5cm", "bottom_margin": "1.5cm", "left_margin": "1.5cm",
                  "right_margin": "1.5cm", "show_top_note": False, "show_footer": False},
-        "colors": {"name": "rgb(20, 20, 20)", "headline": "rgb(90, 90, 90)",
+        "colors": {"name": "rgb(20, 20, 20)", "headline": "rgb(176, 74, 44)",
                    "connections": "rgb(70, 70, 70)", "section_titles": "rgb(176, 74, 44)",
                    "links": "rgb(176, 74, 44)", "body": "rgb(30, 30, 30)"},
         "typography": {"font_family": {"body": "Open Sauce Sans", "name": "Open Sauce Sans",
@@ -243,6 +248,12 @@ DEFAULTS: dict[str, dict] = {
         "sections": {"show_time_spans_in": []},
     },
 }
+for _name, _d in list(DEFAULTS.items()):
+    if "_like" in _d:
+        _base = copy.deepcopy(DEFAULTS[_d.pop("_like")])
+        _base.update(_d)
+        DEFAULTS[_name] = _base
+
 # The sections a sidebar carries, by RenderCV's snake_case title. Anything
 # else stays in the main column.
 SIDEBAR_SECTIONS = ["skills", "languages", "certifications", "interests", "awards",
@@ -250,9 +261,14 @@ SIDEBAR_SECTIONS = ["skills", "languages", "certifications", "interests", "award
                     "langues", "idiomas", "habilidades", "certificações", "certificaciones"]
 
 
-# Themes that render but are not offered in the picker until they are
-# ready: Sidebar cannot yet carry more than a page one column holds.
-HIDDEN = {"sidebar"}
+# Duo's right-hand column holds more: the summary and education as well.
+DUO_SECTIONS = ["summary", "profile", "about_me", "résumé", "profil", "resumen", "perfil", "resumo",
+                "education", "formation", "éducation", "educación", "formação", "educação"] + SIDEBAR_SECTIONS
+SIDE_THEMES = {"sidebar": SIDEBAR_SECTIONS, "duo": DUO_SECTIONS}
+
+
+# Themes that render but are not offered in the picker until they are ready.
+HIDDEN: set[str] = set()
 
 
 def _lum(rgb) -> float:
@@ -341,9 +357,9 @@ def theme_classes() -> dict:
     out = {}
     for name in DEFAULTS:
         fields = {"theme": (Literal[name], name)}  # type: ignore[valid-type]
-        if name == "sidebar":
+        if name in SIDE_THEMES:
             fields["sidebar_sections"] = (list[str], pydantic.Field(
-                default_factory=lambda: list(SIDEBAR_SECTIONS),
+                default_factory=lambda d=SIDE_THEMES[name]: list(d),
                 description="Sections shown in the sidebar, by their title in snake_case."))
         out[name] = pydantic.create_model(f"{name.capitalize()}Theme", __base__=ClassicTheme, **fields)
     return out

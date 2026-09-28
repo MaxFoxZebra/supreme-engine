@@ -6911,13 +6911,13 @@ async function fillThemePreviews(){
    first, then four that read well on paper. A colour sets the name, headline,
    contact line, section titles and links together; the wheel opens Colors for
    anything else. "Suits" is a hint about where a theme is usually seen. */
-const TH_INK={vivid:"rgb(220, 53, 34)",swiss:"rgb(255, 94, 14)",crisp:"rgb(0, 116, 217)",aurora:"rgb(79, 70, 229)",editorial:"rgb(122, 31, 43)",timeline:"rgb(13, 148, 136)",
+const TH_INK={vivid:"rgb(220, 53, 34)",swiss:"rgb(255, 94, 14)",crisp:"rgb(0, 116, 217)",duo:"rgb(0, 116, 217)",aurora:"rgb(79, 70, 229)",editorial:"rgb(122, 31, 43)",timeline:"rgb(13, 148, 136)",
   studio:"rgb(31, 78, 121)",ledger:"rgb(176, 74, 44)",sidebar:"rgb(31, 111, 107)",
   classic:"rgb(0, 79, 144)",engineeringclassic:"rgb(0, 79, 144)",moderncv:"rgb(0, 79, 144)",
   ember:"rgb(155, 35, 25)",opal:"rgb(0, 100, 90)",ink:"rgb(42, 24, 82)",
   harvard:"rgb(0, 0, 0)",sb2nov:"rgb(0, 0, 0)",engineeringresumes:"rgb(0, 0, 0)"};
 const TH_SUITS={vivid:"Tech, engineering, data",swiss:"Almost anywhere, clean and plain",
-  crisp:"Product, sales, operations",aurora:"Tech, product, startups",editorial:"Consulting, law, publishing",
+  crisp:"Product, sales, operations",duo:"A lot on one page: skills, tools, languages",aurora:"Tech, product, startups",editorial:"Consulting, law, publishing",
   timeline:"A career with a clear story",studio:"Almost anywhere, with presence",ledger:"Consulting, product, design",
   sidebar:"Read by people: referrals, small companies",classic:"Almost anywhere",ember:"Education, health, non-profits",
   engineeringclassic:"Engineering, science",engineeringresumes:"A long career on one page",
@@ -6929,7 +6929,11 @@ const INK_KEYS=["name","headline","connections","section_titles","links"];
 /* Studio's name sits white on the colour band, so its colour is the band's:
    the section titles. The others keep a dark name beside the accent. */
 const inkKeys=t=>["studio","aurora"].includes(t)?["section_titles","links"]
-  :["sidebar","editorial","timeline","ledger","vivid","swiss","crisp"].includes(t)?["headline","section_titles","links"]:INK_KEYS;
+  :["crisp","duo"].includes(t)?["headline"]
+  :["sidebar","editorial","timeline","ledger","vivid","swiss"].includes(t)?["headline","section_titles","links"]:INK_KEYS;
+/* The colour a theme's swatches set and show as chosen: Crisp's accent is
+   its headline (and companies); its section titles stay near-black. */
+const accentKey=t=>["crisp","duo"].includes(t)?"headline":"section_titles";
 const rgbOf=v=>(/(\d+)\D+(\d+)\D+(\d+)/.exec(v||"")||[0,0,0,0]).slice(1).map(Number);
 const near=(a,b)=>{ const x=rgbOf(a),y=rgbOf(b); return Math.max(...x.map((v,i)=>Math.abs(v-y[i])))<40 };
 /* What an ATS reads cleanly, applied to a theme you switch to unless the
@@ -6948,7 +6952,7 @@ function setRow(row,v){
   else el.value=v==null?"":v;
 }
 function inkNow(theme){
-  const r=dzRow(["colors","section_titles"]);
+  const r=dzRow(["colors",accentKey(theme)]);
   return r&&S.schemaTheme===theme?rowValue(r):TH_INK[theme]||"";
 }
 async function pickTheme(theme,ink){
@@ -6979,8 +6983,8 @@ function paintThemes(){
       '<button class="thumbwrap" role="radio" aria-checked="'+String(t===cur)+'" data-theme="'+esc(t)+'">'+
       (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
       '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
-      (t==="sidebar"
-        ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some may mix the sidebar into your experience")+'">ATS ~</b>'
+      (t==="sidebar"||t==="duo"
+        ?'<b class="th-ats warn" title="'+esc("Two columns: most ATS read them in order, some may mix the right-hand column into your experience")+'">ATS ~</b>'
         :t==="ledger"
         ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some read the column of dates on its own, apart from each job")+'">ATS ~</b>'
         :'<b class="th-ats" title="'+esc("Read in order by both kinds of PDF reader ATS use, in our tests; no icon characters in the text")+'">ATS ✓</b>')+

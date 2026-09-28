@@ -144,10 +144,23 @@ def main() -> int:
                 p1 = len(pages[0].extract_text())
                 text = "\n".join(p.extract_text() for p in pages)
                 check(f"{name}: twenty jobs flow across pages, page one full",
-                      len(pages) >= 2 and p1 > 1500 and "Company 19" in text,
+                      len(pages) >= 2 and p1 > (1200 if name in themes.SIDE_THEMES else 1500) and "Company 19" in text,
                       f"{len(pages)} pages, {p1} characters on page one")
             else:
                 check(f"{name}: twenty jobs render", False, (r.get("log") or "")[-200:])
+
+            if name in themes.SIDE_THEMES:
+                many = [{"label": f"Skill {i}", "details": "Kubernetes, Terraform, AWS, GCP, Prometheus, "
+                         "Grafana and more"} for i in range(45)]
+                r = render(tmp, name, {**base, "sections": {**base["sections"], "skills": many}}, {})
+                if r.get("ok"):
+                    pages = [p.extract_text() for p in pypdf.PdfReader(r["pdf"]).pages]
+                    text = "\n".join(pages)
+                    check(f"{name}: a column longer than the page carries on in the main one",
+                          all(f"Skill {i}:" in text for i in range(45)) and "Skill 0" in pages[0]
+                          and "fluent" in text, f"{len(pages)} pages")
+                else:
+                    check(f"{name}: a long column renders", False, (r.get("log") or "")[-200:])
 
             r = render(tmp, name, base, {}, {"language": "hebrew"})
             check(f"{name}: renders right to left", bool(r.get("ok")),
