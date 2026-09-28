@@ -27,6 +27,7 @@ cd server
 | `scaletest.js` | Sample data with 500 applications; times the list, opening one, search, the funnel and the calendar, and fails on anything over 250 ms (`SCALE_BUDGET` to change it). |
 | `i18nscan.js` | Every screen in English and French; lists text left untranslated. |
 | `i18nserver.py` | Every message the server can send (errors, render hints) has a translation. The catalogue is `i18n/catalogue.py`; `python i18n/build.py` writes `static/i18n.js` from it. |
+| `clipflow.js` | Save to CV Studio in headless Chrome on simulated job pages (Greenhouse drawn by script, a company page with job data, thin job data on Lever, Ashby, Indeed, LinkedIn, a page with only selected text): what the window reads and what is saved. Starts its own server with the boards' feeds simulated (`clipsim.py`); needs Chrome or Chromium, or `CHROME=`. |
 | `crop.py` | Crops and zooms a PNG using only the stdlib, so a screenshot can be read at a size where design decisions are visible. |
 
 ## audit.py

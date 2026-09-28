@@ -105,6 +105,11 @@ jobs:
       - name: Posting from a link
         run: python checks/postingtest.py
 
+      # The bookmark clicked on simulated job pages in headless Chrome (on
+      # the runner already): what its window reads and what is saved.
+      - name: Save to CV Studio on simulated job pages
+        run: node checks/clipflow.js
+
       - name: CV Studio's themes
         run: python checks/themetest.py
 
