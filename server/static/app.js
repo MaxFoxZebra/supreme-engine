@@ -5679,28 +5679,54 @@ function drawJourney(mode,animate){
   let worst=-1, low=101;
   st.forEach(([,n],i)=>{ if(!i) return; const d=st[i-1][1];
     if(d>=10){ const r=n/d*100; if(r<low){ low=r; worst=i } } });
-  let h="";
+  /* Each stage in the colour the chart below gives it. */
+  const col=["var(--sk-waiting)","var(--sk-closed)","var(--sk-live)","var(--sk-offer)","var(--sk-won)"];
+  /* The step into each stage. Under ten a rate is an anecdote, so it reads
+     as a count; with nothing before it there is no step to show. */
+  const chip=i=>{
+    const d=st[i-1][1], n=st[i][1]; if(!d) return "";
+    return '<span class="fj-conv'+(i===worst?" acc":d<10?" thin":"")+'" style="--x:'+(i*20)+
+      '%;animation-delay:'+(1+i*.2)+'s"><b>'+(d<10?n+"/"+d:Math.round(n/d*100)+"%")+'</b> '+
+      '<span>'+conv[i-1][0]+'</span>'+(i===worst?' <span class="fj-low">lowest step</span>':"")+'</span>';
+  };
+  let h='<div class="fj-cols">';
   st.forEach(([label,n],i)=>{
-    /* The step into this stage, as a chip on the rule before it. Under ten
-       a rate is an anecdote, so it reads as a count instead; with nothing
-       before it there is no step to show. */
-    let chip="";
-    if(i){
-      const d=st[i-1][1];
-      if(d) chip='<span class="fj-conv'+(i===worst?" acc":d<10?" thin":"")+'" style="animation-delay:'+
-        (.55+i*.18)+'s" title="'+conv[i-1][0]+(i===worst?" · lowest step":"")+'">'+
-        (d<10?n+" of "+d:Math.round(n/d*100)+"%")+" "+conv[i-1][0]+'</span>';
-    }
     const sub=i?(n&&sent?Math.round(n/sent*100)+"% of sent":"none yet"):
       /* What is left to do there: the drafts still to send. */
       (t.total-n>0?(t.total-n)+" draft"+(t.total-n===1?"":"s")+" not sent yet":t.total?"every draft sent":"");
-    const w=sent?Math.max(n?1.5:0,n/sent*100):0;
-    h+='<div class="fj-stg fx-r'+(n?"":" zero")+'" style="animation-delay:'+(.35+i*.18)+'s">'+chip+
-      '<span class="sl">'+label+'</span>'+
+    h+='<div class="fj-stg fx-r'+(n?"":" zero")+'" style="--c:'+col[i]+';animation-delay:'+(.3+i*.12)+'s">'+
+      '<span class="sl"><i></i>'+label+'</span>'+
       '<b data-to="'+n+'" data-from="'+(mode==="morph"&&prev[i]!=null?prev[i]:0)+'" data-delay="'+
-      (mode==="morph"?0:450+i*180)+'">'+n+'</b><small>'+sub+'</small>'+
-      '<span class="fj-bar"><span style="width:'+w+'%;animation-delay:'+(.6+i*.18)+'s"></span></span></div>';
+      (mode==="morph"?0:450+i*180)+'">'+n+'</b><small>'+sub+'</small>'+(i?chip(i):"")+'</div>';
   });
+  h+='</div>';
+  /* The ribbon: each stage as thick as its share of what was sent, necking
+     down between them, over a track the full height of Sent so what fell
+     away reads as the gap. Stretched to the card, so drawn in a 1000-wide
+     box and never re-measured. */
+  const Hh=84, M=Hh/2, R=64, seg=200, ease=60;
+  const half=st.map(([,n])=>sent&&n?Math.max(2.5,R/2*n/sent):1);
+  /* Half the thickness at x: flat through a stage, an eased neck across
+     each boundary. */
+  const at=x=>{
+    const k=Math.round(x/seg), d=x-k*seg;
+    if(k<1||k>4||Math.abs(d)>=ease) return half[Math.min(4,Math.floor(x/seg))];
+    const u=(d+ease)/(2*ease), e=u*u*(3-2*u);
+    return half[k-1]+(half[k]-half[k-1])*e;
+  };
+  const xs=[]; for(let x=0;x<=1000;x+=4) xs.push(x);
+  const ribbon="M"+xs.map(x=>x+" "+(M-at(x)).toFixed(2)).join(" L")+
+    " L"+xs.reverse().map(x=>x+" "+(M+at(x)).toFixed(2)).join(" L")+"Z";
+  /* A stage nobody has reached yet stays grey: a thread, not progress. */
+  const grad=col.map((c,i)=>'<stop offset="'+(i*20+10)+'%" style="stop-color:'+
+    (st[i][1]?c:"var(--dot-dead)")+'"/>').join("");
+  h+='<div class="fj-flow" aria-hidden="true"><svg viewBox="0 0 1000 '+Hh+'" preserveAspectRatio="none">'+
+    '<defs><linearGradient id="fj-g" x1="0" x2="1" y1="0" y2="0">'+grad+'</linearGradient>'+
+    '<linearGradient id="fj-sh" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/>'+
+    '<stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".08"/></linearGradient></defs>'+
+    '<rect class="fj-ghost" x="0" y="'+(M-R/2)+'" width="1000" height="'+R+'"/>'+
+    '<g class="fj-rib"><path d="'+ribbon+'" fill="url(#fj-g)"/><path d="'+ribbon+'" fill="url(#fj-sh)"/></g>'+
+    '</svg>'+st.map((s,i)=>i?chip(i):"").join("")+'</div>';
   host.innerHTML=h;
   countUp(host,animate);
   S.fnPrevJourney=st.map(s=>s[1]);

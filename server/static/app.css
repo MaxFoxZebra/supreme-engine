@@ -1101,34 +1101,48 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .fn-big{font-size:30px;font-weight:600;letter-spacing:-.02em;color:var(--t900);
   font-variant-numeric:tabular-nums;line-height:1.1}
 
-/* Sent to accepted. */
-.fn-journey{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:0}
-.fj-stg{position:relative;min-width:0;display:flex;flex-direction:column;gap:2px;
-  padding:34px 24px 22px}
-.fj-stg+.fj-stg{border-left:1px solid var(--rule)}
-.fj-stg .sl{font-size:12px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--t500)}
-.fj-stg b{font-size:36px;font-weight:600;letter-spacing:-.03em;line-height:1.1;
+/* Sent to accepted: five numbers over a ribbon as thick as each stage, in
+   the colours the chart below gives them. */
+.fn-journey{position:relative;padding:0;overflow:hidden;
+  --sk-waiting:#3a6ea5;--sk-closed:#7a5cb8;--sk-live:#a8761f;--sk-offer:#3f8f76;--sk-won:#007a5e;
+  --fj-ghost:rgba(27,26,23,.045);--fj-ghost-line:rgba(27,26,23,.10)}
+:root[data-theme=dark] .fn-journey{--sk-waiting:#5b8fc9;--sk-closed:#9b7ad6;--sk-live:#d19a45;--sk-offer:#4fae90;
+  --sk-won:#2bb58c;--fj-ghost:rgba(255,255,255,.035);--fj-ghost-line:rgba(255,255,255,.09)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .fn-journey{--sk-waiting:#5b8fc9;--sk-closed:#9b7ad6;
+  --sk-live:#d19a45;--sk-offer:#4fae90;--sk-won:#2bb58c;
+  --fj-ghost:rgba(255,255,255,.035);--fj-ghost-line:rgba(255,255,255,.09)}}
+.fj-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+.fj-stg{min-width:0;display:flex;flex-direction:column;gap:2px;padding:22px 24px 14px}
+.fj-stg .sl{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--t500)}
+.fj-stg .sl i{width:8px;height:8px;border-radius:50%;background:var(--c);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 18%,transparent)}
+.fj-stg b{font-size:40px;font-weight:650;letter-spacing:-.035em;line-height:1.1;
   color:var(--t900);font-variant-numeric:tabular-nums}
 .fj-stg small{font-size:12.5px;color:var(--t500)}
 .fj-stg.zero b{color:var(--dot-dead)}
-.fj-stg.zero small{color:var(--t400)}
-.fj-bar{margin-top:12px;height:4px;border-radius:2px;background:var(--bd-inner);overflow:hidden}
-.fj-stg.zero .fj-bar{visibility:hidden}
-.fj-bar span{display:block;height:100%;border-radius:2px;background:var(--t800);
-  transform-origin:left}
-/* The step into a stage: a chip sitting on the rule before it. */
-.fj-conv{position:absolute;top:10px;left:0;translate:-50% 0;z-index:1;
-  padding:2px 9px;border-radius:999px;background:var(--field);border:1px solid var(--rule);
-  font-size:11.5px;font-weight:500;color:var(--t600);white-space:nowrap;font-variant-numeric:tabular-nums}
-.fj-conv.thin{color:var(--t500)}
-.fj-conv.acc{background:var(--acc-wash);color:var(--acc-text);
-  border-color:color-mix(in srgb,var(--acc) 35%,transparent)}
+.fj-stg.zero .sl i{background:var(--dot-dead);box-shadow:none}
+.fj-stg>.fj-conv{display:none}
+.fj-flow{position:relative;height:84px;margin-bottom:6px}
+.fj-flow svg{display:block;width:100%;height:100%}
+.fj-ghost{fill:var(--fj-ghost);stroke:var(--fj-ghost-line);stroke-dasharray:3 5;
+  vector-effect:non-scaling-stroke}
+/* The step into a stage, a chip on the neck before it. */
+.fj-conv{display:inline-flex;align-items:baseline;gap:5px;padding:4px 11px;border-radius:999px;
+  background:var(--field);box-shadow:0 0 0 1px var(--rule),0 6px 18px -8px rgba(27,26,23,.35);
+  font-size:11.5px;color:var(--t500);white-space:nowrap}
+.fj-conv b{font-size:13px;font-weight:650;color:var(--t900);font-variant-numeric:tabular-nums}
+.fj-flow>.fj-conv{position:absolute;top:50%;left:var(--x);translate:-50% -50%;z-index:1}
+.fj-conv.thin b{color:var(--t600)}
+.fj-conv.acc{background:linear-gradient(var(--acc-wash),var(--acc-wash)),var(--field);
+  box-shadow:0 0 0 1.5px var(--acc),0 6px 20px -6px rgba(192,138,62,.55);color:var(--acc-text)}
+.fj-conv.acc b{color:var(--acc-text)}
+.fj-low{font-weight:600}
 @media (max-width:900px){
-  .fn-journey{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .fj-stg+.fj-stg{border-left:0}
-  .fj-stg{border-top:1px solid var(--rule)}
-  .fj-stg:first-child{grid-column:1/-1;border-top:0}
-  .fj-conv{left:24px;translate:none}
+  .fj-cols{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fj-stg:first-child{grid-column:1/-1}
+  .fj-stg>.fj-conv{display:inline-flex;align-self:flex-start;margin-top:6px}
+  .fj-flow{display:none}
 }
 
 .fn-main{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:stretch}
@@ -1290,8 +1304,10 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 /* A ring that swells and fades, so the word inside stays at full strength. */
 @keyframes fx-breathe{0%,100%{box-shadow:0 0 0 0 rgba(232,188,124,0)}50%{box-shadow:0 0 0 3px rgba(232,188,124,.4)}}
 .fx-in .fx-r{animation:fx-rise .7s cubic-bezier(.2,.8,.2,1) both}
-.fx-in .fj-bar span,.fx-in .fn-src .fill{animation:fx-grow 1.1s cubic-bezier(.2,.8,.2,1) both}
+.fx-in .fn-src .fill{animation:fx-grow 1.1s cubic-bezier(.2,.8,.2,1) both}
 .fx-in .fj-conv{animation:fx-pop .6s cubic-bezier(.2,.8,.2,1) both}
+.fx-in .fj-rib{animation:fx-sweep 1.5s cubic-bezier(.3,.7,.2,1) .5s both}
+.fx-in .fj-ghost{animation:fx-fade .8s ease .2s both}
 .fx-in .fn-wk .bar{animation:fx-growy .7s cubic-bezier(.2,.8,.2,1) both}
 .fx-in .fn-wk .iv i,.fx-in .fn-dots i{animation:fx-pop .45s both}
 .fx-in .sk-link{animation:fx-sweep 1.1s cubic-bezier(.3,.7,.2,1) both}
