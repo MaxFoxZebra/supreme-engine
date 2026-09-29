@@ -3841,12 +3841,19 @@ const api=async(u,o)=>{ o=o||{}; o.headers=Object.assign({"Content-Type":"applic
 const BOARDS=[[/linkedin\./,"LinkedIn"],[/indeed\./,"Indeed"],[/welcometothejungle\./,"Welcome to the Jungle"],
   [/glassdoor\./,"Glassdoor"],[/wellfound\.|angel\.co/,"Wellfound"],[/xing\./,"XING"],[/hellowork\./,"HelloWork"],
   [/apec\.fr/,"APEC"],[/francetravail\.|pole-emploi\./,"France Travail"],[/jobteaser\./,"JobTeaser"],
-  [/greenhouse\.io/,"Greenhouse"],[/lever\.co/,"Lever"],[/workable\.com/,"Workable"],[/ashbyhq\.com/,"Ashby"]];
+  [/greenhouse\.io/,"Greenhouse"],[/lever\.co/,"Lever"],[/workable\.com/,"Workable"],[/ashbyhq\.com/,"Ashby"],
+  [/myworkdayjobs\.com/,"Workday"]];
 const sourceOf=d=>{ for(const [re,n] of BOARDS) if(re.test(d.host)) return n; return d.site||d.host.replace(/^www\./,"") };
 /* A posting's HTML as the Markdown the app keeps: headings, lists, bold, paragraphs. */
 function toMd(html){
   if(!html) return "";
   if(/&lt;\/?[a-z]/i.test(html)&&!/<\/?[a-z]/i.test(html)){ const x=document.createElement("textarea"); x.innerHTML=html; html=x.value }
+  /* Text rather than HTML (Workday's page data): its lines kept, and its
+     bullet characters, even run into one line, as list items. */
+  if(!/<\/?[a-z][^>]*>/i.test(html)){ const x=document.createElement("textarea"); x.innerHTML=html;
+    return x.value.replace(/\r/g,"").replace(/\s*[•●▪◦‣∙➢►▸]\s*/g,"\n- ").split("\n")
+      .map(l=>l.replace(/[ \t\u00a0]+/g," ").trim().replace(/^[•●▪◦‣·∙○■□➢►▸\-*–]\s+/,"- ")).join("\n")
+      .replace(/\n{3,}/g,"\n\n").trim() }
   const doc=new DOMParser().parseFromString("<div>"+html+"</div>","text/html");
   const walk=n=>{
     if(n.nodeType===3) return n.nodeValue.replace(/\s+/g," ");
@@ -3898,14 +3905,17 @@ async function receive(d){
   VIA="";
   /* Little or nothing on the page (a board that draws its posting with
      script, like Greenhouse's): CV Studio reads it from the board's own
-     record at this link, which gives the text exactly as published. */
-  if(words<120){
+     record at this link, which gives the text exactly as published. So
+     does a description given as text, not HTML (Workday's), which has lost
+     its lists on the way and the board's record may still have. */
+  const flat=!!d.job&&!!j.description&&!/<\/?[a-z][^>]*>/i.test(j.description.replace(/&lt;/g,"<"));
+  if(words<120||flat){
     $("#post-line").innerHTML="<b></b>"; $("#post-line b").textContent=t("Reading the posting from its link…");
     show("form");
     try{
       const r=await api("/api/posting?url="+encodeURIComponent((d.job&&d.job.url)||d.url));
       const n=(r.description||"").split(/\s+/).filter(Boolean).length;
-      if(!r.error&&n>words){
+      if(!r.error&&(n>words||flat&&/^- /m.test(r.description)&&!/^- /m.test(POST)&&n>=words*0.8)){
         POST=r.description; words=n; VIA=r.via||"";
         if(r.title&&(!d.job||!$("#f-title").value.trim()||!j.title)) $("#f-title").value=r.title;
         if(r.company&&!$("#f-company").value.trim()) $("#f-company").value=r.company;

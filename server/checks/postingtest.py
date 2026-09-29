@@ -58,6 +58,10 @@ SMART = {"name": "Customer Success Manager", "company": {"name": "Visma"},
          "location": {"city": "Amsterdam", "country": "nl"},
          "jobAd": {"sections": {"jobDescription": {"title": "The job", "text": "<p>Help customers grow.</p>"},
                                 "qualifications": {"title": "You bring", "text": "<ul><li>Five years in SaaS</li></ul>"}}}}
+WORKDAY = {"jobPostingInfo": {"title": "Communications Specialist, Foundations", "location": "Geneva",
+                              "jobDescription": "<p><b>Reporting to</b> the Head.</p><p>Key responsibilities:</p>"
+                                                "<ul><li><p>Write stories</p></li><li><p>Run socials</p></li></ul>"},
+           "hiringOrganization": {"name": "World Economic Forum"}}
 PAGE_NOTHING = "<html><head><title>Careers</title></head><body>Join us</body></html>"
 
 ROUTES = {
@@ -68,6 +72,8 @@ ROUTES = {
     "https://www.valtech.com/fr-fr/carrieres/4670848101/": PAGE_LD,
     "https://www.valtech.com/career/jobs/4765692101/": PAGE_EMBED,
     "https://example.com/careers/1": PAGE_NOTHING,
+    "https://weforum.wd3.myworkdayjobs.com/wday/cxs/weforum/Forum_Careers/job/Geneva/"
+    "Communications-Specialist--Foundations_R4282-1": json.dumps(WORKDAY),
     "https://api.ashbyhq.com/posting-api/job-board/acme": json.dumps(ASHBY),
     "https://api.smartrecruiters.com/v1/companies/Visma/postings/744000012345678": json.dumps(SMART),
 }
@@ -123,6 +129,17 @@ def main() -> int:
           ("Customer Success Manager", "Visma", "Amsterdam, nl"), f"{p['title']} / {p['company']} / {p['location']}")
     check("SmartRecruiters: each section under its heading", "## The job" in p["description"]
           and "## You bring" in p["description"] and "- Five years in SaaS" in p["description"], p["description"])
+
+    p = posting.read("https://weforum.wd3.myworkdayjobs.com/en-US/Forum_Careers/job/Geneva/"
+                     "Communications-Specialist--Foundations_R4282-1?source=LinkedIn")
+    check("Workday: read from the site's JSON", (p["title"], p["company"], p["location"], p["via"]) ==
+          ("Communications Specialist, Foundations", "World Economic Forum", "Geneva", "Workday"),
+          f"{p['title']} / {p['company']} / {p['location']}")
+    check("Workday: its list kept", "- Write stories\n- Run socials" in p["description"], p["description"])
+
+    md = posting.to_markdown("Key responsibilities:\n• Write stories • Run socials\n\nRequirements &amp; skills")
+    check("text, not HTML: lines and bullets kept",
+          md == "Key responsibilities:\n- Write stories\n- Run socials\n\nRequirements & skills", repr(md))
 
     for bad, why in (("https://example.com/careers/1", "a page with no job data"),
                      ("ftp://example.com/x", "a link that is not the web"),

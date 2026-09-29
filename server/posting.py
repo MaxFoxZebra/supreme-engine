@@ -1,8 +1,8 @@
 """A job posting, read from its link on this machine.
 
 The job boards most companies hire through publish each posting as data as
-well as a page: Lever, Greenhouse, Ashby and SmartRecruiters have public
-feeds, and most other pages describe the job for search engines
+well as a page: Lever, Greenhouse, Ashby, SmartRecruiters and Workday have
+public feeds, and most other pages describe the job for search engines
 (schema.org JobPosting). Reading that, rather than a summary of the page,
 gives the title and the text exactly as the company wrote them.
 
@@ -77,7 +77,7 @@ class _Md(HTMLParser):
         elif tag == "br":
             self._nl(1)
         elif tag in self.BLOCK:
-            self._nl()
+            self._nl(1 if self.depth else 2)  # a paragraph in a list item keeps the list tight
 
     def handle_endtag(self, tag):
         if tag in ("script", "style"):
@@ -93,15 +93,32 @@ class _Md(HTMLParser):
             href = self.href.pop() if self.href else None
             self.out.append(f"]({href})" if href and href.startswith("http") else "]")
         elif tag in self.BLOCK - {"br"}:
-            self._nl()
+            self._nl(1 if self.depth else 2)
 
     def handle_data(self, data):
         if not self.skip:
             self.out.append(re.sub(r"\s+", " ", data))
 
 
+BULLET = r"[•●▪◦‣·∙○■□➢►▸\-*–]"
+
+
+def _plain(text: str) -> str:
+    """A posting given as text, not HTML (Workday's page data among them):
+    its line breaks kept, and its bullet characters, even run into one line,
+    as Markdown list items."""
+    text = re.sub(r"\s*[•●▪◦‣∙➢►▸]\s*", "\n- ", text.replace("\r", ""))
+    out = []
+    for line in text.split("\n"):
+        line = re.sub(r"[ \t\u00a0]+", " ", line).strip()
+        out.append(re.sub(rf"^{BULLET}\s+", "- ", line) if line else "")
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
 def to_markdown(fragment: str) -> str:
     """A posting's HTML as the Markdown the app stores."""
+    if fragment and not re.search(r"</?[a-zA-Z][^>]*>", fragment):
+        return _plain(htmllib.unescape(fragment))
     p = _Md()
     p.feed(fragment or "")
     p.close()
@@ -180,6 +197,26 @@ def _smartrecruiters(u) -> dict | None:
             "description": to_markdown(body), "via": "SmartRecruiters"}
 
 
+def _workday(u) -> dict | None:
+    """A Workday career site: the posting as its own page reads it, from the
+    site's JSON, where the description keeps its HTML. The page's search-engine
+    data flattens it to text and its lists run together."""
+    host = u.hostname or ""
+    m = re.match(r"(?:/[a-z]{2}-[A-Z]{2})?/([^/]+)(/job/.+)$", u.path)
+    if not host.endswith(".myworkdayjobs.com") or not m:
+        return None
+    tenant = host.split(".")[0]
+    try:
+        d = _json(f"https://{host}/wday/cxs/{tenant}/{m.group(1)}{m.group(2).rstrip('/')}")
+    except Exception:  # noqa: BLE001 -- the page's own job data is still there
+        return None
+    job = d.get("jobPostingInfo") or {}
+    places = [job.get("location")] + list(job.get("additionalLocations") or [])
+    return {"title": job.get("title"), "company": (d.get("hiringOrganization") or {}).get("name"),
+            "location": " · ".join(x for x in dict.fromkeys(places) if x) or None,
+            "description": to_markdown(job.get("jobDescription") or ""), "via": "Workday"}
+
+
 def _find_jobposting(o):
     if isinstance(o, list):
         for x in o:
@@ -245,7 +282,7 @@ def read(url: str) -> dict:
         raise ValueError("A posting's link starts with http:// or https://.")
     out = None
     try:
-        for reader in (_lever, _greenhouse, _ashby, _smartrecruiters):
+        for reader in (_lever, _greenhouse, _ashby, _smartrecruiters, _workday):
             out = reader(u)
             if out:
                 break
