@@ -8,6 +8,17 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.32.0
+
+- **The top of Funnel is now a funnel.** Under Sent, Heard back,
+  Interviewed, Offers and Accepted, a ribbon in the chart's own colours
+  narrows stage by stage to what reached each one, over a track the height
+  of what you sent, so what fell away is the gap you can see. The rate of
+  each step sits on the neck between two stages, and the weakest one is
+  marked. With only a few applications behind a step it reads "0/2
+  replied" rather than a percentage, and a stage nobody has reached yet
+  stays grey.
+
 ## 0.31.0
 
 - **Duo, a two-column theme** after Enhancv's Double Column: Crisp's type,
