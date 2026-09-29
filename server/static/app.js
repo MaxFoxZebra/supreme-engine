@@ -5681,19 +5681,22 @@ function drawJourney(mode,animate){
     if(d>=10){ const r=n/d*100; if(r<low){ low=r; worst=i } } });
   let h="";
   st.forEach(([label,n],i)=>{
+    /* The step into this stage, as a chip on the rule before it. Under ten
+       a rate is an anecdote, so it reads as a count instead; with nothing
+       before it there is no step to show. */
+    let chip="";
     if(i){
-      const d=st[i-1][1], r=d?Math.round(n/d*100):null;
-      /* Under ten, a rate is an anecdote: shown, but greyed and not ranked. */
-      h+='<div class="fj-conv'+(i===worst?" acc":d<10?" thin":"")+'" style="animation-delay:'+(.55+i*.18)+'s">'+
-        '<svg width="26" height="12" viewBox="0 0 26 12" aria-hidden="true"><path d="M0 6h22M17 1l5 5-5 5" '+
-        'fill="none" stroke="currentColor" stroke-width="1.6"/></svg><b>'+(r==null?"–":r+"%")+'</b>'+
-        '<span>'+conv[i-1][0]+(i===worst?'<br>lowest step':d<10&&d?'<br>too few to say':'')+'</span></div>';
+      const d=st[i-1][1];
+      if(d) chip='<span class="fj-conv'+(i===worst?" acc":d<10?" thin":"")+'" style="animation-delay:'+
+        (.55+i*.18)+'s" title="'+conv[i-1][0]+(i===worst?" · lowest step":"")+'">'+
+        (d<10?n+" of "+d:Math.round(n/d*100)+"%")+" "+conv[i-1][0]+'</span>';
     }
-    const sub=i?(sent?Math.round(n/sent*100)+"% of sent":"–"):
+    const sub=i?(n&&sent?Math.round(n/sent*100)+"% of sent":"none yet"):
       /* What is left to do there: the drafts still to send. */
       (t.total-n>0?(t.total-n)+" draft"+(t.total-n===1?"":"s")+" not sent yet":t.total?"every draft sent":"");
     const w=sent?Math.max(n?1.5:0,n/sent*100):0;
-    h+='<div class="fj-stg fx-r" style="animation-delay:'+(.35+i*.18)+'s"><span class="sl">'+label+'</span>'+
+    h+='<div class="fj-stg fx-r'+(n?"":" zero")+'" style="animation-delay:'+(.35+i*.18)+'s">'+chip+
+      '<span class="sl">'+label+'</span>'+
       '<b data-to="'+n+'" data-from="'+(mode==="morph"&&prev[i]!=null?prev[i]:0)+'" data-delay="'+
       (mode==="morph"?0:450+i*180)+'">'+n+'</b><small>'+sub+'</small>'+
       '<span class="fj-bar"><span style="width:'+w+'%;animation-delay:'+(.6+i*.18)+'s"></span></span></div>';

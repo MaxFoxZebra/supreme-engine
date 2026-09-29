@@ -1102,24 +1102,34 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   font-variant-numeric:tabular-nums;line-height:1.1}
 
 /* Sent to accepted. */
-.fn-journey{display:flex;align-items:flex-start;gap:14px;padding:22px 28px 24px}
-.fj-stg{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-.fj-stg .sl{font-size:13px;font-weight:500;color:var(--t600)}
-.fj-stg b{font-size:46px;font-weight:600;letter-spacing:-.03em;line-height:1.05;
+.fn-journey{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:0}
+.fj-stg{position:relative;min-width:0;display:flex;flex-direction:column;gap:2px;
+  padding:34px 24px 22px}
+.fj-stg+.fj-stg{border-left:1px solid var(--rule)}
+.fj-stg .sl{font-size:12px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--t500)}
+.fj-stg b{font-size:36px;font-weight:600;letter-spacing:-.03em;line-height:1.1;
   color:var(--t900);font-variant-numeric:tabular-nums}
 .fj-stg small{font-size:12.5px;color:var(--t500)}
-.fj-bar{margin-top:10px;height:6px;border-radius:3px;background:var(--bd-inner);overflow:hidden}
-.fj-bar span{display:block;height:100%;border-radius:3px;background:var(--t800);
+.fj-stg.zero b{color:var(--dot-dead)}
+.fj-stg.zero small{color:var(--t400)}
+.fj-bar{margin-top:12px;height:4px;border-radius:2px;background:var(--bd-inner);overflow:hidden}
+.fj-stg.zero .fj-bar{visibility:hidden}
+.fj-bar span{display:block;height:100%;border-radius:2px;background:var(--t800);
   transform-origin:left}
-.fj-conv{flex:none;align-self:flex-start;display:flex;flex-direction:column;align-items:center;
-  gap:2px;margin-top:14px;padding:10px 12px;border-radius:12px;color:var(--t400)}
-.fj-conv b{font-size:17px;font-weight:600;color:var(--t900);font-variant-numeric:tabular-nums}
-.fj-conv span{font-size:11.5px;color:var(--t500);white-space:nowrap}
-.fj-conv.acc{background:var(--acc-wash);color:var(--acc-text);box-shadow:inset 0 0 0 1px
-  color-mix(in srgb,var(--acc) 35%,transparent)}
-.fj-conv.acc b,.fj-conv.acc span{color:var(--acc-text)}
-.fj-conv.acc span{font-weight:500}
-.fj-conv.thin b{color:var(--t400)}
+/* The step into a stage: a chip sitting on the rule before it. */
+.fj-conv{position:absolute;top:10px;left:0;translate:-50% 0;z-index:1;
+  padding:2px 9px;border-radius:999px;background:var(--field);border:1px solid var(--rule);
+  font-size:11.5px;font-weight:500;color:var(--t600);white-space:nowrap;font-variant-numeric:tabular-nums}
+.fj-conv.thin{color:var(--t500)}
+.fj-conv.acc{background:var(--acc-wash);color:var(--acc-text);
+  border-color:color-mix(in srgb,var(--acc) 35%,transparent)}
+@media (max-width:900px){
+  .fn-journey{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fj-stg+.fj-stg{border-left:0}
+  .fj-stg{border-top:1px solid var(--rule)}
+  .fj-stg:first-child{grid-column:1/-1;border-top:0}
+  .fj-conv{left:24px;translate:none}
+}
 
 .fn-main{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:stretch}
 .fn-side{display:flex;flex-direction:column;gap:20px;min-width:0}
