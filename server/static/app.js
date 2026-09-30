@@ -351,7 +351,7 @@ const TZ_LOCAL={
 const tzCity=tz=>{ const k=String(tz||"").split("/").pop();
   return ((TZ_LOCAL[UI_LANG]||{})[k])||TZ_NAMES[k]||k.replace(/_/g," ") };
 function fmtWhen(date,tz,withDay=true){
-  const o={timeZone:tz,hour:"2-digit",minute:"2-digit"};
+  const o={timeZone:tz,hour:"2-digit",minute:"2-digit",hourCycle:clock12()?"h12":"h23"};
   if(withDay) Object.assign(o,{weekday:"short",day:"numeric",month:"short"});
   try{ return DTF(uiLocale(),o).format(date) }catch(e){ return date.toISOString().slice(0,16) }
 }
@@ -437,7 +437,7 @@ function drawTzMap(sel){
   const arc=(a,b)=>{ const x1=WX(a[0]),y1=WY(a[1]),x2=WX(b[0]),y2=WY(b[1]);
     const mx=(x1+x2)/2, my=(y1+y2)/2-Math.hypot(x2-x1,y2-y1)*.28;
     return '<path class="arc" d="M'+x1+' '+y1+'Q'+mx+' '+my+' '+x2+' '+y2+'"/>' };
-  const hm=z=>DTF(uiLocale(),{timeZone:z,hour:"2-digit",minute:"2-digit"}).format(now);
+  const hm=z=>DTF(uiLocale(),{timeZone:z,hour:"2-digit",minute:"2-digit",hourCycle:clock12()?"h12":"h23"}).format(now);
   host.innerHTML='<svg viewBox="0 0 '+WW+' '+WH+'" role="img">'+
     '<rect class="band" x="'+bx+'" y="0" width="'+bw+'" height="'+WH+'"/>'+
     '<line class="band-edge" x1="'+bx+'" x2="'+bx+'" y1="0" y2="'+WH+'"/>'+
@@ -682,6 +682,7 @@ const isoToday=()=>new Date().toISOString().slice(0,10);
    to the right edge, and that has to hold in both or the gear moves when you
    switch. */
 function setView(v){
+  if(S.view==="letter"&&v!=="letter"&&LT.dirty) ltSave();
   S.view=v;
   const doc=v==="cvs";
   ["cvs","jobs","docs","funnel","cal","letter"].forEach(k=>{ $("#v-"+k).hidden = k!==v });
@@ -769,8 +770,8 @@ function paintStatus(){
     R.textContent=shortPath((S.state&&S.state.workspace)||"");
     R.title=(S.state&&S.state.workspace)||"";
   }else if(S.view==="letter"){
-    L.className="mono"+(LT.dirty?" warn":"");
-    L.textContent=LT.dirty?t("unsaved changes"):t("all saved");
+    L.className="mono";
+    L.textContent=LT.saving||LT.dirty?t("saving…"):LT.savedAt?t("saved {t} ago",{t:ago(LT.savedAt)}):t("all saved");
     R.textContent=shortPath((S.state&&S.state.workspace)||"");
     R.title=(S.state&&S.state.workspace)||"";
   }else{
@@ -1178,8 +1179,8 @@ function paintProv(){
          divergence rule had no such anchor anywhere in the product, so it gets
          one here: this is the only place both marks appear beside the words
          that define them. */
-      '<span><i class="fromb"></i> <b>'+pv.from_base.length+
-        '</b> differ from base</span>');
+      '<span><i class="fromb"></i> '+esc(pv.from_base.length===1?t("1 field differs from the base")
+        :t("{n} fields differ from the base",{n:pv.from_base.length}))+'</span>');
   if(pv.last_ai){
     if(bits.length) bits.push('<span class="dot"></span>');
     bits.push(markHTML(pv.last_ai,null,true)+'<span>'+esc(whoLabel(pv.last_ai))+', '+
@@ -1501,10 +1502,20 @@ function closeSheet(){
 }
 $("#scrim").onclick=closeSheet;
 document.addEventListener("keydown",e=>{
-  if(e.key==="Escape"){
-    if(!$("#sheet").hidden) return closeSheet();
-    if(!$("#ovl-design").hidden||!$("#ovl-settings").hidden) return closeOverlays();
+  /* One Escape, one step back. Whatever handles it claims it
+     (preventDefault), and the handlers after this one leave a claimed key
+     alone: before, closing a sheet also closed the application behind it. */
+  if(e.key==="Escape"&&!e.defaultPrevented){
+    if(!$("#sheet").hidden){ e.preventDefault(); return closeSheet() }
+    if(!$("#ovl-design").hidden||!$("#ovl-settings").hidden){ e.preventDefault(); return closeOverlays() }
     if(S.view==="cvs"&&!$("#ed").hidden){ e.preventDefault(); return closeEditor() }
+    /* In a letter, back to where you came from; it saves on the way. */
+    if(S.view==="letter"){
+      const el=document.activeElement;
+      if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      e.preventDefault();
+      return $("#lt-back").click();
+    }
     /* Last in the chain: once the sheet, the overlays and the block editor
        have each had their turn, Escape in the editor is the way back out of
        it. Not while typing -- Escape in a field belongs to the field. */
@@ -1527,7 +1538,9 @@ document.addEventListener("keydown",e=>{
   }
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){ e.preventDefault(); save() }
 });
-window.addEventListener("beforeunload",e=>{if(S.dirty){e.preventDefault();e.returnValue=""}});
+window.addEventListener("beforeunload",e=>{
+  if(LT.dirty&&LT.path) ltSave();
+  if(S.dirty||LT.dirty){e.preventDefault();e.returnValue=""}});
 
 /* ---- boot --------------------------------------------------------------- */
 async function boot(){
@@ -2152,6 +2165,7 @@ const LT={path:null, doc:null, meta:{}, body:"", dirty:false, tab:"write", pages
 const isLetterPath=p=>/\.md$/i.test(p||"");
 
 async function openLetter(path){
+  if(LT.dirty&&LT.path&&LT.path!==path) await ltSave();
   if(path) palRemember({doc:path});
   closeOverlays();
   try{
@@ -2172,10 +2186,10 @@ function ltBackLabel(){
   $("#lt-back").textContent=to==="docs"?"Documents":"Applications";
   $$("#nav button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.view===to)));
 }
-$("#lt-back").onclick=()=>{
-  if(LT.dirty&&!confirm("This letter has unsaved changes. Leave without saving?")) return;
-  LT.path=null;
+$("#lt-back").onclick=async()=>{
+  if(LT.dirty) await ltSave();
   const j=ltJob();
+  LT.path=null;
   if(j){ setView("jobs"); selectJob(j.id); return }
   setView("docs");
 };
@@ -2365,8 +2379,7 @@ function ltHeadWire(h){
   $("#lt-lh").onclick=e=>{ const b=e.target.closest("[data-lh]"); if(!b) return;
     if(b.dataset.lh==="reset"){ LT.meta.letterhead=null; ltDirty(); ltSave().then(()=>ltPaint()) }
     else if(h.cv){
-      if(LT.dirty&&!confirm("This letter has unsaved changes. Leave without saving?")) return;
-      LT.path=null; openDoc(h.cv) }
+      (LT.dirty?ltSave():Promise.resolve()).then(()=>{ LT.path=null; openDoc(h.cv) }) }
   };
 }
 /* Where the first page ends, drawn on the sheet, so a letter that runs over
@@ -2387,8 +2400,13 @@ function ltChanged(){
   clearTimeout(LT.t); LT.t=setTimeout(ltPageMark,120);
   ltFindRun(true);
 }
+/* A letter saves itself a moment after you stop typing, as a CV's preview
+   renders itself: a letter left with unsaved words and then navigated away
+   from lost them, while the status bar said "all saved". */
 function ltDirty(){
-  LT.dirty=true; $("#lt-save").disabled=false;
+  LT.dirty=true; LT.gen=(LT.gen||0)+1; $("#lt-save").disabled=false;
+  clearTimeout(LT.auto); LT.auto=setTimeout(()=>{ if(LT.dirty) ltSave() },1200);
+  if(S.view==="letter") paintStatus();
   const w=$("#lt-words"); if(w) w.textContent=ltWords(LT.body);
   const m=$("#lt-meterfill"); if(m) m.style.width=Math.min(100,ltWords(LT.body)/350*100)+"%";
   const sh=$("#lt-short"); if(sh) sh.hidden=!ltShort(ltWords(LT.body));
@@ -2419,7 +2437,7 @@ function ltPanel(){
       '<label>For</label><span>'+(j?'<b style="font-weight:600">'+esc(j.company)+'</b> · '+esc(j.title)
         :'<span class="muted2">No application</span>')+'</span>'+
       '<label for="lt-cv">Letterhead from</label><select id="lt-cv">'+cvs.map(d=>'<option value="'+esc(d.path)+'"'+
-        (d.path===(m.looks_like||(LT.doc.head||{}).cv)?" selected":"")+'>'+esc(docTitle(d))+'</option>').join("")+'</select>'+
+        (d.path===(m.looks_like||(LT.doc.head||{}).cv)?" selected":"")+'>'+esc(docTitle(d)+(d.translation_of||cvs.some(o=>o!==d&&docTitle(o)===docTitle(d))?" · "+langOf(d.lang||"en").native:""))+'</option>').join("")+'</select>'+
       '<label for="lt-lang">Language</label><select id="lt-lang">'+((S.state&&S.state.languages)||[]).map(l=>
         '<option value="'+l.code+'"'+(l.code===lang?" selected":"")+'>'+esc(l.native)+'</option>').join("")+'</select>'+
       '<label for="lt-place">Written from</label><input id="lt-place" value="'+esc(m.place||"")+'" placeholder="City">'+
@@ -2450,14 +2468,22 @@ function ltPanel(){
 
 async function ltSave(){
   if(!LT.path) return;
+  clearTimeout(LT.auto);
   const body=LT.tab==="md"&&LT.mdText!=null?{path:LT.path,text:LT.mdText}
     :{path:LT.path,meta:LT.meta,body:LT.body};
+  const gen=LT.gen, path=LT.path;
+  LT.saving=true; if(S.view==="letter") paintStatus();
   try{
     const r=await post("/api/save",body);
-    LT.doc=r; LT.meta=Object.assign({},r.meta); LT.body=r.body; LT.mdText=null; LT.dirty=false;
+    if(LT.path!==path) return;
+    LT.doc=r; LT.savedAt=Date.now();
+    /* Typed while the save was on its way: keep those words, and go again. */
+    if(LT.gen!==gen){ LT.auto=setTimeout(()=>{ if(LT.dirty) ltSave() },600); return }
+    LT.meta=Object.assign({},r.meta); LT.body=r.body; LT.mdText=null; LT.dirty=false;
     $("#lt-save").disabled=true;
     ltRender();
   }catch(e){ toast(e.message,true) }
+  finally{ LT.saving=false; if(S.view==="letter") paintStatus() }
 }
 /* Laid out after every save, so the page count and the PDF tab are always
    the letter as it stands. */
@@ -2583,12 +2609,16 @@ function ltFindClose(back){
    bold word in the middle is still found. */
 function ltFindRun(keep){
   if(!LTF.open) return;
-  const ed=$("#lt-edit"), q=$("#lt-q").value;
+  const q=$("#lt-q").value;
   LTF.hits=[];
-  if(ed&&q){
+  /* Everything you can edit on the page, in page order: the letterhead, the
+     subject, the letter and the signature. A match never spans two of them. */
+  const hosts=$$("#lt-paper [contenteditable=true]");
+  if(q) for(const ed of hosts){
     const nodes=[], w=document.createTreeWalker(ed,NodeFilter.SHOW_TEXT);
     let x, text="";
     while((x=w.nextNode())){ nodes.push([x,text.length]); text+=x.nodeValue }
+    if(!nodes.length) continue;
     const hay=text.toLocaleLowerCase(), needle=q.toLocaleLowerCase();
     const at=off=>{ let k=nodes.length-1; while(k>0&&nodes[k][1]>off) k--; return [nodes[k][0],off-nodes[k][1]] };
     for(let p=hay.indexOf(needle); p>=0; p=hay.indexOf(needle,p+needle.length)){
@@ -2624,10 +2654,12 @@ function ltReplace(all){
   if(!LTF.hits.length) return;
   const ed=$("#lt-edit"), sel=document.getSelection(), by=$("#lt-r").value;
   const from=document.activeElement;
-  /* Last first, so the ranges not yet replaced still point at their text. */
+  /* Last first, so the ranges not yet replaced still point at their text.
+     Each in its own field, which hears the change as if it were typed. */
   const which=all?LTF.hits.slice().reverse():[LTF.hits[LTF.i]];
-  ed.focus();
-  which.forEach(r=>{ sel.removeAllRanges(); sel.addRange(r);
+  which.forEach(r=>{
+    const n=r.startContainer, host=(n.nodeType===1?n:n.parentElement).closest("[contenteditable=true]")||ed;
+    host.focus(); sel.removeAllRanges(); sel.addRange(r);
     if(by) document.execCommand("insertText",false,by); else document.execCommand("delete") });
   const n=which.length;
   if(all) LTF.i=0;
@@ -2726,6 +2758,19 @@ function diffHTML(a,b){
   return wdiff(a,b).map(([op,tx])=>op==="eq"?rvText(tx)
     :op==="del"?'<del class="rvd">'+rvText(tx)+'</del>':'<ins class="rvi">'+rvText(tx)+'</ins>').join("");
 }
+/* Where a paragraph changed, with a few words either side: the start of a
+   paragraph says nothing when the edit is at its end. */
+function rvExcerpt(a,b,room=48){
+  const ops=wdiff(a,b), first=ops.findIndex(o=>o[0]!=="eq");
+  if(first<0) return esc(b.slice(0,110));
+  let last=first; for(let k=first;k<ops.length;k++) if(ops[k][0]!=="eq") last=k;
+  const before=first>0?ops[first-1][1]:"", after=last+1<ops.length?ops[last+1][1]:"";
+  const head=before.length>room?"…"+before.slice(-room).replace(/^\S*\s/,""):before;
+  const tail=after.length>room?after.slice(0,room).replace(/\s\S*$/,"")+"…":after;
+  const mid=ops.slice(first,last+1).map(([op,tx])=>op==="eq"?(tx.length>room*2?rvText(tx.slice(0,room))+" … "+rvText(tx.slice(-room)):rvText(tx))
+    :op==="del"?'<del class="rvd">'+rvText(tx)+'</del>':'<ins class="rvi">'+rvText(tx)+'</ins>').join("");
+  return rvText(head)+mid+rvText(tail);
+}
 function diffStats(a,b){
   let plus=0, minus=0;
   const words=s=>(s.match(/[\p{L}\p{N}]+/gu)||[]).length;
@@ -2765,9 +2810,10 @@ function rvBar(el,r,kind,on){
     (r.created
       ?'<button class="obtn" data-rv="undo">'+esc(t("Delete it"))+'</button>'+
        '<button class="pbtn" data-rv="keep">'+esc(t("Keep it"))+'</button>'
-      :(on.open?'<button class="pbtn" data-rv="open">'+esc(on.label||t("Review changes"))+'</button>':'')+
+      :on.open?'<button class="obtn" data-rv="undo">'+esc(t("Undo all"))+'</button>'+
        '<button class="obtn" data-rv="keep">'+esc(t("Keep all"))+'</button>'+
-       '<button class="obtn" data-rv="undo">'+esc(t("Undo all"))+'</button>');
+       '<button class="pbtn" data-rv="open">'+esc(on.label||t("Review changes"))+'</button>'
+      :'<span class="rvnote">'+esc(t("Decide on each change beside the page, or all at once at the bottom."))+'</span>');
   el.hidden=false;
   el.onclick=e=>{ const b=e.target.closest("[data-rv]"); if(!b) return;
     if(b.dataset.rv==="open") return on.open();
@@ -2784,7 +2830,7 @@ function rvCard(u,i,body,extra){
     (body?'<div class="rvx">'+body+'</div>':'')+
     '<div class="rva">'+(extra||"")+'<div class="grow"></div>'+
       '<button class="obtn" data-act="undo" data-id="'+esc(u.id)+'">'+esc(t("Undo"))+'</button>'+
-      '<button class="obtn rvkeep" data-act="keep" data-id="'+esc(u.id)+'">'+esc(t("Keep"))+'</button></div></div>';
+      '<button class="pbtn rvkeep" data-act="keep" data-id="'+esc(u.id)+'">'+esc(t("Keep"))+'</button></div></div>';
 }
 
 /* ---- letters ------------------------------------------------------------- */
@@ -2883,18 +2929,18 @@ function ltRvPanel(){
         :u.tag==="ins"?esc(t("{n} word(s) added",{n:st.plus}))
         :(st.plus||st.minus)?(st.plus?'<ins class="rvi">+'+st.plus+'</ins> ':'')+(st.minus?'<del class="rvd">−'+st.minus+'</del> ':'')+esc(t("words"))
         :esc(t("Formatting only")))+'</span>'+
-        '<span class="rvq">'+esc((u.tag==="del"?a:b).slice(0,110))+((u.tag==="del"?a:b).length>110?"…":"")+'</span>';
+        '<span class="rvq">'+(u.tag==="chg"?rvExcerpt(a,b):esc((u.tag==="del"?a:b).slice(0,110))+((u.tag==="del"?a:b).length>110?"…":""))+'</span>';
     }else body=diffHTML(rvVal(u.before),rvVal(u.after))||'<span class="rvs">'+esc(t("(empty)"))+'</span>';
     return rvCard(u,i,body);
   };
   $("#lt-panel").innerHTML=
     '<div class="rvhead">'+rvIcon(r.by)+'<div><h4>'+esc(t("{who}’s changes",{who:whoLabel(r)}))+'</h4>'+
-      '<span class="muted2">'+esc(t("Since {t} · {n} write(s)",{t:new Date(r.since*1000).toLocaleTimeString(uiLocale(),{hour:"2-digit",minute:"2-digit"}),n:r.writes||1}))+'</span></div></div>'+
+      '<span class="muted2">'+esc(t("Since {t} · {n} write(s)",{t:new Date(r.since*1000).toLocaleTimeString(uiLocale(),{hour:"2-digit",minute:"2-digit",hourCycle:clock12()?"h12":"h23"}),n:r.writes||1}))+'</span></div></div>'+
     '<p class="muted2 rvhelp">'+esc(t("Struck through is what it took out, underlined is what it put in. Keep a change to accept it, undo it to put back what was there."))+'</p>'+
     '<div class="rvlist">'+units.map(card).join("")+'</div>'+
     '<div class="rvfoot"><button class="obtn" data-all="undo">'+esc(t("Undo all"))+'</button>'+
       '<button class="obtn" data-all="keep">'+esc(t("Keep all"))+'</button><div class="grow"></div>'+
-      '<button class="pbtn" data-all="done">'+esc(t("Done"))+'</button></div>';
+      '<button class="obtn" data-all="done">'+esc(t("Done for now"))+'</button></div>';
   const pn=$("#lt-panel");
   pn.onclick=e=>{
     const b=e.target.closest("[data-act]");
@@ -2916,7 +2962,7 @@ function cvRvBar(){
 }
 async function cvRvDo(ids,action){
   const r=S.doc&&S.doc.review; if(!r) return;
-  if(S.dirty){ toast(t("Save or discard your edits first."),true); return }
+  if(S.dirty){ toast(t("Save your edits first (Ctrl S), then decide on the changes."),true); return }
   const out=await rvCall(S.path,ids,action,r.sig);
   if(!out){ await reopenInPlace(); return }
   if(out.deleted){ closeSheet(); toast(t("Deleted. It is in the trash folder."));
@@ -2983,7 +3029,7 @@ function cvRvSheet(){
   }).join("");
   openSheet('<div class="rvsheet"><div class="rvhead">'+rvIcon(r.by)+'<div><h3 id="sheet-title">'+
       esc(t("{who}’s changes",{who:whoLabel(r)}))+'</h3><p>'+
-      esc(t("Since {t} · {n} write(s)",{t:new Date(r.since*1000).toLocaleTimeString(uiLocale(),{hour:"2-digit",minute:"2-digit"}),n:r.writes||1}))+
+      esc(t("Since {t} · {n} write(s)",{t:new Date(r.since*1000).toLocaleTimeString(uiLocale(),{hour:"2-digit",minute:"2-digit",hourCycle:clock12()?"h12":"h23"}),n:r.writes||1}))+
       ' · '+esc(t("Struck through is what it took out, underlined is what it put in."))+'</p></div></div>'+
     '<div class="rvlist">'+body+'</div>'+
     '<div class="foot"><button class="obtn" data-all="undo">'+esc(t("Undo all"))+'</button>'+
@@ -3008,6 +3054,11 @@ function cvRvSheet(){
 async function refreshDocBadges(){
   try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
     if(S.view==="docs") drawDocuments() }catch(e){}
+}
+/* Open a document straight into its review. */
+async function openForReview(path){
+  if(isLetterPath(path)){ await openLetter(path); if(ltRv()) ltRvEnter() }
+  else{ await openDoc(path); if(S.doc&&S.doc.review) cvRvSheet() }
 }
 const docByPath=p=>((S.state&&S.state.documents)||[]).find(d=>d.path===p)||null;
 const rvPill=d=>d&&d.review?'<span class="rvpill" title="'+esc(t("{who} changed this. Not reviewed yet.",{who:whoLabel(d.review)}))+'">'+
@@ -3767,6 +3818,13 @@ function buildForm(){
      the middle of the letters. The inspector has always grown its bullets;
      the form simply never asked. */
   $$("#pane-form textarea").forEach(autoGrow);
+  /* Each label names the field after it, for a screen reader and for a
+     click on the label: they were siblings with nothing tying them. */
+  $$("#pane-form .fg>label").forEach((l,i)=>{
+    const f=l.nextElementSibling;
+    if(!f||!/^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName)||l.htmlFor) return;
+    f.id=f.id||"pf-"+i; l.htmlFor=f.id;
+  });
   revealSelected($("#pane-form"));
   $$("#pane-form [data-add]").forEach(b=>b.onclick=()=>addEntry(b.dataset.add));
   $$("#pane-form [data-rm]").forEach(b=>b.onclick=()=>removeEntry(b.dataset.rm,+b.dataset.i));
@@ -4011,25 +4069,40 @@ async function doRender(){
     const r=await post("/api/render",{path:S.path});
     S.renderMs=Math.round(performance.now()-t0);
     if(!r.ok){
-      S.pdf=null; $("#btn-pdf").disabled=true;
-      $("#pane-page").innerHTML='<div class="err"><h4>This CV didn\'t render</h4>'+
-        (r.hint?'<div class="hint">'+esc(r.hint)+'</div>':"")+
-        '<pre>'+esc(r.error||"")+'</pre></div>';
+      S.pdf=null; $("#btn-pdf").disabled=true; $("#btn-pdf").title=t("The page did not render, so there is no PDF yet");
+      renderFailed(r.hint,r.error);
       S.render=null; paintBudget(); paintStatus();
       return;
     }
+    $("#btn-pdf").title="";
     await adoptRender(r);
   }catch(e){
     S.render=null;
-    $("#pane-page").innerHTML='<div class="err"><h4>Render failed</h4><pre>'+
-      esc(e.message)+'</pre></div>';
+    renderFailed(null,e.message);
   }
   paintStatus();
+}
+
+/* A page that did not lay out: what happened in words, what you can do,
+   and the log only if you ask for it. The document itself is saved and every
+   other way of editing it still works, which is the thing to say first. */
+function renderFailed(hint,log){
+  S.renderFailed=true;
+  const tab=S.tab||"page";
+  $("#pane-page").innerHTML='<div class="err rfail" role="alert"><h4>'+esc(t("The page could not be laid out"))+'</h4>'+
+    '<div class="hint">'+esc(hint?tx(hint):t("Something in the CV stopped the layout. Your CV is saved; the details below say where."))+'</div>'+
+    '<div class="acts"><button class="obtn" data-rf-again>'+esc(t("Try again"))+'</button>'+
+      (tab==="page"?'<button class="obtn" data-rf-form>'+esc(t("Edit in Form"))+'</button>':'')+'</div>'+
+    (log?'<details><summary>'+esc(t("Show details"))+'</summary><pre>'+esc(log)+'</pre></details>':'')+'</div>';
+  const pane=$("#pane-page");
+  const again=pane.querySelector("[data-rf-again]"); if(again) again.onclick=()=>doRender();
+  const form=pane.querySelector("[data-rf-form]"); if(form) form.onclick=()=>{ const b=$('#edtabs [data-tab="form"]'); if(b) b.click() };
 }
 
 /* Every good render updates the same three things: the pages on screen, the
    page budget, and what we know about this document and this theme. */
 async function adoptRender(r){
+  S.renderFailed=false;
   S.render=r; S.pdf=r.pdf; $("#btn-pdf").disabled=!r.pdf;
   const grew=S.pages[S.path]!==r.pages;
   S.pages[S.path]=r.pages;
@@ -4400,6 +4473,12 @@ function setYamlError(err){
 async function loadJobs(quiet){
   try{
     const d=await api("/api/jobs");
+    /* With an application open, the list keeps the order it had: a reload
+       from the poll sorted the edited row to the top under it. */
+    if(S.jsel&&S.jobs&&S.jobs.length){
+      const at=new Map(S.jobs.map((j,i)=>[j.id,i]));
+      d.jobs.sort((a,b)=>(at.has(a.id)?at.get(a.id):-1)-(at.has(b.id)?at.get(b.id):-1));
+    }
     S.jobs=d.jobs; S.statuses=d.statuses; S.nodes=d.nodes||{}; S.labels=d.labels||{};
     S.jready=true;
   }catch(e){
@@ -4539,7 +4618,7 @@ async function fillBackups(){
     catch(e){ toast(e.message,true); now.disabled=false } };
   list.onclick=()=>{
     const kb=n=>n>1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
-    const when=a=>DTF(uiLocale(),{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(a*1000));
+    const when=a=>DTF(uiLocale(),{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",hourCycle:clock12()?"h12":"h23"}).format(new Date(a*1000));
     openSheet('<div><h3>'+t("Restore a backup")+'</h3><p>'+t("Its files are put back into the workspace. What is there now is backed up first, so this can be undone the same way.")+'</p></div>'+
       '<div class="bk-list">'+r.backups.map(b=>'<div class="bk-row"><span><b>'+esc(when(b.at))+'</b>'+
         '<small>'+esc(kb(b.size))+(/before-restore/.test(b.name)?' · '+t("before a restore"):/manual/.test(b.name)?' · '+t("made by hand"):'')+'</small></span>'+
@@ -5411,7 +5490,8 @@ function drawJobs(){
        offer to make one would be standing on top of a document that exists. */
     /* What there is, not what the files are called: the names are in the
        tooltip and one click away. */
-    const docs=cv?esc(t("CV"))+(letter?" + "+esc(t("letter")):""):(letter?esc(t("Letter only")):null);
+    const docs=(cv?esc(t("CV"))+(letter?" + "+esc(t("letter")):""):(letter?esc(t("Letter only")):null));
+    const rvd=[j.cv_path,j.letter_path].map(docByPath).find(d=>d&&d.review);
     const openable=cv?j.cv_path:j.letter_path;
     const ap=appliedAt(j);
     const due=j.followup_date&&j.followup_date<=isoToday();
@@ -5423,7 +5503,7 @@ function drawJobs(){
       '<span class="role"><b>'+esc(j.title)+'</b>'+
         (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
       '</span>'+
-      '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'" title="'+esc([cv,letter].filter(Boolean).join(" · "))+'">'+docs+'</span>'
+      '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'" title="'+esc([cv,letter].filter(Boolean).join(" · "))+'">'+docs+'</span>'+rvPill(rvd)
                /* Sent without a CV linked: nothing to tailor any more, only
                   a CV to name, on the application. */
                :j.status!=="pending"?'<span class="docs none" title="'+esc(t("No CV linked"))+'">–</span>'
@@ -5539,6 +5619,7 @@ function peekStep(delta){
 }
 function closePeek(){
   S.jsel=null;
+  if(S.jobs){ byRecent(); drawJobs() }
   $("#jpeek").hidden=true;
   $("#v-jobs").classList.remove("peeking");
   moveSel();
@@ -5637,7 +5718,7 @@ async function apThumb(el,path){
   if(!th){
     try{ const t=await api("/api/thumb?path="+encodeURIComponent(path));
       th={png:t.png}; if(!t.fresh){ const r=await post("/api/render",{path});
-        if(r.ok) th={png:r.pngs[0]} } }catch(e){ th={png:null,failed:true} }
+        th=r.ok?{png:r.pngs[0]}:{png:t.png||null,failed:!t.png} } }catch(e){ th={png:null,failed:true} }
     S.docThumbs[path]=th;
   }
   if(el.isConnected) el.innerHTML=th&&th.png?'<img alt="" src="'+esc(th.png+tok())+'">'
@@ -5885,7 +5966,7 @@ $("#jpk-close").onclick=closePeek;
    being typed into, and of the select and date inputs, which use the arrows
    themselves. */
 document.addEventListener("keydown",e=>{
-  if(S.view!=="jobs"||$("#jpeek").hidden) return;
+  if(e.defaultPrevented||S.view!=="jobs"||$("#jpeek").hidden) return;
   if(!$("#sheet").hidden||!$("#ovl-settings").hidden||!$("#ovl-design").hidden) return;
   if(e.key==="Escape"){ e.preventDefault(); return closePeek() }
   if(e.key!=="ArrowUp"&&e.key!=="ArrowDown") return;
@@ -5992,9 +6073,13 @@ function wireRounds(j){
         setPref("notify",true); notifyTick(); toast(t("Reminders on: 1 hour and 10 minutes before each interview."))
       }});
     }
-    /* A first time for an application still waiting moves it to interviewing. */
+    /* A first time for an application still waiting moves it to interviewing,
+       and says so: a status changing on its own was news to nobody. */
+    const was=j.status;
     if(list.some(r=>r.at)&&(j.status==="applied"||j.status==="pending")) patch.status="interviewing";
-    return saveJob(j.id,patch);
+    return saveJob(j.id,patch).then(()=>{ if(patch.status&&patch.status!==was)
+      toast(t("{co} is now {s}",{co:j.company,s:prettyStatus(patch.status)}),false,
+        {label:t("Undo"),fn:()=>saveJob(j.id,{status:was})}) });
   };
   /* Kinds are stored in English, so they read in any language. */
   const kindKey=v=>ROUND_KINDS.find(k=>t(k)===v||k===v)||v;
@@ -6020,7 +6105,8 @@ function wireRounds(j){
       if(r.outcome) S.roundOpen=null }));
     const ics=el.querySelector("[data-rd-ics]");
     if(ics) ics.onclick=()=>window.open("/api/calendar.ics?id="+encodeURIComponent(j.id)+tok());
-    el.querySelector("[data-rd-del]").onclick=()=>{ S.roundOpen=null; save(rs().filter(x=>x.id!==id)) };
+    el.querySelector("[data-rd-del]").onclick=()=>{ const prev=rs(); S.roundOpen=null;
+      save(prev.filter(x=>x.id!==id)).then(()=>toast(t("Round removed"),false,{label:t("Undo"),fn:()=>save(prev)})) };
   });
   box.querySelector("[data-rd-add]").onclick=()=>{
     const list=rs(), id="r"+Math.random().toString(36).slice(2,8);
@@ -6031,14 +6117,17 @@ function wireRounds(j){
   if(rj) rj.onclick=()=>saveJob(j.id,{status:"rejected_interviewing"});
 }
 
+const byRecent=()=>S.jobs.sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)));
 async function saveJob(id,patch){
   try{
     const updated=await post("/api/jobs/update",Object.assign({id},patch));
     const i=S.jobs.findIndex(x=>x.id===id);
     if(i>=0) S.jobs[i]=updated;
-    /* Sorting is by updated_at, so an edit moves the row; redraw the whole
-       table rather than leaving a stale order behind. */
-    S.jobs.sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)));
+    /* Sorting is by updated_at, so an edit moves the row -- but not while
+       that application is open: the list reordering under it made "9 of 66"
+       jump to "3 of 66" and the arrows walk somewhere else. It settles when
+       the application is closed. */
+    if(!S.jsel) byRecent();
     drawJobs();
     if(S.view==="cvs") buildInspector();
     S.funnel=null;
@@ -6838,6 +6927,14 @@ function ivSoon(j){
   const at=interviewMoment(j); if(!at) return false;
   const d=dayDiff(todayKey(),dayIn(at)); return d>=0&&d<=7;
 }
+/* A status set in one click says so, and can be taken back: the row it came
+   from disappears, and nothing else told you what just happened. */
+async function statusWithUndo(j,status){
+  const was=j.status;
+  await saveJob(j.id,{status});
+  toast(t("{co} is now {s}",{co:j.company,s:prettyStatus(status)}),false,
+    {label:t("Undo"),fn:()=>saveJob(j.id,{status:was})});
+}
 function nextActions(){
   const now=new Date(), today=todayKey(), out=[];
   const dshort=k=>fmtKey(k,{day:"numeric",month:"short"});
@@ -6854,6 +6951,14 @@ function nextActions(){
     return fmtKey(k,{weekday:"short"})+" "+hm+" · "+t("in {n} days",{n:days});
   };
   (S.jobs||[]).forEach(j=>{
+    /* A CV or letter an AI client changed and you have not looked at yet:
+       most likely the one you are about to send. */
+    for(const [path,kind] of [[j.cv_path,"cv"],[j.letter_path,"letter"]]){
+      const d=path&&docByPath(path), r=d&&d.review; if(!r) continue;
+      out.push({j,rank:1,at:-(r.at||0),dot:"live",what:t("Review what {who} changed",{who:whoLabel(r)}),
+        why:kind==="cv"?t("The CV"):t("The cover letter"),when:t("{t} ago",{t:ago(r.at*1000)}),
+        act:t("Review"),run:()=>openForReview(path)});
+    }
     if(DEAD_ST.has(j.status)) return;
     const rs=j.rounds||[], at=interviewMoment(j);
     /* An interview this week. */
@@ -6889,12 +6994,12 @@ function nextActions(){
       if(j.status==="applied"&&quiet>42) out.push({j,rank:late?1:3,at:-late,dot:"late",what:t("Follow up or let it go"),
         why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)}):t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}),
         when:t("{n} weeks quiet",{n:Math.floor(quiet/7)}),
-        acts:[[t("Mark ghosted"),()=>saveJob(j.id,{status:"ghosted"})],[t("Write follow-up"),()=>p?draftSheet(j,p,"followup"):selectJob(j.id)]]});
+        acts:[[t("Mark ghosted"),()=>statusWithUndo(j,"ghosted")],[t("Write follow-up"),()=>draftSheet(j,p,"followup")]]});
       else out.push({j,rank:late?1:3,at:-late,dot:late?"late":"waiting",what:t("Follow up"),
         why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)})
           :ap?t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}):"",
         when:late?t("{n} day(s) overdue",{n:late}):t("today"),hot:!!late,
-        act:t("Write follow-up"),run:()=>p?draftSheet(j,p,"followup"):selectJob(j.id)});
+        act:t("Write follow-up"),run:()=>draftSheet(j,p,"followup")});
     }
     /* An offer to answer. */
     if(j.status==="offer"){
@@ -6904,9 +7009,9 @@ function nextActions(){
          was answered and the list was not told, so it asks which way. */
       if(days>30) out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),
         why:t("Offer since {d}. Did you take it?",{d:dshort(k)}),when:t("{n} day(s) ago",{n:days}),
-        acts:[[t("Accepted"),()=>saveJob(j.id,{status:"accepted"})],[t("Declined by me"),()=>saveJob(j.id,{status:"refused"})]]});
+        acts:[[t("Accepted"),()=>statusWithUndo(j,"accepted")],[t("Declined by me"),()=>statusWithUndo(j,"refused")]]});
       else out.push({j,rank:2,at:-days,dot:"offer",what:t("Answer the offer"),why:t("Offer since {d}",{d:dshort(k)}),
-        when:days?t("{n} day(s) ago",{n:days}):t("today"),hot:days>7,act:t("Reply to the offer"),run:()=>p?draftSheet(j,p,"offer"):selectJob(j.id)});
+        when:days?t("{n} day(s) ago",{n:days}):t("today"),hot:days>7,act:t("Reply to the offer"),run:()=>draftSheet(j,p,"offer")});
     }
     /* A draft left for more than three days; after a month it is not a
        plan any more, and it stays in the list below. */
@@ -8069,8 +8174,8 @@ function paintEffect(){
   const r=S.render;
   $("#dz-pages").innerHTML=r&&r.pngs
     ? r.pngs.map((u,i)=>'<img src="'+esc(u+tok())+'" alt="Page '+(i+1)+'">').join("")
-    : '<p class="note muted">Rendering…</p>';
-  if(!r){ $("#dz-effect").innerHTML='<span>Nothing rendered yet</span>'; return }
+    : '<p class="note muted">'+esc(S.renderFailed?t("The page could not be laid out, so there is nothing to preview. The page view says why."):t("Rendering…"))+'</p>';
+  if(!r){ $("#dz-effect").innerHTML='<span>'+esc(S.renderFailed?t("Not laid out"):t("Nothing rendered yet"))+'</span>'; return }
   const pct=S.fill==null?null:Math.round(S.fill*100);
   const known=Object.keys(S.themePages).filter(t=>t!==DZ.theme);
   const shortest=known.sort((a,b)=>S.themePages[a]-S.themePages[b])[0];
@@ -8719,9 +8824,23 @@ async function packSheet(id){
   let info;
   try{ info=await api("/api/pack/info?job="+encodeURIComponent(id)) }catch(e){ return toast(e.message,true) }
   const both=info.cv&&info.letter, draft=j.status==="pending";
+  /* What would go out wrong, said before it goes: a letter still holding its
+     writing prompts, a CV that does not render, changes nobody has read. */
+  const warn=[];
+  if(j.letter_path){
+    try{ const d=await api("/api/doc?path="+encodeURIComponent(j.letter_path));
+      if(/Open with something only you could write|Commencez par ce que vous seul/.test(d.body||""))
+        warn.push(t("The letter still has its writing prompts in it."));
+    }catch(e){}
+  }
+  const th=j.cv_path&&S.docThumbs[j.cv_path];
+  if(th&&th.failed) warn.push(t("The CV does not render at the moment, so it cannot be exported."));
+  for(const pth of [j.cv_path,j.letter_path]){ const d=pth&&docByPath(pth);
+    if(d&&d.review) warn.push(t("{who} changed the {what} and you have not reviewed it.",{who:whoLabel(d.review),what:isLetterPath(pth)?t("letter"):t("CV")})) }
   openSheet('<h3>'+esc(t("Export for {co}",{co:j.company}))+'</h3>'+
     '<p>'+esc(both?t("The CV and the letter for this application, ready to upload or attach."):
       t("This application's document, ready to upload or attach."))+'</p>'+
+    (warn.length?'<div class="pk-warn" role="alert"><b>'+esc(t("Before you send it"))+'</b><ul>'+warn.map(w=>'<li>'+esc(w)+'</li>').join("")+'</ul></div>':'')+
     '<div class="pk-opts" role="radiogroup" aria-label="'+esc(t("Format"))+'">'+
       '<label class="pk-opt"><span class="pk-h"><input type="radio" name="pk-f" value="pdf" checked><b>'+
         esc(both?t("One PDF"):t("PDF"))+'</b></span><small>'+
@@ -8732,8 +8851,9 @@ async function packSheet(id){
     '<label class="pk-field">'+esc(t("File name"))+'<input id="pk-name" spellcheck="false" value="'+esc(info.name)+'"></label>'+
     (info.posting?'<label class="pk-check" id="pk-post-row" hidden><input type="checkbox" id="pk-post" checked>'+
       esc(t("Add the posting, as Markdown"))+'</label>':'')+
-    (draft?'<label class="pk-check"><input type="checkbox" id="pk-applied" checked>'+
-      esc(t("Mark the application as applied today"))+'</label>':'')+
+    /* Off until asked: an export to proofread is not an application sent. */
+    (draft?'<label class="pk-check"><input type="checkbox" id="pk-applied">'+
+      esc(t("I am sending it now: mark the application as applied today"))+'</label>':'')+
     '<p class="pk-note">'+esc(t("Rendered from what is saved now: unsaved edits are left out."))+'</p>'+
     '<div class="foot"><button class="sbtn" id="pk-cancel">'+esc(t("Cancel"))+'</button>'+
       '<button class="sbtn primary" id="pk-go">'+esc(t("Save PDF…"))+'</button></div>');
@@ -8752,7 +8872,7 @@ async function packSheet(id){
     const mark=$("#pk-applied")&&$("#pk-applied").checked;
     window.open("/api/pack?"+q+tok());
     closeSheet();
-    if(mark) saveJob(id,{status:"applied"});
+    if(mark) statusWithUndo(j,"applied");
   };
 }
 
@@ -8783,22 +8903,37 @@ function prepParts(d,j){
   const keep=(d.asks||[]).filter(a=>a.keep).length;
   const parts=[
     {k:"q",label:t("Questions rehearsed"),val:t("{n} of {m}",{n:got,m:qs.length}),f:qs.length?got/qs.length:0},
-    {k:"s",label:t("Stories with proof"),val:t("{n} of {m}",{n:proved,m:st.length}),f:st.length?proved/st.length:1},
-    {k:"a",label:t("Questions to ask"),val:t("{n} ready",{n:keep}),f:Math.min(1,keep/2)},
-    {k:"c",label:t("The CV you sent"),val:j.cv_path?(d.cv_read?t("re-read"):""):t("not linked"),f:d.cv_read?1:0,
+    {k:"s",label:t("Stories with proof"),val:t("{n} of {m}",{n:proved,m:st.length}),f:st.length?proved/st.length:0,none:!st.length},
+    {k:"a",label:t("Questions to ask"),val:t("{n} ready",{n:keep}),f:Math.min(1,keep/2),none:!!d.local},
+    {k:"c",label:t("The CV you sent"),val:j.cv_path?(d.cv_read?t("re-read"):""):t("not linked"),f:d.cv_read?1:0,none:!j.cv_path,
       act:j.cv_path&&!d.cv_read?t("Re-read →"):""},
   ];
-  return {parts,pct:Math.round(parts.reduce((a,p)=>a+p.f,0)/parts.length*100)};
+  /* Readiness counts what there is to be ready with: no posting means no
+     stories to prove, no CV linked means nothing to re-read, and neither is
+     half of being ready. */
+  const counted=parts.filter(p=>!p.none);
+  return {parts,pct:Math.round(counted.reduce((a,p)=>a+p.f,0)/Math.max(1,counted.length)*100)};
+}
+/* The card grows above the interviews, so whatever the user is working on
+   below it would be pushed down out of view as it appears. Keep the open
+   round -- else the focused field -- where it was on screen. */
+function keepPlace(fn){
+  const a=$(".rd.open")||(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("#jinsp-body .block"));
+  const y0=a&&a.isConnected?a.getBoundingClientRect().top:null;
+  fn();
+  if(y0==null||!a.isConnected) return;
+  let sc=a.parentElement; while(sc&&sc!==document.body&&!(sc.scrollHeight>sc.clientHeight&&/(auto|scroll)/.test(getComputedStyle(sc).overflowY))) sc=sc.parentElement;
+  if(sc&&sc!==document.body) sc.scrollTop+=a.getBoundingClientRect().top-y0;
 }
 async function drawPrep(j){
   const host=$("#ap-prep"); if(!host) return;
   clearInterval(PREP.tick);
   const nr=prepRound(j);
   if(!nr){ host.innerHTML=""; host.hidden=true; return }
-  host.hidden=false;
+  keepPlace(()=>{ host.hidden=false });
   if(PREP.job!==j.id||!PREP.data){
     PREP.job=j.id; PREP.data=null;
-    host.innerHTML='<section class="pp-stage pp-wait"><span class="spin"></span></section>';
+    keepPlace(()=>{ host.innerHTML='<section class="pp-stage pp-wait"><span class="spin"></span></section>' });
     try{ PREP.data=await api("/api/jobs/prep?id="+encodeURIComponent(j.id)) }
     catch(e){ host.innerHTML=""; host.hidden=true; return }
     if(S.jsel!==j.id) return;
@@ -8818,7 +8953,7 @@ async function drawPrep(j){
   const by=d.by&&!d.local?(aiClient(d.by)||{}).label||t("your AI client"):"";
   const aiOn=(S.ai||[]).some(c=>c.state==="connected");
   const deck=qs.slice(0,3).reverse();
-  host.innerHTML='<section class="pp-stage" aria-labelledby="pp-h">'+
+  const card='<section class="pp-stage" aria-labelledby="pp-h">'+
     '<div class="pp-top">'+
       '<div class="pp-when"><span class="pp-kick"><i></i>'+esc(t("Round {n} of {m}",{n:nr.n,m:nr.m})+(r.kind?" · "+t(r.kind):""))+'</span>'+
         '<h2 id="pp-h">'+esc(r.with?(nr.at?t("{when} with {who}",{when,who:r.with}):t("With {who}, not scheduled yet",{who:r.with})):when)+'</h2>'+
@@ -8853,13 +8988,22 @@ async function drawPrep(j){
     (d.local&&aiOn?'<div class="pp-ask"><span>'+esc(t("These come from the posting's words alone. Your AI client can write the real ones, from the posting, the CV you sent and the company."))+
       '</span><code data-noi18n>'+esc(t("prepare my {co} interview",{co:j.company}))+'</code><button type="button" class="obtn" id="pp-copy">'+esc(t("Copy"))+'</button></div>':'')+
     '<div class="pp-foot">'+(by?esc(t("Prepared by {who} from the posting and your CV · {d}",{who:by,d:d.at?fmtKey(d.at,{day:"numeric",month:"short"}):""}))
-        :esc(t("Made on this computer from the posting, the CV you sent and the kind of round."))+
+        :esc(j.description&&j.cv_path?t("Made on this computer from the posting, the CV you sent and the kind of round.")
+          :j.description?t("Made on this computer from the posting and the kind of round. Link the CV you sent for questions about it.")
+          :j.cv_path?t("Made on this computer from the CV you sent and the kind of round. Save the posting for questions about the role.")
+          :t("General questions for this kind of round. Save the posting and link your CV for questions about this role."))+
           (aiOn?''
             :' <button type="button" class="linkbtn" id="pp-ai">'+esc(t("Connect an AI client for better questions"))+'</button>'))+
       '<span class="grow"></span><button type="button" class="linkbtn" id="pp-print">'+esc(t("Print a sheet"))+'</button>'+
       '<button type="button" class="linkbtn" id="pp-askl">'+
         esc(r.with?t("Questions to ask {who}",{who:r.with.split(" ")[0]}):t("Questions to ask them"))+'</button></div>'+
   '</section>';
+  keepPlace(()=>{ host.innerHTML=card });
+  /* The round you were just editing, back in view after the redraw. */
+  if(S.roundSaved&&Date.now()-S.roundSaved.at<4000){
+    const rd=$('.rd[data-rd="'+CSS.escape(S.roundSaved.id)+'"]');
+    if(rd){ const b=rd.getBoundingClientRect(); if(b.top<60||b.bottom>innerHeight-20) rd.scrollIntoView({block:"center"}) }
+  }
   const rr=document.querySelector('[data-rd-ready="'+CSS.escape(r.id)+'"]');
   if(rr){ rr.hidden=false; rr.textContent=t("Prep: {n}% ready",{n:pct}) }
   if(nr.at) PREP.tick=setInterval(()=>{ const el=$("#pp-cd"); if(el) el.innerHTML=cd(); else clearInterval(PREP.tick) },30000);
@@ -8867,10 +9011,12 @@ async function drawPrep(j){
   const pd=$("#pp-date");
   if(pd) pd.onclick=()=>{ const f=$('.rd-ed input[data-rf="day"]');
     if(f){ f.scrollIntoView({block:"center",behavior:"smooth"}); f.focus({preventScroll:true}) } };
-  $("#pp-go").onclick=()=>rehearse(j);
-  $("#pp-all").onclick=()=>prepSheet(j,"q");
-  $("#pp-askl").onclick=()=>prepSheet(j,"a");
-  $("#pp-print").onclick=()=>prepPrint(j);
+  /* The card can land after you have moved on; nothing to wire then. */
+  const on=(id,f)=>{ const e=$(id); if(e) e.onclick=f };
+  on("#pp-go",()=>rehearse(j));
+  on("#pp-all",()=>prepSheet(j,"q"));
+  on("#pp-askl",()=>prepSheet(j,"a"));
+  on("#pp-print",()=>prepPrint(j));
   const ai=$("#pp-ai"); if(ai) ai.onclick=()=>openSettings("ai");
   const cp=$("#pp-copy"); if(cp) cp.onclick=()=>{ navigator.clipboard.writeText(t("prepare my {co} interview",{co:j.company})).then(()=>toast(t("Copied"))) };
   $$("#ap-prep [data-pp-cv]").forEach(b=>b.onclick=()=>{ prepSave(j,{...PREP.data,cv_read:true}); openDoc(j.cv_path) });
@@ -9161,15 +9307,22 @@ function workday(k){
   return wd===6?addDays(k,2):wd===0?addDays(k,1):k;
 }
 async function draftSheet(j,p,kind){
+  /* No one with an email on this application yet: the draft is still worth
+     writing, and the address is asked for here rather than the button
+     quietly opening the application instead. */
+  const ask=!p||!p.email;
+  p=p?Object.assign({},p):{name:"",email:""};
   let ctx={};
   try{ ctx=await api("/api/jobs/draft?id="+encodeURIComponent(j.id)) }catch(e){}
   const lang=PP_TPL[j.language]?j.language:(PP_TPL[UI_LANG]?UI_LANG:"en");
   openSheet('<h3>'+esc(t(PP_KIND_LABEL[kind]))+'</h3>'+
-    '<p>'+esc(t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name&&p.email?p.name+" <"+p.email+">":p.name||p.email,co:j.company}))+
+    '<p>'+esc(ask?t("Written from this application: edit anything. Add who it goes to below."):
+      t("To {n}, at {co}. Written from this application: edit anything.",{n:p.name&&p.email?p.name+" <"+p.email+">":p.name||p.email,co:j.company}))+
       (lang!==UI_LANG?' '+esc(t("In {lang}, the application's language.",{lang:langName(lang)})):'')+'</p>'+
     '<div class="pp-kinds" role="radiogroup" aria-label="'+esc(t("Kind of email"))+'">'+
       Object.keys(PP_KIND_LABEL).filter(k=>(k!=="offer"||j.status==="offer"||kind==="offer")&&(k!=="confirm"||interviewMoment(j)>new Date()||kind==="confirm")).map(k=>'<button class="pp-kind" role="radio" aria-checked="'+(k===kind)+'" data-k="'+k+'">'+
         esc(t(PP_KIND_LABEL[k]))+'</button>').join("")+'</div>'+
+    (ask?'<label class="pk-field">'+esc(t("To"))+'<input id="dr-to" type="email" autocomplete="email" placeholder="'+esc(t("their email, e.g. name@company.com"))+'"></label>':'')+
     '<label class="pk-field">'+esc(t("Subject"))+'<input id="dr-sub" spellcheck="true"></label>'+
     '<label class="pk-field">'+esc(t("Message"))+'<textarea id="dr-body" rows="12" spellcheck="true"></textarea></label>'+
     /* With an interview booked, that date is the next step, not a follow-up. */
@@ -9188,6 +9341,9 @@ async function draftSheet(j,p,kind){
     $("#dr-move-row").hidden=k!=="followup";
   };
   fillIn(kind);
+  const to=$("#dr-to");
+  if(to) to.oninput=()=>{ p.email=to.value.trim(); const ok=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email);
+    $("#dr-mail").disabled=!ok; $("#dr-mail").title=ok?"":t("No email address for them yet") };
   $$("#sheet .pp-kind").forEach(b=>b.onclick=()=>fillIn(b.dataset.k));
   $("#dr-cancel").onclick=closeSheet;
   $("#dr-copy").onclick=async()=>{

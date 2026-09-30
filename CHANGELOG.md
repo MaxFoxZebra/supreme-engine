@@ -50,6 +50,49 @@ tag, so a release is never published with nothing said about it.
   chose, whatever your computer's language, with the calendar a click away,
   and interview times everywhere follow the clock.
 
+### Fixed after a usability review
+
+- **Escape goes back one step, never two.** Closing a sheet, Settings or a
+  dialog with Esc no longer also closes the application behind it, and Esc
+  in the CV editor lands on the application it was written for. In a letter,
+  Esc goes back too.
+- **Cover letters save themselves** a moment after you stop typing, and when
+  you leave them. Before, a letter left with unsaved words lost them, while
+  the status bar said "all saved"; it now says "saving…" and "saved".
+- **A page that does not lay out says why, in words**, with **Try again**
+  and **Edit in Form**, and the technical log under "Show details". Thumbnails
+  of it no longer say "Rendering…" forever, Design says it is not laid out,
+  and the disabled Export PDF says why it is disabled.
+- **Changes an AI client made are flagged where you work**: a Review badge on
+  the application's row, and "Review what Claude changed" in Next actions,
+  which opens straight into the review.
+- **Exporting no longer marks an application as applied unless you tick
+  it**, and it warns first when the letter still has its writing prompts, the
+  CV does not render, or an AI client's changes are unreviewed.
+- **Adding an interview date keeps your place**: the round you are editing
+  stays in view as the prep card appears, the move to Interviewing is
+  announced with Undo, and the list no longer reorders under an open
+  application. Readiness counts only what there is to prepare with, so a new
+  application reads 0%, not 50%, and the card says what its questions were
+  made from.
+- **Next actions do what they say.** Write follow-up and Reply to the offer
+  always open the draft, asking for an address when the application has
+  none; Mark ghosted, Accepted, Declined and removing a round can be undone.
+- **The 12-hour clock applies everywhere**, including the Interviews list,
+  and the round's time field is no longer clipped. Date format and Clock sit
+  at the top of Language & region.
+- **Narrow windows**: the title bar keeps the Settings gear on screen, and
+  onboarding stacks instead of crushing its right-hand column.
+- **The CV editor's outline comes first** in the left rail, with the other
+  documents below it in their own scroll.
+- Smaller: find and replace in a letter covers the letterhead, subject and
+  signature; "Letterhead from" tells a CV's languages apart; review cards
+  show where a paragraph changed, and keep a space between the words taken
+  out and put in; Keep and Undo read the same way everywhere; the
+  follow-up date field looks like the others; the base-CV thumbnail's label
+  no longer runs under its tag; "Saved views" is "Views"; form fields in the
+  CV editor are named for screen readers.
+
 ## 0.32.0
 
 - **The top of Funnel is now a funnel.** Under Sent, Heard back,

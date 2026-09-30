@@ -2867,7 +2867,8 @@ textarea{resize:vertical}
 .rd-ed label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--t600);min-width:0}
 .rd-ed input{width:100%;box-sizing:border-box;height:32px;padding:0 8px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
   color:var(--t900);font-size:13px;font-weight:400;min-width:0}
-.rd-when{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.7fr) minmax(0,1fr);gap:8px}
+.rd-when{display:grid;grid-template-columns:minmax(128px,1.1fr) minmax(104px,.8fr);gap:8px}
+.rd-when select{grid-column:1/-1}
 .rd-saved{font-size:12px;font-weight:500;color:var(--rv-ins);animation:rdsaved 2.5s ease-out forwards}
 @keyframes rdsaved{0%,70%{opacity:1}100%{opacity:0}}
 .rd-when select{min-height:32px;border-radius:8px;font-size:13px}
@@ -3224,11 +3225,60 @@ ins.rvi{color:var(--rv-ins);background:var(--rv-ins-bg);text-decoration:underlin
 .rvx li{margin:1px 0}
 .rva{display:flex;align-items:center;gap:6px}
 .rva .obtn{height:28px}
-.rva .rvkeep{border-color:transparent;background:var(--t900);color:var(--app)}
-.rva .rvkeep:hover:not(:disabled){background:var(--t700)}
+.rva .rvkeep{height:28px;padding:0 14px}
 .rvfoot{display:flex;align-items:center;gap:6px;padding-top:4px}
 .sheet.wide{width:760px}
 .rvsheet{display:flex;flex-direction:column;gap:14px}
 .rvsheet .rvlist{max-height:calc(100vh - 290px);overflow-y:auto;margin:0 -6px;padding:2px 6px}
 .rvsheet .rvc{cursor:default}
 .pp-cd .pp-date{height:34px;padding:0 16px;font-size:13px}
+
+/* a page that did not lay out */
+.err.rfail{max-width:560px;align-self:flex-start}
+.err.rfail .acts{display:flex;gap:8px;margin-top:12px}
+.err.rfail details{margin-top:12px}
+.err.rfail summary{cursor:pointer;font-size:12px;color:var(--t600)}
+.err.rfail pre{max-height:260px;overflow:auto;white-space:pre}
+.pk-warn{padding:10px 12px;border-radius:8px;background:var(--bad-bg);border-left:2px solid var(--bad);font-size:12.5px}
+.pk-warn b{font-weight:600}
+.pk-warn ul{margin:4px 0 0;padding-left:18px}
+
+/* ---------- narrower windows --------------------------------------------
+   Below about 1280px the title bar ran out of room and pushed the gear off
+   the edge. It gives up, in order: the search box's width, the sample pill's
+   wording, and the space between the AI clients' marks. */
+@media (max-width:1280px){
+  #chrome{gap:16px}
+  .tsearch{width:200px}
+  .samp-pill{white-space:nowrap;margin-right:4px}
+  .samp-pill b{padding:0 8px}
+  .cbtn.ai{gap:6px;padding:0 9px}
+}
+@media (max-width:1140px){
+  .tsearch{width:150px}
+  .tsearch kbd{display:none}
+  .samp-pill{font-size:0;gap:0;padding:0 4px 0 8px}
+  .samp-pill i{margin-right:6px}
+  .samp-pill b{font-size:11.5px}
+}
+/* Onboarding: below this the aside was crushed to one word per line beside
+   the form; it goes under it instead. */
+@media (max-width:1240px){
+  .onb-rail{width:240px;padding:32px 22px 22px}
+  .onb-step{flex-direction:column;gap:28px;padding:40px 40px 0}
+  .onb-main{width:auto;max-width:620px}
+  .onb-side{align-items:stretch;flex:none;padding-bottom:28px}
+  .onb-drop{min-height:260px;max-width:none}
+}
+/* The other documents scroll in their own space under the outline. */
+#doclist{max-height:36vh;overflow-y:auto;flex:none}
+/* a word taken out and one put in, not glued together */
+del.rvd+ins.rvi{margin-left:3px}
+.rvbar .rvnote{font-size:12px;color:var(--t600)}
+/* a date field with no styles of its own looks like the app's other fields */
+:where(.dfx>.dfx-t){min-height:32px;padding:0 34px 0 9px;border:1px solid var(--bd-field);border-radius:8px;
+  background:var(--field);color:var(--t900);font:inherit;font-size:13px}
+:where(.dfx>.dfx-t):focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
+/* the empty base thumbnail's words clear the "Base CV" tag over it */
+.bthumb.empty span{padding-top:26px;text-align:center}
+.empty .cta{display:flex;flex-wrap:wrap;gap:10px}

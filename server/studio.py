@@ -3119,6 +3119,14 @@ def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
 # Error text from RenderCV is precise but not friendly. These are the failures
 # real users actually hit, with an explanation of what to do about it.
 HINTS = (
+    # Typst fetches a theme's icon and font packages the first time it lays
+    # one out, and caches them. Offline, or behind a proxy, that first time
+    # fails with a trace that says nothing a person can act on.
+    ("failed to download package",
+     "The page needs a font or icon package it downloads once, the first time a "
+     "theme is used, and it could not be downloaded. Check your internet "
+     "connection, then try again. Your CV is saved; you can keep editing it in Form "
+     "or YAML meanwhile."),
     ("mapping values are not allowed",
      "A line of text contains a colon followed by a space, which YAML reads as a "
      "new field. Wrap that text in a >- block, or put it in quotes."),
@@ -4872,10 +4880,13 @@ const API_TOKEN=__API_TOKEN__;
   <!-- ---------------------------------------------------------------- CVs -->
   <section class="view" id="v-cvs" hidden>
     <aside class="rail rail-cvs">
-      <div class="rail-label">Documents</div>
-      <div class="rail-list" id="doclist"></div>
+      <!-- The open document's outline first: it is how you move around the
+           one you are editing, and under a list of every other document it
+           was below the fold as soon as there were a dozen. -->
       <div class="rail-label" id="outline-label">Outline</div>
       <div class="rail-list" id="outline"></div>
+      <div class="rail-label">Documents</div>
+      <div class="rail-list" id="doclist"></div>
       <div class="grow"></div>
       <div class="budget" id="budget" hidden>
         <div class="brow"><span class="pp"></span><span class="ww mono"></span></div>
@@ -5000,7 +5011,7 @@ const API_TOKEN=__API_TOKEN__;
       </div>
       <div class="rail-label">Status</div>
       <div id="statuslist"></div>
-      <div class="rail-label">Saved views</div>
+      <div class="rail-label">Views</div>
       <div id="savedlist"></div>
       <div class="grow"></div>
       <!-- The one document every tailored CV is copied from. It sits with the
@@ -5341,16 +5352,16 @@ const API_TOKEN=__API_TOKEN__;
         <div class="srow" id="s-cvlang-row"><div><b>Language of your CVs</b><span>Dates, month
           names and “present” print in it, and new letters are written in it.</span></div>
           <select id="s-cvlang"></select></div>
-        <div class="srow"><div><b>Time zone</b><span>Interviews somewhere else show in
-          your time, with theirs beside it.</span></div>
-          <select id="s-tz"></select></div>
-        <div class="tzmap" id="tzmap" aria-hidden="true"></div>
         <div class="srow"><div><b>Date format</b><span>How dates are written in every date
           field, and the order you type them in.</span></div>
           <select id="s-datefmt"></select></div>
         <div class="srow"><div><b>Clock</b><span>Interview times, in the fields and
           everywhere they are shown.</span></div>
           <select id="s-clock"></select></div>
+        <div class="srow"><div><b>Time zone</b><span>Interviews somewhere else show in
+          your time, with theirs beside it.</span></div>
+          <select id="s-tz"></select></div>
+        <div class="tzmap" id="tzmap" aria-hidden="true"></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>
