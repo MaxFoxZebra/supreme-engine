@@ -5131,14 +5131,26 @@ const API_TOKEN=__API_TOKEN__;
         <button data-c="undo" data-k="Z" aria-label="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
         <button data-c="redo" data-k="Shift+Z" aria-label="Redo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
         <span class="sep" aria-hidden="true"></span>
+        <select id="lt-style" class="lt-style" aria-label="Text style" title="Text style">
+          <option value="p">Paragraph</option><option value="h1">Heading 1</option>
+          <option value="h2">Heading 2</option><option value="h3">Heading 3</option>
+          <option value="blockquote">Quote</option><option value="pre">Code block</option>
+        </select>
+        <span class="sep" aria-hidden="true"></span>
         <button data-c="bold" data-k="B" aria-label="Bold" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
         <button data-c="italic" data-k="I" aria-label="Italic" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5h8M6 19h8M14.5 5l-5 14"/></svg></button>
+        <button data-c="strikeThrough" data-k="Shift+X" aria-label="Strikethrough" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M16 6.5A4.5 3.5 0 0 0 12 5c-2.5 0-4.5 1.3-4.5 3.2 0 1.4 1 2.3 3 3"/><path d="M8 17.5c.8 1 2.3 1.5 4 1.5 2.5 0 4.5-1.3 4.5-3.3 0-.9-.4-1.6-1-2.2"/></svg></button>
+        <button data-c="code" data-k="E" aria-label="Inline code" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8-4 4 4 4M15 8l4 4-4 4"/></svg></button>
         <button data-c="link" data-k="K" aria-label="Link" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></button>
+        <span class="sep" aria-hidden="true"></span>
         <button data-c="insertUnorderedList" data-k="Shift+8" aria-label="Bullet list" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><circle cx="5" cy="6" r=".6"/><circle cx="5" cy="12" r=".6"/><circle cx="5" cy="18" r=".6"/></svg></button>
+        <button data-c="insertOrderedList" data-k="Shift+7" aria-label="Numbered list" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 5h1.5v4M4 9h3M4 15.5c0-.8.7-1.5 1.5-1.5S7 14.7 7 15.5c0 1-3 2-3 3.5h3"/></svg></button>
+        <button data-c="insertHorizontalRule" data-k="" aria-label="Horizontal line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16"/><path d="M8 7h8M8 17h8" opacity=".45"/></svg></button>
+        <button data-c="table" data-k="" aria-label="Table"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 10h16M4 15h16M12 10v9"/></svg></button>
         <span class="sep" aria-hidden="true"></span>
         <button class="wide" data-c="find" data-k="F" aria-label="Find and replace" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.3-4.3"/></svg><span>Find and replace</span></button>
       </div>
-      <span class="note">The page prints bold, italic, links and bullet lists.</span>
+      <span class="note">Markdown works as you type: # heading, - list, 1. list, &gt; quote.</span>
     </div>
     <div class="lt-find" id="lt-find" role="search" aria-label="Find in the letter" hidden>
       <div class="lt-pill">

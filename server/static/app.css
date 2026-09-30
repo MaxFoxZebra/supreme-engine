@@ -3328,3 +3328,29 @@ del.rvd+ins.rvi{margin-left:3px}
   padding-bottom:3px}
 .lt-paper .ltbody p.lt-prompt::before{content:attr(data-tip);display:block;margin-bottom:1px;font:600 9.5px 'IBM Plex Sans',system-ui,sans-serif;
   letter-spacing:.04em;text-transform:uppercase;color:#b69455;font-style:normal}
+
+/* ---------- a letter's Markdown, as it prints --------------------------------
+   Sizes are the PDF's, relative to its 10.5pt body; colours are the CV's. */
+.lt-paper .ltbody h1,.lt-paper .ltbody h2,.lt-paper .ltbody h3{margin:.55em 0 0;font-weight:700;line-height:1.25;
+  color:var(--lt-rule);text-align:left}
+.lt-paper .ltbody h1{font-size:1.43em}
+.lt-paper .ltbody h2{font-size:1.19em}
+.lt-paper .ltbody h3{font-size:1.05em}
+.lt-paper .ltbody ol{margin:0;padding-left:1.6em}
+.lt-paper .ltbody li>ul,.lt-paper .ltbody li>ol{margin-top:.2em}
+.lt-paper .ltbody blockquote{margin:0;padding:.1em 0 .1em 1.05em;border-left:1.5px solid var(--lt-rule);
+  font-style:italic;color:var(--lt-grey)}
+.lt-paper .ltbody blockquote p{margin:0}
+.lt-paper .ltbody hr{width:100%;margin:.3em 0;border:0;border-top:.5px solid var(--lt-grey)}
+.lt-paper .ltbody pre{margin:0;padding:.75em;border-radius:3px;background:#f5f5f5;white-space:pre-wrap;
+  font:0.9em/1.5 'DejaVu Sans Mono','IBM Plex Mono',ui-monospace,monospace;text-align:left}
+.lt-paper .ltbody code{padding:0 .2em;border-radius:2px;background:#f2f2f2;font:0.9em 'DejaVu Sans Mono','IBM Plex Mono',ui-monospace,monospace}
+.lt-paper .ltbody s{text-decoration-thickness:1px}
+.lt-paper .ltbody table{align-self:flex-start;border-collapse:collapse;text-align:left}
+.lt-paper .ltbody th,.lt-paper .ltbody td{border:.5px solid var(--lt-grey);padding:.3em .55em;min-width:3em;vertical-align:top}
+.lt-paper .ltbody th{font-weight:700}
+/* the style menu in the toolbar */
+.lt-pill .lt-style{height:32px;padding:0 26px 0 10px;border:0;border-radius:8px;background-color:transparent;
+  color:var(--t800);font-size:13px;cursor:pointer}
+.lt-pill .lt-style:hover{background-color:var(--paper-hover)}
+.lt-pill .lt-style:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}

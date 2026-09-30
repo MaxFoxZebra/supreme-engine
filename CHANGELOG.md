@@ -8,6 +8,22 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.34.0
+
+- **Cover letters are full Markdown, and all of it prints.** Headings in
+  three sizes, bullet and numbered lists nested as deep as you like, quotes,
+  horizontal rules, code blocks and tables, and inside a line bold, italic,
+  strikethrough, code and links, with a line break wherever you want one.
+  The page, the PDF, Word and plain text are written from the same reading of
+  the letter, so what you see is what goes out.
+- **A fuller toolbar**: a style menu (paragraph, headings, quote, code
+  block), strikethrough, inline code, numbered lists, a rule and a table.
+  Tab nests a list item and walks a table's cells, adding a row after the
+  last. Markdown also works as you type: `# ` to `### `, `- `, `1. `, `> `,
+  and three backticks or `---` then Enter.
+- Your AI client is told it can use all of it, and to keep most letters to
+  paragraphs.
+
 ## 0.33.0
 
 - **Cover letters have a proper toolbar.** Above the page, always in view:

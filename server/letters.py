@@ -22,8 +22,10 @@ disguise. A letter here is a Markdown file with a short header:
 and it is laid out with Typst, which the app already ships, in the look of the
 CV it names: that CV's name, headline and contact line, its fonts, colours,
 margins and paper, read every time it renders. The body is the letter as you
-would type it in an email; the formatting it prints is bold, italic, links and
-bullet lists, and nothing else, so nothing on screen fails to reach the page.
+would type it in an email, in Markdown: headings, lists, quotes, rules, code,
+tables, bold, italic, strikethrough and links all print, and the page, the PDF,
+Word and plain text are written from one parse, so nothing on screen fails to
+reach the page.
 """
 
 from __future__ import annotations
@@ -172,9 +174,19 @@ def dump(meta: dict, body: str) -> str:
 # The body: the Markdown a letter uses, and nothing more
 # --------------------------------------------------------------------------
 
-BULLET = re.compile(r"^\s*[-*•]\s+")
-INLINE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)\s]+)\)")
+# A letter is Markdown, all of it that a letter can use: headings (three
+# levels; a fourth and deeper read as the third), paragraphs, hard line
+# breaks, bullet and numbered lists nested as deep as you like, quotes, rules,
+# code blocks and tables; and inside a line bold, italic, both, strikethrough,
+# code, links and backslash escapes. The page, the PDF, Word and plain text
+# are all written from the one parse below, so what shows is what prints.
 
+LIST_ITEM = re.compile(r"^(\s*)([-*+•]|\d{1,9}[.)])\s+(.*)$")
+HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+RULE = re.compile(r"^\s{0,3}([-*_])(\s*\1){2,}\s*$")
+FENCE = re.compile(r"^\s{0,3}(```|~~~)(.*)$")
+QUOTE = re.compile(r"^\s{0,3}>\s?(.*)$")
+TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$")
 
 _PROMPT_RES: list = []
 
@@ -191,65 +203,283 @@ def is_prompt(text: str) -> bool:
     return any(r.match(flat) for r in _PROMPT_RES)
 
 
-def blocks(body: str, prompts: bool = False) -> list[tuple[str, list[str] | str]]:
-    """Paragraphs and lists: [("p", text), ("ul", [items])]. A writing
-    prompt nobody replaced is left out unless asked for: it is never printed,
-    exported, or sent."""
-    out: list = []
-    for chunk in re.split(r"\n\s*\n", (body or "").strip()):
-        lines = [l for l in chunk.split("\n") if l.strip()]
-        if not lines:
-            continue
-        if all(BULLET.match(l) for l in lines):
-            out.append(("ul", [BULLET.sub("", l).strip() for l in lines]))
-        else:
-            para = " ".join(l.strip() for l in lines)
-            if prompts or not is_prompt(para):
-                out.append(("p", para))
+def _cells(line: str) -> list[str]:
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|") and not s.endswith("\\|"):
+        s = s[:-1]
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s)]
+
+
+def _starts_block(line: str, nxt: str | None) -> bool:
+    return bool(HEADING.match(line) or RULE.match(line) or FENCE.match(line)
+                or QUOTE.match(line) or LIST_ITEM.match(line)
+                or ("|" in line and nxt is not None and TABLE_SEP.match(nxt) and "-" in nxt))
+
+
+def _join(lines: list[str]) -> str:
+    """Lines of one paragraph: a line ending in two spaces or a backslash
+    breaks there; any other line break is a space."""
+    out = ""
+    for i, l in enumerate(lines):
+        hard = l.endswith("  ") or l.rstrip(" ").endswith("\\")
+        t = l.strip()
+        if t.endswith("\\") and not t.endswith("\\\\"):
+            t = t[:-1].rstrip()
+        out += t + (("\n" if hard else " ") if i < len(lines) - 1 else "")
     return out
+
+
+def _list(lines: list[str]) -> list[dict]:
+    """Items and continuation lines as a tree, by how far each is indented."""
+    items: list[list] = []            # [indent, ordered, number, text lines]
+    for l in lines:
+        m = LIST_ITEM.match(l)
+        if m:
+            ind = len(m.group(1).expandtabs(4))
+            mark = m.group(2)
+            items.append([ind, mark[0].isdigit(), int(mark[:-1]) if mark[0].isdigit() else 1,
+                          [m.group(3)]])
+        elif items:
+            items[-1][3].append(l)
+
+    def build(i: int, base: int) -> tuple[dict, int]:
+        first = items[i]
+        node = {"t": "ol" if first[1] else "ul", "start": first[2], "items": []}
+        while i < len(items) and items[i][0] >= base:
+            # A bullet after numbers, or numbers after bullets, at the same
+            # depth: a new list.
+            if items[i][0] == base and items[i][1] != first[1]:
+                break
+            if items[i][0] > base and node["items"]:
+                child, i = build(i, items[i][0])
+                node["items"][-1]["children"].append(child)
+                continue
+            node["items"].append({"text": _join(items[i][3]), "children": []})
+            i += 1
+        return node, i
+
+    out, i = [], 0
+    while i < len(items):
+        node, i = build(i, items[i][0])
+        out.append(node)
+    return out
+
+
+def parse_md(body: str) -> list[dict]:
+    """The blocks of a letter's body, in order."""
+    lines = (body or "").replace("\r\n", "\n").replace("\t", "    ").split("\n")
+    out: list[dict] = []
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        nxt = lines[i + 1] if i + 1 < n else None
+        if not line.strip():
+            i += 1
+            continue
+        m = FENCE.match(line)
+        if m:
+            fence, code = m.group(1), []
+            i += 1
+            while i < n and not lines[i].strip().startswith(fence):
+                code.append(lines[i])
+                i += 1
+            out.append({"t": "code", "text": "\n".join(code)})
+            i += 1
+            continue
+        m = HEADING.match(line)
+        if m:
+            out.append({"t": "h", "level": min(3, len(m.group(1))), "text": m.group(2)})
+            i += 1
+            continue
+        if RULE.match(line):
+            out.append({"t": "hr"})
+            i += 1
+            continue
+        if "|" in line and nxt is not None and TABLE_SEP.match(nxt) and "-" in nxt:
+            head = _cells(line)
+            aligns = []
+            for c in _cells(nxt):
+                aligns.append("center" if c.startswith(":") and c.endswith(":")
+                              else "right" if c.endswith(":") else "left")
+            rows = []
+            i += 2
+            while i < n and lines[i].strip() and "|" in lines[i]:
+                rows.append(_cells(lines[i]))
+                i += 1
+            w = len(head)
+            rows = [(r + [""] * w)[:w] for r in rows]
+            out.append({"t": "table", "head": head, "rows": rows, "align": (aligns + ["left"] * w)[:w]})
+            continue
+        if QUOTE.match(line):
+            q = []
+            while i < n and lines[i].strip() and (QUOTE.match(lines[i]) or not _starts_block(lines[i], None)):
+                m = QUOTE.match(lines[i])
+                q.append(m.group(1) if m else lines[i])
+                i += 1
+            out.append({"t": "quote", "blocks": parse_md("\n".join(q))})
+            continue
+        if LIST_ITEM.match(line):
+            block = []
+            while i < n:
+                l = lines[i]
+                if not l.strip():
+                    # A blank line inside a list ends it unless the list goes on.
+                    j = i + 1
+                    while j < n and not lines[j].strip():
+                        j += 1
+                    if j < n and (LIST_ITEM.match(lines[j]) or lines[j].startswith("  ")):
+                        i = j
+                        continue
+                    break
+                if block and not LIST_ITEM.match(l) and not l.startswith(" ") and _starts_block(l, lines[i + 1] if i + 1 < n else None):
+                    break
+                block.append(l)
+                i += 1
+            out += _list(block)
+            continue
+        para = []
+        while i < n and lines[i].strip():
+            if para and _starts_block(lines[i], lines[i + 1] if i + 1 < n else None):
+                break
+            para.append(lines[i])
+            i += 1
+        out.append({"t": "p", "text": _join(para)})
+    return out
+
+
+def blocks(body: str, prompts: bool = False) -> list[dict]:
+    """The letter's blocks. A writing prompt nobody replaced is left out
+    unless asked for: it is never printed, exported, or sent."""
+    return [b for b in parse_md(body)
+            if prompts or not (b["t"] == "p" and is_prompt(b["text"]))]
 
 
 def prompts_left(body: str) -> list[str]:
     """The writing prompts still in a letter, as the page shows them."""
-    return [c for k, c in blocks(body, prompts=True) if k == "p" and is_prompt(c)]
+    return [b["text"] for b in parse_md(body) if b["t"] == "p" and is_prompt(b["text"])]
 
 
-def _inline(text: str, bold, em, link, plain):
-    pos, parts = 0, []
-    for m in INLINE.finditer(text):
-        parts.append(plain(text[pos:m.start()]))
-        if m.group(1) or m.group(2):
-            parts.append(bold(_inline(m.group(1) or m.group(2), bold, em, link, plain)))
-        elif m.group(3) or m.group(4):
-            parts.append(em(_inline(m.group(3) or m.group(4), bold, em, link, plain)))
+# Inside a line: each piece of text with what it is (b, i, s, code, br) and
+# the link it belongs to, if any.
+INLINE_TOK = re.compile(
+    r"\\([\\`*_{}\[\]()#+\-.!~|>])"                 # 1 escaped character
+    r"|`([^`]+)`"                                    # 2 code
+    r"|\*\*\*(?!\s)(.+?)(?<!\s)\*\*\*"                # 3 bold italic
+    r"|\*\*(?!\s)(.+?)(?<!\s)\*\*|(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)"   # 4, 5 bold
+    r"|~~(?!\s)(.+?)(?<!\s)~~"                        # 6 strikethrough
+    r"|\*(?!\s)(.+?)(?<!\s)\*|(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)"         # 7, 8 italic
+    r"|\[([^\]]+)\]\(([^)\s]+)\)"                    # 9, 10 link
+    r"|(\n)")                                        # 11 hard break
+INLINE = INLINE_TOK
+
+
+def spans(text: str, st: frozenset = frozenset(), url: str | None = None) -> list:
+    out: list = []
+    pos = 0
+    for m in INLINE_TOK.finditer(text or ""):
+        if m.start() > pos:
+            out.append((text[pos:m.start()], st, url))
+        g = m.groups()
+        if g[0] is not None:
+            out.append((g[0], st, url))
+        elif g[1] is not None:
+            out.append((g[1], st | {"code"}, url))
+        elif g[2] is not None:
+            out += spans(g[2], st | {"b", "i"}, url)
+        elif g[3] is not None or g[4] is not None:
+            out += spans(g[3] if g[3] is not None else g[4], st | {"b"}, url)
+        elif g[5] is not None:
+            out += spans(g[5], st | {"s"}, url)
+        elif g[6] is not None or g[7] is not None:
+            out += spans(g[6] if g[6] is not None else g[7], st | {"i"}, url)
+        elif g[8] is not None:
+            out += spans(g[8], st, g[9])
         else:
-            parts.append(link(_inline(m.group(5), bold, em, link, plain), m.group(6)))
+            out.append(("\n", st | {"br"}, url))
         pos = m.end()
-    parts.append(plain(text[pos:]))
-    return "".join(parts)
+    if pos < len(text or ""):
+        out.append((text[pos:], st, url))
+    return out
 
 
 def _typ_escape(s: str) -> str:
-    return re.sub(r'([\\#$@*_<>\[\]`~=/"])', r"\\\1", s)
+    return re.sub(r'([\\#$@*_<>\[\]`~=/"+-])', r"\\\1", s)
 
 
 def _typ_str(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _groups(sp: list):
+    """Consecutive spans that share a link, together."""
+    run: list = []
+    for x in sp:
+        if run and x[2] != run[-1][2]:
+            yield run[0][2], run
+            run = []
+        run.append(x)
+    if run:
+        yield run[0][2], run
+
+
 def to_typst(text: str) -> str:
-    return _inline(text, lambda x: f"#strong[{x}]", lambda x: f"#emph[{x}]",
-                   lambda x, u: f"#link({_typ_str(u)})[{x}]", _typ_escape)
+    out = []
+    for url, run in _groups(spans(text)):
+        parts = []
+        for t, st, _ in run:
+            if "br" in st:
+                parts.append("#linebreak()")
+                continue
+            x = f"#raw({_typ_str(t)})" if "code" in st else _typ_escape(t)
+            if "s" in st:
+                x = f"#strike[{x}]"
+            if "i" in st:
+                x = f"#emph[{x}]"
+            if "b" in st:
+                x = f"#strong[{x}]"
+            parts.append(x)
+        body = "".join(parts)
+        out.append(f"#link({_typ_str(url)})[{body}]" if url else body)
+    return "".join(out)
 
 
 def to_plain(text: str) -> str:
-    return _inline(text, lambda x: x, lambda x: x, lambda x, u: f"{x} ({u})", lambda x: x)
+    out = []
+    for url, run in _groups(spans(text)):
+        body = "".join(t for t, _, _ in run)
+        out.append(f"{body} ({url})" if url and url != body else body)
+    return "".join(out)
+
+
+def _walk_text(bl: list[dict]):
+    for b in bl:
+        if b["t"] in ("p", "h"):
+            yield b["text"]
+        elif b["t"] in ("ul", "ol"):
+            stack = [b]
+            while stack:
+                node = stack.pop()
+                for it in node["items"]:
+                    yield it["text"]
+                    stack += it["children"]
+        elif b["t"] == "quote":
+            yield from _walk_text(b["blocks"])
+        elif b["t"] == "table":
+            yield from b["head"]
+            for r in b["rows"]:
+                yield from r
+        elif b["t"] == "code":
+            yield b["text"]
 
 
 def word_count(body: str) -> int:
     """Words of the letter itself: its writing prompts are not."""
-    kept = "\n\n".join(c if k == "p" else "\n".join(c) for k, c in blocks(body))
-    return len(re.findall(r"[\w'’-]+", to_plain(kept)))
+    words = 0
+    for t in _walk_text(blocks(body)):
+        words += len(re.findall(r"[^\W_][\w'’-]*", to_plain(t)))
+    return words
 
 
 # --------------------------------------------------------------------------
@@ -359,12 +589,7 @@ def typst_source(meta: dict, body: str, head: dict) -> str:
         _typ_escape(c) for c in head["contact"])
     to = meta.get("to")
     to_lines = to if isinstance(to, list) else [l for l in str(to or "").split("\n") if l.strip()]
-    parts = []
-    for kind, content in blocks(body):
-        if kind == "ul":
-            parts.append("\n".join("- " + to_typst(i) for i in content))
-        else:
-            parts.append(to_typst(content))
+    parts = [_typ_block(b, head) for b in blocks(body)]
     lang = str(meta.get("language") or "en")
     return f'''#let accent = rgb("{head["name_color"]}")
 #let grey = rgb("{head["contact_color"]}")
@@ -374,6 +599,12 @@ def typst_source(meta: dict, body: str, head: dict) -> str:
 #set par(justify: true, leading: 0.72em, spacing: 1.15em)
 #set list(indent: 0.6em, spacing: 0.7em, marker: [•])
 #show link: it => underline(offset: 2pt, stroke: 0.5pt + rgb("{head["link_color"]}"), it)
+#show heading: set text(fill: rgb("{head["rule_color"]}"), weight: "bold")
+#show heading: set block(above: 1.3em, below: 0.7em)
+#show heading.where(level: 1): set text(size: 15pt)
+#show heading.where(level: 2): set text(size: 12.5pt)
+#show heading.where(level: 3): set text(size: 11pt)
+#show raw: set text(font: ("DejaVu Sans Mono", "Liberation Mono", "Courier New"), size: 9.5pt)
 #text(font: {_typ_str(head["name_font"])}, size: 24pt, weight: {'"bold"' if head["name_bold"] else '"regular"'}, fill: accent)[{_typ_escape(head["name"])}]
 {'#linebreak()#v(-0.35em)#text(size: 11pt, fill: rgb("' + head["headline_color"] + '"))[' + _typ_escape(head["headline"]) + ']' if head["headline"] else ''}
 #v(0.3em)
@@ -389,6 +620,45 @@ def typst_source(meta: dict, body: str, head: dict) -> str:
 #v(2.2em)
 #text(weight: "bold")[{_typ_escape(head.get("signature") or head["name"])}]
 '''
+
+
+def _typ_list(node: dict, depth: int = 0) -> str:
+    pad = "  " * depth
+    lines = []
+    for k, it in enumerate(node["items"]):
+        mark = f"{node['start'] + k}." if node["t"] == "ol" else "-"
+        lines.append(f"{pad}{mark} {to_typst(it['text'])}")
+        for ch in it["children"]:
+            lines.append(_typ_list(ch, depth + 1))
+    return "\n".join(lines)
+
+
+def _typ_block(b: dict, head: dict) -> str:
+    t = b["t"]
+    if t == "p":
+        return to_typst(b["text"])
+    if t == "h":
+        return f"#heading(level: {b['level']}, outlined: false)[{to_typst(b['text'])}]"
+    if t in ("ul", "ol"):
+        return _typ_list(b)
+    if t == "hr":
+        return f'#line(length: 100%, stroke: 0.5pt + rgb("{head["contact_color"]}"))'
+    if t == "code":
+        return ('#block(fill: luma(245), inset: 8pt, radius: 3pt, width: 100%)'
+                f'[#raw(block: true, {_typ_str(b["text"])})]')
+    if t == "quote":
+        inner = "\n\n".join(_typ_block(x, head) for x in b["blocks"])
+        return (f'#block(inset: (left: 11pt, y: 3pt), stroke: (left: 1.5pt + rgb("{head["rule_color"]}")))'
+                f'[#set text(style: "italic", fill: rgb("{head["contact_color"]}"))\n{inner}]')
+    if t == "table":
+        n = len(b["head"])
+        al = ", ".join(b["align"])
+        cells = [f"[#strong[{to_typst(c)}]]" for c in b["head"]]
+        for r in b["rows"]:
+            cells += [f"[{to_typst(c)}]" for c in r]
+        return (f'#table(columns: {n}, align: ({al},), inset: 6pt, '
+                f'stroke: 0.5pt + rgb("{head["contact_color"]}"), ' + ", ".join(cells) + ")")
+    return ""
 
 
 def _font_paths(extra: list[Path]) -> list[str]:
@@ -439,78 +709,143 @@ def file_stem(name: str) -> str:
 # Other ways out: Word, and plain text for a form's box
 # --------------------------------------------------------------------------
 
-def plain_text(meta: dict, body: str, head: dict) -> str:
+def _plain_blocks(bl: list[dict], depth: int = 0) -> list[str]:
     out = []
-    for kind, content in blocks(body):
-        out.append("\n".join("• " + to_plain(i) for i in content) if kind == "ul"
-                   else to_plain(content))
-    return "\n\n".join(out + [head.get("signature") or head["name"]]) + "\n"
+    for b in bl:
+        t = b["t"]
+        if t in ("p", "h"):
+            out.append(to_plain(b["text"]))
+        elif t in ("ul", "ol"):
+            def lines(node, d):
+                for k, it in enumerate(node["items"]):
+                    mark = f"{node['start'] + k}." if node["t"] == "ol" else "•"
+                    yield "   " * d + mark + " " + to_plain(it["text"])
+                    for ch in it["children"]:
+                        yield from lines(ch, d + 1)
+            out.append("\n".join(lines(b, 0)))
+        elif t == "quote":
+            out.append("\n".join("> " + l for l in "\n\n".join(_plain_blocks(b["blocks"])).split("\n")))
+        elif t == "hr":
+            out.append("———")
+        elif t == "code":
+            out.append(b["text"])
+        elif t == "table":
+            rows = [b["head"]] + b["rows"]
+            out.append("\n".join(" | ".join(to_plain(c) for c in r) for r in rows))
+    return out
 
 
-def _w_runs(text: str) -> str:
-    """Inline Markdown as WordprocessingML runs."""
+def plain_text(meta: dict, body: str, head: dict) -> str:
+    return "\n\n".join(_plain_blocks(blocks(body)) + [head.get("signature") or head["name"]]) + "\n"
+
+
+def _hex(c) -> str:
+    return str(c or "000000").lstrip("#")
+
+
+def _w_runs(text: str, *, bold=False, italic=False, size=None, color=None, font=None) -> str:
+    """Inline Markdown as WordprocessingML runs, over the paragraph's own look."""
     runs = []
-
-    def emit(t, b=False, i=False, u=False):
-        if not t:
-            return
-        props = ("<w:b/>" if b else "") + ("<w:i/>" if i else "") + ('<w:u w:val="single"/>' if u else "")
+    for t, st, url in spans(text):
+        if "br" in st:
+            runs.append("<w:r><w:br/></w:r>")
+            continue
+        props = (("<w:rFonts w:ascii=\"Consolas\" w:hAnsi=\"Consolas\"/>" if "code" in st
+                  else f'<w:rFonts w:ascii="{html.escape(font)}" w:hAnsi="{html.escape(font)}"/>' if font else "")
+                 + ("<w:b/>" if bold or "b" in st else "") + ("<w:i/>" if italic or "i" in st else "")
+                 + ("<w:strike/>" if "s" in st else "")
+                 + (f'<w:color w:val="{_hex(color)}"/>' if color else "")
+                 + (f'<w:sz w:val="{size}"/>' if size else "")
+                 + ('<w:u w:val="single"/>' if url else "")
+                 + ('<w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>' if "code" in st else ""))
         runs.append(f'<w:r>{"<w:rPr>" + props + "</w:rPr>" if props else ""}'
                     f'<w:t xml:space="preserve">{html.escape(t, quote=False)}</w:t></w:r>')
-
-    pos = 0
-    for m in INLINE.finditer(text):
-        emit(text[pos:m.start()])
-        if m.group(1) or m.group(2):
-            emit(to_plain(m.group(1) or m.group(2)), b=True)
-        elif m.group(3) or m.group(4):
-            emit(to_plain(m.group(3) or m.group(4)), i=True)
-        else:
-            emit(to_plain(m.group(5)), u=True)
-        pos = m.end()
-    emit(text[pos:])
     return "".join(runs)
+
+
+def _wp(runs: str, *, align=None, after=160, before=None, indent=None, hanging=None,
+        left_border=None, bottom_border=None, shade=None, keep_next=False) -> str:
+    ppr = ((f'<w:keepNext/>' if keep_next else "")
+           + (f'<w:pBdr>' + (f'<w:left w:val="single" w:sz="12" w:space="8" w:color="{_hex(left_border)}"/>' if left_border else "")
+              + (f'<w:bottom w:val="single" w:sz="6" w:space="1" w:color="{_hex(bottom_border)}"/>' if bottom_border else "")
+              + '</w:pBdr>' if left_border or bottom_border else "")
+           + (f'<w:shd w:val="clear" w:color="auto" w:fill="{shade}"/>' if shade else "")
+           + f'<w:spacing w:after="{after}"' + (f' w:before="{before}"' if before is not None else "") + '/>'
+           + (f'<w:ind w:left="{indent}"' + (f' w:hanging="{hanging}"' if hanging else "") + '/>' if indent else "")
+           + (f'<w:jc w:val="{align}"/>' if align else ""))
+    return f"<w:p><w:pPr>{ppr}</w:pPr>{runs}</w:p>"
+
+
+def _w_blocks(bl: list[dict], head: dict, *, indent=0, quote=False) -> list[str]:
+    out = []
+    grey = head["contact_color"]
+    for b in bl:
+        t = b["t"]
+        if t == "p":
+            out.append(_wp(_w_runs(b["text"], italic=quote, color=grey if quote else None),
+                           indent=indent or None, left_border=grey if quote else None))
+        elif t == "h":
+            size = {1: 30, 2: 25, 3: 22}[b["level"]]
+            out.append(_wp(_w_runs(b["text"], bold=True, size=size, color=head["rule_color"]),
+                           before=240, after=100, indent=indent or None, keep_next=True))
+        elif t in ("ul", "ol"):
+            def items(node, d):
+                for k, it in enumerate(node["items"]):
+                    mark = f"{node['start'] + k}.\t" if node["t"] == "ol" else "•\t"
+                    out.append(_wp('<w:r><w:t xml:space="preserve">' + mark + "</w:t></w:r>" + _w_runs(it["text"], italic=quote),
+                                   indent=indent + 360 * (d + 1), hanging=300, after=60))
+                    for ch in it["children"]:
+                        items(ch, d + 1)
+            items(b, 0)
+        elif t == "quote":
+            out += _w_blocks(b["blocks"], head, indent=indent + 240, quote=True)
+        elif t == "hr":
+            out.append(_wp("", bottom_border=grey, after=200))
+        elif t == "code":
+            for line in b["text"].split("\n") or [""]:
+                run = ('<w:r><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="19"/></w:rPr>'
+                       f'<w:t xml:space="preserve">{html.escape(line, quote=False)}</w:t></w:r>') if line else ""
+                out.append(_wp(run, shade="F4F4F4", after=0, indent=indent or None))
+            out.append(_wp("", after=120))
+        elif t == "table":
+            border = f'w:val="single" w:sz="4" w:space="0" w:color="{_hex(grey)}"'
+            rows = []
+            for r_i, row in enumerate([b["head"]] + b["rows"]):
+                cells = "".join(
+                    f'<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/></w:tcPr>'
+                    f'<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="{ {"left": "left", "center": "center", "right": "right"}[b["align"][c_i]] }"/></w:pPr>'
+                    f'{_w_runs(c, bold=r_i == 0)}</w:p></w:tc>'
+                    for c_i, c in enumerate(row))
+                rows.append(f"<w:tr>{cells}</w:tr>")
+            out.append('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>'
+                       + "".join(f"<w:{e} {border}/>" for e in ("top", "left", "bottom", "right", "insideH", "insideV"))
+                       + '</w:tblBorders><w:tblCellMar><w:left w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar>'
+                       + "</w:tblPr>" + "".join(rows) + "</w:tbl>")
+            out.append(_wp("", after=120))
+    return out
 
 
 def docx(meta: dict, body: str, head: dict) -> bytes:
     """A plain .docx: the same parts in the same order, in the CV's font. Built
-    by hand rather than with a library, because a letter needs six paragraph
-    kinds and the app should not ship a dependency for them."""
+    by hand rather than with a library, because a letter needs a dozen
+    paragraph kinds and the app should not ship a dependency for them."""
     font = html.escape(head["font"])
-
-    def para(runs, *, size=None, bold=False, align=None, space_after=160, indent=None, color=None):
-        ppr = (f'<w:jc w:val="{align}"/>' if align else "") + \
-              f'<w:spacing w:after="{space_after}"/>' + \
-              (f'<w:ind w:left="{indent}" w:hanging="240"/>' if indent else "")
-        rpr = (f'<w:sz w:val="{size}"/>' if size else "") + ("<w:b/>" if bold else "") + \
-              (f'<w:color w:val="{color.lstrip("#")}"/>' if color else "")
-        if rpr:
-            runs = runs.replace("<w:r>", f"<w:r><w:rPr>{rpr}</w:rPr>", ).replace(
-                "<w:rPr>" + rpr + "</w:rPr><w:rPr>", "<w:rPr>" + rpr)
-        return f"<w:p><w:pPr>{ppr}</w:pPr>{runs}</w:p>"
 
     def t(s):
         return f'<w:r><w:t xml:space="preserve">{html.escape(s, quote=False)}</w:t></w:r>'
 
-    ps = [para(t(head["name"]), size=44, bold=head["name_bold"] or True, space_after=0,
-               color=head["name_color"])]
+    ps = [_wp(_w_runs(head["name"], bold=True, size=44, color=head["name_color"]), after=0)]
     if head["headline"]:
-        ps.append(para(t(head["headline"]), size=22, space_after=60, color=head["headline_color"]))
-    ps.append(para(t("   •   ".join(head["contact"])), size=18, space_after=360,
-                   color=head["contact_color"]))
+        ps.append(_wp(_w_runs(head["headline"], size=22, color=head["headline_color"]), after=60))
+    ps.append(_wp(_w_runs("   •   ".join(head["contact"]), size=18, color=head["contact_color"]), after=360))
     to = meta.get("to")
     for line in (to if isinstance(to, list) else [l for l in str(to or "").split("\n") if l.strip()]):
-        ps.append(para(t(str(line)), space_after=0))
-    ps.append(para(t(date_line(meta)), align="right", space_after=360, color=head["contact_color"]))
+        ps.append(_wp(t(str(line)), after=0))
+    ps.append(_wp(_w_runs(date_line(meta), color=head["contact_color"]), align="right", after=360))
     if meta.get("subject"):
-        ps.append(para(t(str(meta["subject"])), bold=True, space_after=240))
-    for kind, content in blocks(body):
-        if kind == "ul":
-            for item in content:
-                ps.append(para(t("•\t") + _w_runs(item), indent=360, space_after=60))
-        else:
-            ps.append(para(_w_runs(content)))
-    ps.append(para(t(head.get("signature") or head["name"]), bold=True, space_after=0).replace("<w:spacing", '<w:spacing w:before="480"', 1))
+        ps.append(_wp(_w_runs(str(meta["subject"]), bold=True), after=240))
+    ps += _w_blocks(blocks(body), head)
+    ps.append(_wp(_w_runs(head.get("signature") or head["name"], bold=True), before=480, after=0))
     document = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'

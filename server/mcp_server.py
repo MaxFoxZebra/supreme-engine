@@ -1021,10 +1021,13 @@ def create_letter(job_id: str) -> dict:
 def write_letter(path: str, body: str, subject: str | None = None) -> str:
     """Replace a cover letter's body, and its subject line if given.
 
-    `body` is the whole letter from greeting to closing, as Markdown:
-    paragraphs separated by blank lines, **bold**, *italic*, [text](url) and
-    '- ' bullets. The name, contact details and signature are printed from the
-    CV the letter looks like, so leave them out. The header is kept.
+    `body` is the whole letter from greeting to closing, as Markdown, all of
+    which prints: paragraphs separated by blank lines, # to ### headings,
+    '- ' and '1. ' lists (nested by indenting), '> ' quotes, '---' rules,
+    fenced code, pipe tables, **bold**, *italic*, ~~struck~~, `code` and
+    [text](url). Most cover letters need only paragraphs; use the rest where
+    it helps the reader. The name, contact details and signature are printed
+    from the CV the letter looks like, so leave them out. The header is kept.
     """
     p = studio.safe_path(path)
     if not studio.is_letter(p):

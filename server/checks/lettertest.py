@@ -114,6 +114,31 @@ def main() -> int:
         data, ctype, _ = studio.letter_export(p, "pdf")
         check("the PDF", data[:4] == b"%PDF" and ctype == "application/pdf")
 
+        print("Markdown, all of it")
+        md = ("# Why Northwind\n\nDear team,\\\nwith **bold**, *it*, ~~old~~, `code`, [a link](https://x.io), "
+              "C# and 5 * 3.\n\n## What I bring\n- one\n   - nested **two**\n\n1. first\n2. second\n\n"
+              "> A quote\n\n---\n\n| Skill | Years |\n|:--|--:|\n| Go | 6 |\n\n```\nmake deploy\n```\n\nKind regards,")
+        kinds = [b["t"] for b in letters.parse_md(md)]
+        check("every block is read", kinds == ["h", "p", "h", "ul", "ol", "quote", "hr", "table", "code", "p"], repr(kinds))
+        studio.save_letter(p, {"body": md})
+        r = studio.render_letter(p)
+        check("Typst lays all of it out", r.get("ok"), r.get("error") or "")
+        try:
+            import pypdf
+            text = "\n".join(pg.extract_text() for pg in pypdf.PdfReader(ws / r["pdf"]).pages)
+            for want in ("Why Northwind", "What I bring", "nested two", "first", "A quote", "Skill", "make deploy", "5 * 3"):
+                check(f"the page has {want!r}", want in text)
+            check("and none of the markup", not any(m in text for m in ("**", "~~", "##", "](", "|:-")))
+        except ImportError:
+            print("  skip  pypdf is not installed")
+        doc = zipfile.ZipFile(io.BytesIO(studio.letter_export(p, "docx")[0])).read("word/document.xml").decode("utf-8")
+        check("Word has the table, the struck word and the code",
+              "<w:tbl>" in doc and "<w:strike/>" in doc and "Consolas" in doc)
+        txt = studio.letter_export(p, "txt")[0].decode("utf-8")
+        check("plain text keeps the structure",
+              "1. first" in txt and "   • nested two" in txt and "> A quote" in txt and "Skill | Years" in txt, repr(txt[:200]))
+        studio.save_letter(p, {"body": body})
+
         print("A letterhead of its own")
         head = studio.load_letter(p)["head"]
         check("from the CV until told otherwise",

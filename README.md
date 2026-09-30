@@ -113,8 +113,10 @@ With **CVs in more than one language** turned on (Settings → Language & region
 the base has a tab per language, each saying what it is missing since the
 source changed. Cover letters are Markdown with a short header, printed in the
 look of the CV they go with. Everything on a letter's page is edited on the page:
-the letterhead, the subject, the body and the signature, with a toolbar for bold,
-italic, links, lists, and find and replace. A letterhead changed there is for that
+the letterhead, the subject, the body and the signature. The body is full
+Markdown, and all of it prints: headings, bullet and numbered lists at any
+depth, quotes, rules, code, tables, bold, italic, strikethrough and links, from a
+toolbar or typed as Markdown (`# `, `- `, `1. `, `> `), with find and replace. A letterhead changed there is for that
 letter only; the CV keeps its own.
 
 ![The editor, with the page and its outline](docs/screenshots/editor.png)
