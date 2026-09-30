@@ -23,6 +23,7 @@ from pathlib import Path
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ImageContent
 
+import review
 import studio
 from cv_render import render_file
 
@@ -148,6 +149,45 @@ def _identify(ctx: Context) -> None:
 # and "Recent activity" would stop being worth reading.
 TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 
+# Tools that only read. Every other tool is watched for the documents it
+# changes, so what it wrote can be shown back to the user as changes to keep
+# or undo (review.py). Watching is a stat of each document and a read of its
+# text, which is nothing next to the model's own turn.
+READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
+             "job_alerts", "calendar", "get_interview_prep", "read_posting",
+             "ats_check", "translation_status", "design_options", "workspace_info"}
+
+
+def _snapshot() -> dict:
+    out = {}
+    for f, _, _ in studio.document_files():
+        try:
+            out[studio.rel(f)] = (f.stat().st_mtime, f.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return out
+
+
+def _checkpoint(before: dict, tool_name: str) -> None:
+    """Keep what each document said before this tool changed it."""
+    try:
+        for f, _, _ in studio.document_files():
+            rel = studio.rel(f)
+            held = before.get(rel)
+            try:
+                if held and f.stat().st_mtime == held[0]:
+                    continue
+                if held and f.read_text(encoding="utf-8") == held[1]:
+                    continue
+            except OSError:
+                continue
+            review.checkpoint(studio.WORKSPACE, rel, held[1] if held else None,
+                              by=studio.CLIENT_ID or "ai", agent=studio.CLIENT_AGENT,
+                              tool=tool_name)
+    except Exception:
+        # Bookkeeping is never what fails a tool call.
+        pass
+
 
 def tool(fn):
     """Register a tool, and leave a note in the workspace that it ran.
@@ -178,13 +218,23 @@ def tool(fn):
         # Record what happened, not merely that it was attempted: a refused
         # call logged like a successful one tells the user the model read a
         # file it was actually blocked from reading.
+        watch = None
+        if fn.__name__ not in READ_ONLY:
+            try:
+                watch = _snapshot()
+            except Exception:
+                watch = None
         try:
             result = fn(*args, **kwargs)
         except Exception as exc:
+            if watch is not None:
+                _checkpoint(watch, fn.__name__)
             studio.note_mcp_activity(fn.__name__,
                                      str(target) if target else None,
                                      ok=False, error=str(exc)[:200])
             raise
+        if watch is not None:
+            _checkpoint(watch, fn.__name__)
         studio.note_mcp_activity(fn.__name__,
                                  str(target) if target else None)
         return result

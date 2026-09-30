@@ -51,6 +51,8 @@
   --rule:#ddd8cc; --rule-strong:#d3cfc3; --bd-field:#cfcabd; --bd-inner:#e6e2d8;
   --t900:#1b1a17; --t800:#33302a; --t700:#4a463d; --t600:#5b574d; --t500:#686459;
   --t400:#70695b; --dot-idle:#8f8878; --dot-dead:#b3ad9d; --paper-hover:#e9e5da;
+  /* review: what an AI client put in, and took out */
+  --rv-ins:#1d6a4b; --rv-ins-bg:rgba(47,143,104,.14); --rv-del:#a2382f; --rv-del-bg:rgba(200,70,60,.10);
   /* accent -- used sparingly */
   --acc:#c08a3e; --acc-hover:#d09a4c; --acc-text:#8a5316; --acc-text-dark:#e8bc7c;
   --acc-wash:rgba(192,138,62,.10); --acc-ring:rgba(192,138,62,.18);
@@ -90,6 +92,7 @@
   --rule:#38352e; --rule-strong:#454239; --bd-field:#4a473e; --bd-inner:#322f2a;
   --t900:#f4f2ef; --t800:#dad6cc; --t700:#c6c0b0; --t600:#b6af9b; --t500:#a79e86;
   --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
+  --rv-ins:#86d6b5; --rv-ins-bg:rgba(63,175,130,.18); --rv-del:#f2a197; --rv-del-bg:rgba(224,98,107,.16);
   --acc-text:#e8bc7c;
   --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
   --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
@@ -113,6 +116,7 @@
     --rule:#38352e; --rule-strong:#454239; --bd-field:#4a473e; --bd-inner:#322f2a;
     --t900:#f4f2ef; --t800:#dad6cc; --t700:#c6c0b0; --t600:#b6af9b; --t500:#a79e86;
     --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
+  --rv-ins:#86d6b5; --rv-ins-bg:rgba(63,175,130,.18); --rv-del:#f2a197; --rv-del-bg:rgba(224,98,107,.16);
     --acc-text:#e8bc7c;
     --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
     --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
@@ -2005,12 +2009,21 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   flex-direction:column;align-items:center;gap:18px;padding:34px 20px 60px}
 .lt-paper{position:relative;flex:none;background:#fff;color:#1b1a17;
   box-shadow:0 10px 40px rgba(27,26,23,.16),0 1px 3px rgba(27,26,23,.12)}
-.lt-paper .lh{position:relative;cursor:pointer}
-.lt-paper .lh .tag{position:absolute;right:0;top:-34px;display:none;align-items:center;gap:6px;
-  height:24px;padding:0 10px;border-radius:12px;background:#1b1a17;color:#f5f2ea;
-  font:500 11.5px 'IBM Plex Sans',system-ui,sans-serif;white-space:nowrap}
-.lt-paper .lh:hover .tag,.lt-paper .lh:focus-visible .tag{display:inline-flex}
-.lt-paper .lh:hover{outline:1px dashed #c9c2b3;outline-offset:6px}
+.lt-paper .lh{position:relative}
+.lt-paper .lh .tag{position:absolute;right:-6px;top:-40px;display:none;align-items:center;gap:4px;
+  height:28px;padding:0 4px 0 12px;border-radius:14px;background:#1b1a17;color:#f5f2ea;
+  font:500 11.5px 'IBM Plex Sans',system-ui,sans-serif;white-space:nowrap;
+  box-shadow:0 4px 14px rgba(27,26,23,.25)}
+.lt-paper .lh .tag .dim{color:#a9a393}
+.lt-paper .lh .tag button{height:22px;padding:0 9px;border:0;border-radius:11px;
+  background:#3a3833;color:#f5f2ea;font:inherit;cursor:pointer}
+.lt-paper .lh .tag button:hover{background:#4a4740}
+.lt-paper .lh:hover .tag,.lt-paper .lh:focus-within .tag{display:inline-flex}
+.lt-paper .lh:hover,.lt-paper .lh:focus-within{outline:1px dashed #c9c2b3;outline-offset:6px;border-radius:2px}
+.lt-paper .lhf:empty::before{content:attr(data-ph);color:#b3ad9d;font-weight:400}
+.lt-paper .lh:not(:hover):not(:focus-within) .lhf:empty{display:none}
+.lt-paper .dl{cursor:pointer;border-radius:2px}
+.lt-paper .dl:hover{box-shadow:0 0 0 1px #e2dccf}
 .lt-paper [contenteditable]{outline:none;border-radius:2px}
 .lt-paper [contenteditable]:hover{box-shadow:0 0 0 1px #e2dccf}
 .lt-paper [contenteditable]:focus{box-shadow:0 0 0 1px #d8c29e}
@@ -2370,15 +2383,17 @@ input[type=checkbox]{accent-color:var(--acc)}
 .srow{display:flex;align-items:center;gap:28px;padding:14px 0;border-top:1px solid var(--rule)}
 .srow.nf-sub.off{opacity:.45;pointer-events:none}
 /* A date field's face in the app's language; see dfxWrap. */
-.dfx{position:relative;display:flex;min-width:0;height:fit-content;align-self:start}
-.dfx>input{flex:1;min-width:0;width:100%;color:transparent}
-.dfx>input:not(:focus)::-webkit-datetime-edit{opacity:0}
-.dfx>input:focus{color:inherit}
-.dfx>input:focus+.dfx-v{visibility:hidden}
+.dfx{position:relative;display:flex;align-items:stretch;min-width:0;height:fit-content;align-self:start}
+.dfx>input[type=date],.dfx>input[type=time]{position:absolute;left:0;bottom:0;width:100%;height:1px;
+  padding:0;border:0;opacity:0;pointer-events:none}
+.dfx>.dfx-t{flex:1;min-width:0;width:100%;padding-right:34px}
+.dfx>.dfx-t[aria-invalid=true]{border-color:var(--bad);box-shadow:0 0 0 3px rgba(224,98,107,.18)}
+.dfx>.dfx-b{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:28px;height:26px;padding:0;
+  display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:6px;
+  background:transparent;color:var(--t500);cursor:pointer}
+.dfx>.dfx-b:hover{background:var(--paper-hover);color:var(--t900)}
+.dfx>.dfx-b svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .dfx:has(>input[hidden]){display:none}
-.dfx-v{position:absolute;inset:0 30px 0 0;display:flex;align-items:center;pointer-events:none;
-  color:var(--t900);white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}
-.dfx-v.dfx-none{color:var(--t400)}
 .bk-list{display:flex;flex-direction:column;max-height:320px;overflow:auto;border:1px solid var(--rule);border-radius:10px}
 .bk-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px}
 .bk-row+.bk-row{border-top:1px solid var(--bd-inner)}
@@ -2852,7 +2867,9 @@ textarea{resize:vertical}
 .rd-ed label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--t600);min-width:0}
 .rd-ed input{width:100%;box-sizing:border-box;height:32px;padding:0 8px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
   color:var(--t900);font-size:13px;font-weight:400;min-width:0}
-.rd-when{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px}
+.rd-when{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.7fr) minmax(0,1fr);gap:8px}
+.rd-saved{font-size:12px;font-weight:500;color:var(--rv-ins);animation:rdsaved 2.5s ease-out forwards}
+@keyframes rdsaved{0%,70%{opacity:1}100%{opacity:0}}
 .rd-when select{min-height:32px;border-radius:8px;font-size:13px}
 .rd-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .rd-acts .obtn{white-space:nowrap}
@@ -3142,3 +3159,76 @@ textarea{resize:vertical}
   #pp-print li{margin:0 0 8pt;break-inside:avoid}#pp-print li p{margin:3pt 0 0;color:#333}
   #pp-print li p.blank{height:34pt;border-bottom:1px dotted #aaa}
 }
+
+/* ---------- reviewing what an AI client changed ----------------------------
+   A bar over the document while anything is waiting; on a letter, the page
+   itself marked up like tracked changes with a card per change beside it; on
+   a CV, the same cards in a sheet. Green underlined is what came in, red
+   struck through is what went out, everywhere. */
+.rvbar{flex:none;display:flex;align-items:center;gap:10px;padding:9px 16px;
+  border-bottom:1px solid var(--rule);background:var(--acc-wash);font-size:13px}
+.rvbar[hidden]{display:none}
+.rvbar .rvtx{display:flex;flex-direction:column;gap:1px;min-width:0}
+.rvbar .rvtx b{font-weight:600;color:var(--t900)}
+.rvbar .rvtx span{font-size:12px;color:var(--t600)}
+.rvbar .obtn,.rvbar .pbtn{height:30px;white-space:nowrap}
+.rvlogo{flex:none;width:18px;height:18px;color:#D97757}
+.rvlogo.dot{width:10px;height:10px;margin:0 4px;border-radius:50%;background:var(--acc)}
+.rvpill{display:inline-flex;align-items:center;height:17px;margin-left:6px;padding:0 7px;
+  border-radius:9px;background:var(--acc);color:#1b1a17;font:600 10.5px 'IBM Plex Sans',system-ui,sans-serif;
+  letter-spacing:.02em;vertical-align:2px;white-space:nowrap}
+#doclist .row .rvpill{margin-left:4px}
+del.rvd{color:var(--rv-del);background:var(--rv-del-bg);text-decoration:line-through;
+  text-decoration-thickness:1.5px;border-radius:2px}
+ins.rvi{color:var(--rv-ins);background:var(--rv-ins-bg);text-decoration:underline;
+  text-decoration-thickness:1.5px;text-underline-offset:2px;border-radius:2px}
+
+/* the letter under review: fixed colours, since the sheet is always paper */
+.lt-paper.reviewing [contenteditable]:hover{box-shadow:none}
+.lt-paper.reviewing del.rvd{color:#a2382f;background:rgba(200,70,60,.10)}
+.lt-paper.reviewing ins.rvi{color:#1d6a4b;background:rgba(47,143,104,.14)}
+.lt-paper .rvb{position:relative;border-radius:3px;cursor:pointer;
+  box-shadow:-10px 0 0 -6px #d8a86a;transition:background .15s}
+.lt-paper .rvb[data-tag=ins]{background:rgba(47,143,104,.07);box-shadow:-10px 0 0 -6px #3f9f7b}
+.lt-paper .rvb[data-tag=del]{box-shadow:-10px 0 0 -6px #d0685e}
+.lt-paper .rvb.hot{background:rgba(216,168,106,.14)}
+.lt-paper .rvnum{position:absolute;left:-34px;top:0;width:18px;height:18px;border-radius:9px;
+  display:inline-flex;align-items:center;justify-content:center;background:#1b1a17;color:#f5f2ea;
+  font:600 10.5px 'IBM Plex Sans',system-ui,sans-serif;line-height:1}
+.lt-paper .rvfmt{margin-top:2px !important;font:italic 11px 'IBM Plex Sans',system-ui,sans-serif;color:#8a8474}
+.flash{animation:rvflash 1.1s ease-out}
+@keyframes rvflash{0%{box-shadow:0 0 0 3px var(--acc)}100%{box-shadow:0 0 0 3px transparent}}
+
+/* the cards */
+.rvhead{display:flex;align-items:flex-start;gap:10px}
+.rvhead .rvlogo{margin-top:2px}
+.lt-panel .rvhead h4{font-size:13.5px;color:var(--t900)}
+.rvhelp{font-size:12px !important}
+.rvlist{display:flex;flex-direction:column;gap:10px}
+.rvc{display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid var(--rule);
+  border-radius:10px;background:var(--field);cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.rvc:hover,.rvc.hot{border-color:var(--acc-line);box-shadow:0 0 0 3px var(--acc-wash)}
+.rvh{display:flex;align-items:center;gap:8px;min-width:0;font-size:12.5px}
+.rvh b{font-weight:600;color:var(--t900);white-space:nowrap}
+.rvn{flex:none;width:18px;height:18px;border-radius:9px;display:inline-flex;align-items:center;
+  justify-content:center;background:var(--t900);color:var(--app);font-size:10.5px;font-weight:600}
+.rvw{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t500)}
+.rvx{font-size:12.5px;line-height:1.55;color:var(--t800);overflow-wrap:anywhere}
+.rvx .rvs{color:var(--t600)}
+.rvx .rvq{display:block;margin-top:3px;color:var(--t600);font-style:italic}
+.rvx dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 12px;margin:0}
+.rvx dt{color:var(--t500);font-size:11.5px;padding-top:1px;text-transform:capitalize}
+.rvx dd{margin:0}
+.rvx dd.same,.rvx .rvsame,.rvx li.same{color:var(--t500)}
+.rvx ul{margin:0;padding-left:16px}
+.rvx li{margin:1px 0}
+.rva{display:flex;align-items:center;gap:6px}
+.rva .obtn{height:28px}
+.rva .rvkeep{border-color:transparent;background:var(--t900);color:var(--app)}
+.rva .rvkeep:hover:not(:disabled){background:var(--t700)}
+.rvfoot{display:flex;align-items:center;gap:6px;padding-top:4px}
+.sheet.wide{width:760px}
+.rvsheet{display:flex;flex-direction:column;gap:14px}
+.rvsheet .rvlist{max-height:calc(100vh - 290px);overflow-y:auto;margin:0 -6px;padding:2px 6px}
+.rvsheet .rvc{cursor:default}
+.pp-cd .pp-date{height:34px;padding:0 16px;font-size:13px}

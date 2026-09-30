@@ -151,7 +151,7 @@ def parse(text: str) -> tuple[dict, str]:
     return meta, m.group(2).strip("\n")
 
 
-ORDER = ["application", "company", "looks_like", "to", "place", "date",
+ORDER = ["application", "company", "looks_like", "letterhead", "to", "place", "date",
          "subject", "language"]
 
 
@@ -295,6 +295,34 @@ def letterhead(cv_data: dict | None, defaults: dict | None = None) -> dict:
     }
 
 
+HEAD_KEYS = ("name", "headline", "contact", "signature")
+
+
+def override_head(head: dict, over) -> dict:
+    """The letterhead with what this letter says instead of its CV.
+
+    A letter's header can hold `letterhead: {name, headline, contact,
+    signature}`; each one set replaces what the CV gives, for this letter
+    only, and an empty headline means none. What the CV says is kept beside
+    it, so the page can offer to go back to it.
+    """
+    head = dict(head)
+    head["from_cv"] = {"name": head["name"], "headline": head["headline"],
+                       "contact": list(head["contact"]), "signature": head["name"]}
+    over = over if isinstance(over, dict) else {}
+    for k in ("name", "headline"):
+        if over.get(k) is not None:
+            head[k] = str(over[k]).strip()
+    if over.get("contact") is not None:
+        c = over["contact"]
+        items = c if isinstance(c, list) else re.split(r"\s*[•·|]\s*", str(c))
+        head["contact"] = [str(x).strip() for x in items if str(x).strip()]
+    head["name"] = head["name"] or head["from_cv"]["name"]
+    head["signature"] = str(over.get("signature") or "").strip() or head["name"]
+    head["overridden"] = [k for k in HEAD_KEYS if over.get(k) is not None]
+    return head
+
+
 # --------------------------------------------------------------------------
 # Laying it out
 # --------------------------------------------------------------------------
@@ -333,7 +361,7 @@ def typst_source(meta: dict, body: str, head: dict) -> str:
 {("#text(weight: \"bold\")[" + _typ_escape(str(meta.get("subject"))) + "]\n#v(0.9em)") if meta.get("subject") else ""}
 {chr(10).join(p + chr(10) for p in parts)}
 #v(2.2em)
-#text(weight: "bold")[{_typ_escape(head["name"])}]
+#text(weight: "bold")[{_typ_escape(head.get("signature") or head["name"])}]
 '''
 
 
@@ -390,7 +418,7 @@ def plain_text(meta: dict, body: str, head: dict) -> str:
     for kind, content in blocks(body):
         out.append("\n".join("• " + to_plain(i) for i in content) if kind == "ul"
                    else to_plain(content))
-    return "\n\n".join(out + [head["name"]]) + "\n"
+    return "\n\n".join(out + [head.get("signature") or head["name"]]) + "\n"
 
 
 def _w_runs(text: str) -> str:
@@ -456,7 +484,7 @@ def docx(meta: dict, body: str, head: dict) -> bytes:
                 ps.append(para(t("•\t") + _w_runs(item), indent=360, space_after=60))
         else:
             ps.append(para(_w_runs(content)))
-    ps.append(para(t(head["name"]), bold=True, space_after=0).replace("<w:spacing", '<w:spacing w:before="480"', 1))
+    ps.append(para(t(head.get("signature") or head["name"]), bold=True, space_after=0).replace("<w:spacing", '<w:spacing w:before="480"', 1))
     document = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'

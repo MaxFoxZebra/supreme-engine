@@ -72,6 +72,7 @@ import sample  # noqa: E402
 import importer  # noqa: E402
 import languages  # noqa: E402
 import letters  # noqa: E402
+import review  # noqa: E402
 import backups  # noqa: E402
 import posting  # noqa: E402
 import themes  # noqa: E402
@@ -1143,6 +1144,7 @@ def rename_document(path: str, name: str) -> dict:
         raise ValueError(f"Something called {dest.name} already exists.")
     src.rename(dest)
     _rewrite_refs(rel(src), rel(dest))
+    review.moved(WORKSPACE, rel(src), rel(dest))
     return {"ok": True, "path": rel(dest), "was": rel(src)}
 
 
@@ -1169,6 +1171,7 @@ def delete_document(path: str) -> dict:
     dest = trash / f"{time.strftime('%Y%m%d-%H%M%S')}-{src.name}"
     shutil.move(str(src), str(dest))
     _rewrite_refs(rp, None)
+    review.moved(WORKSPACE, rp, None)
     return {"ok": True, "trashed": dest.relative_to(WORKSPACE).as_posix()}
 
 
@@ -1691,7 +1694,7 @@ def letter_head(meta: dict) -> dict:
     theme = str(((data.get("design") or {}).get("theme")) or "classic")
     head = letters.letterhead(data, design_defaults(theme))
     head["cv"] = rel(cvp) if cvp else None
-    return head
+    return letters.override_head(head, meta.get("letterhead"))
 
 
 def load_letter(path: Path) -> dict:
@@ -1702,7 +1705,7 @@ def load_letter(path: Path) -> dict:
             "body": body, "head": head, "date_line": letters.date_line(dated(meta, path)),
             "sent_on": letter_sent_on(path),
             "words": letters.word_count(body), "target": letters.WORD_TARGET,
-            "mtime": path.stat().st_mtime}
+            "mtime": path.stat().st_mtime, "review": review_payload(path)}
 
 
 def save_letter(path: Path, payload: dict, tool: str = "save") -> dict:
@@ -1714,6 +1717,89 @@ def save_letter(path: Path, payload: dict, tool: str = "save") -> dict:
         text = letters.dump(meta, payload.get("body", body))
     path.write_text(text, encoding="utf-8")
     return load_letter(path)
+
+
+# --------------------------------------------------------------------------
+# Reviewing what an AI client changed (see review.py)
+# --------------------------------------------------------------------------
+
+def review_units(path: Path, before: str | None, now: str) -> list[dict]:
+    if is_letter(path):
+        return review.letter_units(letters, before, now)
+    if before is None:
+        return [{"id": "created", "kind": "created", "label": "New CV"}]
+    return review.cv_units(to_plain(yaml_rt.load(before)), to_plain(yaml_rt.load(now)),
+                           entry_title)
+
+
+def review_payload(path: Path) -> dict | None:
+    """The changes waiting on this document, as units to keep or undo."""
+    e = review.entry(WORKSPACE, rel(path))
+    if not e:
+        return None
+    now = path.read_text(encoding="utf-8")
+    before = e.get("before")
+    try:
+        units = review_units(path, before, now)
+    except Exception:
+        # A file the model left unparseable is still reviewable, whole.
+        units = [{"id": "all", "kind": "text", "label": "The whole file",
+                  "before": before, "after": now}]
+    if not units:
+        # Everything it changed has been changed back, by hand or otherwise.
+        review.clear(WORKSPACE, rel(path))
+        return None
+    return {"by": e.get("by"), "agent": e.get("agent"), "since": e.get("since"),
+            "at": e.get("at"), "writes": e.get("writes"), "tools": e.get("tools") or [],
+            "created": bool(e.get("created")), "sig": review.signature(before, now),
+            "units": units}
+
+
+def review_resolve(path: Path, ids: list, action: str, sig: str | None) -> dict:
+    """Keep or undo some of an AI client's changes, or all of them ("*")."""
+    if action not in ("keep", "undo"):
+        raise ValueError("Keep or undo, nothing else.")
+    rp = rel(path)
+    e = review.entry(WORKSPACE, rp)
+    if not e:
+        return {"review": None}
+    now = path.read_text(encoding="utf-8")
+    before = e.get("before")
+    if sig and sig != review.signature(before, now):
+        raise ValueError("The document changed while you were reviewing it. "
+                         "The changes are shown again as they are now.")
+    if action == "keep" and "*" in ids:
+        review.clear(WORKSPACE, rp)
+        return {"review": None}
+    if before is None:
+        if action == "keep":
+            review.clear(WORKSPACE, rp)
+            return {"review": None}
+        return {"review": None, "deleted": delete_document(rp)}
+    try:
+        units = review_units(path, before, now)
+    except Exception:
+        units = [{"id": "all"}]
+    known = {u["id"] for u in units}
+    chosen = known if "*" in ids or "all" in known else set(ids) & known
+    if not chosen:
+        return {"review": review_payload(path)}
+    if action == "undo" and chosen == known:
+        # All of it: the text it had, exactly, comments and all.
+        text, kept = before, before
+    elif is_letter(path):
+        text, kept = review.letter_resolve(letters, before, now, chosen, action)
+    else:
+        text, kept = review.cv_resolve(yaml_rt, to_plain, entry_title, before, now,
+                                       chosen, action)
+    if action == "undo":
+        if is_letter(path):
+            path.write_text(text, encoding="utf-8")
+        else:
+            write_doc(path, text, "review")
+    else:
+        review.set_before(WORKSPACE, rp, kept)
+    return {"review": review_payload(path)}
 
 
 def letter_sent_on(path: Path) -> str | None:
@@ -2679,6 +2765,7 @@ def list_documents() -> list[dict]:
     inside it do.
     """
     docs = _edits_read()["docs"]
+    waiting = review.pending(WORKSPACE)
 
     def last_ai(path: str) -> dict | None:
         best = None
@@ -2701,7 +2788,8 @@ def list_documents() -> list[dict]:
             out.append({"path": path, "label": label, "group": group, "letter": True,
                         "mtime": f.stat().st_mtime, "ai": last_ai(path), "base": None,
                         "lang": languages.code_of(meta.get("language")),
-                        "translation_of": None, "looks_like": meta.get("looks_like")})
+                        "translation_of": None, "looks_like": meta.get("looks_like"),
+                        "review": waiting.get(path)})
             continue
         if not is_cv_yaml(f):
             continue
@@ -2717,7 +2805,8 @@ def list_documents() -> list[dict]:
                     "mtime": f.stat().st_mtime, "ai": last_ai(path),
                     "base": (docs.get(path, {}).get("base") or {}).get("path"),
                     "lang": lang,
-                    "translation_of": trans.get("of")})
+                    "translation_of": trans.get("of"),
+                    "review": waiting.get(path)})
     return out
 
 
@@ -2733,7 +2822,7 @@ def pulse() -> dict:
         except OSError:
             pass
     return {"docs": stamps, "mcp": mcp_activity(), "jobs": jobs_stamp(),
-            "edits": edits_stamp()}
+            "edits": edits_stamp(), "review": review.stamp(WORKSPACE)}
 
 
 def jobs_stamp() -> str | None:
@@ -2845,7 +2934,9 @@ def load_doc(path: Path) -> dict:
             "drift": translation_drift(path),
             # How this document would point at the workspace photo, when
             # there is one to point at.
-            "photo_ref": photo_ref(path) if photo_info() else None}
+            "photo_ref": photo_ref(path) if photo_info() else None,
+            # What an AI client changed that you have not yet kept or undone.
+            "review": review_payload(path)}
 
 
 def line_map(doc, text: str) -> dict:
@@ -3509,6 +3600,13 @@ def openapi_spec() -> dict:
             "/api/render": {"post": {"summary":
                 "Render to PDF and PNG, with a map of where each block landed",
                 "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
+            "/api/review": {"post": {"summary":
+                "Keep or undo changes an AI client made to a document, one unit or all ('*')",
+                "requestBody": body({"path": {"type": "string"},
+                                     "ids": {"type": "array", "items": {"type": "string"}},
+                                     "action": {"type": "string", "enum": ["keep", "undo"]},
+                                     "sig": {"type": "string"}}),
+                "responses": ok}},
             "/api/preview": {"post": {"summary":
                 "Render unsaved content without writing the file",
                 "requestBody": body({"path": {"type": "string"},
@@ -4451,6 +4549,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json(ai_connect(payload.get("client", "")))
                 except (ValueError, OSError) as exc:
                     return self._json({"error": str(exc)}, 400)
+            if u.path == "/api/review":
+                p = safe_path(payload["path"])
+                try:
+                    r = review_resolve(p, list(payload.get("ids") or []),
+                                       str(payload.get("action") or ""), payload.get("sig"))
+                except ValueError as exc:
+                    return self._json({"error": str(exc), "review": review_payload(p)}, 409)
+                if r.get("deleted"):
+                    return self._json({"ok": True, **r})
+                return self._json({"ok": True, **r,
+                                   "doc": load_letter(p) if is_letter(p) else load_doc(p)})
             if u.path == "/api/render":
                 p = safe_path(payload["path"])
                 return self._json(render_letter(p) if is_letter(p) else render(p))
@@ -4811,6 +4920,7 @@ const API_TOKEN=__API_TOKEN__;
         <button class="obtn primary" id="ext-keep"
           title="Keep your unsaved edits. Their version stays on disk.">Keep mine</button>
       </div>
+      <div class="rvbar" id="cv-rv" role="status" hidden></div>
       <div class="subbar">
         <div class="seg light" id="edtabs" role="tablist" aria-label="What edits the page">
           <button role="tab" data-tab="page" aria-selected="true"
@@ -4983,6 +5093,7 @@ const API_TOKEN=__API_TOKEN__;
       <span class="lt-export"><button class="obtn" id="lt-export" aria-haspopup="menu">Export &#9662;</button></span>
       <button class="pbtn" id="lt-save">Save</button>
     </div>
+    <div class="rvbar" id="lt-rv" role="status" hidden></div>
     <div class="lt-tools" id="lt-tools" role="toolbar" aria-label="Format the letter">
       <div class="lt-pill">
         <button data-c="undo" data-k="Z" aria-label="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
@@ -5234,6 +5345,12 @@ const API_TOKEN=__API_TOKEN__;
           your time, with theirs beside it.</span></div>
           <select id="s-tz"></select></div>
         <div class="tzmap" id="tzmap" aria-hidden="true"></div>
+        <div class="srow"><div><b>Date format</b><span>How dates are written in every date
+          field, and the order you type them in.</span></div>
+          <select id="s-datefmt"></select></div>
+        <div class="srow"><div><b>Clock</b><span>Interview times, in the fields and
+          everywhere they are shown.</span></div>
+          <select id="s-clock"></select></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>

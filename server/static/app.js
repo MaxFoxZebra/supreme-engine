@@ -93,36 +93,127 @@ if(I18N_D){
   } }).observe(document.body,{childList:true,subtree:true,characterData:true,
     attributes:true,attributeFilter:I18N_ATTRS});
 }
-/* Date fields in the app's language. A native date field formats itself in
-   the system's locale (mm/dd/yyyy on an English Windows, whatever language
-   the app is in), and no attribute changes that. So each one gets a face: the
-   date as the app would write it, over the field while it is not being
-   typed into. The field underneath is untouched, picker and all. */
-const DFX_FMT={date:{day:"numeric",month:"short",year:"numeric"},
-  "datetime-local":{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}};
+/* Date and time fields in the format you chose (Settings › Language &
+   region). A native date field edits in the operating system's format --
+   mm/dd/yyyy on an English Windows, whatever language the app is in -- and no
+   attribute changes that. So each one gets a text box you type into in your
+   format, and a button that opens the native picker; the native field stays
+   underneath as the value every other piece of code reads and sets. */
+const DFX_ORDERS={dmy:["d","m","y"],mdy:["m","d","y"],ymd:["y","m","d"]};
+function dateOrder(){
+  const p=prefs().date_format;
+  if(DFX_ORDERS[p]) return p;
+  /* Automatic: the order your system's own locale writes dates in. */
+  try{
+    const parts=new Intl.DateTimeFormat(navigator.language||uiLocale()).formatToParts(new Date(2026,10,23))
+      .filter(x=>/day|month|year/.test(x.type)).map(x=>x.type[0]);
+    const k=parts.join("");
+    return DFX_ORDERS[k]?k:"dmy";
+  }catch(e){ return "dmy" }
+}
+function clock12(){
+  const p=prefs().clock;
+  if(p==="12"||p==="24") return p==="12";
+  try{ return new Intl.DateTimeFormat(navigator.language||uiLocale(),{hour:"numeric"}).resolvedOptions().hour12===true }
+  catch(e){ return false }
+}
+const dateSep=o=>o==="ymd"?"-":o==="mdy"?"/":"/";
+function datePattern(){
+  const o=dateOrder(), w={d:t("dd"),m:t("mm"),y:t("yyyy")};
+  return DFX_ORDERS[o].map(k=>w[k]).join(dateSep(o));
+}
+function fmtDateISO(v){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v||""); if(!m) return "";
+  const o=dateOrder(), part={y:m[1],m:m[2],d:m[3]};
+  return DFX_ORDERS[o].map(k=>part[k]).join(dateSep(o));
+}
+function parseDate(txt){
+  const s=String(txt||"").trim(); if(!s) return "";
+  let m=/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(s), y, mo, d;
+  if(m){ [y,mo,d]=[+m[1],+m[2],+m[3]] }
+  else{
+    m=/^(\d{1,4})[-/. ](\d{1,2})[-/. ](\d{1,4})$/.exec(s); if(!m) return null;
+    const o=DFX_ORDERS[dateOrder()], got={};
+    o.forEach((k,i)=>got[k]=+m[i+1]);
+    [y,mo,d]=[got.y,got.m,got.d];
+    if(y<100) y+=2000;
+  }
+  const dt=new Date(y,mo-1,d);
+  if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d) return null;
+  return String(y).padStart(4,"0")+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+}
+function fmtTime(v){
+  const m=/^(\d{2}):(\d{2})/.exec(v||""); if(!m) return "";
+  if(!clock12()) return m[1]+":"+m[2];
+  const h=+m[1]; return ((h+11)%12+1)+":"+m[2]+" "+(h<12?"AM":"PM");
+}
+function parseTime(txt){
+  const s=String(txt||"").trim().toLowerCase(); if(!s) return "";
+  const m=/^(\d{1,2})(?:[:h.](\d{2}))?\s*(a|p|am|pm)?\.?$/.exec(s.replace(/\s+/g," "));
+  if(!m) return null;
+  let h=+m[1]; const mi=+(m[2]||0);
+  if(m[3]){ if(h<1||h>12) return null; h=h%12+(m[3][0]==="p"?12:0) }
+  if(h>23||mi>59) return null;
+  return String(h).padStart(2,"0")+":"+String(mi).padStart(2,"0");
+}
+const DFX={date:{fmt:fmtDateISO,parse:parseDate,ph:datePattern,bad:()=>t("Write it as {p}",{p:datePattern()})},
+  time:{fmt:fmtTime,parse:parseTime,ph:()=>clock12()?"h:mm AM":"hh:mm",bad:()=>t("Write it as {p}",{p:clock12()?"2:30 PM":"14:30"})}};
 const DFX_VALUE=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
 function dfxPaint(inp){
-  const sp=inp.nextElementSibling; if(!sp||!sp.classList.contains("dfx-v")) return;
-  const v=DFX_VALUE.get.call(inp); let txt="";
-  if(v){ const d=inp.type==="date"?new Date(v+"T12:00:00"):new Date(v);
-    if(!isNaN(d)) try{ txt=DTF(uiLocale(),DFX_FMT[inp.type]).format(d) }catch(e){} }
-  sp.textContent=txt||t("No date"); sp.classList.toggle("dfx-none",!txt);
+  const tx=inp._dfx; if(!tx) return;
+  if(document.activeElement===tx&&tx.dataset.typing) return;
+  tx.value=DFX[inp.type].fmt(DFX_VALUE.get.call(inp));
+  tx.placeholder=DFX[inp.type].ph();
+  tx.removeAttribute("aria-invalid"); tx.title="";
 }
 function dfxWrap(inp){
-  if(inp.dataset.dfx||!DFX_FMT[inp.type]) return;
+  if(inp.dataset.dfx||!DFX[inp.type]) return;
   inp.dataset.dfx="1";
-  const cs=getComputedStyle(inp), w=document.createElement("span"), sp=document.createElement("span");
-  w.className="dfx"; sp.className="dfx-v"; sp.setAttribute("aria-hidden","true");
-  sp.style.paddingLeft=(parseFloat(cs.paddingLeft)+parseFloat(cs.borderLeftWidth)||0)+"px";
-  sp.style.fontSize=cs.fontSize; sp.style.fontWeight=cs.fontWeight;
-  inp.replaceWith(w); w.append(inp,sp);
+  const kind=DFX[inp.type], w=document.createElement("span"), tx=document.createElement("input"),
+    btn=document.createElement("button");
+  w.className="dfx";
+  tx.type="text"; tx.className="dfx-t "+inp.className; tx.autocomplete="off"; tx.spellcheck=false;
+  tx.inputMode="numeric";
+  const name=inp.getAttribute("aria-label")||(inp.labels&&inp.labels[0]&&inp.labels[0].textContent.trim())||"";
+  if(name) tx.setAttribute("aria-label",name);
+  btn.type="button"; btn.className="dfx-b"; btn.tabIndex=-1;
+  btn.setAttribute("aria-label",inp.type==="time"?t("Choose a time"):t("Open the calendar"));
+  btn.innerHTML=inp.type==="time"
+    ?'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>'
+    :'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M4 10h16M9 3.5v4M15 3.5v4"/></svg>';
+  inp.tabIndex=-1; inp.setAttribute("aria-hidden","true");
+  inp.replaceWith(w); w.append(inp,tx,btn);
+  inp._dfx=tx;
   /* Code that sets the value directly fires no event; repaint on that too. */
   Object.defineProperty(inp,"value",{configurable:true,get(){ return DFX_VALUE.get.call(this) },
     set(v){ DFX_VALUE.set.call(this,v); dfxPaint(this) }});
+  /* Focus asked of the native field (a label, a "set the date" button) lands
+     in the one you type into. */
+  inp.addEventListener("focus",()=>tx.focus());
   inp.addEventListener("input",()=>dfxPaint(inp)); inp.addEventListener("change",()=>dfxPaint(inp));
+  const commit=()=>{
+    delete tx.dataset.typing;
+    const v=kind.parse(tx.value);
+    if(v===null){ tx.setAttribute("aria-invalid","true"); tx.title=kind.bad(); toast(kind.bad(),true); return }
+    tx.removeAttribute("aria-invalid"); tx.title="";
+    if(v!==DFX_VALUE.get.call(inp)){
+      DFX_VALUE.set.call(inp,v);
+      inp.dispatchEvent(new Event("input",{bubbles:true}));
+      inp.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+    dfxPaint(inp);
+  };
+  tx.addEventListener("input",()=>{ tx.dataset.typing="1" });
+  tx.addEventListener("change",commit);
+  tx.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); commit() } });
+  btn.addEventListener("mousedown",e=>e.preventDefault());
+  btn.addEventListener("click",()=>{ try{ inp.showPicker() }catch(e){ tx.focus() } });
+  /* Disabled or hidden with its field. */
+  new MutationObserver(()=>{ tx.disabled=btn.disabled=inp.disabled }).observe(inp,{attributes:true,attributeFilter:["disabled"]});
+  tx.disabled=btn.disabled=inp.disabled;
   dfxPaint(inp);
 }
-const DFX_SEL='input[type="date"],input[type="datetime-local"]';
+const DFX_SEL='input[type="date"],input[type="time"]';
 new MutationObserver(ms=>{ for(const m of ms) for(const n of m.addedNodes){ if(n.nodeType!==1) continue;
   if(n.matches(DFX_SEL)) dfxWrap(n); else n.querySelectorAll&&n.querySelectorAll(DFX_SEL).forEach(dfxWrap) } })
   .observe(document.body,{childList:true,subtree:true});
@@ -1023,6 +1114,7 @@ function setProv(prov){
   S.prov=prov||null;
   if(S.prov) S.prov.baseSet=new Set(S.prov.from_base||[]);
   paintProv();
+  cvRvBar();
 }
 
 /* The base says so. A tailored copy has always said what it came from; the
@@ -1226,6 +1318,20 @@ async function pulse(){
   /* A new mark without a new file: an AI client can change the base CV this
      one is compared against, which moves what "differs from the base" means
      here without touching this file at all. */
+  /* Changes waiting on review: the badges everywhere, and the bar over the
+     open document, whether it was a write or a review somewhere else. */
+  if(before.review!==p.review){
+    refreshDocBadges();
+    try{
+      if(S.view==="letter"&&LT.path&&!LT.dirty){
+        const d=await api("/api/doc?path="+encodeURIComponent(LT.path));
+        if(JSON.stringify(d.review)!==JSON.stringify(LT.doc.review)){ LT.doc.review=d.review; if(LT.rv) ltPaint(); else ltRvBar() }
+      }else if(S.path&&S.doc&&!S.dirty){
+        const d=await api("/api/doc?path="+encodeURIComponent(S.path));
+        S.doc.review=d.review; cvRvBar();
+      }
+    }catch(e){}
+  }
   if(before.edits!==p.edits&&S.path&&!S.dirty){
     try{ setProv((await api("/api/doc?path="+encodeURIComponent(S.path))).prov);
          buildOutline(); buildInspector(); }catch(e){}
@@ -2042,7 +2148,7 @@ window.addEventListener("keydown",e=>{ if(onbOpen()) e.stopPropagation() },true)
    prints, the letterhead comes from the CV, and place, date, language and the
    CV it looks like are set beside it. The PDF tab is the exact render. */
 const LT={path:null, doc:null, meta:{}, body:"", dirty:false, tab:"write", pages:null,
-  png:null, rendering:false, mdText:null, t:null};
+  png:null, rendering:false, mdText:null, t:null, rv:false};
 const isLetterPath=p=>/\.md$/i.test(p||"");
 
 async function openLetter(path){
@@ -2051,7 +2157,7 @@ async function openLetter(path){
   try{
     const d=await api("/api/doc?path="+encodeURIComponent(path));
     Object.assign(LT,{path, doc:d, meta:Object.assign({},d.meta), body:d.body, dirty:false,
-      tab:"write", pages:null, png:null, mdText:null});
+      tab:"write", pages:null, png:null, mdText:null, rv:false});
   }catch(e){ return toast(e.message,true) }
   setView("letter");
   ltPaint();
@@ -2150,8 +2256,10 @@ function ltFont(fam){
 
 function ltPaint(){
   const d=LT.doc, h=(d&&d.head)||{}, j=ltJob();
-  $("#lt-tools").hidden=LT.tab!=="write";
-  if(LT.tab!=="write"&&LTF.open) ltFindClose();
+  if(LT.rv&&!ltRv()) LT.rv=false;
+  ltRvBar();
+  $("#lt-tools").hidden=LT.tab!=="write"||LT.rv;
+  if((LT.tab!=="write"||LT.rv)&&LTF.open) ltFindClose();
   $("#lt-title").textContent=t("Cover letter")+(j?" · "+j.company:LT.meta.company?" · "+LT.meta.company:"");
   $("#lt-file").textContent=LT.path.split("/").pop();
   ltBackLabel();
@@ -2179,24 +2287,28 @@ function ltPaint(){
       'padding:'+(ltMM(mg.top)*u)+'px '+(ltMM(mg.right)*u)+'px '+(ltMM(mg.bottom)*u)+'px '+(ltMM(mg.left)*u)+'px;'+
       'box-sizing:border-box;font-family:\''+esc(h.font||"Source Sans 3")+'\',sans-serif;font-size:'+(10.5*pt)+'px;'+
       'line-height:1.52;color:'+esc(h.body_color||"#000")+'">'+
-      '<div class="lh" tabindex="0" role="link" aria-label="'+esc(t("Letterhead, from {cv}. Opens that CV.",{cv:h.cv||t("the CV")}))+'" id="lt-lh">'+
-        '<span class="tag">From '+esc((h.cv||"the CV").split("/").pop().replace(/\.ya?ml$/,""))+' · <u>change it there</u></span>'+
-        '<div style="font-family:\''+esc(h.name_font||h.font)+'\',sans-serif;font-size:'+(24*pt)+'px;line-height:1.1;'+
+      '<div class="lh" id="lt-lh" role="group" aria-label="Letterhead">'+
+        '<span class="tag" data-noi18n>'+ltHeadTag(h)+'</span>'+
+        '<div class="lhf" contenteditable="true" spellcheck="false" data-k="name" data-ph="Your name" aria-label="Name on the letterhead" '+
+          'style="font-family:\''+esc(h.name_font||h.font)+'\',sans-serif;font-size:'+(24*pt)+'px;line-height:1.1;'+
           'font-weight:'+(h.name_bold?700:400)+';color:'+esc(h.name_color)+'">'+esc(h.name)+'</div>'+
-        (h.headline?'<div style="font-size:'+(11*pt)+'px;color:'+esc(h.headline_color)+'">'+esc(h.headline)+'</div>':'')+
-        '<div style="margin-top:'+(4*pt)+'px;font-size:'+(9.5*pt)+'px;color:'+esc(h.contact_color)+'">'+
-          (h.contact||[]).map(esc).join(' &nbsp;•&nbsp; ')+'</div>'+
+        '<div class="lhf" contenteditable="true" spellcheck="true" data-k="headline" data-ph="Headline (optional)" aria-label="Headline on the letterhead" '+
+          'style="font-size:'+(11*pt)+'px;color:'+esc(h.headline_color)+'">'+esc(h.headline||"")+'</div>'+
+        '<div class="lhf" contenteditable="true" spellcheck="false" data-k="contact" data-ph="Contact details, separated by •" aria-label="Contact line on the letterhead" '+
+          'style="margin-top:'+(4*pt)+'px;font-size:'+(9.5*pt)+'px;color:'+esc(h.contact_color)+'">'+
+          (h.contact||[]).map(esc).join(' • ')+'</div>'+
         '<div style="margin-top:'+(6*pt)+'px;border-top:'+Math.max(1,0.6*pt)+'px solid '+esc(h.rule_color)+'"></div>'+
       '</div>'+
       (toLines.length?'<div style="margin-top:'+(16*pt)+'px">'+toLines.map(esc).join("<br>")+'</div>':'')+
-      '<div style="margin-top:'+(16*pt)+'px;text-align:right;color:'+esc(h.contact_color)+'" title="Set the place and date beside the letter">'+
+      '<div class="dl" id="lt-dl" role="button" tabindex="0" style="margin-top:'+(16*pt)+'px;text-align:right;color:'+esc(h.contact_color)+'" title="Set the place and date beside the letter">'+
         esc(LT.doc.date_line||"")+'</div>'+
       '<div class="subj" id="lt-subj" contenteditable="true" spellcheck="true" data-ph="Subject" '+
         'aria-label="Subject" style="margin-top:'+(18*pt)+'px;font-weight:700">'+esc(LT.meta.subject||"")+'</div>'+
       '<div class="ltbody" id="lt-edit" contenteditable="true" spellcheck="true" aria-label="The letter" '+
         'style="margin-top:'+(10*pt)+'px;display:flex;flex-direction:column;gap:'+(8*pt)+'px;text-align:justify">'+
         ltToHTML(LT.body)+'</div>'+
-      '<div style="margin-top:'+(24*pt)+'px;font-weight:700">'+esc(h.name)+'</div>'+
+      '<div class="lhf" contenteditable="true" spellcheck="false" data-k="signature" data-ph="Signature" aria-label="Signature" '+
+        'style="margin-top:'+(24*pt)+'px;font-weight:700">'+esc(h.signature||h.name)+'</div>'+
     '</div>';
     try{ document.execCommand("styleWithCSS",false,false); document.execCommand("defaultParagraphSeparator",false,"p") }catch(e){}
     const ed=$("#lt-edit"), sj=$("#lt-subj");
@@ -2206,14 +2318,56 @@ function ltPaint(){
     [ed,sj].forEach(el=>el.onpaste=e=>{ e.preventDefault();
       document.execCommand("insertText",false,(e.clipboardData||window.clipboardData).getData("text/plain")) });
     ed.onkeydown=ltKeys;
-    const lh=$("#lt-lh"), open=()=>{ if(h.cv){
-      if(LT.dirty&&!confirm("This letter has unsaved changes. Leave without saving?")) return;
-      LT.path=null; openDoc(h.cv) } };
-    lh.onclick=open; lh.onkeydown=e=>{ if(e.key==="Enter") open() };
+    if(LT.rv){ ltPanel(); return ltRvPage() }
+    ltHeadWire(h);
+    const dl=$("#lt-dl"), toPlace=()=>{ const f=$("#lt-place"); if(f){ f.focus(); f.select() } };
+    dl.onclick=toPlace; dl.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); toPlace() } };
     ltPageMark();
     ltFindRun(true); ltToolState();
   }
   ltPanel();
+}
+/* The letterhead is the CV's, and editable here for this letter only: what
+   is typed over it is kept in the letter's header, and the CV is left alone.
+   The tag above it says which is which, and puts the CV's back. */
+function ltHeadTag(h){
+  const cv=esc((h.cv||t("the CV")).split("/").pop().replace(/\.ya?ml$/,""));
+  const own=(h.overridden||[]).length;
+  return '<span>'+(own?esc(t("Edited for this letter"))
+      :esc(t("From {cv}",{cv}))+' <span class="dim">· '+esc(t("click a line to change it for this letter"))+'</span>')+'</span>'+
+    (own?'<button type="button" data-lh="reset">'+esc(t("Use the CV’s"))+'</button>':'')+
+    (h.cv?'<button type="button" data-lh="open">'+esc(t("Open the CV"))+'</button>':'');
+}
+function ltHeadRead(el){
+  const v=el.innerText.replace(/\s+/g," ").trim();
+  return el.dataset.k==="contact"?v.split(/\s*[•·|]\s*/).filter(Boolean):v;
+}
+function ltHeadWire(h){
+  const from=h.from_cv||{};
+  $$("#lt-paper .lhf").forEach(el=>{
+    el.oninput=()=>{
+      const k=el.dataset.k, v=ltHeadRead(el);
+      const same=JSON.stringify(v)===JSON.stringify(k==="signature"?(LT.meta.letterhead&&LT.meta.letterhead.name)||from.name:from[k]);
+      const over=Object.assign({},LT.meta.letterhead||{});
+      if(same||(k!=="headline"&&(!v||!v.length))) delete over[k]; else over[k]=v;
+      LT.meta.letterhead=Object.keys(over).length?over:null;
+      h.overridden=Object.keys(over);
+      $("#lt-lh .tag").innerHTML=ltHeadTag(h);
+      ltDirty();
+    };
+    el.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); el.blur() } };
+    el.onpaste=e=>{ e.preventDefault();
+      document.execCommand("insertText",false,(e.clipboardData||window.clipboardData).getData("text/plain").replace(/\s+/g," ")) };
+    /* An emptied name or signature is the CV's again, shown as such. */
+    el.onblur=()=>{ const k=el.dataset.k;
+      if((k==="name"||k==="signature")&&!el.innerText.trim()) el.textContent=k==="name"?from.name:(h.name||from.name) };
+  });
+  $("#lt-lh").onclick=e=>{ const b=e.target.closest("[data-lh]"); if(!b) return;
+    if(b.dataset.lh==="reset"){ LT.meta.letterhead=null; ltDirty(); ltSave().then(()=>ltPaint()) }
+    else if(h.cv){
+      if(LT.dirty&&!confirm("This letter has unsaved changes. Leave without saving?")) return;
+      LT.path=null; openDoc(h.cv) }
+  };
 }
 /* Where the first page ends, drawn on the sheet, so a letter that runs over
    says so while it is being written. */
@@ -2245,6 +2399,7 @@ const ltShort=n=>n>=20&&n<200;
 const ltWords=b=>(String(b||"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").match(/[\p{L}\p{N}'’-]+/gu)||[]).length;
 
 function ltPanel(){
+  if(LT.rv&&ltRv()) return ltRvPanel();
   const j=ltJob(), n=ltWords(LT.body), m=LT.meta, docs=(S.state&&S.state.documents)||[];
   const cvs=docs.filter(d=>d.group!=="Cover letters"&&!d.letter);
   const today=!m.date||m.date==="today";
@@ -2277,9 +2432,9 @@ function ltPanel(){
     '</div></div>'+
     '<hr>'+
     (scaffold?sayBox("To have your AI client write it, ask it:",say)+'<hr>':'')+
-    '<div class="muted2" style="font-size:12.5px">Click anywhere in the letter and type. The toolbar above '+
-      'the page sets bold, italic, a link or a list, and finds and replaces. The letterhead is the CV’s: '+
-      'change it there, and every letter that looks like it follows.</div>';
+    '<div class="muted2" style="font-size:12.5px">Click anywhere on the page and type: the letterhead, '+
+      'the subject, the letter and the signature. The toolbar above sets bold, italic, a link or a list, and '+
+      'finds and replaces. A letterhead changed here is for this letter only; the CV keeps its own.</div>';
   if(scaffold) wireSay(say);
   const set=(k,v)=>{ LT.meta[k]=v; ltDirty(); ltSave().then(()=>{ if(LT.tab==="write") ltPaint() }) };
   $("#lt-cv").onchange=e=>set("looks_like",e.target.value);
@@ -2322,7 +2477,7 @@ $("#lt-save").onclick=()=>ltSave().then(()=>toast("Saved"));
 $$("#lt-tabs [data-lt]").forEach(b=>b.onclick=async()=>{
   if(b.dataset.lt===LT.tab) return;
   if(LT.tab==="md"&&LT.mdText!=null) await ltSave();
-  LT.tab=b.dataset.lt; ltPaint();
+  LT.tab=b.dataset.lt; LT.rv=false; ltPaint();
 });
 document.addEventListener("keydown",e=>{
   if(S.view!=="letter") return;
@@ -2409,6 +2564,7 @@ function ltKeys(e){
 const LTF={open:false, hits:[], i:-1};
 const LT_HL=typeof CSS!=="undefined"&&CSS.highlights&&typeof Highlight!=="undefined";
 function ltFindOpen(){
+  if(LT.rv) return;
   LTF.open=true; $("#lt-find").hidden=false;
   $('#lt-tools [data-c="find"]').setAttribute("aria-pressed","true");
   const sel=document.getSelection(), ed=$("#lt-edit"), q=$("#lt-q");
@@ -2522,6 +2678,341 @@ async function ltExternal(stamp){
     ltPaint(); ltRender();
   }catch(e){}
 }
+/* =========================================================================
+   Reviewing what an AI client changed
+   ========================================================================= */
+/* The first time an AI client writes a document, the server keeps what it
+   said before (review.py). Until every change since has been kept or undone,
+   the document carries them as units -- a paragraph, a header line, a CV
+   entry -- each shown as the words it took out and the words it put in, with
+   Keep and Undo beside it. The provenance marks say who touched a field; this
+   says what they did to it, and lets you take it back. */
+
+/* Words, spaces and punctuation, so a diff reads as words changing rather
+   than letters. */
+const rvTok=s=>String(s??"").match(/\s+|[\p{L}\p{N}_'’-]+|[^\s\p{L}\p{N}_]/gu)||[];
+function wdiff(a,b){
+  const A=rvTok(a), B=rvTok(b), n=A.length, m=B.length, W=m+1;
+  if(n*m>600000) return [["del",String(a??"")],["ins",String(b??"")]];
+  const T=new Uint32Array((n+1)*(m+1));
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--)
+    T[i*W+j]=A[i]===B[j]?T[(i+1)*W+j+1]+1:Math.max(T[(i+1)*W+j],T[i*W+j+1]);
+  const raw=[]; let i=0, j=0;
+  while(i<n&&j<m){
+    if(A[i]===B[j]){ raw.push(["eq",A[i++]]); j++ }
+    else if(T[(i+1)*W+j]>=T[i*W+j+1]) raw.push(["del",A[i++]]);
+    else raw.push(["ins",B[j++]]);
+  }
+  while(i<n) raw.push(["del",A[i++]]); while(j<m) raw.push(["ins",B[j++]]);
+  /* A run of changes reads as what went, then what came: the spaces and
+     one-letter words the two happen to share inside it are part of the
+     change, not islands of sameness breaking it up. */
+  const out=[]; let del="", ins="";
+  const flush=()=>{ if(del) out.push(["del",del]); if(ins) out.push(["ins",ins]); del=ins="" };
+  for(let k=0;k<raw.length;k++){
+    const [op,tx]=raw[k];
+    const inside=op==="eq"&&(del||ins)&&/^\s*\S?\s*$/.test(tx)&&raw.slice(k+1).some(x=>x[0]!=="eq")&&
+      raw[k+1]&&raw[k+1][0]!=="eq";
+    if(op==="del"||inside) del+=tx;
+    if(op==="ins"||inside) ins+=tx;
+    if(op==="eq"&&!inside){ flush(); const l=out[out.length-1];
+      if(l&&l[0]==="eq") l[1]+=tx; else out.push(["eq",tx]) }
+  }
+  flush();
+  return out;
+}
+const rvText=s=>esc(s).replace(/\n/g,"<br>");
+function diffHTML(a,b){
+  return wdiff(a,b).map(([op,tx])=>op==="eq"?rvText(tx)
+    :op==="del"?'<del class="rvd">'+rvText(tx)+'</del>':'<ins class="rvi">'+rvText(tx)+'</ins>').join("");
+}
+function diffStats(a,b){
+  let plus=0, minus=0;
+  const words=s=>(s.match(/[\p{L}\p{N}]+/gu)||[]).length;
+  wdiff(a,b).forEach(([op,tx])=>{ if(op==="ins") plus+=words(tx); else if(op==="del") minus+=words(tx) });
+  return {plus,minus};
+}
+/* Markdown as it reads, for comparing what a paragraph says. */
+const rvPlain=md=>String(md??"").replace(/\*\*(.+?)\*\*|__(.+?)__/g,"$1$2")
+  .replace(/\*(.+?)\*|_(.+?)_/g,"$1$2").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").replace(/^- /gm,"• ");
+function rvVal(v){
+  if(v==null||v==="") return "";
+  if(Array.isArray(v)) return v.map(rvVal).join(" · ");
+  if(typeof v==="object") return Object.entries(v).filter(([,x])=>x!=null&&x!=="")
+    .map(([k,x])=>k.replace(/_/g," ")+": "+rvVal(x)).join(" · ");
+  return String(v);
+}
+function rvIcon(by){
+  return by&&by!=="ai"&&by!=="you"
+    ?'<svg class="rvlogo" viewBox="0 0 24 24" aria-hidden="true"><use href="#'+esc(by)+'-mark"/></svg>'
+    :'<span class="rvlogo dot" aria-hidden="true"></span>';
+}
+async function rvCall(path,ids,action,sig){
+  try{ return await post("/api/review",{path,ids,action,sig}) }
+  catch(e){ toast(e.message,true); return null }
+}
+/* The bar above a document with changes waiting: who, when, how many, and
+   the three things to do about them. */
+function rvBar(el,r,kind,on){
+  if(!r){ el.hidden=true; el.innerHTML=""; return }
+  const who=whoLabel(r), n=r.units.length;
+  const what=kind==="letter"?t("this letter"):t("this CV");
+  el.innerHTML=rvIcon(r.by)+
+    '<div class="rvtx"><b>'+esc(r.created?t("{who} wrote {what}",{who,what}):t("{who} changed {what}",{who,what}))+'</b>'+
+      '<span>'+esc(r.created?t("{t} ago. Not reviewed yet.",{t:ago(r.at*1000)})
+        :t("{t} ago · {n} change(s) to review",{t:ago(r.at*1000),n}))+'</span></div>'+
+    '<div class="grow"></div>'+
+    (r.created
+      ?'<button class="obtn" data-rv="undo">'+esc(t("Delete it"))+'</button>'+
+       '<button class="pbtn" data-rv="keep">'+esc(t("Keep it"))+'</button>'
+      :(on.open?'<button class="pbtn" data-rv="open">'+esc(on.label||t("Review changes"))+'</button>':'')+
+       '<button class="obtn" data-rv="keep">'+esc(t("Keep all"))+'</button>'+
+       '<button class="obtn" data-rv="undo">'+esc(t("Undo all"))+'</button>');
+  el.hidden=false;
+  el.onclick=e=>{ const b=e.target.closest("[data-rv]"); if(!b) return;
+    if(b.dataset.rv==="open") return on.open();
+    if(b.dataset.rv==="undo"&&!confirm(r.created
+      ?t("Delete this document? It goes to the trash folder.")
+      :t("Undo every change {who} made that you have not kept?",{who}))) return;
+    on.all(b.dataset.rv);
+  };
+}
+/* One change, as a card: what it is, the words, and Keep / Undo. */
+function rvCard(u,i,body,extra){
+  return '<div class="rvc" data-u="'+esc(u.id)+'"><div class="rvh"><span class="rvn">'+(i+1)+'</span>'+
+      '<b>'+esc(t(u.label))+'</b>'+(u.where?'<span class="rvw">'+esc(u.where)+'</span>':'')+'</div>'+
+    (body?'<div class="rvx">'+body+'</div>':'')+
+    '<div class="rva">'+(extra||"")+'<div class="grow"></div>'+
+      '<button class="obtn" data-act="undo" data-id="'+esc(u.id)+'">'+esc(t("Undo"))+'</button>'+
+      '<button class="obtn rvkeep" data-act="keep" data-id="'+esc(u.id)+'">'+esc(t("Keep"))+'</button></div></div>';
+}
+
+/* ---- letters ------------------------------------------------------------- */
+const ltRv=()=>LT.doc&&LT.doc.review;
+function ltRvBar(){
+  const r=ltRv();
+  if(r&&LT.rv&&r.created) LT.rv=false;
+  rvBar($("#lt-rv"),r,"letter",{
+    open:LT.rv?null:()=>ltRvEnter(),
+    all:a=>ltRvDo(["*"],a)});
+}
+async function ltRvEnter(){
+  if(LT.dirty) await ltSave();
+  if(!ltRv()) return;
+  LT.rv=true; if(LTF.open) ltFindClose();
+  LT.tab="write"; ltPaint();
+}
+function ltRvLeave(){ LT.rv=false; ltPaint() }
+async function ltRvDo(ids,action){
+  const r=ltRv(); if(!r) return;
+  if(LT.dirty) await ltSave();
+  const out=await rvCall(LT.path,ids,action,ltRv().sig);
+  if(!out){ try{ const d=await api("/api/doc?path="+encodeURIComponent(LT.path));
+    Object.assign(LT,{doc:d,meta:Object.assign({},d.meta),body:d.body}) }catch(e){} ltPaint(); return }
+  if(out.deleted){ toast(t("Deleted. It is in the trash folder.")); LT.path=null; LT.rv=false;
+    try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
+    return setView(ltJob()?"jobs":"docs") }
+  const d=out.doc;
+  Object.assign(LT,{doc:d,meta:Object.assign({},d.meta),body:d.body,dirty:false,mdText:null});
+  if(!d.review){ LT.rv=false; toast(ids[0]==="*"?(action==="keep"?t("Kept"):t("Undone")):t("All reviewed")) }
+  ltPaint();
+  if(action==="undo") ltRender();
+  refreshDocBadges();
+}
+/* The page while reviewing: the letter as it is now, read-only, with each
+   change drawn where it is -- the words taken out struck through, the words
+   put in underlined, a paragraph removed shown where it was -- and numbered
+   to match its card. */
+function ltRvPage(){
+  const r=ltRv(); if(!r) return;
+  const paper=$("#lt-paper"); if(!paper) return;
+  paper.classList.add("reviewing");
+  paper.querySelectorAll("[contenteditable]").forEach(el=>el.setAttribute("contenteditable","false"));
+  const units=r.units, num=new Map(units.map((u,i)=>[u.id,i+1]));
+  const chunks=String(LT.body||"").trim().split(/\n\s*\n/).filter(c=>c.trim());
+  const paras=units.filter(u=>u.kind==="para");
+  const badge=u=>'<span class="rvnum" aria-hidden="true">'+num.get(u.id)+'</span>';
+  const block=(u,html)=>'<div class="rvb" data-tag="'+u.tag+'" data-u="'+esc(u.id)+'">'+badge(u)+html+'</div>';
+  const para=u=>{
+    if(u.tag==="del") return block(u,'<p><del class="rvd">'+rvText(rvPlain(u.before))+'</del></p>');
+    if(u.tag==="ins") return block(u,ltToHTML(u.after));
+    const a=rvPlain(u.before), b=rvPlain(u.after);
+    return block(u,a===b?ltToHTML(u.after)+'<p class="rvfmt">'+esc(t("Only the formatting changed."))+'</p>'
+      :'<p>'+diffHTML(a,b)+'</p>');
+  };
+  let html="";
+  for(let k=0;k<=chunks.length;k++){
+    paras.filter(u=>u.tag==="del"&&u.at===k).forEach(u=>html+=para(u));
+    if(k===chunks.length) break;
+    const u=paras.find(x=>x.tag!=="del"&&x.at===k);
+    html+=u?para(u):ltToHTML(chunks[k]);
+  }
+  $("#lt-edit").innerHTML=html;
+  const sub=units.find(u=>u.id==="meta:subject");
+  if(sub){ const sj=$("#lt-subj"); sj.classList.add("rvb"); sj.dataset.u=sub.id;
+    sj.innerHTML=badge(sub)+diffHTML(sub.before||"",sub.after||"") }
+  const lh=units.find(u=>u.id==="meta:letterhead");
+  if(lh){ const el=$("#lt-lh"); el.classList.add("rvb"); el.dataset.u=lh.id;
+    el.insertAdjacentHTML("afterbegin",badge(lh)) }
+  const dt=units.find(u=>u.id==="meta:date"||u.id==="meta:place");
+  if(dt){ const el=$("#lt-dl"); el.classList.add("rvb"); el.dataset.u=dt.id;
+    el.insertAdjacentHTML("afterbegin",badge(dt)) }
+  paper.onmouseover=e=>{ const b=e.target.closest(".rvb"); rvHover(b&&b.dataset.u) };
+  paper.onmouseleave=()=>rvHover(null);
+  paper.onclick=e=>{ const b=e.target.closest(".rvb"); if(b) rvFocus(b.dataset.u,"card") };
+}
+function rvHover(id){
+  $$(".rvb.hot,.rvc.hot").forEach(x=>x.classList.remove("hot"));
+  if(id) $$('[data-u="'+CSS.escape(id)+'"]').forEach(x=>x.classList.add("hot"));
+}
+function rvFocus(id,where){
+  const sel='[data-u="'+CSS.escape(id)+'"]';
+  const el=where==="card"?$("#lt-panel "+sel):$("#lt-paper "+sel);
+  if(!el) return;
+  el.scrollIntoView({block:"center",behavior:"smooth"});
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+}
+function ltRvPanel(){
+  const r=ltRv(), units=r.units;
+  const card=(u,i)=>{
+    let body="";
+    if(u.kind==="para"){
+      const a=rvPlain(u.before||""), b=rvPlain(u.after||"");
+      const st=diffStats(a,b);
+      body='<span class="rvs">'+(u.tag==="del"?esc(t("{n} word(s) removed",{n:st.minus}))
+        :u.tag==="ins"?esc(t("{n} word(s) added",{n:st.plus}))
+        :(st.plus||st.minus)?(st.plus?'<ins class="rvi">+'+st.plus+'</ins> ':'')+(st.minus?'<del class="rvd">−'+st.minus+'</del> ':'')+esc(t("words"))
+        :esc(t("Formatting only")))+'</span>'+
+        '<span class="rvq">'+esc((u.tag==="del"?a:b).slice(0,110))+((u.tag==="del"?a:b).length>110?"…":"")+'</span>';
+    }else body=diffHTML(rvVal(u.before),rvVal(u.after))||'<span class="rvs">'+esc(t("(empty)"))+'</span>';
+    return rvCard(u,i,body);
+  };
+  $("#lt-panel").innerHTML=
+    '<div class="rvhead">'+rvIcon(r.by)+'<div><h4>'+esc(t("{who}’s changes",{who:whoLabel(r)}))+'</h4>'+
+      '<span class="muted2">'+esc(t("Since {t} · {n} write(s)",{t:new Date(r.since*1000).toLocaleTimeString(uiLocale(),{hour:"2-digit",minute:"2-digit"}),n:r.writes||1}))+'</span></div></div>'+
+    '<p class="muted2 rvhelp">'+esc(t("Struck through is what it took out, underlined is what it put in. Keep a change to accept it, undo it to put back what was there."))+'</p>'+
+    '<div class="rvlist">'+units.map(card).join("")+'</div>'+
+    '<div class="rvfoot"><button class="obtn" data-all="undo">'+esc(t("Undo all"))+'</button>'+
+      '<button class="obtn" data-all="keep">'+esc(t("Keep all"))+'</button><div class="grow"></div>'+
+      '<button class="pbtn" data-all="done">'+esc(t("Done"))+'</button></div>';
+  const pn=$("#lt-panel");
+  pn.onclick=e=>{
+    const b=e.target.closest("[data-act]");
+    if(b) return ltRvDo([b.dataset.id],b.dataset.act);
+    const a=e.target.closest("[data-all]");
+    if(a){ if(a.dataset.all==="done") return ltRvLeave();
+      if(a.dataset.all==="undo"&&!confirm(t("Undo every change {who} made that you have not kept?",{who:whoLabel(r)}))) return;
+      return ltRvDo(["*"],a.dataset.all) }
+    const c=e.target.closest(".rvc"); if(c) rvFocus(c.dataset.u,"page");
+  };
+  pn.onmouseover=e=>{ const c=e.target.closest(".rvc"); rvHover(c&&c.dataset.u) };
+  pn.onmouseleave=()=>rvHover(null);
+}
+
+/* ---- CVs ----------------------------------------------------------------- */
+function cvRvBar(){
+  const r=S.doc&&S.doc.review;
+  rvBar($("#cv-rv"),r,"cv",{open:()=>cvRvSheet(), all:a=>cvRvDo(["*"],a)});
+}
+async function cvRvDo(ids,action){
+  const r=S.doc&&S.doc.review; if(!r) return;
+  if(S.dirty){ toast(t("Save or discard your edits first."),true); return }
+  const out=await rvCall(S.path,ids,action,r.sig);
+  if(!out){ await reopenInPlace(); return }
+  if(out.deleted){ closeSheet(); toast(t("Deleted. It is in the trash folder."));
+    try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
+    S.path=null; return setView("docs") }
+  if(action==="undo") await reopenInPlace();
+  else { S.doc.review=out.doc.review; cvRvBar() }
+  refreshDocBadges();
+  if(!S.doc.review){ closeSheet(); toast(ids[0]==="*"?(action==="keep"?t("Kept"):t("Undone")):t("All reviewed")) }
+  else if(!$("#sheet").hidden&&$("#sheet .rvsheet")) cvRvSheet();
+}
+/* An entry, field by field: what stayed plainly, what changed as words, a
+   list of bullets as bullets added, removed and reworded. */
+function rvEntryHTML(a,b,tag){
+  if(tag==="ins"||tag==="del"){
+    const e=tag==="ins"?b:a, cls=tag==="ins"?"rvi":"rvd", el=tag==="ins"?"ins":"del";
+    if(e==null||typeof e!=="object") return '<'+el+' class="'+cls+'">'+rvText(rvVal(e))+'</'+el+'>';
+    return '<dl>'+Object.entries(e).map(([k,v])=>'<dt>'+esc(k.replace(/_/g," "))+'</dt><dd>'+
+      (Array.isArray(v)?'<ul>'+v.map(x=>'<li><'+el+' class="'+cls+'">'+rvText(rvVal(x))+'</'+el+'></li>').join("")+'</ul>'
+        :'<'+el+' class="'+cls+'">'+rvText(rvVal(v))+'</'+el+'>')+'</dd>').join("")+'</dl>';
+  }
+  if(typeof a!=="object"||typeof b!=="object"||!a||!b) return diffHTML(rvVal(a),rvVal(b));
+  const keys=[...new Set([...Object.keys(a),...Object.keys(b)])];
+  return '<dl>'+keys.map(k=>{
+    const x=a[k], y=b[k], same=JSON.stringify(x)===JSON.stringify(y);
+    let v;
+    if(same) v='<span class="rvsame">'+rvText(rvVal(y))+'</span>';
+    else if(Array.isArray(x)||Array.isArray(y)) v=rvListHTML(x||[],y||[]);
+    else v=diffHTML(rvVal(x),rvVal(y));
+    return '<dt>'+esc(k.replace(/_/g," "))+'</dt><dd'+(same?' class="same"':'')+'>'+v+'</dd>';
+  }).join("")+'</dl>';
+}
+function rvListHTML(x,y){
+  const A=x.map(rvVal), B=y.map(rvVal), n=A.length, m=B.length, W=m+1;
+  const T=new Uint32Array((n+1)*(m+1));
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--)
+    T[i*W+j]=A[i]===B[j]?T[(i+1)*W+j+1]+1:Math.max(T[(i+1)*W+j],T[i*W+j+1]);
+  const ops=[]; let i=0,j=0;
+  while(i<n&&j<m){ if(A[i]===B[j]){ ops.push(["eq",A[i++]]); j++ }
+    else if(T[(i+1)*W+j]>=T[i*W+j+1]) ops.push(["del",A[i++]]); else ops.push(["ins",B[j++]]) }
+  while(i<n) ops.push(["del",A[i++]]); while(j<m) ops.push(["ins",B[j++]]);
+  /* A bullet taken out and one put in at the same place is a bullet reworded. */
+  const li=[];
+  for(let k=0;k<ops.length;k++){
+    const [op,tx]=ops[k], nx=ops[k+1];
+    if(op==="del"&&nx&&nx[0]==="ins"){ li.push('<li class="chg">'+diffHTML(tx,nx[1])+'</li>'); k++ }
+    else if(op==="eq") li.push('<li class="same">'+rvText(tx)+'</li>');
+    else li.push('<li class="'+op+'"><'+op+' class="'+(op==="ins"?"rvi":"rvd")+'">'+rvText(tx)+'</'+op+'></li>');
+  }
+  return '<ul>'+li.join("")+'</ul>';
+}
+function cvRvSheet(){
+  const r=S.doc&&S.doc.review; if(!r) return;
+  const body=r.units.map((u,i)=>{
+    let x;
+    if(u.kind==="entry") x=rvEntryHTML(u.before,u.after,u.tag);
+    else if(u.kind==="section") x=u.before==null?'<span class="rvs">'+esc(t("{n} entry(s) added",{n:(u.after||[]).length}))+'</span>'
+      :u.after==null?'<span class="rvs">'+esc(t("{n} entry(s) removed",{n:(u.before||[]).length}))+'</span>':rvListHTML(u.before||[],u.after||[]);
+    else if(u.kind==="text") x='<span class="rvs">'+esc(t("The file no longer reads as a CV, so it is shown whole."))+'</span>';
+    else if(Array.isArray(u.before)||Array.isArray(u.after)) x=rvListHTML(u.before||[],u.after||[]);
+    else x=diffHTML(rvVal(u.before),rvVal(u.after));
+    const show=u.kind==="entry"&&u.tag!=="del"||u.kind==="field";
+    return rvCard(u,i,x,show?'<button class="obtn" data-go="'+esc(u.id)+'">'+esc(t("Show on the page"))+'</button>':'');
+  }).join("");
+  openSheet('<div class="rvsheet"><div class="rvhead">'+rvIcon(r.by)+'<div><h3 id="sheet-title">'+
+      esc(t("{who}’s changes",{who:whoLabel(r)}))+'</h3><p>'+
+      esc(t("Since {t} · {n} write(s)",{t:new Date(r.since*1000).toLocaleTimeString(uiLocale(),{hour:"2-digit",minute:"2-digit"}),n:r.writes||1}))+
+      ' · '+esc(t("Struck through is what it took out, underlined is what it put in."))+'</p></div></div>'+
+    '<div class="rvlist">'+body+'</div>'+
+    '<div class="foot"><button class="obtn" data-all="undo">'+esc(t("Undo all"))+'</button>'+
+      '<button class="obtn" data-all="keep">'+esc(t("Keep all"))+'</button><div class="grow"></div>'+
+      '<button class="sbtn primary" data-cancel>'+esc(t("Close"))+'</button></div></div>',
+    ()=>$("#sheet").classList.remove("wide"));
+  const sh=$("#sheet"); sh.classList.add("wide");
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  sh.querySelector(".rvsheet").onclick=e=>{
+    const b=e.target.closest("[data-act]"); if(b) return cvRvDo([b.dataset.id],b.dataset.act);
+    const a=e.target.closest("[data-all]");
+    if(a){ if(a.dataset.all==="undo"&&!confirm(t("Undo every change {who} made that you have not kept?",{who:whoLabel(r)}))) return;
+      return cvRvDo(["*"],a.dataset.all) }
+    const g=e.target.closest("[data-go]");
+    if(g){ const u=r.units.find(x=>x.id===g.dataset.go); if(!u) return;
+      if(u.kind==="entry"&&u.i!=null) select({kind:"entry",name:u.section,i:u.i}); else select({kind:"header"});
+      closeSheet() }
+  };
+}
+/* Badges on every list that names documents, so changes waiting are seen
+   from wherever you are, not only once the document is open. */
+async function refreshDocBadges(){
+  try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents);
+    if(S.view==="docs") drawDocuments() }catch(e){}
+}
+const docByPath=p=>((S.state&&S.state.documents)||[]).find(d=>d.path===p)||null;
+const rvPill=d=>d&&d.review?'<span class="rvpill" title="'+esc(t("{who} changed this. Not reviewed yet.",{who:whoLabel(d.review)}))+'">'+
+  esc(t("Review"))+'</span>':"";
+
 /* =========================================================================
    Editor
    ========================================================================= */
@@ -2678,7 +3169,7 @@ function renderDocs(docs){
           (other&&!tr?lchip(d.lang):tr?'<span class="flg-only">'+flag(d.lang)+'</span>':'')+
           (isBase(d.path)?'<span class="btag" title="The base CV: every tailored CV '+
             'starts as a copy of it">base</span>':'')+
-          markHTML(d.ai,null,true)+
+          markHTML(d.ai,null,true)+rvPill(d)+
           (job?'<span class="tie" title="'+esc(t("Linked to"))+' '+
             esc(job.title+" · "+job.company)+'"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" '+
             'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/>'+
@@ -2707,7 +3198,7 @@ async function openDoc(path){
      when there is one, and goBack asks for that first. */
   setView("cvs");
   S.path=path; S.dirty=false; S.savedAt=null; S.sel=null; S.openSection=null;
-  S.prov=null; $("#provchip").hidden=true;
+  S.prov=null; $("#provchip").hidden=true; $("#cv-rv").hidden=true;
   S.render=null; S.renderMs=null; S.fill=null; S.themePages={}; S.zoomAuto=true;
   hideExternalChange();
   /* The Design panel still holds the last document's controls, and its inputs
@@ -4635,7 +5126,7 @@ function drawDocuments(){
         :'<span>'+(th&&th.failed?"Doesn\u2019t render":"Rendering\u2026")+'</span>')+
         ((d.lang||"en")!==srcLang?'<span class="langs">'+lchip(d.lang,true)+'</span>':'')+
         (letter?'<span class="tag">Letter</span>':'')+'</span>'+
-      '<span class="meta"><b>'+esc(docTitle(d))+'</b><span>'+about+'</span>'+
+      '<span class="meta"><b>'+esc(docTitle(d))+rvPill(d)+'</b><span>'+about+'</span>'+
         '<em>'+esc(mtimeLabel(d.mtime))+(S.pages[d.path]?" \u00b7 "+S.pages[d.path]+
           " page"+(S.pages[d.path]===1?"":"s"):"")+'</em></span></button>'+
       '<button class="dmore" data-more="'+esc(d.path)+'" aria-label="'+esc(t("Rename or delete {name}",{name:docTitle(d)}))+
@@ -5240,7 +5731,7 @@ function drawJobInspector(){
   const cvCard=j.cv_path
     ? '<div class="ap-doc"><div class="pg" data-open-doc="'+esc(j.cv_path)+'" data-thumb="'+esc(j.cv_path)+
         '" role="button" tabindex="0" aria-label="Open the CV"><span>Rendering…</span></div>'+
-      '<div class="t"><b>'+esc(sent?t("The CV you sent"):t("CV"))+'</b><span>'+esc(cvName)+'</span></div>'+
+      '<div class="t"><b>'+esc(sent?t("The CV you sent"):t("CV"))+rvPill(docByPath(j.cv_path))+'</b><span>'+esc(cvName)+'</span></div>'+
       '<div class="a"><button class="obtn" data-open-doc="'+esc(j.cv_path)+'">Open</button>'+
         '<button class="obtn" id="job-ats" title="ATS check: what an applicant tracking system reads">ATS</button></div></div>'
     : sent
@@ -5254,7 +5745,7 @@ function drawJobInspector(){
   const ltCard=j.letter_path
     ? '<div class="ap-doc"><div class="pg" data-open-doc="'+esc(j.letter_path)+'" data-thumb="'+esc(j.letter_path)+
         '" role="button" tabindex="0" aria-label="Open the cover letter"><span>Rendering…</span></div>'+
-      '<div class="t"><b>Cover letter</b><span>'+esc(ltName)+'</span></div>'+
+      '<div class="t"><b>Cover letter'+rvPill(docByPath(j.letter_path))+'</b><span>'+esc(ltName)+'</span></div>'+
       '<div class="a"><button class="obtn" data-open-doc="'+esc(j.letter_path)+'">Open</button></div></div>'
     : '<div class="ap-doc"><div class="pg none"><span>No cover letter</span>'+
         '<button class="obtn" id="ap-write">Write one</button></div>'+
@@ -5443,7 +5934,8 @@ function roundsHTML(j){
         '<span class="rd-n '+(r.outcome||(r.at?"":"unset"))+'" aria-hidden="true">'+mark+'</span>'+
         '<span class="rd-tx"><b>'+esc(r.kind?t(r.kind):t("Interview"))+
           (r.with?' <span>· '+esc(t("with {n}",{n:r.with}))+'</span>':'')+'</b>'+
-          '<small>'+esc(roundWhen(j,r))+'</small>'+
+          '<small>'+esc(roundWhen(j,r))+
+            (S.roundSaved&&S.roundSaved.id===r.id&&Date.now()-S.roundSaved.at<2500?' <span class="rd-saved" role="status">✓ '+esc(t("Saved"))+'</span>':'')+'</small>'+
           /* Filled in by the prep card once it knows how ready you are. */
           (!r.outcome&&r.at?'<small class="rd-ready" data-rd-ready="'+esc(r.id)+'" hidden></small>':'')+'</span>'+
         (label?'<span class="rd-due '+tone+'">'+esc(label)+'</span>':'')+'</button>';
@@ -5452,7 +5944,11 @@ function roundsHTML(j){
       h+='<div class="rd-ed">'+
         '<label>'+esc(t("Kind"))+'<input data-rf="kind" list="rd-kinds" value="'+esc(r.kind?t(r.kind):"")+'" placeholder="'+esc(t("Technical, team fit…"))+'"></label>'+
         '<label>'+esc(t("With"))+'<input data-rf="with" list="rd-people" value="'+esc(r.with)+'" placeholder="'+esc(t("Who you will meet"))+'"></label>'+
-        '<label>'+esc(t("When"))+'<span class="rd-when"><input type="datetime-local" data-rf="at" value="'+esc(r.at)+'">'+
+        /* Day and time apart: one field for both saved nothing until both
+           were filled, and said nothing about it, so a day on its own was
+           lost. A day now saves at once, at 10:00 until a time is given. */
+        '<label>'+esc(t("When"))+'<span class="rd-when"><input type="date" data-rf="day" aria-label="'+esc(t("Day of the interview"))+'" value="'+esc((r.at||"").slice(0,10))+'">'+
+          '<input type="time" data-rf="time" aria-label="'+esc(t("Time of the interview"))+'" value="'+esc((r.at||"").slice(11,16))+'">'+
           '<select id="rd-tz" data-rf="tz" aria-label="'+esc(t("Time zone of the interview"))+'"><option value=""'+(zone?"":" selected")+'>'+
           esc(t("Your time"))+' · '+esc(tzCity(mine))+'</option>'+tzOptions(zone,guess&&guess!==mine?guess:null)+'</select></span></label>'+
         '<div class="rd-acts">'+
@@ -5505,12 +6001,19 @@ function wireRounds(j){
   box.querySelectorAll("[data-rd-toggle]").forEach(b=>b.onclick=()=>{
     S.roundOpen=S.roundOpen===b.dataset.rdToggle?"__none":b.dataset.rdToggle; drawJobInspector() });
   box.querySelectorAll(".rd.open").forEach(el=>{
-    const id=el.dataset.rd, edit=(f)=>{ const list=rs(), r=list.find(x=>x.id===id); f(r); save(list) };
+    const id=el.dataset.rd, edit=(f)=>{ const list=rs(), r=list.find(x=>x.id===id); f(r);
+      S.roundSaved={id,at:Date.now()}; save(list);
+      setTimeout(()=>{ const m=$("#ap-rounds .rd-saved"); if(m) m.remove() },2600) };
     el.querySelectorAll("[data-rf]").forEach(inp=>inp.onchange=()=>edit(r=>{
       const k=inp.dataset.rf; let v=inp.value.trim();
+      if(k==="day"||k==="time"){
+        const day=el.querySelector('[data-rf="day"]').value, tm=el.querySelector('[data-rf="time"]').value;
+        v=day?day+"T"+(tm||"10:00"):"";
+        /* A first time in a place elsewhere starts in that place's zone. */
+        if(v&&!r.at&&!r.tz){ const g=guessTz(j); if(g&&g!==userTz()) r.tz=g }
+        r.at=v; return;
+      }
       if(k==="kind") v=kindKey(v);
-      /* A first time in a place elsewhere starts in that place's zone. */
-      if(k==="at"&&v&&!r.at&&!r.tz){ const g=guessTz(j); if(g&&g!==userTz()) r.tz=g }
       r[k]=v }));
     el.querySelectorAll("[data-rd-out]").forEach(b=>b.onclick=()=>edit(r=>{
       r.outcome=r.outcome===b.dataset.rdOut?"":b.dataset.rdOut;
@@ -6311,6 +6814,8 @@ function wallIn(date,tz){
   return g("year")+"-"+g("month")+"-"+g("day")+"T"+g("hour")+":"+g("minute");
 }
 const hmIn=(date,tz)=>wallIn(date,tz).slice(11);
+/* The same, as it is read: in the clock you chose (Settings › Language & region). */
+const hmShow=(date,tz)=>fmtTime(hmIn(date,tz));
 const todayKey=()=>dayIn(new Date());
 const keyDate=k=>{ const [y,m,d]=k.split("-").map(Number); return new Date(Date.UTC(y,m-1,d,12)) };
 const addDays=(k,n)=>{ const d=keyDate(k); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10) };
@@ -6342,7 +6847,7 @@ function nextActions(){
     return ps.find(p=>p.role==="Hiring manager")||ps.find(p=>p.role==="Recruiter")||ps.find(p=>p.role!=="Referral")||ps[0]||null };
   const lastWrote=j=>(j.people||[]).filter(p=>p.last).sort((a,b)=>b.last.localeCompare(a.last))[0];
   const when=at=>{
-    const mins=Math.round((at-now)/6e4), k=dayIn(at), days=dayDiff(today,k), hm=hmIn(at,userTz());
+    const mins=Math.round((at-now)/6e4), k=dayIn(at), days=dayDiff(today,k), hm=hmShow(at,userTz());
     if(mins<180) return t("in {h} h {m} min",{h:Math.floor(mins/60),m:mins%60});
     if(days===0) return t("today {t}",{t:hm});
     if(days===1) return t("tomorrow {t}",{t:hm});
@@ -6535,7 +7040,7 @@ function clockSVG(date,tz,label,delay){
       'deg;animation-delay:'+delay+'s"/>'+
     '<line class="cal-hand mh" x1="50" y1="50" x2="50" y2="15" stroke-width="2.5" stroke-linecap="round" style="--a:'+ma+
       'deg;animation-delay:'+(delay+.1)+'s"/><circle class="pin" cx="50" cy="50" r="3.5"/></svg>'+
-    '<b>'+hmIn(date,tz)+'</b><span>'+esc(label)+'</span></div>';
+    '<b>'+hmShow(date,tz)+'</b><span>'+esc(label)+'</span></div>';
 }
 function drawCalOverview(ev){
   const now=new Date(), today=todayKey();
@@ -6586,7 +7091,7 @@ function drawCalOverview(ev){
         '<div><div class="n">'+p(h)+'</div><div class="u">'+t("hours")+'</div></div>'+
         '<div><div class="n">'+p(m)+'</div><div class="u">'+t("min")+'</div></div>'+
         '<div class="when"><b>'+esc(fmtKey(next.day,{weekday:"long",day:"numeric",month:"long"}))+'</b><br>'+
-        esc(hmIn(next.at,userTz()))+' '+t("your time")+'</div>';
+        esc(hmShow(next.at,userTz()))+' '+t("your time")+'</div>';
     };
     tick(); S.calTick=setInterval(tick,15000);
   }
@@ -6656,7 +7161,7 @@ function calJourneys(ev){
     const at=interviewMoment(j);
     if(at&&at>new Date()&&dayIn(at)<=end){
       const k=dayIn(at); aheadKeys.push(k);
-      const lab=fmtKey(k,{weekday:"short"})+" "+hmIn(at,userTz())+(otherTz(j)?" · "+hmIn(at,j.interview_tz)+" "+tzCity(j.interview_tz):"");
+      const lab=fmtKey(k,{weekday:"short"})+" "+hmShow(at,userTz())+(otherTz(j)?" · "+hmShow(at,j.interview_tz)+" "+tzCity(j.interview_tz):"");
       marks+='<span class="jr-iv" style="left:'+pct(k)+'%;animation-delay:'+(1.5+i*.07).toFixed(2)+'s"></span>'+
         '<span class="jr-lab iv" style="'+labAt(pct(k),14)+';animation-delay:'+(1.7+i*.07).toFixed(2)+'s">'+esc(lab)+'</span>';
     }
@@ -6707,10 +7212,10 @@ function calChip(e){
      there more than once, a word of the role tells them apart. */
   const j=e.job, tag=e.kind==="iv"||e.kind==="fu"?roleTag(j):"", co=esc(j.company)+(tag?' <em class="rt">'+esc(tag)+'</em>':'');
   if(e.past) return '<button class="cal-chip iv past" data-open-job="'+esc(j.id)+'" title="'+esc(j.company+" · "+j.title+(e.round.kind?" · "+t(e.round.kind):"")+
-    (e.round.outcome?" · "+t(e.round.outcome==="passed"?"Passed":"Didn't pass"):""))+'"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span></button>';
+    (e.round.outcome?" · "+t(e.round.outcome==="passed"?"Passed":"Didn't pass"):""))+'"><i class="pt"></i><span>'+hmShow(e.at,userTz())+' '+co+'</span></button>';
   const drag=(e.kind==="iv"||e.kind==="fu")?' draggable="true" data-drag="'+e.kind+':'+esc(j.id)+'"':'';
   if(e.kind==="iv") return '<button class="cal-chip iv" data-open-job="'+esc(j.id)+'"'+drag+' title="'+esc(interviewLine(j))+
-    '"><i class="pt"></i><span>'+hmIn(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
+    '"><i class="pt"></i><span>'+hmShow(e.at,userTz())+' '+co+'</span>'+(otherTz(j)?'<i class="gl">'+GLOBE+'</i>':'')+'</button>';
   /* The chip's colour says follow-up; the words left for the company. */
   if(e.kind==="fu") return '<button class="cal-chip fu'+(e.late?" late":"")+'" data-open-job="'+esc(j.id)+'" title="'+
     esc((e.late?t("Overdue"):t("Follow up"))+" · "+j.company+" · "+j.title)+'"'+drag+'><span>'+
@@ -6760,7 +7265,7 @@ function calComing(ev){
     .sort((a,b)=>a.day.localeCompare(b.day)||(a.at||0)-(b.at||0));
   const col={iv:"var(--fn-positive)",fu:"var(--fn-wait)",rp:"var(--fn-offer)",of:"var(--fn-offer)"};
   const when=e=>(e.day===today?t("Today")+" · ":"")+fmtKey(e.day,{weekday:"short",day:"numeric"})+
-    (e.kind==="iv"?" · "+hmIn(e.at,userTz())+(otherTz(e.job)?" "+t("your time"):""):"");
+    (e.kind==="iv"?" · "+hmShow(e.at,userTz())+(otherTz(e.job)?" "+t("your time"):""):"");
   const what=e=>e.kind==="iv"?t("Interview")+" · "+e.job.company:e.kind==="fu"?t("Follow up with {co}",{co:e.job.company})
     :e.kind==="rp"?t("{co} moved to interviews",{co:e.job.company}):t("Offer")+" · "+e.job.company;
   return '<section class="cal-card cal-side cal-r" style="animation-delay:.1s"><div class="cal-ch"><h2>'+t("Coming up")+
@@ -6769,7 +7274,7 @@ function calComing(ev){
       late.slice(0,4).map(e=>esc(e.job.company)+" ("+esc(fmtKey(e.day,{day:"numeric",month:"short"}))+")").join(", ")+'</div>':'')+
     (up.length?up.map(e=>'<button class="cal-item" data-open-job="'+esc(e.job.id)+'"><span class="bar" style="background:'+col[e.kind]+'"></span>'+
       '<span class="tx"><small>'+esc(when(e))+'</small><b>'+esc(what(e))+'</b><span>'+esc(e.job.title)+'</span>'+
-      (e.kind==="iv"&&otherTz(e.job)?'<em>'+GLOBE+esc(hmIn(e.at,e.job.interview_tz)+" "+t("in")+" "+tzCity(e.job.interview_tz))+'</em>':'')+
+      (e.kind==="iv"&&otherTz(e.job)?'<em>'+GLOBE+esc(hmShow(e.at,e.job.interview_tz)+" "+t("in")+" "+tzCity(e.job.interview_tz))+'</em>':'')+
       '</span></button>').join(""):'<p class="cal-none">'+t("Nothing in the next seven days.")+'</p>')+'</section>';
 }
 /* Drag an interview or a follow-up to another day. An interview keeps its
@@ -6821,8 +7326,8 @@ function drawCalWeek(ev){
     const top=(h-h0+m/60)*HH+2, grp=bySlot[slot(e)], n=grp.length, k=grp.indexOf(e);
     const tz=!e.past&&otherTz(e.job);
     return '<button class="cal-blk'+(e.past?" past":"")+(S.calPop===e.job.id&&!e.past?" on":"")+'" '+(e.past?'data-open-job':'data-pop')+'="'+esc(e.job.id)+'" style="left:calc('+col+
-      ' * (100% / 7) + '+k+' * (100% / 7 / '+n+') + 4px);width:calc(100% / 7 / '+n+' - 8px);top:'+top+'px;height:'+(HH-4)+'px"><b>'+hmIn(e.at,userTz())+' '+
-      esc(e.job.company)+'</b><span>'+esc(e.past&&e.round&&e.round.kind?t(e.round.kind):e.job.title)+'</span>'+(tz?'<em>'+GLOBE+esc(hmIn(e.at,e.job.interview_tz)+
+      ' * (100% / 7) + '+k+' * (100% / 7 / '+n+') + 4px);width:calc(100% / 7 / '+n+' - 8px);top:'+top+'px;height:'+(HH-4)+'px"><b>'+hmShow(e.at,userTz())+' '+
+      esc(e.job.company)+'</b><span>'+esc(e.past&&e.round&&e.round.kind?t(e.round.kind):e.job.title)+'</span>'+(tz?'<em>'+GLOBE+esc(hmShow(e.at,e.job.interview_tz)+
       " "+t("in")+" "+tzCity(e.job.interview_tz))+'</em>':'')+'</button>';
   }).join("");
   let nowl="";
@@ -6847,8 +7352,8 @@ function calPopHTML(ivs){
     '<button class="x" id="cal-pop-x" aria-label="'+esc(t("Close"))+'">✕</button>'+
     '<div class="hd">'+companyMark(j)+'<div><b>'+esc(t("Interview")+" · "+j.company)+'</b><span>'+esc(j.title)+
       (j.location?" · "+esc(j.location):"")+'</span></div></div>'+
-    '<div class="tz"><div><small>'+t("Your time")+'</small><b>'+esc(fmtKey(e.day,{weekday:"short",day:"numeric"})+" · "+hmIn(e.at,userTz()))+'</b></div>'+
-      (two?'<div><small>'+esc(t("In {city}",{city:tzCity(j.interview_tz)}))+'</small><b>'+esc(hmIn(e.at,j.interview_tz))+'</b></div>'
+    '<div class="tz"><div><small>'+t("Your time")+'</small><b>'+esc(fmtKey(e.day,{weekday:"short",day:"numeric"})+" · "+hmShow(e.at,userTz()))+'</b></div>'+
+      (two?'<div><small>'+esc(t("In {city}",{city:tzCity(j.interview_tz)}))+'</small><b>'+esc(hmShow(e.at,j.interview_tz))+'</b></div>'
         :'<div><small>'+t("Status")+'</small><b>'+esc(prettyStatus(j.status))+'</b></div>')+'</div>'+
     (j.notes?'<p>'+esc(String(j.notes).slice(0,220))+'</p>':'')+
     '<div class="a"><button class="pbtn" data-open-job="'+esc(j.id)+'">'+t("Open application")+'</button>'+
@@ -7736,6 +8241,25 @@ function fillSettings(){
     try{ sessionStorage.setItem("cvs.reopen","region") }catch(e){}
     location.reload() };
   drawTzMap(tzs);
+  /* Examples rather than names: "30/09/2026" says what "day first" means. */
+  const sample=o=>{ const p={d:"30",m:"09",y:"2026"}; return DFX_ORDERS[o].map(k=>p[k]).join(dateSep(o)) };
+  const df=$("#s-datefmt"), autoOrder=(()=>{ const keep=pr.date_format; delete prefs().date_format;
+    const o=dateOrder(); if(keep) prefs().date_format=keep; return o })();
+  df.innerHTML='<option value="">'+esc(t("Match system"))+' · '+esc(sample(autoOrder))+'</option>'+
+    [["dmy","Day first"],["mdy","Month first"],["ymd","Year first"]].map(([k,l])=>
+      '<option value="'+k+'">'+esc(t(l))+' · '+esc(sample(k))+'</option>').join("");
+  df.value=pr.date_format||"";
+  const ck=$("#s-clock"), autoClock=(()=>{ const keep=pr.clock; delete prefs().clock;
+    const c=clock12(); if(keep) prefs().clock=keep; return c })();
+  const at=c=>c?"2:30 PM":"14:30";
+  ck.innerHTML='<option value="">'+esc(t("Match system"))+' · '+at(autoClock)+'</option>'+
+    '<option value="24">'+esc(t("24-hour"))+' · 14:30</option><option value="12">'+esc(t("12-hour"))+' · 2:30 PM</option>';
+  ck.value=pr.clock||"";
+  const reopen=()=>{ try{ sessionStorage.setItem("cvs.reopen","region") }catch(e){} location.reload() };
+  /* Saved before the reload, which would otherwise cut the request off. */
+  const keep=(k,v)=>{ setPref(k,v); post("/api/prefs",{set:{[k]:v}}).catch(()=>{}).finally(reopen) };
+  df.onchange=()=>keep("date_format",df.value||null);
+  ck.onchange=()=>keep("clock",ck.value||null);
   const sb=$("#s-sample");
   sb.textContent=st.sample?"Back to my workspace":"Open sample data";
   sb.onclick=()=>setSample(!st.sample,sb);
@@ -8240,10 +8764,16 @@ async function packSheet(id){
    sent and the kind of round; an AI client can write better ones, and your
    notes stay. */
 const PREP={job:null,data:null,tick:null};
+/* The round to prepare for: the first with no outcome. A round with no date
+   yet is still one to prepare for -- the questions do not wait on the
+   invitation -- so it gets the card, with "not scheduled" where the
+   countdown goes. One whose date has passed is waiting for its outcome in
+   Interviews instead. */
 const prepRound=j=>{
   if(DEAD_ST.has(j.status)) return null;
-  const rs=j.rounds||[], i=rs.findIndex(r=>!r.outcome&&r.at);
+  const rs=j.rounds||[], i=rs.findIndex(r=>!r.outcome);
   if(i<0) return null;
+  if(!rs[i].at) return {r:rs[i],n:i+1,m:rs.length,at:null};
   const at=interviewMoment({interview_at:rs[i].at+":00",interview_tz:rs[i].tz||null});
   return at&&at>new Date()?{r:rs[i],n:i+1,m:rs.length,at}:null;
 };
@@ -8275,12 +8805,13 @@ async function drawPrep(j){
   }
   const d=PREP.data, r=nr.r, {parts,pct}=prepParts(d,j);
   const who=(j.people||[]).find(p=>p.name&&p.name===r.with);
-  const two=r.tz&&r.tz!==userTz();
-  const when=fmtKey(dayIn(nr.at),{weekday:"long"})+", "+hmIn(nr.at,userTz());
-  const sub=[two?t("{t} in {city}",{t:hmIn(nr.at,r.tz),city:tzCity(r.tz)}):"",
+  const two=nr.at&&r.tz&&r.tz!==userTz();
+  const when=nr.at?fmtKey(dayIn(nr.at),{weekday:"long"})+", "+hmShow(nr.at,userTz()):t("Not scheduled yet");
+  const sub=[two?t("{t} in {city}",{t:hmShow(nr.at,r.tz),city:tzCity(r.tz)}):"",
     who&&who.role?t(who.role):""].filter(Boolean).join(" · ");
   const ring=415, off=Math.round(ring*(1-pct/100));
-  const cd=()=>{ const left=Math.max(0,nr.at-new Date()), D=Math.floor(left/864e5), H=Math.floor(left/36e5)%24, M=Math.floor(left/6e4)%60;
+  const cd=()=>{ if(!nr.at) return '<button type="button" class="pp-go pp-date" id="pp-date">'+esc(t("Set the date"))+'</button>';
+    const left=Math.max(0,nr.at-new Date()), D=Math.floor(left/864e5), H=Math.floor(left/36e5)%24, M=Math.floor(left/6e4)%60;
     return [[D,t("days")],[String(H).padStart(2,"0"),t("hours")],[String(M).padStart(2,"0"),t("min")]]
       .map(([n,u])=>'<span><b>'+n+'</b><small>'+esc(u)+'</small></span>').join("") };
   const st=d.stories||[], qs=d.questions||[], proved=st.filter(s=>s.proof).length;
@@ -8290,7 +8821,7 @@ async function drawPrep(j){
   host.innerHTML='<section class="pp-stage" aria-labelledby="pp-h">'+
     '<div class="pp-top">'+
       '<div class="pp-when"><span class="pp-kick"><i></i>'+esc(t("Round {n} of {m}",{n:nr.n,m:nr.m})+(r.kind?" · "+t(r.kind):""))+'</span>'+
-        '<h2 id="pp-h">'+esc(r.with?t("{when} with {who}",{when,who:r.with}):when)+'</h2>'+
+        '<h2 id="pp-h">'+esc(r.with?(nr.at?t("{when} with {who}",{when,who:r.with}):t("With {who}, not scheduled yet",{who:r.with})):when)+'</h2>'+
         (sub?'<span class="pp-sub">'+esc(sub)+'</span>':'')+
         '<span class="pp-cd" id="pp-cd">'+cd()+'</span></div>'+
       '<div class="pp-ready"><div class="pp-ring" role="img" aria-label="'+esc(t("{n}% ready",{n:pct}))+'">'+
@@ -8331,7 +8862,11 @@ async function drawPrep(j){
   '</section>';
   const rr=document.querySelector('[data-rd-ready="'+CSS.escape(r.id)+'"]');
   if(rr){ rr.hidden=false; rr.textContent=t("Prep: {n}% ready",{n:pct}) }
-  PREP.tick=setInterval(()=>{ const el=$("#pp-cd"); if(el) el.innerHTML=cd(); else clearInterval(PREP.tick) },30000);
+  if(nr.at) PREP.tick=setInterval(()=>{ const el=$("#pp-cd"); if(el) el.innerHTML=cd(); else clearInterval(PREP.tick) },30000);
+  /* Undated: the date goes in the round's own editor, just below. */
+  const pd=$("#pp-date");
+  if(pd) pd.onclick=()=>{ const f=$('.rd-ed input[data-rf="day"]');
+    if(f){ f.scrollIntoView({block:"center",behavior:"smooth"}); f.focus({preventScroll:true}) } };
   $("#pp-go").onclick=()=>rehearse(j);
   $("#pp-all").onclick=()=>prepSheet(j,"q");
   $("#pp-askl").onclick=()=>prepSheet(j,"a");
@@ -8360,7 +8895,7 @@ function prepPrint(j){
   const el=document.createElement("div"); el.id="pp-print";
   el.innerHTML='<h1>'+esc(j.company)+' · '+esc(j.title)+'</h1>'+
     '<p class="when">'+esc([t("Round {n} of {m}",{n:nr.n||1,m:nr.m||1}),r.kind?t(r.kind):"",r.with?t("with {n}",{n:r.with}):"",
-      nr.at?fmtKey(dayIn(nr.at),{weekday:"long",day:"numeric",month:"long"})+", "+hmIn(nr.at,userTz()):""].filter(Boolean).join(" · "))+'</p>'+
+      nr.at?fmtKey(dayIn(nr.at),{weekday:"long",day:"numeric",month:"long"})+", "+hmShow(nr.at,userTz()):""].filter(Boolean).join(" · "))+'</p>'+
     '<h2>'+esc(t("Likely questions"))+'</h2><ol>'+(d.questions||[]).map(q=>'<li><b>'+esc(q.q)+'</b>'+
       (q.note?'<p>'+esc(q.note)+'</p>':'<p class="blank"></p>')+'</li>').join("")+'</ol>'+
     ((d.stories||[]).length?'<h2>'+esc(t("What they ask for"))+'</h2><ul>'+d.stories.map(s=>'<li><b>'+esc(s.req)+'</b> — '+

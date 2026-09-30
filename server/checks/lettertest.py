@@ -114,6 +114,45 @@ def main() -> int:
         data, ctype, _ = studio.letter_export(p, "pdf")
         check("the PDF", data[:4] == b"%PDF" and ctype == "application/pdf")
 
+        print("A letterhead of its own")
+        head = studio.load_letter(p)["head"]
+        check("from the CV until told otherwise",
+              head["name"] == "Alex Moreau" and head["signature"] == "Alex Moreau"
+              and head["overridden"] == [])
+        studio.save_letter(p, {"meta": {"letterhead": {
+            "headline": "Platform Engineer", "contact": "Paris • alex@example.com",
+            "signature": "Alex M."}}})
+        head = studio.load_letter(p)["head"]
+        check("this letter's headline, contact line and signature",
+              head["headline"] == "Platform Engineer"
+              and head["contact"] == ["Paris", "alex@example.com"]
+              and head["signature"] == "Alex M.", repr(head["contact"]))
+        check("the CV's are still known, to go back to",
+              head["from_cv"]["headline"] == "Staff Engineer"
+              and sorted(head["overridden"]) == ["contact", "headline", "signature"])
+        check("the CV itself is untouched",
+              "Staff Engineer" in (ws / "profile" / "my-cv.yaml").read_text(encoding="utf-8"))
+        txt = studio.letter_export(p, "txt")[0].decode("utf-8")
+        check("plain text signs with it", txt.rstrip().endswith("Alex M."))
+        doc = zipfile.ZipFile(io.BytesIO(studio.letter_export(p, "docx")[0])).read(
+            "word/document.xml").decode("utf-8")
+        check("so does Word, with the new headline",
+              "Alex M." in doc and "Platform Engineer" in doc and "Staff Engineer" not in doc)
+        r = studio.render_letter(p)
+        try:
+            import pypdf
+            text = "\n".join(pg.extract_text() for pg in pypdf.PdfReader(ws / r["pdf"]).pages)
+            check("and the page", "Platform Engineer" in text and "Staff Engineer" not in text
+                  and "Alex M." in text)
+        except ImportError:
+            print("  skip  pypdf is not installed")
+        studio.save_letter(p, {"meta": {"letterhead": {"headline": ""}}})
+        check("an empty headline means none", studio.load_letter(p)["head"]["headline"] == "")
+        studio.save_letter(p, {"meta": {"letterhead": None}})
+        head = studio.load_letter(p)["head"]
+        check("back to the CV's", head["headline"] == "Staff Engineer" and head["overridden"] == []
+              and "letterhead" not in p.read_text(encoding="utf-8"))
+
         print("Write one, for an application")
         if studio.jobstore is not None:
             job = studio.jobstore.add_job(ws, {

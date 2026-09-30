@@ -112,7 +112,10 @@ and opens it. Every field you then change is marked as differing from the base.
 With **CVs in more than one language** turned on (Settings → Language & region),
 the base has a tab per language, each saying what it is missing since the
 source changed. Cover letters are Markdown with a short header, printed in the
-look of the CV they go with.
+look of the CV they go with. Everything on a letter's page is edited on the page:
+the letterhead, the subject, the body and the signature, with a toolbar for bold,
+italic, links, lists, and find and replace. A letterhead changed there is for that
+letter only; the CV keeps its own.
 
 ![The editor, with the page and its outline](docs/screenshots/editor.png)
 
@@ -140,6 +143,7 @@ an entry in one view selects it in all of them.
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, with what the line said before, and a second mark for every field that no longer matches the base. Neither is in the YAML, so neither prints |
+| **Review what it changed** | Until you have looked, a document an AI client wrote says so, on every list that shows it and in a bar over it. **Review changes** shows each change as the words it took out, struck through, and the words it put in, underlined: on a letter, marked on the page itself; on a CV, entry by entry. Keep or undo each one, or all of them. Undo puts back only what that change touched |
 
 **Funnel** is the whole search at a glance: sent, heard back, interviewed,
 offers and accepted, with the rate between each and the biggest drop marked.

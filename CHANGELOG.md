@@ -22,6 +22,33 @@ tag, so a release is never published with nothing said about it.
   at a time. It finds a phrase even when part of it is bold.
 - New shortcuts in a letter: Ctrl+Shift+8 for a bullet list, Ctrl+Y to redo
   on Windows and Linux.
+- **See exactly what your AI client changed, and take back what you do not
+  want.** A CV or letter an AI client wrote carries a **Review** badge on
+  every list that shows it, and a bar over it naming the client and how long
+  ago. **Review changes** shows every change since you last looked, as the
+  words it took out, struck through, and the words it put in, underlined. On
+  a letter the changes are marked on the page itself, numbered, with a card
+  for each beside it; on a CV each changed entry is shown field by field, its
+  bullets as added, removed and reworded. **Keep** or **Undo** each one, or
+  all at once. Undo puts back only what that change touched, and the rest of
+  what the model wrote stays. A letter it created can be kept or deleted.
+- **A letter's letterhead and signature are editable on the page.** Name,
+  headline, contact line and signature can be changed for one letter, for a
+  company that should see a different headline, without touching the CV.
+  **Use the CV's** puts them back. The PDF, Word and plain-text exports all
+  follow.
+- **Interviews without a date get their prep.** An interview round added
+  before it is scheduled now shows the full prep card (questions to rehearse,
+  stories, questions to ask), with **Set the date** where the countdown goes.
+- **Setting an interview's date saves at once.** The day and the time are two
+  fields now: before, one field held both and saved nothing until both were
+  filled, and said nothing about it. A day on its own saves at 10:00 until you
+  give a time, and "✓ Saved" says so each time.
+- **Date format and clock in Settings › Language & region.** Day first
+  (30/09/2026), month first (09/30/2026) or year first (2026-09-30), and a
+  24- or 12-hour clock. Every date and time field is typed in the format you
+  chose, whatever your computer's language, with the calendar a click away,
+  and interview times everywhere follow the clock.
 
 ## 0.32.0
 

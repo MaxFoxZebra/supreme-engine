@@ -350,6 +350,15 @@ app next to the lines themselves. `create_cv(copy_from=...)` is what records the
 lineage, so duplicating rather than writing a new file from scratch is what
 makes "how does this differ from the base" answerable afterwards.
 
+**And kept for review until the user has seen it.** The first time a tool
+writes a document, what the document said before is kept in
+`.cvstudio-review.json`. Later writes leave that alone, so the app can show
+everything a model changed since the user last looked, as changes to keep or
+undo one at a time: a paragraph of a letter, a line of its header, an entry of a
+CV, a header field. A document a tool created is one change, which undoing sends
+to the trash. Nothing a tool does needs to change for this; it is the app's
+bookkeeping, like the marks.
+
 None of it is written into the YAML, so **none of it prints**: the sidecar is
 local bookkeeping, the marks are drawn in the app, and the PDF comes from
 RenderCV out of the YAML alone.

@@ -69,6 +69,9 @@ jobs:
       - name: Cover letters
         run: python checks/lettertest.py
 
+      - name: Reviewing what an AI client changed
+        run: python checks/reviewtest.py
+
       - name: Importing a CV
         run: python checks/importtest.py
 
