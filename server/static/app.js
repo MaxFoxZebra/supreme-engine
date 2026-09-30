@@ -1393,8 +1393,8 @@ async function pulse(){
     }catch(e){}
   }
   if(before.edits!==p.edits&&S.path&&!S.dirty){
-    try{ setProv((await api("/api/doc?path="+encodeURIComponent(S.path))).prov);
-         buildOutline(); buildInspector(); }catch(e){}
+    try{ const pv=(await api("/api/doc?path="+encodeURIComponent(S.path))).prov;
+         keepFocus(()=>{ setProv(pv); buildOutline(); buildInspector() }) }catch(e){}
   }
 
   /* A document appearing or disappearing means Claude created or removed one.
@@ -4390,6 +4390,33 @@ function setPage(i){
 }
 
 /* ---- rendering ------------------------------------------------------------ */
+/* The form, the block editor and the YAML source are rebuilt from the model
+   after a save, and when the poll brings new marks. Rebuilt, the field you
+   were typing in was a new element: focus went to the page body, the next
+   keystrokes went nowhere, and the pane jumped. Whatever the rebuild, the
+   field with the caret -- found again by its data path or id -- gets focus
+   back, with its selection, and every pane keeps its scroll. */
+function keepFocus(fn){
+  const a=document.activeElement;
+  const inEd=a&&a.closest&&a.closest("#pane-form,#ed,#pane-yaml");
+  const key=inEd&&a.dataset&&a.dataset.p, id=inEd&&a.id, tag=inEd&&a.tagName;
+  const s0=inEd&&a.selectionStart!=null?[a.selectionStart,a.selectionEnd,a.selectionDirection]:null;
+  const scrolls=["#pane-form","#ed .ed-body","#ed","#yaml","#pane-page"].map(q=>[q,($(q)||{}).scrollTop]);
+  const out=fn();
+  const done=()=>{
+    for(const [q,top] of scrolls){ const el=$(q); if(el&&top!=null&&el.scrollTop!==top) el.scrollTop=top }
+    if(!inEd||document.activeElement===a&&a.isConnected) return;
+    let el=id?document.getElementById(id):null;
+    if(!el&&key){ const box=inEd.id?"#"+inEd.id+" ":"";
+      el=document.querySelector(box+tag.toLowerCase()+'[data-p="'+CSS.escape(key)+'"]')||
+         document.querySelector(tag.toLowerCase()+'[data-p="'+CSS.escape(key)+'"]') }
+    if(!el||!el.isConnected) return;
+    el.focus({preventScroll:true});
+    if(s0&&el.setSelectionRange){ const n=(el.value||"").length; try{ el.setSelectionRange(Math.min(s0[0],n),Math.min(s0[1],n),s0[2]) }catch(e){} }
+  };
+  if(out&&typeof out.then==="function") return out.then(v=>{ done(); return v });
+  done(); return out;
+}
 async function save(ops){
   if(!S.path||S.busy) return;
   S.busy=true; $("#btn-render").disabled=true;
@@ -4403,9 +4430,12 @@ async function save(ops){
        somebody else having changed the file. */
     S.docMtime=r.mtime; hideExternalChange();
     S.dirty=false; S.savedAt=Date.now();
-    setProv(r.prov);
-    $("#yaml").value=r.yaml; paint(); setYamlError(r.parse_error);
-    buildOutline(); buildInspector(); if(S.tab==="form") buildForm();
+    keepFocus(()=>{
+      setProv(r.prov);
+      if($("#yaml").value!==r.yaml) $("#yaml").value=r.yaml;
+      paint(); setYamlError(r.parse_error);
+      buildOutline(); buildInspector(); if(S.tab==="form") buildForm();
+    });
     /* The Design screen measures "changed" against the file, which just moved. */
     if(!$("#ovl-design").hidden&&S.schema){ paintAdvanced(); paintDesignNav() }
     /* A refused operation is not a failure of the save, so it cannot be left
@@ -4427,7 +4457,10 @@ function collectPatches(){
 async function doRender(){
   if(!S.path) return;
   const t0=performance.now();
-  $("#pane-page").innerHTML='<div class="skel" style="width:472px;height:668px"></div>';
+  /* The page on screen stays until the new one is ready: swapping in a blank
+     sheet first made the pane blink and lose its scroll on every save. */
+  if(!$("#pane-page img.pg")) $("#pane-page").innerHTML='<div class="skel" style="width:472px;height:668px"></div>';
+  const top=$("#pane-page").scrollTop;
   try{
     const r=await post("/api/render",{path:S.path});
     S.renderMs=Math.round(performance.now()-t0);
@@ -4438,7 +4471,8 @@ async function doRender(){
       return;
     }
     $("#btn-pdf").title="";
-    await adoptRender(r);
+    await keepFocus(()=>adoptRender(r));
+    if($("#pane-page").scrollTop!==top) $("#pane-page").scrollTop=top;
   }catch(e){
     S.render=null;
     renderFailed(null,e.message);
@@ -4751,7 +4785,7 @@ async function runLive(){
     if(token!==liveToken) return;
     if(r.ok){
       S.renderMs=Math.round(performance.now()-t0);
-      S.live="ok"; await adoptRender(r);
+      S.live="ok"; await keepFocus(()=>adoptRender(r));
     }else{ S.live="bad"; S.liveMsg=r.hint||"not valid yet" }
   }catch(e){ if(token===liveToken){ S.live="bad"; S.liveMsg=e.message } }
   paintStatus();

@@ -148,6 +148,11 @@ jobs:
           done
           node checks/flow.js "http://127.0.0.1:8750/?token=t&lang=en"
 
+      # Typing in the letter and CV editors through autosave, the live
+      # preview, saves and polls: the caret, the pane and the file.
+      - name: The editors under real typing
+        run: node checks/editortest.js "http://127.0.0.1:8750/?token=t&lang=en"
+
       - name: Every screen translated
         run: node checks/i18nscan.js "http://127.0.0.1:8750/?token=t&lang=en"
 

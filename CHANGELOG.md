@@ -8,6 +8,23 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.35.0
+
+- **The CV editor no longer loses your place after a save.** Saving (Ctrl+S
+  or Render) rebuilt the form and the block editor, and so did the poll a
+  moment later that picks up the new change marks: the field you were typing
+  in was replaced, the caret went to nowhere, the next keystrokes were lost,
+  and the arrow keys walked to another entry instead of moving the caret.
+  The field, its selection and every pane's scroll now survive both, and
+  the page keeps its scroll while it re-renders instead of blinking to a
+  blank sheet.
+- **Tests for the editors under real typing.** Keys and clicks sent the way a
+  keyboard and mouse send them, in the cover letter and in the CV editor's
+  Page, Form and YAML tabs, through autosave, the live preview, saves and
+  polls: the caret stays in its field and paragraph, panes stay put, bold,
+  italic, strikethrough and code keep the selection, what you type lands
+  where you typed it, and undo works after a save. They run on every push.
+
 ## 0.34.0
 
 - **Cover letters are full Markdown, and all of it prints.** Headings in

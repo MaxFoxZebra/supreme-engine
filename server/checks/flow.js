@@ -76,7 +76,10 @@ design:
     await post("/api/letter/new", {job_id: S.jobs.find(j => j.company === "Qonto").id});
     const st = await api("/api/state"); S.state = st; renderDocs(st.documents);
     await loadJobs(true);
+    /* The editor opens on the tab it was last left on, which is a
+       preference shared by every workspace: start from the page. */
     await openDoc("profile/hard.yaml");
+    if (S.tab !== "page") $('#edtabs [data-tab="page"]').click();
     for (let i = 0; i < 40 && !document.querySelector(".hit"); i++) await wait(250);
     return {path: S.path, hits: document.querySelectorAll(".hit").length};
   })()`);

@@ -23,6 +23,7 @@ cd server
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
+| `editortest.js` | The letter and CV editors under real key and mouse input: the caret stays in its field and its paragraph, and the panes stay put, through autosave, the live preview, Ctrl+S and the poll after it; bold, italic, strikethrough and code keep the selection; what was typed reaches the file where it was typed; undo works after a save. |
 | `a11yscan.js` | Every screen in light and dark: text below WCAG AA contrast, things you can click but not reach with Tab, controls with no name, Tab stops with no visible ring. |
 | `scaletest.js` | Sample data with 500 applications; times the list, opening one, search, the funnel and the calendar, and fails on anything over 250 ms (`SCALE_BUDGET` to change it). |
 | `i18nscan.js` | Every screen in English and French; lists text left untranslated. |
