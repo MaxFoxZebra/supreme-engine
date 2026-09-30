@@ -176,8 +176,25 @@ BULLET = re.compile(r"^\s*[-*•]\s+")
 INLINE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|\[([^\]]+)\]\(([^)\s]+)\)")
 
 
-def blocks(body: str) -> list[tuple[str, list[str] | str]]:
-    """Paragraphs and lists: [("p", text), ("ul", [items])]."""
+_PROMPT_RES: list = []
+
+
+def is_prompt(text: str) -> bool:
+    """A paragraph that is still one of a new letter's writing prompts, as
+    written, in any language: a note to the writer, not part of the letter."""
+    if not _PROMPT_RES:
+        for ps in PROMPTS.values():
+            for p in ps:
+                rx = re.escape(" ".join(p.split())).replace(re.escape("{company}"), ".+?")
+                _PROMPT_RES.append(re.compile("^" + rx + "$"))
+    flat = " ".join(str(text or "").split())
+    return any(r.match(flat) for r in _PROMPT_RES)
+
+
+def blocks(body: str, prompts: bool = False) -> list[tuple[str, list[str] | str]]:
+    """Paragraphs and lists: [("p", text), ("ul", [items])]. A writing
+    prompt nobody replaced is left out unless asked for: it is never printed,
+    exported, or sent."""
     out: list = []
     for chunk in re.split(r"\n\s*\n", (body or "").strip()):
         lines = [l for l in chunk.split("\n") if l.strip()]
@@ -186,8 +203,15 @@ def blocks(body: str) -> list[tuple[str, list[str] | str]]:
         if all(BULLET.match(l) for l in lines):
             out.append(("ul", [BULLET.sub("", l).strip() for l in lines]))
         else:
-            out.append(("p", " ".join(l.strip() for l in lines)))
+            para = " ".join(l.strip() for l in lines)
+            if prompts or not is_prompt(para):
+                out.append(("p", para))
     return out
+
+
+def prompts_left(body: str) -> list[str]:
+    """The writing prompts still in a letter, as the page shows them."""
+    return [c for k, c in blocks(body, prompts=True) if k == "p" and is_prompt(c)]
 
 
 def _inline(text: str, bold, em, link, plain):
@@ -223,7 +247,9 @@ def to_plain(text: str) -> str:
 
 
 def word_count(body: str) -> int:
-    return len(re.findall(r"[\w'’-]+", to_plain(body or "")))
+    """Words of the letter itself: its writing prompts are not."""
+    kept = "\n\n".join(c if k == "p" else "\n".join(c) for k, c in blocks(body))
+    return len(re.findall(r"[\w'’-]+", to_plain(kept)))
 
 
 # --------------------------------------------------------------------------

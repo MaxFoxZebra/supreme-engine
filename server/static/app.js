@@ -681,6 +681,64 @@ const isoToday=()=>new Date().toISOString().slice(0,10);
    independently of each other. The gap between them is what pins the cluster
    to the right edge, and that has to hold in both or the gear moves when you
    switch. */
+/* ---- back and forward ----------------------------------------------------
+   Every place you can be has an address in the hash -- #/jobs, #/jobs/<id>,
+   #/doc/<path>, #/letter/<path>, #/docs, #/funnel, #/cal -- so the window's
+   back and forward, the mouse's side buttons and Alt+arrows walk where you
+   have been. Navigation code does not know about any of this: once it has
+   settled, where the app now is gets written down, unless it got there by
+   going back or forward, which only reads. */
+const NAV={busy:false,t:null};
+function navHere(){
+  const v=S.view;
+  if(v==="letter"&&LT.path) return "#/letter/"+encodeURIComponent(LT.path);
+  if(v==="cvs"&&S.path) return "#/doc/"+encodeURIComponent(S.path);
+  if(v==="jobs") return S.jsel?"#/jobs/"+encodeURIComponent(S.jsel):"#/jobs";
+  return "#/"+(v||"jobs");
+}
+function navNote(){
+  if(NAV.busy) return;
+  clearTimeout(NAV.t);
+  NAV.t=setTimeout(()=>{
+    if(NAV.busy) return;
+    const h=navHere();
+    if(h!==location.hash) history.pushState(null,"",location.pathname+location.search+h);
+  },0);
+}
+async function navGo(hash){
+  const m=/^#\/(\w+)(?:\/(.+))?$/.exec(hash||""); if(!m) return;
+  const [,where,arg]=m, id=arg?decodeURIComponent(arg):null;
+  if(S.view==="cvs"&&where!=="doc"||where==="doc"&&id!==S.path){
+    if(!await leaveEdits()){ history.pushState(null,"",location.pathname+location.search+navHere()); return }
+  }
+  NAV.busy=true;
+  try{
+    closeSheet(); closeOverlays();
+    if(where==="doc"&&id){ if(id!==S.path||S.view!=="cvs") await openDoc(id) }
+    else if(where==="letter"&&id){ if(id!==LT.path||S.view!=="letter") await openLetter(id) }
+    else if(where==="jobs"){
+      if(S.view!=="jobs") setView("jobs");
+      if(!S.jready) await loadJobs(true);
+      if(id&&S.jobs.some(j=>j.id===id)){ if(S.jsel!==id) selectJob(id) }
+      else if(S.jsel) closePeek();
+    }
+    else if(["docs","funnel","cal"].includes(where)) setView(where);
+  }finally{ setTimeout(()=>{ NAV.busy=false },0) }
+}
+window.addEventListener("popstate",()=>navGo(location.hash));
+/* The side buttons on a mouse, where the window does not map them itself. */
+window.addEventListener("mouseup",e=>{
+  if(e.button===3){ e.preventDefault(); history.back() }
+  else if(e.button===4){ e.preventDefault(); history.forward() }
+});
+document.addEventListener("keydown",e=>{
+  if(!e.altKey||e.ctrlKey||e.metaKey||e.shiftKey) return;
+  const el=document.activeElement;
+  if(el&&(/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)||el.isContentEditable)) return;
+  if(e.key==="ArrowLeft"){ e.preventDefault(); history.back() }
+  else if(e.key==="ArrowRight"){ e.preventDefault(); history.forward() }
+});
+
 function setView(v){
   if(S.view==="letter"&&v!=="letter"&&LT.dirty) ltSave();
   S.view=v;
@@ -698,6 +756,7 @@ function setView(v){
   if(v==="funnel") loadFunnel();
   if(v==="cal") openCalendar();
   paintStatus();
+  navNote();
 }
 /* Out of the editor, to the application the open document was written for.
    Derived from the link rather than remembered as history: a stack can go
@@ -1133,8 +1192,8 @@ function paintBaseChip(){
   chip.title="Changes here reach the next CV you tailor, not the ones already "+
     "copied. Click to see every document.";
   chip.hidden=false;
-  chip.onclick=()=>{
-    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+  chip.onclick=async ()=>{
+    if(!await leaveEdits()) return;
     setView("docs");
   };
 }
@@ -1501,6 +1560,57 @@ function closeSheet(){
   if(sheetOnClose){ const f=sheetOnClose; sheetOnClose=null; f() }
 }
 $("#scrim").onclick=closeSheet;
+
+/* The app's own dialogs, in place of the browser's confirm() and prompt():
+   those looked like a system error, could not say which choice was the
+   dangerous one, and could not offer a third way out ("save and continue").
+   They sit above everything, sheets included, and take Enter and Escape for
+   themselves while open. */
+function askDialog({title,body,ok,cancel,danger,alt,input}){
+  return new Promise(done=>{
+    const back=document.createElement("div"); back.className="dlg-back";
+    const box=document.createElement("div"); box.className="dlg"; box.setAttribute("role","alertdialog");
+    box.setAttribute("aria-modal","true"); box.setAttribute("aria-labelledby","dlg-t");
+    box.innerHTML='<h3 id="dlg-t">'+esc(title)+'</h3>'+(body?'<p>'+esc(body)+'</p>':'')+
+      (input?'<input class="dlg-in" id="dlg-in" spellcheck="false" autocomplete="off" placeholder="'+esc(input.placeholder||"")+'">'+
+        '<span class="dlg-err" id="dlg-err" role="alert"></span>':'')+
+      '<div class="dlg-foot"><button class="sbtn" data-v="cancel">'+esc(cancel||t("Cancel"))+'</button>'+
+        (alt?'<button class="sbtn'+(alt.danger?' danger':'')+'" data-v="alt">'+esc(alt.label)+'</button>':'')+
+        '<button class="sbtn primary'+(danger?' danger':'')+'" data-v="ok">'+esc(ok||t("OK"))+'</button></div>';
+    document.body.append(back,box);
+    const inp=box.querySelector("#dlg-in"), prev=document.activeElement;
+    if(inp){ inp.value=input.value||""; inp.focus(); inp.select() } else box.querySelector('[data-v="ok"]').focus();
+    const finish=v=>{ document.removeEventListener("keydown",keys,true); back.remove(); box.remove();
+      if(prev&&prev.focus&&prev.isConnected) try{ prev.focus({preventScroll:true}) }catch(e){}
+      done(v) };
+    const submit=()=>{ if(!inp) return finish("ok");
+      const v=inp.value.trim(), bad=input.check&&input.check(v);
+      if(bad){ box.querySelector("#dlg-err").textContent=bad; inp.setAttribute("aria-invalid","true"); inp.focus(); return }
+      finish({value:v}) };
+    const keys=e=>{
+      if(e.key==="Escape"){ e.preventDefault(); e.stopImmediatePropagation(); finish(null) }
+      else if(e.key==="Enter"&&(!e.target.closest||!e.target.closest(".dlg-foot"))){ e.preventDefault(); e.stopImmediatePropagation(); submit() }
+      else if(e.key==="Tab"){ const f=[...box.querySelectorAll("input,button")]; const i=f.indexOf(document.activeElement);
+        if(e.shiftKey&&i<=0){ e.preventDefault(); f[f.length-1].focus() } else if(!e.shiftKey&&i===f.length-1){ e.preventDefault(); f[0].focus() } }
+    };
+    document.addEventListener("keydown",keys,true);
+    back.onclick=()=>finish(null);
+    box.querySelector(".dlg-foot").onclick=e=>{ const b=e.target.closest("[data-v]"); if(!b) return;
+      if(b.dataset.v==="ok") submit(); else finish(b.dataset.v==="alt"?"alt":null) };
+  });
+}
+const askConfirm=async o=>(await askDialog(o))==="ok";
+const askText=async o=>{ const r=await askDialog({...o,input:o.input||{}}); return r&&r.value!=null?r.value:null };
+/* Leaving a CV with unsaved edits: keep editing, throw them away, or save
+   them and go on -- the choice the browser's box could not offer. */
+async function leaveEdits(){
+  if(!S.dirty) return true;
+  const r=await askDialog({title:t("Unsaved changes"),body:t("This CV has changes you have not saved."),
+    ok:t("Save and continue"),cancel:t("Keep editing"),alt:{label:t("Discard them"),danger:true}});
+  if(r==="alt"){ S.dirty=false; return true }
+  if(r==="ok"){ await save(); return !S.dirty }
+  return false;
+}
 document.addEventListener("keydown",e=>{
   /* One Escape, one step back. Whatever handles it claims it
      (preventDefault), and the handlers after this one leave a claimed key
@@ -1573,6 +1683,9 @@ async function boot(){
   /* A time zone change reloads the page; come back to where it was made. */
   let back=null; try{ back=sessionStorage.getItem("cvs.reopen"); sessionStorage.removeItem("cvs.reopen") }catch(e){}
   if(back) openSettings(back);
+  /* Reloaded on a document or an application: back there. */
+  if(/^#\/(doc|letter|jobs\/|docs|funnel|cal)/.test(location.hash)) navGo(location.hash);
+  else history.replaceState(null,"",location.pathname+location.search+navHere());
 }
 /* Into the sample folder, or back to your own. Everything on screen belongs
    to one workspace, so the page starts over in the other one. */
@@ -2208,11 +2321,19 @@ function ltInline(t){
   }
   return out+esc(t.slice(pos));
 }
+/* A new letter's writing prompts are notes to you, not the letter: drawn as
+   placeholders, never printed, and one click selects one so what you type
+   replaces it. Which paragraphs they are, the server says (letters.py). */
+const ltFlat=s=>String(s||"").replace(/\s+/g," ").trim();
+const ltPrompts=()=>new Set(((LT.doc&&LT.doc.prompts)||[]).map(ltFlat));
 function ltToHTML(body){
+  const ps=ltPrompts();
   return String(body||"").trim().split(/\n\s*\n/).filter(c=>c.trim()).map(c=>{
     const lines=c.split("\n").filter(l=>l.trim());
     if(lines.every(l=>/^\s*[-*•]\s+/.test(l)))
       return "<ul>"+lines.map(l=>"<li>"+ltInline(l.replace(/^\s*[-*•]\s+/,"").trim())+"</li>").join("")+"</ul>";
+    const flat=ltFlat(lines.join(" "));
+    if(ps.has(flat)) return '<p class="lt-prompt" data-tip="'+esc(t("Writing prompt · click to replace it"))+'" data-orig="'+esc(flat)+'">'+ltInline(flat)+"</p>";
     return "<p>"+ltInline(lines.map(l=>l.trim()).join(" "))+"</p>";
   }).join("")||"<p><br></p>";
 }
@@ -2326,7 +2447,14 @@ function ltPaint(){
     '</div>';
     try{ document.execCommand("styleWithCSS",false,false); document.execCommand("defaultParagraphSeparator",false,"p") }catch(e){}
     const ed=$("#lt-edit"), sj=$("#lt-subj");
-    ed.oninput=()=>ltChanged();
+    ed.oninput=()=>{
+      /* A prompt typed into is a paragraph of the letter now. */
+      ed.querySelectorAll(".lt-prompt").forEach(p=>{ if(ltFlat(p.textContent)!==p.dataset.orig) p.classList.remove("lt-prompt") });
+      ltChanged() };
+    ed.addEventListener("click",()=>{
+      const sel=document.getSelection(), n=sel.anchorNode, p=n&&(n.nodeType===1?n:n.parentElement).closest(".lt-prompt");
+      if(p&&sel.isCollapsed){ const r=document.createRange(); r.selectNodeContents(p); sel.removeAllRanges(); sel.addRange(r) }
+    });
     sj.oninput=()=>{ LT.meta.subject=sj.textContent.replace(/\s+/g," ").trim(); ltDirty() };
     sj.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); ed.focus() } };
     [ed,sj].forEach(el=>el.onpaste=e=>{ e.preventDefault();
@@ -2414,7 +2542,9 @@ function ltDirty(){
 /* Short is worth saying once there is a letter to speak of, not while the
    page is still empty. */
 const ltShort=n=>n>=20&&n<200;
-const ltWords=b=>(String(b||"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").match(/[\p{L}\p{N}'’-]+/gu)||[]).length;
+const ltWords=b=>{ const ps=ltPrompts();
+  const kept=String(b||"").split(/\n\s*\n/).filter(c=>!ps.has(ltFlat(c))).join("\n\n");
+  return (kept.replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").match(/[\p{L}\p{N}'’-]+/gu)||[]).length };
 
 function ltPanel(){
   if(LT.rv&&ltRv()) return ltRvPanel();
@@ -2535,11 +2665,12 @@ function ltFocus(){
 const ltLinkAt=()=>{ const s=document.getSelection(), ed=$("#lt-edit");
   const n=s.rangeCount&&s.anchorNode, a=n&&(n.nodeType===1?n:n.parentElement).closest("a");
   return a&&ed&&ed.contains(a)?a:null };
-function ltLink(){
+async function ltLink(){
   if(!ltFocus()) return;
   const sel=document.getSelection(), a=ltLinkAt();
   const saved=sel.getRangeAt(0).cloneRange();
-  const url=prompt(a?"Link to (empty to remove the link)":"Link to",a?a.getAttribute("href"):"https://");
+  const url=await askText({title:a?t("Edit the link"):t("Add a link"),body:a?t("Empty it to remove the link."):"",
+    ok:a?t("Save"):t("Add link"),input:{value:a?a.getAttribute("href"):"https://",placeholder:"https://"}});
   if(url==null) return;
   $("#lt-edit").focus(); sel.removeAllRanges(); sel.addRange(saved);
   const u=url.trim();
@@ -2815,11 +2946,11 @@ function rvBar(el,r,kind,on){
        '<button class="pbtn" data-rv="open">'+esc(on.label||t("Review changes"))+'</button>'
       :'<span class="rvnote">'+esc(t("Decide on each change beside the page, or all at once at the bottom."))+'</span>');
   el.hidden=false;
-  el.onclick=e=>{ const b=e.target.closest("[data-rv]"); if(!b) return;
+  el.onclick=async e=>{ const b=e.target.closest("[data-rv]"); if(!b) return;
     if(b.dataset.rv==="open") return on.open();
-    if(b.dataset.rv==="undo"&&!confirm(r.created
-      ?t("Delete this document? It goes to the trash folder.")
-      :t("Undo every change {who} made that you have not kept?",{who}))) return;
+    if(b.dataset.rv==="undo"&&!await askConfirm(r.created
+      ?{title:t("Delete this document?"),body:t("It goes to the trash folder."),ok:t("Delete it"),danger:true}
+      :{title:t("Undo all of {who}’s changes?",{who}),body:t("Everything it changed that you have not kept goes back to how it was."),ok:t("Undo all"),danger:true})) return;
     on.all(b.dataset.rv);
   };
 }
@@ -2942,12 +3073,12 @@ function ltRvPanel(){
       '<button class="obtn" data-all="keep">'+esc(t("Keep all"))+'</button><div class="grow"></div>'+
       '<button class="obtn" data-all="done">'+esc(t("Done for now"))+'</button></div>';
   const pn=$("#lt-panel");
-  pn.onclick=e=>{
+  pn.onclick=async e=>{
     const b=e.target.closest("[data-act]");
     if(b) return ltRvDo([b.dataset.id],b.dataset.act);
     const a=e.target.closest("[data-all]");
     if(a){ if(a.dataset.all==="done") return ltRvLeave();
-      if(a.dataset.all==="undo"&&!confirm(t("Undo every change {who} made that you have not kept?",{who:whoLabel(r)}))) return;
+      if(a.dataset.all==="undo"&&!await askConfirm({title:t("Undo all of {who}’s changes?",{who:whoLabel(r)}),body:t("Everything it changed that you have not kept goes back to how it was."),ok:t("Undo all"),danger:true})) return;
       return ltRvDo(["*"],a.dataset.all) }
     const c=e.target.closest(".rvc"); if(c) rvFocus(c.dataset.u,"page");
   };
@@ -3038,10 +3169,10 @@ function cvRvSheet(){
     ()=>$("#sheet").classList.remove("wide"));
   const sh=$("#sheet"); sh.classList.add("wide");
   $("#sheet [data-cancel]").onclick=closeSheet;
-  sh.querySelector(".rvsheet").onclick=e=>{
+  sh.querySelector(".rvsheet").onclick=async e=>{
     const b=e.target.closest("[data-act]"); if(b) return cvRvDo([b.dataset.id],b.dataset.act);
     const a=e.target.closest("[data-all]");
-    if(a){ if(a.dataset.all==="undo"&&!confirm(t("Undo every change {who} made that you have not kept?",{who:whoLabel(r)}))) return;
+    if(a){ if(a.dataset.all==="undo"&&!await askConfirm({title:t("Undo all of {who}’s changes?",{who:whoLabel(r)}),body:t("Everything it changed that you have not kept goes back to how it was."),ok:t("Undo all"),danger:true})) return;
       return cvRvDo(["*"],a.dataset.all) }
     const g=e.target.closest("[data-go]");
     if(g){ const u=r.units.find(x=>x.id===g.dataset.go); if(!u) return;
@@ -3232,9 +3363,9 @@ function renderDocs(docs){
         ? '<div class="rail-sub">'+esc(g==="My CVs"?"CVs":g)+'</div>' : "")+rows;
     }).join("")+newRow;
   }
-  $$("#doclist [data-path]").forEach(b=>b.onclick=()=>{
+  $$("#doclist [data-path]").forEach(b=>b.onclick=async ()=>{
     if(b.dataset.path===S.path) return;
-    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    if(!await leaveEdits()) return;
     openDoc(b.dataset.path);
   });
   $("#doc-new").onclick=()=>newDocumentSheet();
@@ -3861,11 +3992,9 @@ async function removeEntry(name,at){
   const list=((S.data&&S.data.cv&&S.data.cv.sections||{})[name])||[];
   if(!list.length) return;
   const last=list.length===1;
-  if(!confirm('Remove "'+entryTitle(list[at],at)+'" from '+sectionLabel(name)+"?"+
-    (last?"\n\nIt is the only entry, so the section goes with it: RenderCV "+
-          "reads a section's type from its entries and cannot render an empty "+
-          "one.":"")+
-    "\n\nThis is written to the file straight away."))
+  if(!await askConfirm({title:t("Remove “{e}” from {s}?",{e:entryTitle(list[at],at),s:sectionLabel(name)}),
+    body:(last?t("It is the only entry, so the section goes with it: an empty section cannot be laid out.")+" ":"")+
+      t("This is written to the file straight away."),ok:t("Remove"),danger:true}))
     return;
   await save([{op:"remove_entry",section:name,at:at}]);
   const left=(((S.data&&S.data.cv&&S.data.cv.sections)||{})[name])||[];
@@ -4514,7 +4643,7 @@ const SAVED={"Open, no letter":NO_LETTER};
    copies of "what counts as overdue" would have drifted apart within a month.
    Needs-follow-up used to live in SAVED above and is now one of them. */
 const ATTENTION=[
-  ["interview_soon",   "Interview in 7 days"],
+  ["interview_soon",   "Interviews in the next 7 days"],
   ["followup_due",     "Follow-up due"],
   ["interview_passed", "Interview, no outcome"],
   ["silent",           "No reply in 2 weeks"],
@@ -4873,13 +5002,13 @@ function mountBase(el,cls){
   /* On Documents the card shows whichever language tab is picked. */
   const shown=cls==="bhero"&&b&&!b.missing
     ?((baseFamily().find(x=>x.lang===S.baseLang)||{}).path||b.path):b&&b.path;
-  el.querySelectorAll("[data-base-open]").forEach(open=>open.onclick=()=>{
-    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+  el.querySelectorAll("[data-base-open]").forEach(open=>open.onclick=async ()=>{
+    if(!await leaveEdits()) return;
     openDoc(shown);
   });
   const design=el.querySelector("[data-base-design]");
   if(design) design.onclick=async()=>{
-    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    if(!await leaveEdits()) return;
     await openDoc(b.path); openDesign();
   };
   const pick=el.querySelector("[data-base-pick]"); if(pick) pick.onclick=baseSheet;
@@ -5132,9 +5261,9 @@ function paintLang(){
       (m.path===S.path?' aria-current="true"':'')+' title="'+esc(m.path)+
       (m.source?" · the source":" · translated from "+docLabel(fam.source))+'">'+
       lchip(m.lang,m.path===S.path)+'<span class="ln">'+esc(langOf(m.lang).native)+'</span></button>').join("");
-    $$("#langsw [data-lp]").forEach(b=>b.onclick=()=>{
+    $$("#langsw [data-lp]").forEach(b=>b.onclick=async ()=>{
       if(b.dataset.lp===S.path) return;
-      if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+      if(!await leaveEdits()) return;
       openDoc(b.dataset.lp);
     });
   }
@@ -5157,6 +5286,11 @@ function paintLang(){
    nothing was reachable from nowhere, because the only list of documents lived
    inside the editor and you needed a document open to see it. Each is shown as
    its page, since two CVs are told apart by looking at them. */
+$("#dq").oninput=()=>{ clearTimeout(S.dqT); S.dqT=setTimeout(drawDocuments,120) };
+$("#dq").onkeydown=e=>{ if(e.key==="Escape"&&$("#dq").value){ e.preventDefault(); $("#dq").value=""; drawDocuments() } };
+$$("#dkind [data-k]").forEach(b=>b.onclick=()=>{ S.docKind=b.dataset.k; drawDocuments() });
+$("#dsort").onchange=e=>{ S.docSort=e.target.value; try{ localStorage.setItem("cvs.docsort",S.docSort) }catch(x){} drawDocuments() };
+try{ S.docSort=localStorage.getItem("cvs.docsort")||"recent"; $("#dsort").value=S.docSort }catch(e){}
 function drawDocuments(){
   mountBase($("#docbase"),"bhero");
   const docs=(S.state&&S.state.documents)||[];
@@ -5184,14 +5318,24 @@ function drawDocuments(){
       drawDocuments() });
   }
   const attached=[], loose=[];
+  const q=palFold(($("#dq").value||"").trim()), kind=S.docKind||"";
+  const words=q.split(/\s+/).filter(Boolean);
+  const hay=d=>{ const j=owner[d.path]; return palFold([docTitle(d),d.path,j&&j.company,j&&j.title].filter(Boolean).join(" ")) };
   for(const d of docs){
     if(family.has(d.path)) continue;
     if(S.docLang&&(d.lang||"en")!==S.docLang) continue;
+    const isL=d.group==="Cover letters"||d.letter;
+    if(kind==="cv"&&isL||kind==="letter"&&!isL) continue;
+    if(words.length){ const h=hay(d); if(!words.every(w=>h.includes(w))) continue }
     (owner[d.path]?attached:loose).push(d);
   }
   baseDrift();
-  const recent=(a,b)=>(b.mtime||0)-(a.mtime||0);
-  attached.sort(recent); loose.sort(recent);
+  const by=S.docSort||"recent", name=d=>docTitle(d).toLocaleLowerCase(),
+    co=d=>((owner[d.path]||{}).company||"\uffff").toLocaleLowerCase();
+  const order=by==="name"?(a,b)=>name(a).localeCompare(name(b))
+    :by==="company"?(a,b)=>co(a).localeCompare(co(b))||name(a).localeCompare(name(b))
+    :(a,b)=>(b.mtime||0)-(a.mtime||0);
+  attached.sort(order); loose.sort(order);
 
   const card=d=>{
     const j=owner[d.path], letter=d.group==="Cover letters";
@@ -5217,8 +5361,10 @@ function drawDocuments(){
     (list.length?'<div class="dgrid">'+list.map(card).join("")+'</div>'
       :'<div class="dempty">'+empty+'</div>')+'</section>';
 
-  $("#doclanes").innerHTML=
-    lane("Written for an application",attached,
+  const found=attached.length+loose.length, filtered=words.length||kind;
+  $("#doclanes").innerHTML=filtered&&!found
+    ? '<div class="dempty">'+esc(t("No document matches."))+' <button class="linkbtn" id="dq-clear">'+esc(t("Show them all"))+'</button></div>'
+    : lane("Written for an application",attached,
       "Each is attached to the application it was tailored for. Opening one here is the "+
       "same as opening it from that row.",
       "None yet. On Applications, <b>Tailor a CV</b> on a row copies the base CV for it.")+
@@ -5228,12 +5374,14 @@ function drawDocuments(){
       "Nothing here. <b>New document</b> or <b>Import</b> puts a CV here.");
   paintStatus();
   $$("#doclanes .dcard").forEach(b=>{
-    b.onclick=()=>{
-      if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    b.onclick=async ()=>{
+      if(!await leaveEdits()) return;
       openDoc(b.dataset.open);
     };
   });
   $$("#doclanes [data-more]").forEach(b=>b.onclick=e=>{ e.stopPropagation(); docMenuSheet(b.dataset.more) });
+  const clr=$("#dq-clear"); if(clr) clr.onclick=()=>{ $("#dq").value=""; S.docKind=""; drawDocuments() };
+  $$("#dkind [data-k]").forEach(b=>b.setAttribute("aria-checked",String((S.docKind||"")===b.dataset.k)));
   docThumbs();
 }
 /* Every card's page. What is on disk is shown at once; anything missing or
@@ -5549,9 +5697,9 @@ function drawJobs(){
   });
   const first=$("#jb-first"); if(first) first.onclick=()=>newJobSheet();
   const jai=$("#jb-ai"); if(jai) jai.onclick=()=>$("#btn-ai").click();
-  $$("#jobrows [data-open]").forEach(a=>a.onclick=e=>{
+  $$("#jobrows [data-open]").forEach(a=>a.onclick=async e=>{
     e.stopPropagation();
-    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    if(!await leaveEdits()) return;
     openDoc(a.dataset.open);
   });
   if(S.jsel&&!rows.some(j=>j.id===S.jsel)) S.jsel=null;
@@ -5562,6 +5710,7 @@ $("#jobq").addEventListener("input",()=>drawJobs());
 
 function selectJob(id){
   if(S.jsel!==id) S.roundOpen=null;
+  navNote();
   S.jsel=id;
   if(id) palRemember({job:id});
   const j=S.jobs.find(x=>x.id===id);
@@ -5619,6 +5768,7 @@ function peekStep(delta){
 }
 function closePeek(){
   S.jsel=null;
+  navNote();
   if(S.jobs){ byRecent(); drawJobs() }
   $("#jpeek").hidden=true;
   $("#v-jobs").classList.remove("peeking");
@@ -5705,9 +5855,9 @@ function sourceMenu(j,btn,pick){
   const r=btn.getBoundingClientRect();
   m.style.left=Math.min(r.left,innerWidth-260)+"px";
   m.style.top=Math.min(r.bottom+6,innerHeight-370)+"px";
-  m.onclick=e=>{ const o=e.target.closest("[data-src]"); if(!o) return; m.remove();
+  m.onclick=async e=>{ const o=e.target.closest("[data-src]"); if(!o) return; m.remove();
     let v=o.dataset.src;
-    if(!v){ v=(prompt(t("Where did you find it?"),jobBoard(j)?"":said)||"").trim(); if(!v) return }
+    if(!v){ v=(await askText({title:t("Where did you find it?"),body:t("A job board, a referral, a recruiter…"),ok:t("Save"),input:{value:jobBoard(j)?"":said}})||"").trim(); if(!v) return }
     pick(v) };
   setTimeout(()=>document.addEventListener("pointerdown",function off(ev){
     if(!m.contains(ev.target)){ m.remove(); document.removeEventListener("pointerdown",off,true) } },true),0);
@@ -5923,8 +6073,9 @@ function drawJobInspector(){
   if(ed) ed.onclick=()=>{ ed.hidden=true; $("#ap-pbody").innerHTML=pasteBox(j.description,false);
     wirePaste(); $("#ap-paste").focus() };
   const al=$("#ap-addlink");
-  if(al) al.onclick=()=>{ const u=prompt(t("The link to the posting"),"https://");
-    if(u&&/^https?:\/\/\S+\.\S+/.test(u.trim())) saveJob(j.id,{url:u.trim()}) };
+  if(al) al.onclick=async()=>{ const u=await askText({title:t("The link to the posting"),ok:t("Save link"),
+      input:{value:"https://",placeholder:"https://",check:v=>/^https?:\/\/\S+\.\S+/.test(v)?"":t("That does not look like a web address.")}});
+    if(u) saveJob(j.id,{url:u}) };
   const diff=$("#jdiff");
   if(diff) fillBaseDiff(diff,j.cv_path);
   const ab=$("#job-ats");
@@ -5941,8 +6092,8 @@ function drawJobInspector(){
     const n=+b.dataset.fit;
     saveJob(j.id,{score:j.score===n?null:n});
   });
-  body.querySelectorAll("[data-open-doc]").forEach(b=>b.onclick=()=>{
-    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+  body.querySelectorAll("[data-open-doc]").forEach(b=>b.onclick=async ()=>{
+    if(!await leaveEdits()) return;
     openDoc(b.dataset.openDoc);
   });
   /* No "are you sure": it goes to the trash, and the toast can bring it back. */
@@ -6138,38 +6289,73 @@ async function saveJob(id,patch){
 function newJobSheet(seed){
   seed=seed||{};
   const docs=g=>(S.state&&S.state.documents||[]).filter(d=>d.group===g);
+  const req='<span class="req" aria-hidden="true">*</span>';
+  const err=id=>'<span class="nj-err" id="'+id+'-err" role="alert"></span>';
+  /* What it takes to add one is two fields; the rest waits under "More
+     details" rather than making a first entry look like a tax form. Errors
+     are said beside the field they are about, not in a toast that covers
+     the form and goes away. */
   openSheet(
-    '<div><h3 id="sheet-title">New application</h3><p>Only the company and the role are '+
-    'required. Everything else can come later.</p></div>'+
-    '<div class="fg w88">'+
-      '<label>Company</label><input id="nj-company" autocomplete="off">'+
-      '<label>Role</label><input id="nj-title" autocomplete="off">'+
-      '<label>Location</label><input id="nj-location" autocomplete="off">'+
-      '<label>Link</label><input id="nj-url" autocomplete="off" placeholder="https://">'+
-      '<label>Status</label><select id="nj-status">'+S.statuses.map(s=>
+    '<div><h3 id="sheet-title">'+esc(t("New application"))+'</h3><p>'+esc(t("Only the company and the role are required. Everything else can come later."))+'</p></div>'+
+    '<div class="fg w88 nj">'+
+      '<label for="nj-company">'+esc(t("Company"))+req+'</label><input id="nj-company" autocomplete="off" aria-required="true" aria-describedby="nj-company-err" value="'+esc(seed.company||"")+'">'+err("nj-company")+
+      '<label for="nj-title">'+esc(t("Role"))+req+'</label><input id="nj-title" autocomplete="off" aria-required="true" aria-describedby="nj-title-err" value="'+esc(seed.title||"")+'">'+err("nj-title")+
+      '<label for="nj-url">'+esc(t("Link"))+'</label><input id="nj-url" autocomplete="off" placeholder="https://" aria-describedby="nj-url-err" value="'+esc(seed.url||"")+'">'+err("nj-url")+
+      '<label for="nj-status">'+esc(t("Status"))+'</label><select id="nj-status">'+S.statuses.map(s=>
         '<option value="'+s+'">'+esc(prettyStatus(s))+'</option>').join("")+'</select>'+
+    '</div>'+
+    '<details class="nj-more"><summary>'+esc(t("More details"))+' <span>'+esc(t("location, where you found it, salary, follow-up, documents, notes"))+'</span></summary>'+
+    '<div class="fg w88 nj">'+
+      '<label for="nj-location">'+esc(t("Location"))+'</label><input id="nj-location" autocomplete="off">'+
       /* The same places the application's own Found on menu offers. */
-      '<label>Found on</label><button type="button" class="ap-src nj-src" id="nj-source" data-v="'+esc(seed.source||"")+'" aria-haspopup="listbox">'+
+      '<label>'+esc(t("Found on"))+'</label><button type="button" class="ap-src nj-src" id="nj-source" data-v="'+esc(seed.source||"")+'" aria-haspopup="listbox">'+
         sourceMark({source:seed.source||""})+'</button>'+
-      '<label>Salary</label><input id="nj-salary" type="number" class="mono">'+
-      '<label>Follow-up</label><input id="nj-followup" type="date">'+
-      '<label>CV</label><select id="nj-cv"><option value="">Not linked</option>'+
+      '<label for="nj-salary">'+esc(t("Salary"))+'</label><input id="nj-salary" type="number" min="0" class="mono" aria-describedby="nj-salary-err">'+err("nj-salary")+
+      '<label for="nj-followup">'+esc(t("Follow-up"))+'</label><input id="nj-followup" type="date">'+
+      '<label for="nj-cv">'+esc(t("CV"))+'</label><select id="nj-cv"><option value="">'+esc(t("Not linked"))+'</option>'+
         docs("My CVs").map(d=>'<option value="'+esc(d.path)+'"'+
           (d.path===seed.cv_path?" selected":"")+'>'+esc(docTitle(d))+'</option>').join("")+
         '</select>'+
-      '<label>Cover letter</label><select id="nj-letter"><option value="">Not linked</option>'+
-        docs("Cover letters").map(d=>'<option value="'+esc(d.path)+'">'+esc(docTitle(d))+
+      '<label for="nj-letter">'+esc(t("Cover letter"))+'</label><select id="nj-letter"><option value="">'+esc(t("Not linked"))+'</option>'+
+        docs("Cover letters").map(d=>'<option value="'+esc(d.path)+'"'+(d.path===seed.letter_path?" selected":"")+'>'+esc(docTitle(d))+
           '</option>').join("")+'</select>'+
-      '<label>Notes</label><textarea id="nj-notes" rows="3"></textarea>'+
-    '</div>'+
-    '<div class="foot"><button class="sbtn" data-cancel>Cancel</button>'+
-    '<button class="sbtn primary" id="nj-go">Add</button></div>');
+      '<label for="nj-notes">'+esc(t("Notes"))+'</label><textarea id="nj-notes" rows="3"></textarea>'+
+    '</div></details>'+
+    '<div class="nj-dup" id="nj-dup" role="alert" hidden></div>'+
+    '<div class="foot"><button class="sbtn" data-cancel>'+esc(t("Cancel"))+'</button>'+
+    '<button class="sbtn primary" id="nj-go">'+esc(t("Add application"))+'</button></div>');
   $("#sheet [data-cancel]").onclick=closeSheet;
   const src=$("#nj-source");
   src.onclick=e=>{ e.stopPropagation(); sourceMenu({source:src.dataset.v},src,v=>{ src.dataset.v=v; src.innerHTML=sourceMark({source:v}) }) };
-  $("#nj-go").onclick=async()=>{
-    const v=id=>$("#"+id).value.trim();
-    if(!v("nj-company")||!v("nj-title")) return toast("Company and role are required",true);
+  const v=id=>$("#"+id).value.trim();
+  const say=(id,msg)=>{ const f=$("#"+id), e=$("#"+id+"-err"); if(!f||!e) return;
+    e.textContent=msg||""; if(msg) f.setAttribute("aria-invalid","true"); else f.removeAttribute("aria-invalid") };
+  ["nj-company","nj-title","nj-url","nj-salary"].forEach(id=>$("#"+id).addEventListener("input",()=>{ say(id,""); dupOk=false; $("#nj-dup").hidden=true;
+    $("#nj-go").textContent=t("Add application") }));
+  let dupOk=false;
+  const check=()=>{
+    const bad=[];
+    if(!v("nj-company")){ say("nj-company",t("Which company is it?")); bad.push("nj-company") }
+    if(!v("nj-title")){ say("nj-title",t("Which role? The job title is enough.")); bad.push("nj-title") }
+    if(v("nj-url")&&!/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(v("nj-url"))){ say("nj-url",t("A web address, starting with https://")); bad.push("nj-url") }
+    if(v("nj-salary")&&!(Number(v("nj-salary"))>=0)){ say("nj-salary",t("A number, without the currency.")); bad.push("nj-salary");
+      $("#sheet .nj-more").open=true }
+    if(bad.length){ $("#"+bad[0]).focus(); return false }
+    /* The same role at the same company is usually the one already there. */
+    const same=(S.jobs||[]).find(j=>j.company.trim().toLowerCase()===v("nj-company").toLowerCase()&&
+      j.title.trim().toLowerCase()===v("nj-title").toLowerCase());
+    if(same&&!dupOk){
+      const d=$("#nj-dup"); d.hidden=false;
+      d.innerHTML=esc(t("You already have {role} at {co} ({s}).",{role:same.title,co:same.company,s:prettyStatus(same.status)}))+
+        ' <button type="button" class="linkbtn" id="nj-open">'+esc(t("Open it"))+'</button>';
+      $("#nj-open").onclick=()=>{ closeSheet(); setView("jobs"); selectJob(same.id) };
+      dupOk=true; $("#nj-go").textContent=t("Add it anyway"); return false;
+    }
+    return true;
+  };
+  const go=async()=>{
+    if(!check()) return;
+    const b=$("#nj-go"); b.disabled=true;
     try{
       const j=await post("/api/jobs",{
         company:v("nj-company"), title:v("nj-title"), status:$("#nj-status").value,
@@ -6180,9 +6366,12 @@ function newJobSheet(seed){
         cv_path:$("#nj-cv").value||null, letter_path:$("#nj-letter").value||null});
       closeSheet(); await loadJobs(); S.funnel=null;
       setView("jobs"); selectJob(j.id); toast(t("Added {co}",{co:j.company}));
-    }catch(e){ toast(e.message,true) }
+    }catch(e){ b.disabled=false; toast(e.message,true) }
   };
-  $("#nj-company").focus();
+  $("#nj-go").onclick=go;
+  /* Enter in any one-line field adds it. */
+  $$("#sheet .nj input").forEach(i=>i.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); go() } }));
+  (seed.company?$("#nj-title"):$("#nj-company")).focus();
 }
 $("#btn-newjob").onclick=()=>newJobSheet();
 $("#btn-newdoc").onclick=()=>newDocumentSheet();
@@ -6992,12 +7181,12 @@ function nextActions(){
       /* Six weeks of silence on an application: chasing it again is rarely
          worth it, and calling it ghosted keeps the list honest. */
       if(j.status==="applied"&&quiet>42) out.push({j,rank:late?1:3,at:-late,dot:"late",what:t("Follow up or let it go"),
-        why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)}):t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}),
+        why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)}):t("Sent {d}, no reply since",{d:dshort(String(ap).slice(0,10))}),
         when:t("{n} weeks quiet",{n:Math.floor(quiet/7)}),
         acts:[[t("Mark ghosted"),()=>statusWithUndo(j,"ghosted")],[t("Write follow-up"),()=>draftSheet(j,p,"followup")]]});
       else out.push({j,rank:late?1:3,at:-late,dot:late?"late":"waiting",what:t("Follow up"),
         why:lw?t("Last wrote to {n} on {d}",{n:lw.name||lw.email,d:dshort(lw.last)})
-          :ap?t("Applied {d}, no reply since",{d:dshort(String(ap).slice(0,10))}):"",
+          :ap?t("Sent {d}, no reply since",{d:dshort(String(ap).slice(0,10))}):"",
         when:late?t("{n} day(s) overdue",{n:late}):t("today"),hot:!!late,
         act:t("Write follow-up"),run:()=>draftSheet(j,p,"followup")});
     }
@@ -7058,7 +7247,7 @@ function drawNextUp(){
         esc(more>0?t("Show {n} more",{n:more}):t("Show fewer"))+'</button></div>':'')+'</div>'+
     '<div class="na-side"><div class="hd">'+esc(t("This week"))+'<button data-nu-cal>'+esc(t("Open calendar"))+' →</button></div>'+
       '<div class="days">'+days+'</div>'+
-      '<div class="na-stats">'+stat(t("Interviews in 7 days"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups this week"),dueWeek)+'</div></div>';
+      '<div class="na-stats">'+stat(t("Interviews in the next 7 days"),ivWeek)+stat(t("Sent this week"),sentWeek)+stat(t("Follow-ups this week"),dueWeek)+'</div></div>';
   el.hidden=false;
   $$("#nextup [data-na]").forEach(b=>b.onclick=()=>{ const a=shown[+b.dataset.na];
     b.dataset.k!=null&&a.acts?a.acts[+b.dataset.k][1]():a.run() });
@@ -7107,11 +7296,13 @@ function drawCalendar(animate){
   $$("#cal-views button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.cv===v)));
   $("#cal-nav").hidden=v==="overview";
   const ev=calEvents(), today=todayKey();
-  const wkEnd=addDays(monday(today),6);
-  const ivs=ev.filter(e=>e.kind==="iv"&&e.day>=today&&e.day<=wkEnd).length;
+  /* The same rule, and the same words, as Applications: interviews today
+     and in the next seven days. This one counted to Sunday, so the two
+     screens gave two different numbers for "this week". */
+  const ivs=(S.jobs||[]).filter(j=>!DEAD_ST.has(j.status)&&ivSoon(j)).length;
   const late=ev.filter(e=>e.kind==="fu"&&e.late).length;
   /* The overdue count is a way in: it opens those applications. */
-  $("#cal-sub").innerHTML=[ivs?esc(t(ivs===1?"1 interview this week":"{n} interviews this week",{n:ivs})):"",
+  $("#cal-sub").innerHTML=[ivs?esc(t(ivs===1?"1 interview in the next 7 days":"{n} interviews in the next 7 days",{n:ivs})):"",
     late?'<button type="button" class="linkbtn" id="cal-late">'+esc(t(late===1?"1 follow-up overdue":"{n} follow-ups overdue",{n:late}))+'</button>':""]
     .filter(Boolean).join(" · ");
   const cl=$("#cal-late"); if(cl) cl.onclick=()=>{ S.jfilter={kind:"alert",value:"followup_due"}; S.fnode=null; setView("jobs"); drawJobs() };
@@ -7603,7 +7794,7 @@ const themeLabel=t=>t.replace(/^engineeringclassic$/,"Engineering")
 $("#btn-design").onclick=async()=>{
   const fam=S.doc&&S.doc.family;
   if(fam&&fam.source&&fam.source!==S.path){
-    if(S.dirty&&!confirm("You have unsaved changes. Discard them?")) return;
+    if(!await leaveEdits()) return;
     toast(t("Every language of this CV shares one design, so it is edited on {p}.",{p:docLabel(fam.source)}));
     await openDoc(fam.source);
   }
@@ -7893,8 +8084,8 @@ function paintPhoto(){
   $("#ph-del").onclick=removePhoto;
 }
 async function removePhoto(){
-  if(!confirm("Remove the photo from your CV Studio folder? It comes off every CV that shows it."))
-    return;
+  if(!await askConfirm({title:t("Remove the photo?"),body:t("It is removed from your CV Studio folder and comes off every CV that shows it."),
+    ok:t("Remove photo"),danger:true})) return;
   try{
     const r=await post("/api/photo/remove",{});
     S.state.photo=null;
@@ -8771,10 +8962,10 @@ function palMarkSel(){
   $("#pal-in").setAttribute("aria-activedescendant",PAL.items.length?"pal-o"+PAL.sel:"");
   const el=$("#pal-o"+PAL.sel); if(el) el.scrollIntoView({block:"nearest"});
 }
-function palRun(i){
+async function palRun(i){
   const it=PAL.items[i]; if(!it) return;
   /* Settings opens over the editor; everything else leaves it. */
-  if(S.dirty&&!it.stay&&!confirm(t("You have unsaved changes. Discard them?"))) return;
+  if(!it.stay&&!await leaveEdits()) return;
   closePal();
   it.run();
 }
@@ -8853,7 +9044,7 @@ async function packSheet(id){
       esc(t("Add the posting, as Markdown"))+'</label>':'')+
     /* Off until asked: an export to proofread is not an application sent. */
     (draft?'<label class="pk-check"><input type="checkbox" id="pk-applied">'+
-      esc(t("I am sending it now: mark the application as applied today"))+'</label>':'')+
+      esc(t("I am sending it now: mark the application as sent today"))+'</label>':'')+
     '<p class="pk-note">'+esc(t("Rendered from what is saved now: unsaved edits are left out."))+'</p>'+
     '<div class="foot"><button class="sbtn" id="pk-cancel">'+esc(t("Cancel"))+'</button>'+
       '<button class="sbtn primary" id="pk-go">'+esc(t("Save PDF…"))+'</button></div>');

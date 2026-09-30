@@ -3282,3 +3282,49 @@ del.rvd+ins.rvi{margin-left:3px}
 /* the empty base thumbnail's words clear the "Base CV" tag over it */
 .bthumb.empty span{padding-top:26px;text-align:center}
 .empty .cta{display:flex;flex-wrap:wrap;gap:10px}
+
+/* ---------- the app's own confirm and prompt ------------------------------ */
+.dlg-back{position:fixed;inset:0;z-index:90;background:rgba(20,19,16,.42)}
+.dlg{position:fixed;left:50%;top:22vh;transform:translateX(-50%);z-index:91;width:460px;max-width:calc(100% - 32px);
+  padding:20px 22px 18px;border-radius:12px;background:var(--app);color:var(--t900);
+  box-shadow:0 24px 56px rgba(0,0,0,.42);display:flex;flex-direction:column;gap:10px;
+  animation:dlgin .14s ease-out}
+@keyframes dlgin{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+.dlg h3{margin:0;font-size:15px;font-weight:600;line-height:1.35}
+.dlg p{margin:0;font-size:13px;line-height:1.5;color:var(--t600)}
+.dlg-in{height:36px;padding:0 10px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
+  color:var(--t900);font:inherit;font-size:13.5px}
+.dlg-in:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
+.dlg-in[aria-invalid=true]{border-color:var(--bad)}
+.dlg-err{min-height:0;font-size:12px;color:var(--bad)}
+.dlg-err:empty{display:none}
+.dlg-foot{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:6px}
+.dlg-foot .sbtn{white-space:nowrap}
+.sbtn.danger:not(.primary){color:var(--bad)}
+.sbtn.primary.danger{background:var(--bad);border-color:var(--bad);color:var(--app)}
+
+/* ---------- finding a document ----------------------------------------- */
+.dtools{display:flex;align-items:center;gap:10px;margin:18px 0 4px;flex-wrap:wrap}
+.dsearch{display:flex;align-items:center;gap:8px;width:280px;height:34px;padding:0 10px;border:1px solid var(--bd-field);
+  border-radius:8px;background:var(--field);color:var(--t500)}
+.dsearch:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
+.dsearch input{flex:1;min-width:0;border:0;outline:none;background:none;color:var(--t900);font-size:13px}
+.dsort{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t600)}
+.dsort select{height:32px;border-radius:8px;font-size:13px}
+
+/* ---------- new application --------------------------------------------- */
+.nj .req{margin-left:2px;color:var(--acc-text)}
+.nj-err{grid-column:2;margin-top:-4px;font-size:12px;color:var(--bad)}
+.nj-err:empty{display:none}
+.nj [aria-invalid=true]{border-color:var(--bad)}
+.nj-more summary{cursor:pointer;font-size:13px;font-weight:500;color:var(--t800);padding:4px 0}
+.nj-more summary span{font-weight:400;color:var(--t500);font-size:12px}
+.nj-more[open] summary{margin-bottom:10px}
+.nj-dup{padding:10px 12px;border-radius:8px;background:var(--acc-wash);border-left:2px solid var(--acc);font-size:12.5px}
+
+/* a writing prompt: a note to you, shown where the paragraph will go */
+.lt-paper .ltbody p.lt-prompt{position:relative;color:#9a9383;font-style:italic;cursor:text;
+  background:repeating-linear-gradient(90deg,#f6f2e9 0 6px,transparent 6px 9px) left bottom/100% 1px no-repeat;
+  padding-bottom:3px}
+.lt-paper .ltbody p.lt-prompt::before{content:attr(data-tip);display:block;margin-bottom:1px;font:600 9.5px 'IBM Plex Sans',system-ui,sans-serif;
+  letter-spacing:.04em;text-transform:uppercase;color:#b69455;font-style:normal}

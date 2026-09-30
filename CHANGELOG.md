@@ -52,6 +52,29 @@ tag, so a release is never published with nothing said about it.
 
 ### Fixed after a usability review
 
+- **Back and forward work.** Every screen, application and document has an
+  address, so the window's back and forward, a mouse's side buttons and
+  Alt+← / Alt+→ go where you have been, and a reload comes back to the same
+  place. Leaving a CV with unsaved edits asks first.
+- **The app's own dialogs** replace the browser's: they say which choice is
+  the dangerous one, and leaving a CV with unsaved edits offers **Save and
+  continue** beside Keep editing and Discard. Adding a link, naming where you
+  found a job and the posting's link are asked in the same style, with the
+  mistake said beside the field.
+- **Documents can be searched, filtered and sorted**: by words in the name,
+  company or role, CVs or letters only, and newest first, by name or by
+  company. The sort is remembered.
+- **One count, one set of words.** Calendar and Applications both count
+  interviews "in the next 7 days", so they agree; sending an application is
+  "Sent" everywhere (the list's date column, the funnel, follow-up lines),
+  and "Awaiting reply" is the status while you wait.
+- **The new-application form asks for two things.** Company and role, the
+  link and the status; the rest is under More details. Missing or wrong
+  fields are said beside them, and adding a role you already have at that
+  company says so, with a link to the one there.
+- **A new letter's writing prompts look like prompts**: grey, labelled, and
+  selected by one click so what you type replaces them. They are not counted
+  as words, and are never printed or exported.
 - **Escape goes back one step, never two.** Closing a sheet, Settings or a
   dialog with Esc no longer also closes the application behind it, and Esc
   in the CV editor lands on the application it was written for. In a letter,

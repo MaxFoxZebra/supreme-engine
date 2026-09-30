@@ -1705,7 +1705,9 @@ def load_letter(path: Path) -> dict:
             "body": body, "head": head, "date_line": letters.date_line(dated(meta, path)),
             "sent_on": letter_sent_on(path),
             "words": letters.word_count(body), "target": letters.WORD_TARGET,
-            "mtime": path.stat().st_mtime, "review": review_payload(path)}
+            "mtime": path.stat().st_mtime, "review": review_payload(path),
+            # Writing prompts still in the body: shown as placeholders, never printed.
+            "prompts": letters.prompts_left(body)}
 
 
 def save_letter(path: Path, payload: dict, tool: str = "save") -> dict:
@@ -3902,7 +3904,7 @@ label.rn input{width:15px;height:15px;min-height:0;padding:0;margin:2px 0 0;flex
     <label>Location<input id="f-location" autocomplete="off"></label>
     <label>Found on<input id="f-source" autocomplete="off"></label>
     <label class="wide">Status<select id="f-status"><option value="pending">Draft</option>
-      <option value="applied">Applied today</option></select></label>
+      <option value="applied">Sent today</option></select></label>
   </div>
   <div class="card" id="post-card">
     <div class="line" id="post-line"></div>
@@ -5037,7 +5039,7 @@ const API_TOKEN=__API_TOKEN__;
       <div class="tcard">
         <div class="thead"><button type="button" data-sort="company">Company</button><button type="button" data-sort="title">Role</button>
           <span>Documents</span><button type="button" data-sort="status">Status</button>
-          <button type="button" data-sort="applied">Applied</button><button type="button" data-sort="next">Next step</button></div>
+          <button type="button" data-sort="applied">Sent</button><button type="button" data-sort="next">Next step</button></div>
         <div class="tbody" id="jobrows"></div>
       </div>
     </div>
@@ -5083,6 +5085,25 @@ const API_TOKEN=__API_TOKEN__;
           <button class="pbtn" id="btn-newdoc">New document&#8230;</button>
         </div>
         <div id="docbase"></div>
+        <!-- Finding one document among dozens: by words in its name, its
+             company or its role; CVs or letters; newest first or by name. -->
+        <div class="dtools" id="dtools">
+          <label class="search dsearch"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/>
+            <path d="M20 20l-4-4"/></svg><input id="dq" type="search" placeholder="Find a document"
+            aria-label="Find a document" autocomplete="off"></label>
+          <div class="seg light" id="dkind" role="radiogroup" aria-label="Kind">
+            <button role="radio" data-k="" aria-checked="true">All</button>
+            <button role="radio" data-k="cv" aria-checked="false">CVs</button>
+            <button role="radio" data-k="letter" aria-checked="false">Letters</button>
+          </div>
+          <div class="grow"></div>
+          <label class="dsort"><span>Sort</span><select id="dsort" aria-label="Sort documents">
+            <option value="recent">Recently changed</option>
+            <option value="name">Name</option>
+            <option value="company">Company</option>
+          </select></label>
+        </div>
         <div id="doclanes"></div>
       </div>
     </div>
