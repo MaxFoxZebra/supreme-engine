@@ -8,6 +8,21 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.33.0
+
+- **Cover letters have a proper toolbar.** Above the page, always in view:
+  undo and redo, bold, italic, a link and a bullet list, each showing when
+  the text under the caret already has it. A link with nothing selected is
+  written as its own address; on an existing link it can be changed or
+  removed. Only what the PDF, Word and plain-text exports print is offered,
+  so nothing you format goes missing on the page.
+- **Find and replace in a letter** (Ctrl+F, ⌘F on a Mac). Every match is
+  marked on the page with a count beside the search, Enter and Shift+Enter
+  step through them, and Replace or Replace all change them one undo step
+  at a time. It finds a phrase even when part of it is bold.
+- New shortcuts in a letter: Ctrl+Shift+8 for a bullet list, Ctrl+Y to redo
+  on Windows and Linux.
+
 ## 0.32.0
 
 - **The top of Funnel is now a funnel.** Under Sent, Heard back,

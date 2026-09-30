@@ -2150,7 +2150,8 @@ function ltFont(fam){
 
 function ltPaint(){
   const d=LT.doc, h=(d&&d.head)||{}, j=ltJob();
-  const bar=$("#lt-bar"); if(bar) bar.remove();
+  $("#lt-tools").hidden=LT.tab!=="write";
+  if(LT.tab!=="write"&&LTF.open) ltFindClose();
   $("#lt-title").textContent=t("Cover letter")+(j?" · "+j.company:LT.meta.company?" · "+LT.meta.company:"");
   $("#lt-file").textContent=LT.path.split("/").pop();
   ltBackLabel();
@@ -2204,14 +2205,13 @@ function ltPaint(){
     sj.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); ed.focus() } };
     [ed,sj].forEach(el=>el.onpaste=e=>{ e.preventDefault();
       document.execCommand("insertText",false,(e.clipboardData||window.clipboardData).getData("text/plain")) });
-    ed.onkeydown=e=>{
-      if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){ e.preventDefault(); ltLink() }
-    };
+    ed.onkeydown=ltKeys;
     const lh=$("#lt-lh"), open=()=>{ if(h.cv){
       if(LT.dirty&&!confirm("This letter has unsaved changes. Leave without saving?")) return;
       LT.path=null; openDoc(h.cv) } };
     lh.onclick=open; lh.onkeydown=e=>{ if(e.key==="Enter") open() };
     ltPageMark();
+    ltFindRun(true); ltToolState();
   }
   ltPanel();
 }
@@ -2231,6 +2231,7 @@ function ltChanged(){
   LT.body=ltToMD($("#lt-edit"));
   ltDirty();
   clearTimeout(LT.t); LT.t=setTimeout(ltPageMark,120);
+  ltFindRun(true);
 }
 function ltDirty(){
   LT.dirty=true; $("#lt-save").disabled=false;
@@ -2276,9 +2277,9 @@ function ltPanel(){
     '</div></div>'+
     '<hr>'+
     (scaffold?sayBox("To have your AI client write it, ask it:",say)+'<hr>':'')+
-    '<div class="muted2" style="font-size:12.5px">Click anywhere in the letter and type. Select text for bold, '+
-      'italic, a link or a list. The letterhead is the CV’s: change it there, and every letter that '+
-      'looks like it follows.</div>';
+    '<div class="muted2" style="font-size:12.5px">Click anywhere in the letter and type. The toolbar above '+
+      'the page sets bold, italic, a link or a list, and finds and replaces. The letterhead is the CV’s: '+
+      'change it there, and every letter that looks like it follows.</div>';
   if(scaffold) wireSay(say);
   const set=(k,v)=>{ LT.meta[k]=v; ltDirty(); ltSave().then(()=>{ if(LT.tab==="write") ltPaint() }) };
   $("#lt-cv").onchange=e=>set("looks_like",e.target.value);
@@ -2326,39 +2327,174 @@ $$("#lt-tabs [data-lt]").forEach(b=>b.onclick=async()=>{
 document.addEventListener("keydown",e=>{
   if(S.view!=="letter") return;
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="s"){ e.preventDefault(); ltSave().then(()=>toast("Saved")) }
+  else if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&e.key.toLowerCase()==="f"&&LT.tab==="write"){
+    e.preventDefault(); ltFindOpen() }
+  else if(e.key==="Escape"&&LTF.open&&$("#sheet").hidden){ e.preventDefault(); ltFindClose(true) }
 });
 
-/* The selection's own bar: the four things a letter prints. */
+/* The toolbar above the page: undo and redo, the four things a letter prints,
+   and find and replace. Every edit goes through the browser's own editing
+   commands, so the undo history is the browser's and holds all of them. */
+const LT_MOD=/Mac|iPhone|iPad/.test(navigator.platform)?"⌘":"Ctrl+";
+$$("#lt-tools [data-c]").forEach(b=>{
+  b.title=t(b.getAttribute("aria-label"))+" ("+LT_MOD+b.dataset.k.replace("Shift+",LT_MOD==="⌘"?"⇧":"Shift+")+")";
+});
+/* Where a command lands: the selection if it is in the body, else the end of
+   the body, so a button pressed with the caret in the subject or nowhere
+   still does something you can see. */
+function ltFocus(){
+  const ed=$("#lt-edit"); if(!ed) return null;
+  const sel=document.getSelection();
+  if(sel.rangeCount&&ed.contains(sel.anchorNode)&&ed.contains(sel.focusNode)){ ed.focus(); return ed }
+  ed.focus();
+  const r=document.createRange(); r.selectNodeContents(ed); r.collapse(false);
+  sel.removeAllRanges(); sel.addRange(r);
+  return ed;
+}
+const ltLinkAt=()=>{ const s=document.getSelection(), ed=$("#lt-edit");
+  const n=s.rangeCount&&s.anchorNode, a=n&&(n.nodeType===1?n:n.parentElement).closest("a");
+  return a&&ed&&ed.contains(a)?a:null };
 function ltLink(){
-  const url=prompt("Link to","https://");
-  if(url&&url!=="https://") document.execCommand("createLink",false,url.trim());
+  if(!ltFocus()) return;
+  const sel=document.getSelection(), a=ltLinkAt();
+  const saved=sel.getRangeAt(0).cloneRange();
+  const url=prompt(a?"Link to (empty to remove the link)":"Link to",a?a.getAttribute("href"):"https://");
+  if(url==null) return;
+  $("#lt-edit").focus(); sel.removeAllRanges(); sel.addRange(saved);
+  const u=url.trim();
+  if(a){
+    const r=document.createRange(); r.selectNodeContents(a); sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand("unlink");
+    if(u) document.execCommand("createLink",false,u);
+  }else if(u&&u!=="https://"){
+    /* Nothing selected, the address is the text. */
+    if(sel.isCollapsed) document.execCommand("insertHTML",false,'<a href="'+esc(u)+'">'+esc(u)+'</a>');
+    else document.execCommand("createLink",false,u);
+  }
   ltChanged();
 }
-document.addEventListener("selectionchange",()=>{
-  let bar=$("#lt-bar");
+function ltCommand(c){
+  if(c==="find") return LTF.open?ltFindClose():ltFindOpen();
+  if(c==="link") return ltLink();
+  if(!ltFocus()) return;
+  document.execCommand(c);
+  ltChanged(); ltToolState();
+}
+$("#lt-tools").onmousedown=e=>{ if(e.target.closest("[data-c]")) e.preventDefault() };
+$("#lt-tools").onclick=e=>{ const b=e.target.closest("[data-c]"); if(b) ltCommand(b.dataset.c) };
+function ltToolState(){
+  if(S.view!=="letter"||LT.tab!=="write") return;
   const sel=document.getSelection(), ed=$("#lt-edit");
-  const inside=S.view==="letter"&&LT.tab==="write"&&ed&&sel.rangeCount&&!sel.isCollapsed&&
-    ed.contains(sel.anchorNode)&&ed.contains(sel.focusNode);
-  if(!inside){ if(bar) bar.remove(); return }
-  const r=sel.getRangeAt(0).getBoundingClientRect();
-  if(!bar){
-    bar=document.createElement("div"); bar.id="lt-bar"; bar.className="lt-bar";
-    bar.setAttribute("role","toolbar"); bar.setAttribute("aria-label","Format the selection");
-    bar.innerHTML='<button data-c="bold" title="Bold (⌘B)"><b>B</b></button>'+
-      '<button data-c="italic" title="Italic (⌘I)"><i style="font-family:Georgia,serif">I</i></button>'+
-      '<button data-c="link" title="Link (⌘K)">Link</button>'+
-      '<button data-c="insertUnorderedList" title="Bullet list">• List</button>';
-    bar.onmousedown=e=>e.preventDefault();
-    bar.onclick=e=>{ const b=e.target.closest("[data-c]"); if(!b) return;
-      if(b.dataset.c==="link") return ltLink();
-      document.execCommand(b.dataset.c); ltChanged() };
-    document.body.append(bar);
+  const inside=!!(ed&&sel.rangeCount&&ed.contains(sel.anchorNode));
+  const q=c=>{ try{ return inside&&document.queryCommandState(c) }catch(e){ return false } };
+  const set=(c,v)=>{ const b=$('#lt-tools [data-c="'+c+'"]'); if(b) b.setAttribute("aria-pressed",String(!!v)) };
+  set("bold",q("bold")); set("italic",q("italic"));
+  set("insertUnorderedList",q("insertUnorderedList")); set("link",inside&&ltLinkAt());
+}
+document.addEventListener("selectionchange",ltToolState);
+/* Shortcuts the browser does not give a contenteditable by itself. Bold,
+   italic, undo and redo it does. */
+function ltKeys(e){
+  if(!(e.metaKey||e.ctrlKey)||e.altKey) return;
+  const k=e.key.toLowerCase();
+  if(k==="k"&&!e.shiftKey){ e.preventDefault(); ltLink() }
+  else if(e.shiftKey&&(e.code==="Digit8"||k==="*")){ e.preventDefault(); ltCommand("insertUnorderedList") }
+  else if(k==="y"&&!e.shiftKey&&LT_MOD!=="⌘"){ e.preventDefault(); ltCommand("redo") }
+}
+
+/* Find and replace, in the body. Matches are painted with the CSS highlight
+   API where there is one, which leaves the letter's own markup alone; without
+   it the count and the scrolling still work. Replacing goes through
+   insertText, so each replacement is one undo step. */
+const LTF={open:false, hits:[], i:-1};
+const LT_HL=typeof CSS!=="undefined"&&CSS.highlights&&typeof Highlight!=="undefined";
+function ltFindOpen(){
+  LTF.open=true; $("#lt-find").hidden=false;
+  $('#lt-tools [data-c="find"]').setAttribute("aria-pressed","true");
+  const sel=document.getSelection(), ed=$("#lt-edit"), q=$("#lt-q");
+  const picked=sel.rangeCount&&ed&&ed.contains(sel.anchorNode)?sel.toString().trim():"";
+  if(picked&&picked.indexOf("\n")<0) q.value=picked;
+  q.focus(); q.select();
+  ltFindRun();
+}
+function ltFindClose(back){
+  LTF.open=false; LTF.hits=[]; LTF.i=-1; $("#lt-find").hidden=true;
+  $('#lt-tools [data-c="find"]').setAttribute("aria-pressed","false");
+  if(LT_HL){ CSS.highlights.delete("lt-find"); CSS.highlights.delete("lt-find-cur") }
+  if(back){ const ed=$("#lt-edit"); if(ed) ed.focus() }
+}
+/* Every match as a range. The text is read across nodes, so a phrase with a
+   bold word in the middle is still found. */
+function ltFindRun(keep){
+  if(!LTF.open) return;
+  const ed=$("#lt-edit"), q=$("#lt-q").value;
+  LTF.hits=[];
+  if(ed&&q){
+    const nodes=[], w=document.createTreeWalker(ed,NodeFilter.SHOW_TEXT);
+    let x, text="";
+    while((x=w.nextNode())){ nodes.push([x,text.length]); text+=x.nodeValue }
+    const hay=text.toLocaleLowerCase(), needle=q.toLocaleLowerCase();
+    const at=off=>{ let k=nodes.length-1; while(k>0&&nodes[k][1]>off) k--; return [nodes[k][0],off-nodes[k][1]] };
+    for(let p=hay.indexOf(needle); p>=0; p=hay.indexOf(needle,p+needle.length)){
+      const r=document.createRange(), s=at(p), e=at(p+needle.length-1);
+      r.setStart(s[0],s[1]); r.setEnd(e[0],e[1]+1);
+      LTF.hits.push(r);
+    }
   }
-  bar.style.left=Math.max(8,r.left+r.width/2-90)+"px";
-  bar.style.top=Math.max(60,r.top-42)+"px";
-  bar.querySelector('[data-c=bold]').setAttribute("aria-pressed",String(document.queryCommandState("bold")));
-  bar.querySelector('[data-c=italic]').setAttribute("aria-pressed",String(document.queryCommandState("italic")));
-});
+  LTF.i=LTF.hits.length?Math.min(Math.max(keep?LTF.i:0,0),LTF.hits.length-1):-1;
+  ltFindPaint();
+}
+function ltFindPaint(scroll){
+  const n=LTF.hits.length, q=$("#lt-q").value;
+  $("#lt-qn").textContent=!q?"":n?t("{i} of {n}",{i:LTF.i+1,n}):t("No matches");
+  $$('#lt-find [data-f="one"],#lt-find [data-f="all"],#lt-find [data-f="prev"],#lt-find [data-f="next"]')
+    .forEach(b=>b.disabled=!n);
+  if(LT_HL){
+    CSS.highlights.set("lt-find",new Highlight(...LTF.hits));
+    if(n) CSS.highlights.set("lt-find-cur",new Highlight(LTF.hits[LTF.i]));
+    else CSS.highlights.delete("lt-find-cur");
+  }
+  if(scroll&&n){
+    const st=$("#lt-stage"), r=LTF.hits[LTF.i].getBoundingClientRect(), b=st.getBoundingClientRect();
+    if(r.top<b.top+40||r.bottom>b.bottom-40) st.scrollTop+=r.top-b.top-b.height/3;
+  }
+}
+function ltFindStep(d){
+  if(!LTF.hits.length) return;
+  LTF.i=(LTF.i+d+LTF.hits.length)%LTF.hits.length;
+  ltFindPaint(true);
+}
+function ltReplace(all){
+  if(!LTF.hits.length) return;
+  const ed=$("#lt-edit"), sel=document.getSelection(), by=$("#lt-r").value;
+  const from=document.activeElement;
+  /* Last first, so the ranges not yet replaced still point at their text. */
+  const which=all?LTF.hits.slice().reverse():[LTF.hits[LTF.i]];
+  ed.focus();
+  which.forEach(r=>{ sel.removeAllRanges(); sel.addRange(r);
+    if(by) document.execCommand("insertText",false,by); else document.execCommand("delete") });
+  const n=which.length;
+  if(all) LTF.i=0;
+  ltChanged();
+  ltFindPaint(true);
+  if(from&&from!==ed) from.focus();
+  if(all) toast(t("Replaced {n}",{n}));
+}
+$("#lt-q").oninput=()=>{ ltFindRun(); ltFindPaint(true) };
+$("#lt-q").onkeydown=e=>{
+  if(e.key==="Enter"){ e.preventDefault(); ltFindStep(e.shiftKey?-1:1) }
+  else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); ltFindClose(true) }
+};
+$("#lt-r").onkeydown=e=>{
+  if(e.key==="Enter"){ e.preventDefault(); ltReplace(e.metaKey||e.ctrlKey) }
+  else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); ltFindClose(true) }
+};
+$("#lt-find").onclick=e=>{ const b=e.target.closest("[data-f]"); if(!b) return;
+  const f=b.dataset.f;
+  if(f==="close") ltFindClose(true);
+  else if(f==="prev"||f==="next") ltFindStep(f==="next"?1:-1);
+  else ltReplace(f==="all");
+};
 
 /* Export: the PDF to attach, Word for recruiters who ask for it, plain text to
    paste into a form. */

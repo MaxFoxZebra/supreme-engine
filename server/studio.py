@@ -4983,6 +4983,36 @@ const API_TOKEN=__API_TOKEN__;
       <span class="lt-export"><button class="obtn" id="lt-export" aria-haspopup="menu">Export &#9662;</button></span>
       <button class="pbtn" id="lt-save">Save</button>
     </div>
+    <div class="lt-tools" id="lt-tools" role="toolbar" aria-label="Format the letter">
+      <div class="lt-pill">
+        <button data-c="undo" data-k="Z" aria-label="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+        <button data-c="redo" data-k="Shift+Z" aria-label="Redo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+        <span class="sep" aria-hidden="true"></span>
+        <button data-c="bold" data-k="B" aria-label="Bold" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
+        <button data-c="italic" data-k="I" aria-label="Italic" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5h8M6 19h8M14.5 5l-5 14"/></svg></button>
+        <button data-c="link" data-k="K" aria-label="Link" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></button>
+        <button data-c="insertUnorderedList" data-k="Shift+8" aria-label="Bullet list" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><circle cx="5" cy="6" r=".6"/><circle cx="5" cy="12" r=".6"/><circle cx="5" cy="18" r=".6"/></svg></button>
+        <span class="sep" aria-hidden="true"></span>
+        <button class="wide" data-c="find" data-k="F" aria-label="Find and replace" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.3-4.3"/></svg><span>Find and replace</span></button>
+      </div>
+      <span class="note">The page prints bold, italic, links and bullet lists.</span>
+    </div>
+    <div class="lt-find" id="lt-find" role="search" aria-label="Find in the letter" hidden>
+      <div class="lt-pill">
+        <label class="fld"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.3-4.3"/></svg>
+          <input id="lt-q" type="text" placeholder="Find in the letter" aria-label="Find in the letter" autocomplete="off" spellcheck="false">
+          <span class="n" id="lt-qn" aria-live="polite"></span></label>
+        <button data-f="prev" aria-label="Previous match"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg></button>
+        <button data-f="next" aria-label="Next match"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <span class="sep" aria-hidden="true"></span>
+        <label class="fld"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg>
+          <input id="lt-r" placeholder="Replace with" aria-label="Replace with" autocomplete="off" spellcheck="false"></label>
+        <button class="txt" data-f="one">Replace</button>
+        <button class="txt" data-f="all">Replace all</button>
+        <span class="sep" aria-hidden="true"></span>
+        <button data-f="close" aria-label="Close find"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+    </div>
     <div class="lt-body">
       <div class="lt-stage" id="lt-stage"></div>
       <aside class="lt-panel" id="lt-panel" aria-label="This letter"></aside>
