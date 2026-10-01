@@ -175,9 +175,28 @@ what fixes that, and the skill below tells it to re-read every interview it has
 already recorded.
 
 A status change appends to the history the funnel is drawn from. The model is
-told to show you every change and wait for you, and a client that supports MCP
-elicitation (a form the server can put in front of you) asks you itself before
-`set_job_status` moves anything: decline and nothing changes.
+told to show you every change and wait for you.
+
+**And the server asks you itself, where your client lets it.** A client that
+supports MCP elicitation lets the server put a small form in front of you,
+mid-call, that the model cannot answer. CV Studio uses it where a model is
+most often wrong, or a mistake costs you most:
+
+| When | You see | Your answer |
+|---|---|---|
+| `set_job_status` moves an application | "Move Acme – Engineer from Awaiting reply to Interviewing?" | No: nothing changes |
+| `add_job` finds a likely duplicate | What the company already has, and "Add it as a separate application?" | Yes adds it; no keeps the one you have |
+| `find_job` matches several applications | A list to pick from, with what the mail was (`about`), and "None of these" | The one you pick is the only candidate |
+| `update_job_tracking` moves or clears an interview | "Move the interview from … to …?" | No keeps the time you had |
+| `update_job_tracking` replaces a posting you saved | Both lengths, and a warning it may have your edits | Yes replaces it with no flag needed |
+| `update_job_tracking` corrects a title | "Rename it to the title its posting gives?" | No keeps your title |
+| `write_cv` would drop comments you wrote | How many, and one of them | No keeps the file |
+| `add_job` cannot read a posting (a sign-in wall) | A box to paste the posting into | What you paste is saved; empty is fine |
+
+A refusal tells the model you declined and that nothing changed, and the
+instructions tell it to ask you rather than try again. In a client without
+elicitation, every one of these behaves as before: the guard refuses, or the
+change is made and waits for you under Changes by AI to review.
 
 **Every change to an application can be undone.** Around each tool that writes
 the tracker, the server records each application's fields as they were and as

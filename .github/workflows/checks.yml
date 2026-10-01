@@ -108,6 +108,9 @@ jobs:
       - name: What an AI client changed on applications
         run: python checks/aichangestest.py
 
+      - name: What a tool asks the user directly
+        run: python checks/elicittest.py
+
       - name: Word in and out
         run: python checks/docxtest.py
 

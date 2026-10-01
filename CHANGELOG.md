@@ -15,9 +15,13 @@ tag, so a release is never published with nothing said about it.
   review*, field by field. Keep it, or undo it; undo refuses if you have
   changed the same thing since, so it never overwrites you. Undoing an
   application it added moves it to the trash.
-- **Asked before a status moves.** A client that can show a form (MCP
-  elicitation) asks you before an application changes status; say no and
-  nothing changes.
+- **Asked, not assumed.** A client that can show a form (MCP elicitation)
+  now asks you directly, in a form the model cannot answer: before a status
+  change, before adding a likely duplicate, before an interview is moved or
+  cleared, before a posting you saved or a title is replaced, and before a
+  whole-file write drops your comments. When a mail matches several
+  applications you pick the right one from a list, and a posting behind a
+  sign-in can be pasted in. Say no and nothing changes.
 - **Renders offline from the first launch.** The icon package a theme needs
   ships with the app instead of being downloaded the first time.
 - **Word in and out.** Import a CV from a .docx, and export a CV as Word, for

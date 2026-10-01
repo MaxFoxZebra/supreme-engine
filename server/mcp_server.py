@@ -59,6 +59,12 @@ mcp = MCPServer(
         "drawn from. The app lists every change you make, to documents and "
         "applications alike, for the user to keep or undo, but a wrong "
         "change they have to clean up is still a cost to them.\n"
+        "Some tools ask the user directly when your client can show them a "
+        "form: before a status change, a likely duplicate, a moved or "
+        "cancelled interview, a replaced posting or title, a whole-file write "
+        "that drops their comments, and to pick between matching "
+        "applications. A tool that says the user declined has changed "
+        "nothing: ask them what is right, do not retry.\n"
         "3. An automated acknowledgement is not a status change. Record it "
         "with last_contact_at and leave the status alone. Never set a ghosted "
         "status from silence: absence of a message is not a message.\n\n"
@@ -253,11 +259,17 @@ class _Confirm(BaseModel):
     confirm: bool = Field(default=True, description="Make this change")
 
 
-def ask_user(message: str) -> bool | None:
-    """Ask the user directly, through the client, when it can show a form.
+# The answer when the user said no, or closed the form: the tool changes
+# nothing and says so, and the model is told to ask rather than retry.
+DECLINED = object()
 
-    True or False is their answer; None means this client cannot ask (most
-    cannot yet), and the instructions' "show the user and wait" is all there
+
+def _elicit(message: str, schema: type[BaseModel]):
+    """Put a form in front of the user, through the client.
+
+    Returns the filled form; DECLINED when they said no or closed it; None
+    when this client cannot show one, in which case the tool carries on as it
+    always did and the instructions' "show the user and wait" is all there
     is. Called from a sync tool, so it hops onto the event loop to ask.
     """
     ctx = getattr(_local, "ctx", None)
@@ -268,10 +280,50 @@ def ask_user(message: str) -> bool | None:
     except Exception:
         return None
     try:
-        res = anyio.from_thread.run(ctx.elicit, message, _Confirm)
+        res = anyio.from_thread.run(ctx.elicit, message, schema)
     except Exception:
         return None
-    return res.action == "accept" and bool(getattr(res.data, "confirm", False))
+    return res.data if res.action == "accept" else DECLINED
+
+
+def ask_user(message: str) -> bool | None:
+    """Yes or no. None when the client cannot ask."""
+    got = _elicit(message, _Confirm)
+    if got is None:
+        return None
+    return got is not DECLINED and bool(getattr(got, "confirm", False))
+
+
+def ask_choice(message: str, options: list[str], title: str = "Choose one"):
+    """One of `options`, as written; DECLINED; or None when the client cannot ask."""
+    from typing import Literal
+    from pydantic import create_model
+    if not options:
+        return None
+    schema = create_model("_Choice", choice=(Literal[tuple(options)],
+                                             Field(title=title, description=title)))
+    got = _elicit(message, schema)
+    if got is None or got is DECLINED:
+        return got
+    return got.choice
+
+
+class _Paste(BaseModel):
+    text: str = Field(default="", title="The posting",
+                      description="Paste the job posting here, or leave it empty")
+
+
+def ask_text(message: str) -> str | None:
+    """Text the user typed or pasted; None when they did not or cannot."""
+    got = _elicit(message, _Paste)
+    if got is None or got is DECLINED:
+        return None
+    return (got.text or "").strip() or None
+
+
+def refused(what: str) -> ToolError:
+    return ToolError(f"The user declined: {what}. Nothing was changed. Ask them what is "
+                     f"right rather than trying again.")
 
 
 def tool(fn):
@@ -363,6 +415,16 @@ def read_cv(path: str) -> str:
     return studio.safe_path(path).read_text(encoding="utf-8")
 
 
+def _comments(text: str) -> list[str]:
+    """The YAML comments in a file, as written, starter guidance included."""
+    out = []
+    for line in text.splitlines():
+        at = line.find("#")
+        if at >= 0 and (at == 0 or line[at - 1] in " \t") and line[:at].count('"') % 2 == 0:
+            out.append(line[at:].strip())
+    return [c for c in out if len(c) > 1]
+
+
 def _short(text, n: int = 90) -> str:
     text = " ".join(str(text).split())
     return text if len(text) <= n else text[:n - 1] + "…"
@@ -415,6 +477,13 @@ def write_cv(path: str, content: str) -> str:
     will drop any comments the user wrote that are not in `content`.
     """
     p = studio.safe_path(path)
+    # The comments are the user's own notes in the file, and the one thing a
+    # whole-file write silently loses. Asked about only when some would go.
+    if p.exists():
+        lost = [c for c in _comments(p.read_text(encoding="utf-8")) if c not in _comments(content)]
+        if lost and ask_user(f"Replace the whole of {path}? {len(lost)} comment(s) you wrote "
+                             f"would be lost, such as: {_short(lost[0], 80)}") is False:
+            raise refused(f"rewriting {path}, which would lose comments; use edit_cv_fields")
     changed = studio.write_doc(p, content, "write_cv")["changed"]
     return (f"Wrote {len(content)} characters to {path}. "
             f"{len(changed)} field(s) changed.")
@@ -738,7 +807,7 @@ def _candidates(company: str, title: str | None = None,
 
 @tool
 def find_job(company: str, title: str | None = None,
-             sender_email: str | None = None) -> dict:
+             sender_email: str | None = None, about: str | None = None) -> dict:
     """Which application does this message or event belong to?
 
     Call this before every write. Matching is genuinely uncertain: people apply
@@ -747,9 +816,29 @@ def find_job(company: str, title: str | None = None,
     and refuses to choose.
 
     `confident` is true only for exactly one candidate. Anything else means ask
-    the user which one, or whether to add it.
+    the user which one, or whether to add it. A client that can show a form
+    asks them here when there are several: pass `about` (the mail's subject
+    and date, say) so they know what they are matching.
     """
     found = [_brief(j) for j in _candidates(company, title, sender_email)]
+    if len(found) > 1:
+        labels = studio.jobstore.STATUS_LABELS
+        names: list[str] = []
+        for j in found:
+            name = f"{j.get('title')} ({labels.get(j.get('status'), j.get('status'))})"
+            while name in names:
+                name += " "
+            names.append(name)
+        none = "None of these"
+        picked = ask_choice(f"Which {company} application is this about?"
+                            + (f"\n\n{about}" if about else ""), names + [none],
+                            title="Application")
+        if picked == none:
+            return {"candidates": [], "confident": False,
+                    "note": "The user says it is none of these. Ask whether to add it."}
+        if picked in names:
+            return {"candidates": [found[names.index(picked)]], "confident": True,
+                    "note": "The user picked this one."}
     return {
         "candidates": found,
         "confident": len(found) == 1,
@@ -870,8 +959,7 @@ def set_job_status(job_id: str, status: str, append_note: str | None = None) -> 
                         f"{label.get(job['status'], job['status'])} to {label.get(code, code)}?"
                         + (f"\n\nNote: {append_note}" if append_note else ""))
         if said is False:
-            raise ToolError("The user declined this status change, so nothing was changed. "
-                            "Ask them what is right before trying again.")
+            raise refused("this status change")
     return studio.jobstore.update_job(
         _ws(), job_id, {"status": code, "append_note": append_note})
 
@@ -946,8 +1034,10 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     refuses any other. The user's own renames are theirs to make.
     """
     data: dict = {}
+    job = read_job(job_id)
+    who = f"{job['company']} – {job['title']}"
     if title is not None:
-        link = url or read_job(job_id).get("url")
+        link = url or job.get("url")
         if not link:
             raise ValueError("This application has no link, so its title cannot be "
                              "checked. Ask the user to rename it in the app.")
@@ -955,6 +1045,9 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
         if read["title"].casefold() != title.strip().casefold():
             raise ValueError(f"The posting's title is {read['title']!r}, not {title!r}. "
                              f"Only the posting's own title can be set here.")
+        if read["title"] != job["title"] and ask_user(
+                f"Rename {who} to “{read['title']}”, the title its posting gives?") is False:
+            raise refused("renaming the application")
         data["title"] = read["title"]
     for field, value in (("interview_at", interview_at), ("interview_tz", interview_tz),
                          ("followup_date", followup_date),
@@ -967,12 +1060,29 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
             data[field] = value.strip() or None
     if url and not url.strip().lower().startswith(("http://", "https://")):
         raise ValueError("url must start with http:// or https://")
+    # An interview that moves or is called off comes from reading a mail, and
+    # reading a mail is where a model is most often wrong: it is asked about.
+    studio.jobstore.check_dates(data)
+    was = str(job.get("interview_at") or "")[:16]
+    if interview_at is not None and was and str(interview_at)[:16] != was:
+        said = ask_user(f"Clear the interview for {who} on {was.replace('T', ' at ')}?"
+                        if interview_at == "" else
+                        f"Move the interview for {who} from {was.replace('T', ' at ')} to "
+                        f"{str(interview_at)[:16].replace('T', ' at ')}?")
+        if said is False:
+            raise refused("changing the interview time")
     if description is not None:
-        current = read_job(job_id).get("description")
+        current = job.get("description")
         if current and current.strip() != description.strip() and not replace_posting:
-            raise ValueError("A posting is already saved for this application, and the "
-                             "user may have edited it. Pass replace_posting=True only if "
-                             "they asked for it to be replaced.")
+            said = ask_user(f"Replace the posting saved for {who} "
+                            f"({len(current.split())} words, which may have your edits) with "
+                            f"the new text ({len(description.split())} words)?")
+            if said is False:
+                raise refused("replacing the saved posting")
+            if said is None:
+                raise ValueError("A posting is already saved for this application, and the "
+                                 "user may have edited it. Pass replace_posting=True only if "
+                                 "they asked for it to be replaced.")
         data["description"] = description.strip() or None
     for field, value in (("cv_path", cv_path), ("letter_path", letter_path)):
         if value is not None:
@@ -1100,11 +1210,20 @@ def add_job(company: str, title: str, status: str = "pending",
     if not confirmed_new:
         existing = _candidates(company, title)
         if existing:
-            listed = "; ".join(f"{j['title']} ({j['status']})" for j in existing)
-            raise ValueError(
-                f"{company} already has: {listed}. If this is genuinely a "
-                f"different application, ask the user, then call again with "
-                f"confirmed_new=True.")
+            labels = studio.jobstore.STATUS_LABELS
+            listed = "; ".join(f"{j['title']} ({labels.get(j['status'], j['status'])})"
+                               for j in existing)
+            said = ask_user(f"{company} already has: {listed}.\n\n"
+                            f"Add “{title}” as a separate application?")
+            if said is False:
+                raise ToolError(f"The user says this is not a new application: {company} "
+                                f"already has {listed}. Nothing was added. Use find_job to "
+                                f"work on the existing one.")
+            if said is None:
+                raise ValueError(
+                    f"{company} already has: {listed}. If this is genuinely a "
+                    f"different application, ask the user, then call again with "
+                    f"confirmed_new=True.")
     notes: dict = {}
     if url:
         try:
@@ -1112,6 +1231,16 @@ def add_job(company: str, title: str, status: str = "pending",
         except Exception as exc:  # the application matters, the reading does not
             notes["posting_note"] = (f"Could not read the posting from its link ({exc}). "
                                      f"The title and text are the ones you passed.")
+            # A board behind a sign-in (LinkedIn, Indeed) cannot be read from
+            # here, but the user can see the page: ask them for the text,
+            # which beats a summary of it from memory.
+            if len((description or "").split()) < THIN_POSTING:
+                pasted = ask_text(f"CV Studio could not read the posting for {title} at "
+                                  f"{company} from its link. Paste the posting's text to "
+                                  f"save it with the application, or leave this empty.")
+                if pasted:
+                    description = pasted
+                    notes["posting_note"] = "The user pasted the posting's text."
         else:
             if read["title"].casefold() != (title or "").strip().casefold():
                 notes["title_note"] = (f"The posting's own title is {read['title']!r}; "
