@@ -199,6 +199,7 @@ jobs:
             --hidden-import cv_map \
             --hidden-import studio \
             --hidden-import mcp_server \
+            --hidden-import mcp_resources \
             --hidden-import ats \
             --hidden-import importer \
             --hidden-import languages \

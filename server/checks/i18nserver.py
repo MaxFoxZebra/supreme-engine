@@ -23,7 +23,8 @@ HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE / "i18n"))
 from catalogue import C, RX  # noqa: E402
 
-FILES = ["studio.py", "jobs.py", "importer.py", "letters.py", "languages.py", "backups.py"]
+FILES = ["studio.py", "jobs.py", "importer.py", "letters.py", "languages.py", "backups.py",
+         "themes/__init__.py"]
 FILL = "Engineering"   # what a run-time part looks like, for matching a pattern
 
 # For a programmer, never shown in the interface.
@@ -31,6 +32,8 @@ INTERNAL = {
     "the config file is not a JSON object", "the config file is not a YAML mapping",
     "unknown client: Engineering", "path outside the workspace", "not http", "too large",
     "unauthorised: supply X-API-Key", "bad request", "Unknown fix: Engineering",
+    # A template that no longer matches RenderCV: a build fault, caught by themetest.
+    "CV Studio themes: RenderCV's preamble has no 'Engineering' to set",
     "Could not record the base CV in Engineering.", "Engineering: Engineering",
     "Typst mapping is unavailable in this build",
     # The reason in brackets after "…config file cannot be read": the file's own fault.

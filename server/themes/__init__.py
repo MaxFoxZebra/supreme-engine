@@ -247,6 +247,70 @@ DEFAULTS: dict[str, dict] = {
                                    "phone_number_format": "international"}},
         "sections": {"show_time_spans_in": []},
     },
+    # Section titles as solid bars of the accent, the words in white
+    # capitals: the most common "modern" look, kept to one column.
+    "bold": {
+        "page": {"top_margin": "1.3cm", "bottom_margin": "1.3cm", "left_margin": "1.45cm",
+                 "right_margin": "1.45cm", "show_top_note": False, "show_footer": False},
+        "colors": {"name": "rgb(17, 24, 39)", "headline": "rgb(30, 64, 175)",
+                   "connections": "rgb(55, 55, 55)", "section_titles": "rgb(30, 64, 175)",
+                   "links": "rgb(30, 64, 175)", "body": "rgb(31, 31, 31)"},
+        "typography": {"font_family": {"body": "Open Sans", "name": "Poppins", "headline": "Open Sans",
+                                       "connections": "Open Sans", "section_titles": "Poppins"},
+                       "font_size": {"body": "9.4pt", "name": "28pt", "headline": "11pt",
+                                     "connections": "8.6pt", "section_titles": "1em"},
+                       "alignment": "left", "line_spacing": "0.55em"},
+        "header": {"alignment": "left", "space_below_name": "0.25cm",
+                   "space_below_headline": "0.25cm", "space_below_connections": "0.35cm",
+                   "connections": {"show_icons": True, "display_urls_instead_of_usernames": True,
+                                   "phone_number_format": "international",
+                                   "space_between_connections": "0.45cm"}},
+        "section_titles": {"type": "without_line", "space_above": "0.45cm", "space_below": "0.22cm"},
+        "sections": {"show_time_spans_in": []},
+    },
+    # Minimal: wide margins, no rules, small spaced-out grey titles and room
+    # between everything. For a CV that has less to say and says it calmly.
+    "airy": {
+        "page": {"top_margin": "2cm", "bottom_margin": "1.8cm", "left_margin": "2.1cm",
+                 "right_margin": "2.1cm", "show_top_note": False, "show_footer": False},
+        "colors": {"name": "rgb(28, 28, 28)", "headline": "rgb(110, 110, 110)",
+                   "connections": "rgb(95, 95, 95)", "section_titles": "rgb(120, 120, 120)",
+                   "links": "rgb(60, 60, 60)", "body": "rgb(40, 40, 40)"},
+        "typography": {"font_family": {"body": "Lato", "name": "Raleway", "headline": "Lato",
+                                       "connections": "Lato", "section_titles": "Lato"},
+                       "font_size": {"body": "9.6pt", "name": "26pt", "headline": "10.5pt",
+                                     "connections": "8.6pt", "section_titles": "1em"},
+                       "bold": {"name": False},
+                       "alignment": "left", "line_spacing": "0.62em"},
+        "header": {"alignment": "left", "space_below_name": "0.3cm",
+                   "space_below_headline": "0.3cm", "space_below_connections": "0.6cm",
+                   "connections": {"show_icons": False, "display_urls_instead_of_usernames": True,
+                                   "phone_number_format": "international",
+                                   "space_between_connections": "0.5cm"}},
+        "section_titles": {"type": "without_line", "space_above": "0.75cm", "space_below": "0.3cm"},
+        "sections": {"show_time_spans_in": [], "space_between_regular_entries": "1.15em"},
+    },
+    # For developers: Ubuntu throughout, titles written as a comment in the
+    # accent (// experience), green on near-black, tight and technical.
+    "terminal": {
+        "page": {"top_margin": "1.3cm", "bottom_margin": "1.3cm", "left_margin": "1.5cm",
+                 "right_margin": "1.5cm", "show_top_note": False, "show_footer": False},
+        "colors": {"name": "rgb(20, 24, 28)", "headline": "rgb(5, 122, 85)",
+                   "connections": "rgb(60, 64, 70)", "section_titles": "rgb(5, 122, 85)",
+                   "links": "rgb(5, 122, 85)", "body": "rgb(30, 33, 36)"},
+        "typography": {"font_family": {"body": "Ubuntu", "name": "Ubuntu", "headline": "Ubuntu",
+                                       "connections": "Ubuntu", "section_titles": "Ubuntu"},
+                       "font_size": {"body": "9.2pt", "name": "25pt", "headline": "10.5pt",
+                                     "connections": "8.4pt", "section_titles": "1.15em"},
+                       "alignment": "left", "line_spacing": "0.52em"},
+        "header": {"alignment": "left", "space_below_name": "0.2cm",
+                   "space_below_headline": "0.25cm", "space_below_connections": "0.35cm",
+                   "connections": {"show_icons": True, "display_urls_instead_of_usernames": True,
+                                   "phone_number_format": "international",
+                                   "space_between_connections": "0.4cm"}},
+        "section_titles": {"type": "without_line", "space_above": "0.42cm", "space_below": "0.18cm"},
+        "sections": {"show_time_spans_in": []},
+    },
 }
 for _name, _d in list(DEFAULTS.items()):
     if "_like" in _d:
@@ -269,6 +333,161 @@ SIDE_THEMES = {"sidebar": SIDEBAR_SECTIONS, "duo": DUO_SECTIONS}
 
 # Themes that render but are not offered in the picker until they are ready.
 HIDDEN: set[str] = set()
+
+# The themes that ship, as distinct from the user's own (below).
+OWN = frozenset(DEFAULTS)
+
+
+# --- Your own themes -----------------------------------------------------------
+#
+# A theme of your own is a folder in the workspace: themes/<name>/theme.yaml
+#
+#     label: Teal for agencies          # what the Design panel calls it
+#     based_on: crisp                   # any theme CV Studio ships
+#     design:                           # only what differs from the base
+#       colors: {section_titles: "rgb(31, 111, 107)"}
+#       typography: {font_family: {body: Lato}}
+#
+# plus, optionally, Typst templates named as RenderCV names them
+# (Header.j2.typ, SectionBeginning.j2.typ, Theme.j2.typ...), each replacing
+# the base's own. What it does not replace, it inherits: the base's
+# templates and defaults, its sidebar if it has one, and every Design
+# setting. It lives with the CVs, so it travels with the workspace, and a CV
+# names it like any other: `design.theme: <name>`.
+
+CUSTOM: dict[str, dict] = {}     # name -> {"dir", "base", "label", "error"}
+NAME_OK = __import__("re").compile(r"[a-z][a-z0-9_]{1,30}")
+_custom_stamp: tuple | None = None
+
+
+@functools.cache
+def builtin_defaults(name: str) -> dict:
+    """A RenderCV theme's own settings. Each is classic with a file of
+    different defaults (rendercv/schema/models/design/other_themes), which
+    is what a theme of yours based on one starts from."""
+    if name == "classic":
+        return {}
+    try:
+        from ruamel.yaml import YAML
+        import rendercv.schema.models.design as d
+        f = Path(d.__file__).parent / "other_themes" / f"{name}.yaml"
+        design = (YAML(typ="safe").load(f.read_text(encoding="utf-8")) or {}).get("design") or {}
+        design.pop("theme", None)
+        return design
+    except Exception:
+        return {}
+
+
+def _can_base(base: str) -> bool:
+    return base == "classic" or base in OWN or base in _builtin()
+
+
+def base_of(name: str) -> str:
+    """The shipped theme a theme behaves like: itself, or a custom one's base."""
+    return CUSTOM.get(name, {}).get("base") or name
+
+
+# Set by studio to a function returning its workspace. Asked rather than
+# imported: run as a script, studio is __main__, and an import of "studio"
+# here would load a second copy with the default workspace in it.
+workspace_getter = None
+
+
+def _workspace() -> Path | None:
+    if workspace_getter is not None:
+        return workspace_getter()
+    import sys
+    return getattr(sys.modules.get("studio"), "WORKSPACE", None)
+
+
+def refresh(workspace: Path | None = None) -> list[dict]:
+    """Read the workspace's themes folder, registering what is there and
+    forgetting what is gone. Cheap when nothing changed: one listing."""
+    global _custom_stamp
+    from ruamel.yaml import YAML
+    ws = workspace or _workspace()
+    root = (ws / "themes") if ws else None
+    files = sorted(root.glob("*/theme.yaml")) if root and root.is_dir() else []
+    stamp = tuple((str(f), f.stat().st_mtime) for f in files) + tuple(
+        (str(t), t.stat().st_mtime) for f in files for t in f.parent.glob("*.j2.typ"))
+    if stamp == _custom_stamp:
+        return custom_list()
+    _custom_stamp = stamp
+    theme_classes.cache_clear()          # built from DEFAULTS, which is changing
+    for name in list(CUSTOM):
+        DEFAULTS.pop(name, None)
+        SIDE_THEMES.pop(name, None)
+    CUSTOM.clear()
+    for f in files:
+        name, error = f.parent.name.lower(), None
+        try:
+            data = YAML(typ="safe").load(f.read_text(encoding="utf-8")) or {}
+        except Exception as exc:
+            data, error = {}, f"theme.yaml could not be read: {exc}"
+        base = str(data.get("based_on") or "classic").strip().lower()
+        if not NAME_OK.fullmatch(name):
+            error = "A theme's folder name is lower case letters, digits and _."
+        elif name in OWN or name in _builtin() or name == "classic":
+            error = f"{name} is already a theme's name; rename the folder."
+        elif not _can_base(base):
+            error = f"based_on must be one of the themes CV Studio ships, not {base}."
+        design = data.get("design") or {}
+        if not isinstance(design, dict):
+            error = error or "design must be a mapping of settings."
+            design = {}
+        design.pop("theme", None)
+        CUSTOM[name] = {"dir": f.parent, "base": base, "error": error,
+                        "label": str(data.get("label") or name.replace("_", " ").title())}
+        if error:
+            continue
+        DEFAULTS[name] = merge(DEFAULTS[base] if base in OWN else builtin_defaults(base), design)
+        if base in SIDE_THEMES:
+            SIDE_THEMES[name] = SIDE_THEMES[base]
+    return custom_list()
+
+
+def custom_list() -> list[dict]:
+    return [{"name": n, "label": c["label"], "based_on": c["base"], "error": c["error"],
+             "templates": sorted(t.name for t in c["dir"].glob("*.j2.typ"))}
+            for n, c in sorted(CUSTOM.items())]
+
+
+def save_custom(workspace: Path, name: str, label: str, based_on: str, design: dict) -> dict:
+    """Write a theme of your own from a design, such as the open CV's."""
+    import io
+    from ruamel.yaml import YAML
+    name = name.strip().lower().replace(" ", "_").replace("-", "_")
+    if not NAME_OK.fullmatch(name):
+        raise ValueError("A theme's name is 2 to 31 lower-case letters, digits or _, "
+                         "starting with a letter.")
+    if name in OWN or name in _builtin() or name == "classic":
+        raise ValueError(f"{name} is already a theme's name.")
+    based_on = base_of(based_on)
+    if not _can_base(based_on):
+        raise ValueError(f"A theme can be based on any theme CV Studio ships, not {based_on}.")
+    # Only what differs from the base: the file reads as a list of choices.
+    def diff(cur, base):
+        if isinstance(cur, dict):
+            out = {k: diff(v, (base or {}).get(k) if isinstance(base, dict) else None)
+                   for k, v in cur.items()}
+            return {k: v for k, v in out.items() if v not in (None, {})}
+        return None if cur == base else cur
+    clean = {k: v for k, v in (design or {}).items() if k not in ("theme", "sidebar_sections")}
+    folder = workspace / "themes" / name
+    folder.mkdir(parents=True, exist_ok=True)
+    body = {"label": label.strip() or name.replace("_", " ").title(), "based_on": based_on,
+            "design": diff(clean, DEFAULTS[based_on] if based_on in OWN
+                           else builtin_defaults(based_on)) or {}}
+    out = io.StringIO()
+    dumper = YAML()
+    dumper.default_flow_style = False
+    dumper.dump(body, out)
+    (folder / "theme.yaml").write_text(
+        "# A CV Studio theme. Change the design below, or add Typst templates beside\n"
+        "# this file (Header.j2.typ, SectionBeginning.j2.typ...) to replace the base's.\n"
+        + out.getvalue(), encoding="utf-8")
+    refresh(workspace)
+    return {"name": name, "path": f"themes/{name}/theme.yaml", **CUSTOM[name]}
 
 
 def _lum(rgb) -> float:
@@ -391,10 +610,20 @@ def _loader():
         # of your own keeps its own.
         if rest == "Preamble.j2.typ" and (theme in DEFAULTS or theme in _builtin()):
             return preamble, None, lambda: True
+        if theme in CUSTOM and not CUSTOM[theme]["error"]:
+            # Yours first, then the base's, then (by returning None) RenderCV's.
+            mine = CUSTOM[theme]["dir"] / rest
+            if mine.is_file():
+                return mine.read_text(encoding="utf-8"), str(mine), lambda: mine.is_file()
+            theme = CUSTOM[theme]["base"]
+            if theme not in OWN and rest == "Theme.j2.typ":
+                return "", None, lambda: True   # RenderCV's look, your settings
         if theme in DEFAULTS:
             f = HERE / theme / rest
             if f.is_file():
                 return f.read_text(encoding="utf-8"), str(f), lambda: True
+            if rest == "Theme.j2.typ":
+                return "", None, lambda: True   # a theme of settings alone
         return None
     return jinja2.FunctionLoader(load)
 
@@ -433,7 +662,8 @@ def install() -> None:
             env.globals["cvstudio_band_ink"] = band_ink
             env.globals["cvstudio_readable"] = readable
             env.globals["cvstudio_swap"] = swap
-            env.globals["cvstudio_ours"] = list(DEFAULTS)
+            env.globals["cvstudio_ours"] = DEFAULTS   # live: your themes join it
+            env.globals["cvstudio_kind"] = base_of
             env.globals["cvstudio_sidebar_default"] = SIDEBAR_SECTIONS
             # SectionEnding is not told which section it ends; the sidebar's
             # SectionBeginning leaves a note here for it. Renders run one at

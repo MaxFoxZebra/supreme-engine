@@ -118,6 +118,7 @@ def _render_in_process_locked(yaml_path: Path, out_dir: Path) -> tuple[bool, str
     try:
         import themes
         themes.install()
+        themes.refresh()
     except Exception:
         pass
 

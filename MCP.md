@@ -22,8 +22,30 @@ one rendered by clicking Save.
 | `add_language` | Start a translation of a CV, with dates and common section titles already translated |
 | `translation_status` | What a translation is missing from the CV it was translated from |
 | `mark_translation_current` | Record that a translation has caught up |
-| `design_options` | Available themes, fonts and page sizes |
+| `design_options` | Available themes (the user's own first), fonts and page sizes |
+| `save_theme` | Keep a CV's design as a theme of the user's own, in `themes/<name>/` |
 | `workspace_info` | Where the workspace is and what is in it, including the base CV to tailor from |
+
+## Resources, and what changed
+
+Tools are what the model calls; resources are what you attach. A client that
+shows resources lists these in its attach menu, and reads one only when you
+pick it:
+
+| Resource | What it is |
+|---|---|
+| `cvstudio://documents/<path>` | A CV (YAML) or a cover letter (Markdown) |
+| `cvstudio://pdf/<path>` | Its PDF, rendered first if the source changed since |
+| `cvstudio://applications/<id>` | An application, as JSON |
+| `cvstudio://applications/<id>/posting` | Its saved posting, as Markdown |
+
+The list is read fresh, so a CV made a minute ago is there. And the server
+watches the workspace while a client is connected: edit a CV in the app, or
+move an application along, and a client that subscribed to it is told, so the
+model is not working from the copy it read an hour ago. A client is also told
+when something is added or removed. Both protocol generations are served:
+`resources/subscribe` with notifications (clients from before 2026-07-28) and
+`subscriptions/listen` streams (from then on).
 
 ## The applications
 
@@ -192,6 +214,12 @@ most often wrong, or a mistake costs you most:
 | `update_job_tracking` corrects a title | "Rename it to the title its posting gives?" | No keeps your title |
 | `write_cv` would drop comments you wrote | How many, and one of them | No keeps the file |
 | `add_job` cannot read a posting (a sign-in wall) | A box to paste the posting into | What you paste is saved; empty is fine |
+
+On a 2026-07-28 connection a server no longer sends a question in the middle
+of a call. The call comes back "input required" with the question, your
+client asks you, and calls again with your answer. CV Studio does both: it
+asks mid-call on older connections and this way on newer ones, and a call
+that has two questions asks each once.
 
 A refusal tells the model you declined and that nothing changed, and the
 instructions tell it to ask you rather than try again. In a client without

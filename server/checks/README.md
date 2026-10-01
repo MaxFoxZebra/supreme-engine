@@ -19,8 +19,9 @@ cd server
 |---|---|
 | `jscheck.py` | Every script in the served page parsed with `node --check`: a stray quote leaves a page that loads and then does nothing. |
 | `audit.py` | Static audit of the served interface. No browser needed. |
-| `prefstest.py`, `langtest.py`, `lettertest.py`, `reviewtest.py`, `importtest.py`, `phototest.py`, `maptest.py`, `sampletest.py`, `aichangestest.py`, `elicittest.py`, `docxtest.py` | One area each, end to end in a scratch folder: preferences, languages, cover letters, reviewing what an AI client changed, importing, the photo, the page map, sample data, what an AI client changed on applications, what a tool asks the user directly, Word in and out. |
+| `prefstest.py`, `langtest.py`, `lettertest.py`, `reviewtest.py`, `importtest.py`, `phototest.py`, `maptest.py`, `sampletest.py`, `aichangestest.py`, `elicittest.py`, `docxtest.py`, `customthemetest.py` | One area each, end to end in a scratch folder: preferences, languages, cover letters, reviewing what an AI client changed, importing, the photo, the page map, sample data, what an AI client changed on applications, what a tool asks the user directly, Word in and out, themes of your own. |
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
+| `mcpmodern.py` | The same server at protocol 2026-07-28, through the SDK's own client: questions as input-required rounds, change events on a listen stream. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
 | `editortest.js` | The letter and CV editors under real key and mouse input: the caret stays in its field and its paragraph, and the panes stay put, through autosave, the live preview, Ctrl+S and the poll after it; bold, italic, strikethrough and code keep the selection; what was typed reaches the file where it was typed; undo works after a save. |

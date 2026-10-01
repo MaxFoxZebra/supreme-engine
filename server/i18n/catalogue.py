@@ -9,6 +9,21 @@ checks/i18nscan.js lists interface text that is missing here.
 """
 
 C = {
+    'Software, infrastructure, data': ('Logiciel, infrastructure, données', 'Software, infraestructura, datos', 'Software, infraestrutura, dados'),
+    'An early career, or a short and senior CV': ('Un début de carrière, ou un CV court et senior', 'Un inicio de carrera, o un CV breve y sénior', 'Um começo de carreira, ou um CV curto e sênior'),
+    'Sales, marketing, operations: a page that stands out': ('Vente, marketing, opérations : une page qui se remarque', 'Ventas, marketing, operaciones: una página que destaca', 'Vendas, marketing, operações: uma página que se destaca'),
+    'design must be a mapping of settings.': ('design doit être une liste de réglages (clé : valeur).', 'design debe ser un conjunto de ajustes (clave: valor).', 'design precisa ser um conjunto de ajustes (chave: valor).'),
+    "A theme's folder name is lower case letters, digits and _.": ("Le nom du dossier d'un thème est en lettres minuscules, chiffres et _.", 'El nombre de la carpeta de un tema va en minúsculas, cifras y _.', 'O nome da pasta de um tema usa letras minúsculas, dígitos e _.'),
+    "A theme's name is 2 to 31 lower-case letters, digits or _, starting with a letter.": ("Le nom d'un thème fait de 2 à 31 lettres minuscules, chiffres ou _, et commence par une lettre.", 'El nombre de un tema tiene de 2 a 31 letras minúsculas, cifras o _, y empieza por una letra.', 'O nome de um tema tem de 2 a 31 letras minúsculas, dígitos ou _, e começa com uma letra.'),
+    'Saved as {n}. Pick it in Design for any CV.': ("Enregistré sous {n}. Choisissez-le dans Mise en page pour n'importe quel CV.", 'Guardado como {n}. Elígelo en Diseño para cualquier CV.', 'Salvo como {n}. Escolha-o em Design para qualquer CV.'),
+    'Your own theme, kept in the themes folder of your workspace': ('Votre propre thème, rangé dans le dossier themes de votre espace de travail', 'Tu propio tema, guardado en la carpeta themes de tu espacio de trabajo', 'Seu próprio tema, guardado na pasta themes do seu espaço de trabalho'),
+    'Give it a name.': ('Donnez-lui un nom.', 'Ponle un nombre.', 'Dê um nome.'),
+    'A name, such as Teal for agencies': ('Un nom, par exemple Bleu-vert pour cabinets', 'Un nombre, por ejemplo Verde azulado para agencias', 'Um nome, por exemplo Verde-azulado para agências'),
+    'Save theme': ('Enregistrer le thème', 'Guardar tema', 'Salvar tema'),
+    'Its colours, fonts and spacing become a theme you can pick for any CV. It is kept in the themes folder of your workspace.': ("Ses couleurs, polices et espacements deviennent un thème à choisir pour n'importe quel CV. Il est rangé dans le dossier themes de votre espace de travail.", 'Sus colores, fuentes y espaciados pasan a ser un tema que puedes elegir para cualquier CV. Se guarda en la carpeta themes de tu espacio de trabajo.', 'Suas cores, fontes e espaçamentos viram um tema que você pode escolher para qualquer CV. Ele fica na pasta themes do seu espaço de trabalho.'),
+    'Save this look as a theme': ('Enregistrer cette mise en page comme thème', 'Guardar este aspecto como tema', 'Salvar este visual como tema'),
+    'Keep this look as a theme you can pick for any CV': ("Garder cette mise en page comme thème, à choisir pour n'importe quel CV", 'Guardar este aspecto como tema, para elegirlo en cualquier CV', 'Guardar este visual como tema, para escolher em qualquer CV'),
+    'Save as theme…': ('Enregistrer comme thème…', 'Guardar como tema…', 'Salvar como tema…'),
     "To paste into a form's cover letter box": ("À coller dans le champ lettre de motivation d'un formulaire", 'Para pegar en el campo de carta de un formulario', 'Para colar no campo de carta de um formulário'),
     'Word (.docx)': ('Word (.docx)', 'Word (.docx)', 'Word (.docx)'),
     'Plain text': ('Texte brut', 'Texto sin formato', 'Texto simples'),
@@ -1377,6 +1392,13 @@ C = {
 }
 
 RX = [
+    ('^based_on must be one of the themes CV Studio ships, not (.+)\\.$', "based_on doit être l'un des thèmes fournis avec CV Studio, pas $1.", 'based_on debe ser uno de los temas que trae CV Studio, no $1.', 'based_on precisa ser um dos temas que vêm com o CV Studio, não $1.'),
+    ('^A theme can be based on any theme CV Studio ships, not (.+)\\.$', "Un thème peut partir de n'importe quel thème fourni avec CV Studio, pas de $1.", 'Un tema puede basarse en cualquier tema que trae CV Studio, no en $1.', 'Um tema pode partir de qualquer tema que vem com o CV Studio, não de $1.'),
+    ('^theme\\.yaml could not be read: (.+)$', "theme.yaml n'a pas pu être lu : $1", 'No se pudo leer theme.yaml: $1', 'Não foi possível ler theme.yaml: $1'),
+    ('^based_on must be classic or a CV Studio theme, not (.+)\\.$', 'based_on doit être classic ou un thème CV Studio, pas $1.', 'based_on debe ser classic o un tema de CV Studio, no $1.', 'based_on precisa ser classic ou um tema do CV Studio, não $1.'),
+    ("^(.+) is already a theme's name; rename the folder\\.$", "$1 est déjà le nom d'un thème ; renommez le dossier.", '$1 ya es el nombre de un tema; cambia el nombre de la carpeta.', '$1 já é o nome de um tema; renomeie a pasta.'),
+    ('^A theme can be based on classic or a CV Studio theme, not (.+)\\.$', "Un thème peut partir de classic ou d'un thème CV Studio, pas de $1.", 'Un tema puede basarse en classic o en un tema de CV Studio, no en $1.', 'Um tema pode partir do classic ou de um tema do CV Studio, não de $1.'),
+    ("^(.+) is already a theme's name\\.$", "$1 est déjà le nom d'un thème.", '$1 ya es el nombre de un tema.', '$1 já é o nome de um tema.'),
     ('^That Word file could not be read \\((.+)\\)\\.$', "Ce fichier Word n'a pas pu être lu ($1).", 'No se pudo leer ese archivo de Word ($1).', 'Não foi possível ler esse arquivo do Word ($1).'),
     ('^No name could be found at the top of the (.+)\\.$', "Aucun nom n'a été trouvé en haut du $1.", 'No se encontró ningún nombre al principio del $1.', 'Nenhum nome foi encontrado no topo do $1.'),
     ("^This application has changed again since \\((.+)\\), so undoing would lose that\\. Change it by hand instead\\.$", "Cette candidature a encore changé depuis ($1) : annuler perdrait ce changement. Modifiez-la à la main.", "Esta candidatura ha vuelto a cambiar desde entonces ($1), así que deshacer perdería eso. Cámbiala a mano.", "Esta candidatura mudou de novo desde então ($1), então desfazer perderia isso. Altere-a à mão."),

@@ -95,7 +95,7 @@ if __name__ == "__main__":
     tools = {t["name"]: t for t in r["result"]["tools"]}
     documents = {"list_cvs", "read_cv", "cv_outline", "write_cv", "edit_cv_fields",
                  "create_cv", "render_cv", "ats_check", "design_options",
-                 "workspace_info", "add_language", "translation_status",
+                 "workspace_info", "add_language", "translation_status", "save_theme",
                  "mark_translation_current", "create_letter", "write_letter"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
@@ -447,6 +447,34 @@ if __name__ == "__main__":
     leaked = "root:" in json.dumps(res)
     check("a path outside the workspace is refused", refused and not leaked,
           "refused" if refused else json.dumps(r)[:80])
+
+    # ---- Resources ---------------------------------------------------------
+    # What a person attaches, rather than what a model calls. Listed fresh
+    # from the workspace, and watched: an edit made in the app reaches a
+    # client that subscribed, as a notification on this same connection.
+    r = c.send("resources/list")
+    uris = [x["uri"] for x in r["result"]["resources"]]
+    check("documents, their PDFs and the applications are resources",
+          "cvstudio://documents/profile/my-cv.yaml" in uris and "cvstudio://pdf/profile/my-cv.yaml" in uris
+          and any(u.startswith("cvstudio://applications/") for u in uris), str(len(uris)))
+    r = c.send("resources/read", {"uri": f"cvstudio://applications/{job_id}"})
+    check("an application reads as JSON", json.loads(r["result"]["contents"][0]["text"])["id"] == job_id)
+    r = c.send("resources/read", {"uri": "cvstudio://documents/../escape.yaml"})
+    check("a resource outside the workspace is refused", bool(r.get("error")))
+    doc = "cvstudio://documents/" + "profile/mcp-probe-edit.yaml"
+    c.send("resources/subscribe", {"uri": doc})
+    time.sleep(2.5)
+    target = ws / "profile" / "mcp-probe-edit.yaml"
+    target.write_text(target.read_text(encoding="utf-8") + "\n# edited outside\n", encoding="utf-8")
+    seen, deadline = [], time.time() + 10
+    while time.time() < deadline and not seen:
+        try:
+            m = c.q.get(timeout=1)
+        except Exception:
+            continue
+        if m.get("method") == "notifications/resources/updated":
+            seen.append(m["params"]["uri"])
+    check("an edit made outside reaches a subscriber", seen == [doc], str(seen))
 
     c.close()
     print("\nSTDERR:", b" | ".join(c.err[-3:]).decode(errors="replace") or "(silent)")

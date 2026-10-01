@@ -141,7 +141,8 @@ an entry in one view selects it in all of them.
 | **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
 | **ATS check** | The text an applicant tracking system actually gets out of the PDF, what in it will not parse, with a one-click fix for the common ones, and which of the posting's keywords the CV uses. A count, not a score: there is no universal ATS score to compute |
-| **Design** | Theme, typeface, size and colours, a photo if you want one, and every other RenderCV option, with what each costs in pages. One design for all the languages of a CV |
+| **Design** | Theme, typeface, size and colours, a photo if you want one, and every other RenderCV option, with what each costs in pages. One design for all the languages of a CV. Twenty-two themes, among them Bold (accent bars), Airy (minimal) and Terminal (for developers) |
+| **Your own themes** | **Save as theme** in Design keeps the look of a CV as a theme you can pick for any CV. It is a folder in the workspace, `themes/<name>/`: a `theme.yaml` naming the theme it is based on and only what differs, and, if you want to go further, Typst templates beside it that replace the base's own |
 | **Save** | Or `Ctrl`/`Cmd` + `S`: writes the file and lays out the page again. The status bar reports how long it took |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, with what the line said before, and a second mark for every field that no longer matches the base. Neither is in the YAML, so neither prints |

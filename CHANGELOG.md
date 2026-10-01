@@ -10,6 +10,18 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Themes of your own.** *Save as theme* in Design keeps the look of a CV as
+  a theme you can pick for any CV, based on any theme the app ships. It is a
+  folder in your workspace (`themes/<name>/`), so it travels with your CVs;
+  add Typst templates there to go further. An AI client can save one too.
+- **Three new themes:** Bold (section titles on bars of colour), Airy (wide
+  margins, nothing but the words) and Terminal (for developers). All one
+  column, all ATS-safe.
+- **Your CVs, letters, PDFs and applications as MCP resources**, for a client
+  to attach, and kept fresh: an edit you make in the app is announced to the
+  client, so the model never works from a stale copy.
+- **Questions work on the newest MCP clients too** (protocol 2026-07-28),
+  which ask by repeating the call with your answer.
 - **Undo what an AI client did to an application.** Every status, date,
   contact or note it writes now waits under Attention, *Changes by AI to
   review*, field by field. Keep it, or undo it; undo refuses if you have

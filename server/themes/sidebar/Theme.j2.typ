@@ -2,7 +2,7 @@
 // languages, certifications...). They are collected as the page is built
 // and placed beside the name, so nothing in your CV is reordered. What does
 // not fit beside page one continues in the main column, in order.
-{% set duo = design.theme == "duo" %}
+{% set duo = cvstudio_kind(design.theme) == "duo" %}
 {% set acc = design.colors.section_titles.as_rgb() %}
 {% if duo %}
 {% include "crisp/Theme.j2.typ" %}

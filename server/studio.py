@@ -76,6 +76,7 @@ import review  # noqa: E402
 import backups  # noqa: E402
 import posting  # noqa: E402
 import themes  # noqa: E402
+themes.workspace_getter = lambda: WORKSPACE
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
 # unpacks data files under _MEIPASS; in a checkout they sit next to this file.
@@ -1679,6 +1680,8 @@ _DEFAULTS: dict = {}
 
 def design_defaults(theme: str) -> dict:
     """A theme's own value for every design setting, keyed "colors.name"."""
+    if theme in themes.CUSTOM:
+        _DEFAULTS.pop(theme, None)       # yours can change under the app
     if theme not in _DEFAULTS:
         out = {}
         for g in design_schema(theme).get("groups", []):
@@ -3546,8 +3549,12 @@ def available_themes() -> list[str]:
         builtin = list(at)
     except Exception:
         builtin = list(THEMES)
-    # CV Studio's own themes first: they are the ones made to look finished.
-    return [t for t in themes.DEFAULTS if t not in builtin and t not in themes.HIDDEN] + builtin
+    # Your own themes first, then CV Studio's: they are the ones made to look
+    # finished, then RenderCV's.
+    themes.refresh()
+    mine = [c["name"] for c in themes.custom_list() if not c["error"]]
+    return mine + [t for t in themes.DEFAULTS if t in themes.OWN and t not in builtin
+                   and t not in themes.HIDDEN] + builtin
 
 
 def _unwrap(spec: dict) -> dict:
@@ -3594,6 +3601,7 @@ def _describe(spec: dict, defs: dict, path: list, group: str, depth: int = 0) ->
 
 def design_schema(theme: str) -> dict:
     """Every design option for a theme, described well enough to build a UI from."""
+    themes.refresh()
     try:
         if theme in themes.DEFAULTS:
             # One of CV Studio's: classic's options, with the theme's own
@@ -3901,6 +3909,11 @@ def openapi_spec() -> dict:
                 "Move a CV or a letter to the workspace's .trash folder. Refuses the base CV "
                 "and a document others are translated from",
                 "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
+            "/api/themes/save": {"post": {"summary":
+                "Save a document's design as a theme of your own, in themes/<name>/",
+                "requestBody": body({"path": {"type": "string"}, "name": {"type": "string"},
+                                     "label": {"type": "string"}}),
+                "responses": ok}},
             "/api/reveal": {"post": {"summary":
                 "Open the workspace, or one path inside it, in the file manager",
                 "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
@@ -4393,6 +4406,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "languages": languages.catalogue(),
                     "photo": photo_info(),
                     "themes": available_themes(),
+                    "custom_themes": themes.custom_list(),
                     "page_sizes": PAGE_SIZES,
                     "fonts": font_families(),
                     "workspace": str(WORKSPACE),
@@ -4739,6 +4753,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "Only web links can be opened."}, 400)
                 webbrowser.open(link)
                 return self._json({"ok": True})
+            if u.path == "/api/themes/save":
+                try:
+                    p = safe_path(payload.get("path", ""))
+                    design = (to_plain(yaml_rt.load(p.read_text(encoding="utf-8"))) or {}).get("design") or {}
+                    return self._json({"ok": True, **{k: v for k, v in themes.save_custom(
+                        WORKSPACE, str(payload.get("name") or ""), str(payload.get("label") or ""),
+                        str(design.get("theme") or "classic"), design).items() if k != "dir"}})
+                except (ValueError, OSError) as exc:
+                    return self._json({"error": str(exc)}, 400)
             if u.path == "/api/reveal":
                 target = WORKSPACE
                 sub_ = payload.get("path")
@@ -5366,6 +5389,7 @@ const API_TOKEN=__API_TOKEN__;
     <span class="dz-badge" id="dz-base" hidden>Base CV</span>
     <span class="dz-note" id="dz-note"></span>
     <div class="grow"></div>
+    <button class="obtn" id="dz-savetheme" title="Keep this look as a theme you can pick for any CV">Save as theme&#8230;</button>
     <button class="obtn" id="dz-pdf">Export PDF&#8230;</button>
     <button class="pbtn" data-close-ovl>Done</button>
   </div>

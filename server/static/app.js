@@ -8047,7 +8047,11 @@ function thumbHTML(theme){
       'px;width:'+w+(mt?';margin-top:'+mt+"px":"")+(bg?";background:"+bg:"")+'"></i>').join("")+
     '</div>';
 }
-const themeLabel=t=>t.replace(/^engineeringclassic$/,"Engineering")
+/* Your own themes are named by their theme.yaml, and behave like the theme
+   they are based on (its columns, its ATS note). */
+const customTheme=t=>((S.state&&S.state.custom_themes)||[]).find(c=>c.name===t)||null;
+const themeBase=t=>{ const c=customTheme(t); return c?c.based_on:t };
+const themeLabel=t=>customTheme(t)?customTheme(t).label:t.replace(/^engineeringclassic$/,"Engineering")
   .replace(/^engineeringresumes$/,"Compact")
   .replace(/^(.)/,c=>c.toUpperCase());
 
@@ -8099,7 +8103,26 @@ function paintDesignHead(){
     : "Only this document. The base CV keeps its own.";
 }
 $("#dz-list").onclick=()=>{ closeOverlays(); goBack() };
-$("#dz-pdf").onclick=()=>$("#btn-pdf").click();
+/* The editor's Export is a menu now, and it sits under this overlay: here,
+   the PDF straight away. */
+$("#dz-pdf").onclick=()=>{ if(S.pdf) window.open("/api/asset?path="+encodeURIComponent(S.pdf)+tok()) };
+/* The look of this CV, kept as a theme of your own: only what differs from
+   the theme it is on, in themes/<name>/theme.yaml, to pick for any CV. */
+$("#dz-savetheme").onclick=async()=>{
+  if(S.dirty) await doRender();
+  const r=await askDialog({title:t("Save this look as a theme"),
+    body:t("Its colours, fonts and spacing become a theme you can pick for any CV. It is kept in the themes folder of your workspace."),
+    ok:t("Save theme"), input:{placeholder:t("A name, such as Teal for agencies"),
+      check:v=>v.length<2?t("Give it a name."):null}});
+  if(!r) return;
+  let slug=r.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,30);
+  if(!/^[a-z]/.test(slug)) slug="my_"+slug;
+  try{
+    await post("/api/themes/save",{path:S.path,name:slug,label:r.value});
+    S.state=await api("/api/state"); paintThemes();
+    toast(t("Saved as {n}. Pick it in Design for any CV.",{n:r.value}));
+  }catch(e){ toast(e.message,true) }
+};
 async function ensureSchema(){
   const theme=DZ.theme||(S.state.themes||[])[0];
   if(S.schema&&S.schemaTheme===theme) return;
@@ -8143,22 +8166,26 @@ const TH_INK={vivid:"rgb(220, 53, 34)",swiss:"rgb(255, 94, 14)",crisp:"rgb(0, 11
   studio:"rgb(31, 78, 121)",ledger:"rgb(176, 74, 44)",sidebar:"rgb(31, 111, 107)",
   classic:"rgb(0, 79, 144)",engineeringclassic:"rgb(0, 79, 144)",moderncv:"rgb(0, 79, 144)",
   ember:"rgb(155, 35, 25)",opal:"rgb(0, 100, 90)",ink:"rgb(42, 24, 82)",
-  harvard:"rgb(0, 0, 0)",sb2nov:"rgb(0, 0, 0)",engineeringresumes:"rgb(0, 0, 0)"};
+  harvard:"rgb(0, 0, 0)",sb2nov:"rgb(0, 0, 0)",engineeringresumes:"rgb(0, 0, 0)",
+  bold:"rgb(30, 64, 175)",airy:"rgb(120, 120, 120)",terminal:"rgb(5, 122, 85)"};
 const TH_SUITS={vivid:"Tech, engineering, data",swiss:"Almost anywhere, clean and plain",
   crisp:"Product, sales, operations",duo:"Read by people first: referrals, a hiring manager, small companies",aurora:"Tech, product, startups",editorial:"Consulting, law, publishing",
   timeline:"A career with a clear story",studio:"Almost anywhere, with presence",ledger:"Consulting, product, design",
   sidebar:"Read by people: referrals, small companies",classic:"Almost anywhere",ember:"Education, health, non-profits",
   engineeringclassic:"Engineering, science",engineeringresumes:"A long career on one page",
   harvard:"Finance, law, consulting",ink:"Design, media, writing",moderncv:"Academia, research",
-  opal:"Tech, product, startups",sb2nov:"Software, US style"};
+  opal:"Tech, product, startups",sb2nov:"Software, US style",
+  bold:"Sales, marketing, operations: a page that stands out",airy:"An early career, or a short and senior CV",
+  terminal:"Software, infrastructure, data"};
 const SWATCHES=[["Navy","rgb(0, 79, 144)"],["Teal","rgb(0, 100, 90)"],
   ["Burgundy","rgb(122, 31, 43)"],["Graphite","rgb(40, 40, 40)"]];
 const INK_KEYS=["name","headline","connections","section_titles","links"];
 /* Studio's name sits white on the colour band, so its colour is the band's:
    the section titles. The others keep a dark name beside the accent. */
-const inkKeys=t=>["studio","aurora"].includes(t)?["section_titles","links"]
+const inkKeys=t=>(t=themeBase(t),["studio","aurora"].includes(t))?["section_titles","links"]
   :["crisp","duo"].includes(t)?["headline"]
-  :["sidebar","editorial","timeline","ledger","vivid","swiss"].includes(t)?["headline","section_titles","links"]:INK_KEYS;
+  :["sidebar","editorial","timeline","ledger","vivid","swiss","bold","terminal"].includes(t)?["headline","section_titles","links"]
+  :t==="airy"?["section_titles"]:INK_KEYS;
 /* The colour a theme's swatches set and show as chosen: Crisp's accent is
    its headline (and companies); its section titles stay near-black. */
 const accentKey=t=>["crisp","duo"].includes(t)?"headline":"section_titles";
@@ -8202,7 +8229,10 @@ function paintThemes(){
   const by=(S.thumbs&&S.thumbs.by)||{};
   const live=S.render&&S.render.pngs&&S.render.pngs[0];
   const ink=inkNow(cur);
-  $("#themegrid").innerHTML=themes.map(t=>{
+  /* A theme of your own that cannot be used says why, rather than vanishing. */
+  const broken=((S.state&&S.state.custom_themes)||[]).filter(c=>c.error);
+  $("#themegrid").innerHTML=broken.map(c=>'<p class="th-broken" role="status">themes/'+esc(c.name)+': '+
+    esc(c.error)+'</p>').join("")+themes.map(t=>{
     const img=t===cur&&live?live+tok():(by[t]?by[t].png+tok():null);
     const pp=S.themePages[t], own=TH_INK[t];
     const sw=(own?[[t==="harvard"||own==="rgb(0, 0, 0)"?"Black":"Theme colour","",own]]:[])
@@ -8211,9 +8241,10 @@ function paintThemes(){
       '<button class="thumbwrap" role="radio" aria-checked="'+String(t===cur)+'" data-theme="'+esc(t)+'">'+
       (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
       '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
-      (t==="sidebar"||t==="duo"
+      (customTheme(t)?'<b class="th-mine" title="'+esc("Your own theme, kept in the themes folder of your workspace")+'">'+esc("Yours")+'</b>':'')+
+      (themeBase(t)==="sidebar"||themeBase(t)==="duo"
         ?'<b class="th-ats warn" title="'+esc("Two columns: most ATS read them in order, some (Workday among them) may mix the right-hand column into your experience. Best when a person reads it first: a referral, an email to a hiring manager, a small company. For a big company's job portal, pick a one-column theme.")+'">ATS ~</b>'
-        :t==="ledger"
+        :themeBase(t)==="ledger"
         ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some read the column of dates on its own, apart from each job")+'">ATS ~</b>'
         :'<b class="th-ats" title="'+esc("Read in order by both kinds of PDF reader ATS use, in our tests; no icon characters in the text")+'">ATS ✓</b>')+
       '<em>'+(pp?pp+" page"+(pp===1?"":"s"):"")+'</em></span>'+

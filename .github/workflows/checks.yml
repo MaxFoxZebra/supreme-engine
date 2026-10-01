@@ -114,6 +114,9 @@ jobs:
       - name: Word in and out
         run: python checks/docxtest.py
 
+      - name: Themes of your own
+        run: python checks/customthemetest.py
+
       - name: Posting from a link
         run: python checks/postingtest.py
 
@@ -141,6 +144,11 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/mcp-ws"
           python checks/mcpclient.py python server_main.py --mcp --workspace "$RUNNER_TEMP/mcp-ws"
+
+      - name: MCP at protocol 2026-07-28 (the SDK's own client)
+        run: |
+          mkdir -p "$RUNNER_TEMP/mcp-ws-modern"
+          python checks/mcpmodern.py python "$RUNNER_TEMP/mcp-ws-modern"
 
       - name: Browser flows
         run: |

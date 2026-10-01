@@ -43,6 +43,9 @@ mcp = MCPServer(
         "their format.\n\n"
         "To find what to edit, call cv_outline: it lists every entry and "
         "bullet with the exact path edit_cv_fields takes.\n\n"
+        "The look is the design block. design_options lists the themes, the "
+        "user's own first. When they like a look you shaped on a CV, "
+        "save_theme keeps it as a theme of theirs for any CV.\n\n"
         "After editing, always call render_cv and look at the returned page "
         "image before telling the user it is done. Page-break problems are "
         "invisible in the source.\n\n"
@@ -264,6 +267,45 @@ class _Confirm(BaseModel):
 DECLINED = object()
 
 
+# From 2026-07-28 a server no longer sends a question mid-call. The call
+# returns "input required" with the question, the client asks the user and
+# calls again with the answer. Each question is keyed by its own text, and the
+# answers so far ride along in request_state (sealed by the SDK), so a tool
+# that asks two things re-runs to the second without asking the first again.
+INPUT_REQUIRED_VERSION = "2026-07-28"
+
+
+class _NeedInput(Exception):
+    def __init__(self, key: str, request) -> None:
+        super().__init__(key)
+        self.key, self.request = key, request
+
+
+def _modern(ctx) -> bool:
+    from mcp_types.version import is_version_at_least
+    try:
+        v = ctx.protocol_version
+        return bool(v) and is_version_at_least(v, INPUT_REQUIRED_VERSION)
+    except Exception:
+        return False
+
+
+def _answers_from(ctx) -> dict:
+    """Every answer this call has had so far: earlier rounds, then this one."""
+    import json as _json
+    out: dict = {}
+    try:
+        out.update(_json.loads(ctx.request_state or "{}").get("answers") or {})
+    except Exception:
+        pass
+    for key, res in (getattr(ctx, "input_responses", None) or {}).items():
+        try:
+            out[key] = {"action": res.action, "content": res.content}
+        except AttributeError:
+            continue
+    return out
+
+
 def _elicit(message: str, schema: type[BaseModel]):
     """Put a form in front of the user, through the client.
 
@@ -273,12 +315,34 @@ def _elicit(message: str, schema: type[BaseModel]):
     is. Called from a sync tool, so it hops onto the event loop to ask.
     """
     ctx = getattr(_local, "ctx", None)
-    try:
-        caps = ctx.session.client_params.capabilities
-        if caps is None or caps.elicitation is None:
-            return None
-    except Exception:
+    if ctx is None:
         return None
+    try:
+        caps = ctx.client_capabilities
+    except Exception:
+        caps = None
+    if caps is None:
+        try:
+            caps = ctx.session.client_params.capabilities
+        except Exception:
+            caps = None
+    if caps is None or caps.elicitation is None:
+        return None
+    if _modern(ctx):
+        import hashlib
+        from mcp.server.elicitation import render_elicitation_schema
+        from mcp_types import ElicitRequest, ElicitRequestFormParams
+        key = "ask-" + hashlib.sha1(message.encode("utf-8")).hexdigest()[:16]
+        got = getattr(_local, "answers", {}).get(key)
+        if got is None:
+            raise _NeedInput(key, ElicitRequest(params=ElicitRequestFormParams(
+                message=message, requested_schema=render_elicitation_schema(schema))))
+        if got.get("action") != "accept":
+            return DECLINED
+        try:
+            return schema.model_validate(got.get("content") or {})
+        except Exception:
+            return DECLINED
     try:
         res = anyio.from_thread.run(ctx.elicit, message, schema)
     except Exception:
@@ -366,8 +430,17 @@ def tool(fn):
         # the inner call must not take the outer one's Context away.
         outer = getattr(_local, "ctx", None)
         _local.ctx = cvs_ctx or outer
+        if cvs_ctx is not None and _modern(cvs_ctx):
+            _local.answers = _answers_from(cvs_ctx)
         try:
             result = fn(*args, **kwargs)
+        except _NeedInput as need:
+            # Nothing has been written yet: every question comes before the
+            # write it guards. Ask, and run again with the answer.
+            import json as _json
+            from mcp_types import InputRequiredResult
+            return InputRequiredResult(input_requests={need.key: need.request},
+                                       request_state=_json.dumps({"answers": getattr(_local, "answers", {})}))
         except Exception as exc:
             if watch is not None:
                 _checkpoint(watch, fn.__name__)
@@ -1439,11 +1512,36 @@ def design_options() -> dict:
     # which is what the Design screen shows -- the two should not disagree.
     return {
         "themes": studio.available_themes(),
+        "your_themes": [{k: c[k] for k in ("name", "label", "based_on", "error")}
+                        for c in studio.themes.custom_list()],
         "fonts": studio.font_families(),
         "page_sizes": studio.PAGE_SIZES,
         "note": "Set these under design.theme, design.typography.font_family.body "
                 "and design.page.size.",
     }
+
+
+@tool
+def save_theme(name: str, path: str, label: str | None = None) -> dict:
+    """Keep the design of the CV at `path` as a theme of the user's own.
+
+    It is written to themes/<name>/theme.yaml in the workspace: the theme the
+    CV is on, and only the settings that differ from it. From then on any CV
+    can use it with design.theme: <name> (edit_cv_fields), and the app offers
+    it in Design. Shape the look on a CV first (edit_cv_fields under design,
+    render_cv to see it), then save it here when the user likes it.
+
+    `name` is lower case letters, digits and _; `label` is what the app calls
+    it. A theme of that name is replaced.
+    """
+    p = studio.safe_path(path)
+    if studio.is_letter(p):
+        raise ValueError("A letter takes its look from its CV; save the CV's design instead.")
+    design = (studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}).get("design") or {}
+    saved = studio.themes.save_custom(_ws(), name, label or "", str(design.get("theme") or "classic"), design)
+    return {"theme": saved["name"], "label": saved["label"], "based_on": saved["base"],
+            "file": f"themes/{saved['name']}/theme.yaml",
+            "next": f"Use it on any CV with edit_cv_fields: path [design, theme], value {saved['name']!r}."}
 
 
 @tool
@@ -1525,5 +1623,8 @@ def main(workspace: str | None = None, client: str | None = None) -> int:
         studio.CLIENT_ID = client
         studio.CLIENT_AGENT = studio.AI_CLIENTS.get(client, {}).get("label")
     studio.bootstrap(studio.WORKSPACE)
-    mcp.run(transport="stdio")
+    # Not mcp.run(): the resources are served and the workspace watched for
+    # changes alongside the stdio session (mcp_resources.py).
+    import mcp_resources
+    anyio.run(mcp_resources.run_stdio, mcp)
     return 0
