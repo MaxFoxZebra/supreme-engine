@@ -8,6 +8,37 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **An AI client is now told why it was refused.** A duplicate application, an
+  unknown status, a missing file: each came with an explanation written for the
+  model, and every one of them reached it as a bare "Error executing tool". It
+  now gets the explanation, and can correct itself instead of retrying blindly.
+- **Statuses in your words.** A model asked to "mark it awaiting reply" can pass
+  the app's own label; it used to be refused, or match nothing.
+- **Dates are checked.** A follow-up of "next Tuesday" used to be saved, then
+  silently left out of the calendar and the reminders. It is refused, with an
+  example of what to write.
+- **A model can add, insert and remove bullets** in a CV without rewriting the
+  file, which used to drop your comments.
+- **A cover letter can be attached by its path.** Only the letter that
+  create_letter made could be attached; swapping it for another always failed.
+- **The page a model sees is the last one**, with how full it is and a warning
+  when a few lines spilled onto it. A render that fails is reported as a
+  failure.
+- **Clients know which tools only read**, so they can stop asking before every
+  read, and which change something for good.
+- **CV Studio says so when it cannot start**, with where its log is, instead of
+  a spinner that never stops.
+- **The title bar shows only the AI clients you have**, and setting one up no
+  longer creates a folder for an app that is not installed.
+- **Less to wade through.** The API pane, the world map under the time zone,
+  the live-preview delay setting and the "Views" heading with its one fixed
+  entry are gone; open applications with no letter now sit under Attention.
+- **Settings and MCP.md tell the truth** about undo (document changes can be
+  undone under Review), about what goes online, about which tools a model has,
+  and about where the skills come from.
+
 ## 0.35.0
 
 - **The CV editor no longer loses your place after a save.** Saving (Ctrl+S

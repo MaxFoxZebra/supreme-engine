@@ -59,6 +59,69 @@ NODE_STATUSES: dict[str, list[str]] = {
     "ghosted_iv":  ["ghosted_interviewing"],
 }
 
+# What the app calls each status. A model asked to "mark it awaiting reply"
+# passes the words the user sees, so those are accepted too, along with the
+# codes written with spaces or capitals.
+STATUS_LABELS = {
+    "pending": "Draft", "applied": "Awaiting reply", "interviewing": "Interviewing",
+    "offer": "Offer", "accepted": "Accepted", "refused": "Declined by me",
+    "rejected": "Rejected", "ghosted": "Ghosted",
+    "rejected_interviewing": "Rejected after interview",
+    "ghosted_interviewing": "Ghosted after interview",
+}
+
+
+def _status_key(s: str) -> str:
+    return re.sub(r"[\s_-]+", " ", str(s or "").strip().lower())
+
+
+_STATUS_ALIASES = {
+    **{_status_key(k): k for k in STATUSES},
+    **{_status_key(v): k for k, v in STATUS_LABELS.items()},
+    "draft": "pending", "sent": "applied", "awaiting": "applied",
+    "declined": "refused", "interview": "interviewing",
+}
+
+
+def normalize_status(status: str) -> str:
+    """The status code for `status`, which may be a code or the app's label."""
+    code = _STATUS_ALIASES.get(_status_key(status))
+    if code is None:
+        raise ValueError(
+            f"Unknown status {status!r}. Use one of: "
+            + ", ".join(f"{k} ({v})" for k, v in STATUS_LABELS.items()) + ".")
+    return code
+
+
+# ISO dates and times, as the app writes them. A model that writes "next
+# tuesday" would otherwise have it stored, and then silently dropped by every
+# reminder and the calendar, which parse it.
+_DATE_FIELDS = {"followup_date": "date", "last_contact_at": "datetime",
+                "interview_at": "datetime"}
+
+
+def check_dates(data: dict) -> None:
+    import datetime as dt
+    for field, kind in _DATE_FIELDS.items():
+        value = data.get(field)
+        if not value:
+            continue
+        text = str(value).strip()
+        try:
+            if kind == "date":
+                dt.date.fromisoformat(text[:10])
+                ok = len(text) == 10 or bool(re.match(r"\d{4}-\d{2}-\d{2}[T ]", text))
+            else:
+                dt.datetime.fromisoformat(text)
+                ok = True
+        except ValueError:
+            ok = False
+        if not ok:
+            example = "2026-10-14" if kind == "date" else "2026-10-14T15:00:00 (or just 2026-10-14)"
+            raise ValueError(f"{field} must be an ISO {kind}, such as {example}; got {value!r}. "
+                             f"Work out the calendar date yourself before writing it.")
+
+
 LABELS = {
     "all": "All applications", "pending": "Draft", "applied_s": "Applied",
     "awaiting": "Awaiting reply", "interview_s": "Interviewed",
@@ -341,7 +404,7 @@ def list_jobs(workspace: Path, status: str | None = None, q: str | None = None,
         args += wanted
     if status:
         where.append("status = ?")
-        args.append(status)
+        args.append(normalize_status(status))
     if q:
         where.append("(title LIKE ? OR company LIKE ? OR notes LIKE ?)")
         args += [f"%{q}%"] * 3
@@ -357,9 +420,8 @@ def list_jobs(workspace: Path, status: str | None = None, q: str | None = None,
 def add_job(workspace: Path, data: dict) -> dict:
     if not (data.get("title") and data.get("company")):
         raise ValueError("A job needs at least a title and a company.")
-    status = data.get("status") or "pending"
-    if status not in STATUSES:
-        raise ValueError(f"Unknown status: {status}")
+    status = normalize_status(data.get("status") or "pending")
+    check_dates(data)
     now = _now()
     job = {
         "id": uuid.uuid4().hex,
@@ -403,6 +465,9 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
     """
     if data.get("interview_tz"):
         valid_tz(data["interview_tz"])
+    check_dates(data)
+    if data.get("status"):
+        data = {**data, "status": normalize_status(data["status"])}
     con = connect(workspace)
     try:
         # The history append below is a read-modify-write, and an AI client is
@@ -479,8 +544,6 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
         # the history is the whole point of the funnel.
         new_status = data.get("status")
         if new_status and new_status != cur["status"]:
-            if new_status not in STATUSES:
-                raise ValueError(f"Unknown status: {new_status}")
             hist = json.loads(cur["status_history"] or "[]")
             hist.append({"status": new_status, "at": _now()})
             sets.append("status_history=?")

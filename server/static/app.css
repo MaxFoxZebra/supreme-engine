@@ -248,6 +248,8 @@ button:disabled{opacity:.4;cursor:default}
 .cbtn.ai{display:flex;align-items:center;gap:13px;height:32px;padding:0 13px;
   border-radius:16px}
 .aic{position:relative;display:flex}
+.aic[hidden]{display:none}
+.ai-none{font-size:12px;white-space:nowrap}
 .aic svg{flex:none;width:16px;height:16px}
 .aic[data-client=claude] svg{color:#D97757}
 /* The same tile as in the settings badge, at dot size. See the note there. */
@@ -2399,41 +2401,6 @@ input[type=checkbox]{accent-color:var(--acc)}
 .bk-row+.bk-row{border-top:1px solid var(--bd-inner)}
 .bk-row span{display:flex;flex-direction:column;gap:1px;font-size:13px}
 .bk-row small{font-size:11.5px;color:var(--t500)}
-/* The time zone on a little world: the land in dots, the night where it is
-   night now, your zone's band and your city pinned, the places you have an
-   interview linked to it. Clicking picks the nearest city. */
-.tzmap{position:relative;max-width:620px;margin:2px auto 6px;padding:14px 14px 10px;border-radius:14px;
-  background:var(--field);border:1px solid var(--bd-inner);overflow:hidden}
-.tzmap svg{display:block;width:100%;height:auto;cursor:crosshair}
-.tzmap .land{fill:none;stroke:var(--t400);stroke-width:2.5;stroke-linecap:round;opacity:.55}
-.tzmap .night{fill:var(--t900);opacity:.07}
-.tzmap .band{fill:var(--acc);opacity:.13}
-.tzmap .band-edge{stroke:var(--acc);stroke-width:1;opacity:.35;stroke-dasharray:2 3}
-.tzmap .arc{fill:none;stroke:var(--acc);stroke-width:1.4;stroke-dasharray:3 4;opacity:.7;
-  animation:tz-flow 1.6s linear infinite}
-.tzmap .iv{fill:var(--card,#fff);stroke:var(--acc);stroke-width:2}
-.tzmap .pin{fill:var(--acc)}
-.tzmap .ring{fill:none;stroke:var(--acc);stroke-width:2;transform-box:fill-box;transform-origin:center;
-  animation:tz-ping 2.4s ease-out infinite}
-.tzmap .ghost{fill:none;stroke:var(--t700);stroke-width:1.5;opacity:.8}
-.tzmap .cap{display:flex;align-items:center;gap:14px;margin-top:8px;font-size:12px;color:var(--t500)}
-.tzmap .cap b{color:var(--t900);font-weight:600}
-.tzmap .cap .sw{display:inline-flex;align-items:center;gap:5px;cursor:default}
-.tzmap .cap .sw i{width:10px;height:10px;border-radius:3px;display:inline-block}
-.tzmap .cap .grow{flex:1}
-.tzmap .tip{position:absolute;pointer-events:none;transform:translate(-50%,-130%);padding:4px 8px;
-  border-radius:6px;background:var(--c900);color:var(--cw);font-size:11.5px;white-space:nowrap;
-  box-shadow:0 4px 12px rgba(0,0,0,.2)}
-.tzmap .card{position:absolute;pointer-events:none;padding:7px 10px;border-radius:9px;
-  background:var(--c900);color:var(--cw);font-size:12px;line-height:1.35;white-space:nowrap;
-  box-shadow:0 6px 18px rgba(0,0,0,.22)}
-.tzmap .card .c1{font-size:13px;font-weight:600}
-.tzmap .card .c2{color:var(--c200)}
-:root[data-theme=dark] .tzmap .night{fill:#000;opacity:.32}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .tzmap .night{fill:#000;opacity:.32}}
-@keyframes tz-ping{0%{transform:scale(.6);opacity:.9}100%{transform:scale(2.6);opacity:0}}
-@keyframes tz-flow{to{stroke-dashoffset:-14}}
-@media (prefers-reduced-motion:reduce){.tzmap .ring,.tzmap .arc{animation:none}}
 .srow>div{flex:1;min-width:0;max-width:56ch}
 .srow b{display:block;font-size:13px;font-weight:500;margin-bottom:2px}
 .srow span{display:block;color:var(--t600);font-size:12px;line-height:1.55;

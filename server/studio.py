@@ -581,7 +581,11 @@ def ai_status(client: str, seen: dict | None = None) -> dict:
            "workspace": None, "command": None, "error": None,
            "last_seen": heard.get("at"), "agent": heard.get("agent"),
            "restart": spec["restart"], "manual": spec["manual"],
-           "snippet": spec["snippet"](want)}
+           "snippet": spec["snippet"](want),
+           # A client keeps its config in a folder of its own, so that folder
+           # is the cheap sign it is installed here at all. The title bar only
+           # shows the clients that are, or that are set up already.
+           "installed": path.parent.is_dir()}
     if not out["config_exists"]:
         return out
     try:
@@ -641,8 +645,13 @@ def ai_connect(client: str) -> dict:
         shutil.copy2(path, backup)
     if before == want:
         return {"ok": True, "action": "unchanged", **ai_status(client)}
+    # Making the folder would leave a ~/.hermes or a ~/.vibe behind on a
+    # machine that has never had either, and connect nothing.
+    if not path.parent.is_dir():
+        raise ValueError(
+            f"{spec['label']} does not look installed on this computer: there is "
+            f"no {path.parent}. Install it and open it once, then set it up here.")
 
-    path.parent.mkdir(parents=True, exist_ok=True)
     spec["write"](path, want)
 
     try:
@@ -3098,11 +3107,40 @@ def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
             missed.append({"path": keys, "why": "no such field"})
             continue
         last = keys[-1]
+        # "op" makes lists editable item by item: a bullet appended, put in
+        # at a position, or removed. Without it the only way to add a bullet
+        # was to rewrite the whole list, or the whole file.
+        op = patch.get("op") or "set"
         try:
-            if isinstance(node, list):
-                node[int(last)] = value
+            if op == "set":
+                if isinstance(node, list):
+                    i = int(last)
+                    if i == len(node):          # one past the end: append
+                        node.append(value)
+                    else:
+                        node[i] = value
+                else:
+                    node[last] = value
+            elif op in ("insert", "remove"):
+                if not isinstance(node, list):
+                    missed.append({"path": keys, "why": f"{op} needs a list position as the last key"})
+                    continue
+                i = int(last)
+                if op == "insert":
+                    if not 0 <= i <= len(node):
+                        raise IndexError(i)
+                    node.insert(i, value)
+                else:
+                    del node[i]
+            elif op == "append":
+                target = node[int(last)] if isinstance(node, list) else node[last]
+                if not isinstance(target, list):
+                    missed.append({"path": keys, "why": "append needs the path of a list"})
+                    continue
+                target.append(value)
             else:
-                node[last] = value
+                missed.append({"path": keys, "why": f"unknown op {op!r}: set, append, insert or remove"})
+                continue
         except (KeyError, IndexError, ValueError, TypeError):
             missed.append({"path": keys, "why": "no such field"})
             continue
@@ -4783,7 +4821,6 @@ if(_p.appearance==="dark"||_p.appearance==="light") document.documentElement.dat
 const API_TOKEN=__API_TOKEN__;
 </script>
 <script src="/static/i18n.js"></script>
-<script src="/static/worldmap.js"></script>
 
 <!-- Marks for the AI clients. The Claude one is as published by Anthropic, and
      identifies that integration and nothing else: see THIRD-PARTY-NOTICES.md. -->
@@ -4864,6 +4901,7 @@ const API_TOKEN=__API_TOKEN__;
     <span class="aic" data-client="mistral" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
       ><use href="#mistral-mark"/></svg><i class="dot"></i></span>
+    <span class="ai-none" hidden>AI clients</span>
   </button>
   <button class="cbtn icon" id="btn-settings" title="Settings, setup and help"
     aria-label="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -5013,8 +5051,6 @@ const API_TOKEN=__API_TOKEN__;
       </div>
       <div class="rail-label">Status</div>
       <div id="statuslist"></div>
-      <div class="rail-label">Views</div>
-      <div id="savedlist"></div>
       <div class="grow"></div>
       <!-- The one document every tailored CV is copied from. It sits with the
            filters rather than above the table: it is not a row of the list,
@@ -5303,7 +5339,6 @@ const API_TOKEN=__API_TOKEN__;
       <button data-s="notify" aria-selected="false">Notifications</button>
       <button data-s="browser" aria-selected="false">Save from the browser</button>
       <button data-s="ai" aria-selected="false">AI clients</button>
-      <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
       <button data-s="about" aria-selected="false">About</button>
     </nav>
@@ -5394,7 +5429,6 @@ const API_TOKEN=__API_TOKEN__;
         <div class="srow"><div><b>Time zone</b><span>Interviews somewhere else show in
           your time, with theirs beside it.</span></div>
           <select id="s-tz"></select></div>
-        <div class="tzmap" id="tzmap" aria-hidden="true"></div>
       </section>
 
       <section class="sp" id="sp-editor" hidden>
@@ -5403,10 +5437,6 @@ const API_TOKEN=__API_TOKEN__;
           file is only written when you actually save.</p>
         <div class="srow"><div><b>Live preview</b><span>Re-render while typing.</span></div>
           <label class="tgl"><input type="checkbox" id="s-live"><i></i></label></div>
-        <div class="srow"><div><b>Idle before re-rendering</b>
-          <span>Longer if renders feel busy on your machine.</span></div>
-          <select id="s-delay"><option value="400">0.4s</option><option value="700">0.7s</option>
-            <option value="1200">1.2s</option><option value="2000">2s</option></select></div>
         <div class="srow"><div><b>Theme for new documents</b>
           <span>Applied when you create a CV or a letter.</span></div>
           <select id="s-deftheme"></select></div>
@@ -5449,6 +5479,10 @@ const API_TOKEN=__API_TOKEN__;
             <p>Reads the YAML, lists what is in the workspace</p></div>
           <div class="tool"><span class="n">write_cv</span>
             <p>Replaces a whole file. Blunt, and it drops comments</p></div>
+          <div class="tool"><span class="n">create_letter &nbsp;write_letter</span>
+            <p>Starts the cover letter for an application, and writes it</p></div>
+          <div class="tool"><span class="n">add_language &nbsp;translation_status</span>
+            <p>Translates a CV, and lists what a translation is missing</p></div>
           <div class="tool"><span class="n">ats_check</span>
             <p>Reads the PDF the way an ATS does, and which of the posting's keywords it uses</p></div>
           <div class="tool"><span class="n">design_options</span>
@@ -5471,9 +5505,13 @@ const API_TOKEN=__API_TOKEN__;
           <div class="tool"><span class="n">job_alerts</span>
             <p>The same list as Attention in the Applications view, read out loud</p></div>
           <div class="tool"><span class="n">calendar</span>
-            <p>Interviews and follow-ups ahead, and an .ics file, so it can put them in your calendar</p></div>
-          <div class="tool"><span class="n">add_job</span>
-            <p>Adds one from a posting you paste, and refuses likely duplicates</p></div>
+            <p>Interviews and follow-ups ahead, and an .ics file you can import</p></div>
+          <div class="tool"><span class="n">add_job &nbsp;read_posting</span>
+            <p>Adds one from its link, reading the posting itself, and refuses likely duplicates</p></div>
+          <div class="tool"><span class="n">save_person</span>
+            <p>Records the recruiter or interviewer a thread names</p></div>
+          <div class="tool"><span class="n">get_interview_prep &nbsp;save_interview_prep</span>
+            <p>Reads and writes the prep for your next interview</p></div>
           <div class="tool"><span class="n">set_company_logo</span>
             <p>Points every application at one company to the same logo</p></div>
         </div>
@@ -5481,20 +5519,21 @@ const API_TOKEN=__API_TOKEN__;
           stroke="currentColor" stroke-width="2" style="flex:none;margin-top:1px"
           aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/>
           </svg><div>
-          <p><b>These write to your files the moment they are called</b>, and there is no
-            undo in this app. They are plain YAML, so keeping the workspace in git gives
-            you a real history.</p>
+          <p><b>These write to your files the moment they are called</b>, and every change
+            to a CV or a letter then waits under Review, where you keep it or undo it.</p>
           <p><b>Your applications are part of this too.</b> A model can read them, move
             a status, record an interview and add one you never got round to logging.
             It cannot delete an application, rename the company or the role, or paint
             over notes you typed: it only ever appends a dated line. Those are not
             promises, they are missing parameters.</p>
           <p><b>A status change is permanent.</b> It appends to the history the funnel
-            is drawn from, and there is no undo here either. The model is told to show
+            is drawn from, and unlike a document edit it cannot be undone. The model is told to show
             you every change and wait, but that one is a rule in prose rather than a
             lock in the code.</p>
-          <p><b>Nothing here reaches your mail or your calendar.</b> This app makes no
-            network calls at all. Those come through your AI client's own connectors,
+          <p><b>Nothing here reaches your mail or your calendar.</b> This app only goes
+            online to read a posting from its link, fetch a company's logo, check for
+            updates and download a theme's fonts the first time it is used. Your mail
+            and calendar come through your AI client's own connectors,
             they are only ever read, and nothing is written back to them, which is also
             why an interview time recorded here is only as fresh as the last time you
             asked.</p></div></div>
@@ -5505,7 +5544,7 @@ const API_TOKEN=__API_TOKEN__;
         <p class="sp-sub">Skills</p>
         <p class="sp-note" style="margin-top:0">Skills are the judgement around the
           documents: reading a posting, tailoring from a master profile, letters,
-          interview prep. Claude Code reads them off disk and already has them. The
+          interview prep. Claude Code reads them from <code>~/.claude/skills/</code>. The
           desktop app does not: there they are uploaded to your account, so the most
           this app can do is hand you archives that are ready to upload.</p>
         <div class="skills" id="s-skills"></div>
@@ -5526,18 +5565,6 @@ const API_TOKEN=__API_TOKEN__;
         <details class="fold"><summary>Set them up by hand instead</summary>
           <div id="s-ai-manual"></div>
         </details>
-      </section>
-
-      <section class="sp" id="sp-api" hidden>
-        <h3>API</h3>
-        <p class="sp-lede">The same server answers a small HTTP API, so scripts and other
-          tools can drive it.</p>
-        <div class="srow"><div><b>Base URL</b><span id="s-base" class="mono"></span></div>
-          <a class="obtn btnlink" id="s-spec" target="_blank" rel="noreferrer">Open reference</a></div>
-        <div class="srow"><div><b>Authentication</b><span id="s-auth"></span></div></div>
-        <pre class="code" id="s-curl"></pre>
-        <div class="skillcta"><button class="obtn" data-copy="s-curl">Copy</button>
-        <button class="obtn" id="s-key" hidden>Show the key</button></div>
       </section>
 
       <section class="sp" id="sp-browser" hidden>

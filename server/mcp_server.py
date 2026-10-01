@@ -21,7 +21,8 @@ import inspect
 from pathlib import Path
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ImageContent
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ImageContent, ToolAnnotations
 
 import review
 import studio
@@ -49,7 +50,8 @@ mcp = MCPServer(
         "or more than one candidate, ask rather than guessing.\n"
         "2. Show the user every change you intend to make and wait for them "
         "to agree. A status change is appended to a permanent history that "
-        "the funnel is drawn from, and this app has no undo.\n"
+        "the funnel is drawn from and cannot be undone. (Document edits can "
+        "be: the user reviews each one in the app and keeps or undoes it.)\n"
         "3. An automated acknowledgement is not a status change. Record it "
         "with last_contact_at and leave the status alone. Never set a ghosted "
         "status from silence: absence of a message is not a message.\n\n"
@@ -89,8 +91,8 @@ mcp = MCPServer(
         "Cover letters are Markdown files in letters/, not RenderCV: a short "
         "header (application, company, looks_like, place, date, subject, "
         "language) and the letter below it, as it would be typed in an email. "
-        "It prints bold, italic, [links](url) and '- ' bullet lists, nothing "
-        "else. The letterhead, font and colours come from the CV named in "
+        "Most letters need only paragraphs, with **bold**, *italic*, "
+        "[links](url) and '- ' lists where they help. The letterhead, font and colours come from the CV named in "
         "looks_like, so never write a name or contact details into the body. "
         "create_letter starts one for an application; write_letter replaces "
         "its body (and subject); render_cv shows the page."
@@ -156,6 +158,30 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info"}
+
+# What a client is told about each tool before calling it, so it can skip the
+# approval prompt for a read and ask harder before a write that cannot be
+# taken back. write_cv replaces a whole file; a status change is permanent
+# history. Reaching outside the machine is the posting and the logo fetches.
+DESTRUCTIVE = {"write_cv", "set_job_status"}
+OPEN_WORLD = {"read_posting", "add_job", "set_company_logo", "update_job_tracking"}
+
+# The exceptions the tools raise on purpose, with a message written for the
+# model: a duplicate, an unknown status, a path that does not exist. The SDK
+# treats anything but ToolError as a crash and sends the model only "Error
+# executing tool", so these are passed on as ToolError, message intact.
+EXPECTED = (ValueError, LookupError, FileNotFoundError, PermissionError)
+
+
+def _message(exc: Exception) -> str:
+    if isinstance(exc, FileNotFoundError):
+        return (f"There is no file at {exc.args[0] if exc.args else 'that path'}. "
+                "list_cvs lists the documents in the workspace.")
+    if isinstance(exc, PermissionError):
+        return f"Refused: {exc}. Paths are relative to the workspace and stay inside it."
+    if isinstance(exc, KeyError):
+        return f"Not found: {exc.args[0] if exc.args else exc}"
+    return str(exc)
 
 
 def _snapshot() -> dict:
@@ -232,6 +258,8 @@ def tool(fn):
             studio.note_mcp_activity(fn.__name__,
                                      str(target) if target else None,
                                      ok=False, error=str(exc)[:200])
+            if isinstance(exc, EXPECTED):
+                raise ToolError(_message(exc)) from exc
             raise
         if watch is not None:
             _checkpoint(watch, fn.__name__)
@@ -246,7 +274,13 @@ def tool(fn):
     ])
     wrapper.__annotations__ = {**getattr(fn, "__annotations__", {}),
                                "cvs_ctx": Context}
-    return mcp.tool()(wrapper)
+    name = fn.__name__
+    return mcp.tool(annotations=ToolAnnotations(
+        read_only_hint=name in READ_ONLY,
+        destructive_hint=name in DESTRUCTIVE,
+        idempotent_hint=name in READ_ONLY,
+        open_world_hint=name in OPEN_WORLD,
+    ))(wrapper)
 
 
 @tool
@@ -280,6 +314,14 @@ def edit_cv_fields(path: str, edits: list[dict]) -> str:
 
     Each edit is {"path": ["cv", "headline"], "value": "Solutions Engineer"}.
     List positions are integers: ["cv","sections","experience",0,"company"].
+
+    Lists take an optional "op" (the default is "set"):
+      {"op": "append", "path": [..., 0, "highlights"], "value": "New bullet"}
+      {"op": "insert", "path": [..., 0, "highlights", 1], "value": "..."}
+      {"op": "remove", "path": [..., 0, "highlights", 2]}
+    Setting the position one past the end also appends. To reorder a list,
+    set the whole list to the new order. Edits apply in the order given, so
+    positions after an insert or remove have moved.
     """
     p = studio.safe_path(path)
     result = studio.apply_patches(p, edits, "edit_cv_fields")
@@ -290,7 +332,7 @@ def edit_cv_fields(path: str, edits: list[dict]) -> str:
         lines.append(f"  NOT APPLIED: {'.'.join(map(str, miss['path']))} "
                      f"-- {miss['why']}")
     if result["missed"]:
-        lines.append("Read the file before retrying: those paths do not exist.")
+        lines.append("Read the file (read_cv) for the exact paths before retrying.")
     return "\n".join(lines)
 
 
@@ -333,45 +375,90 @@ def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
     return f"Created {folder}/{safe}.yaml"
 
 
-@tool
-def render_cv(path: str, page: int = 1) -> list:
-    """Render a CV to PDF and return the page as an image to look at.
+def _last_page_fill(pdf: Path) -> float | None:
+    """How full the last page is, 0 to 1, from where its text sits.
 
-    Returns the page count, the word count an ATS would extract, the PDF's
-    location, and an image of the requested page. Check the image before
-    reporting success: page-break damage does not show up in the YAML.
+    The app measures the same thing off the page image; this reads the PDF,
+    which needs nothing the build does not already ship. The top margin says
+    where the bottom one is, so a page number in the footer does not count.
+    """
+    try:
+        import pypdf
+        page = pypdf.PdfReader(str(pdf)).pages[-1]
+        height = float(page.mediabox.height)
+        ys: list[float] = []
+
+        def seen(text, cm, tm, *_):
+            if text.strip():
+                ys.append(tm[4] * cm[1] + tm[5] * cm[3] + cm[5])
+
+        page.extract_text(visitor_text=seen)
+    except Exception:
+        return None
+    if not ys:
+        return 0.0
+    top = max(ys)
+    margin = max(0.0, height - top)
+    body = [y for y in ys if y >= margin] or ys
+    return round(max(0.0, min(1.0, (top - min(body)) / max(1.0, height - 2 * margin))), 2)
+
+
+def _layout_notes(pages: int, fill: float | None) -> list[str]:
+    notes = []
+    if fill is not None and pages > 1 and fill < 0.25:
+        notes.append(f"The last page is only {round(fill * 100)}% full: a few lines "
+                     f"spilled over. Tighten the text to save a page, or fill it out.")
+    return notes
+
+
+@tool
+def render_cv(path: str, page: int | str = "last") -> list:
+    """Render a CV or a cover letter to PDF and return a page as an image.
+
+    Returns the page count, how full the last page is, the word count an ATS
+    would extract, the PDF's location, layout warnings, and an image of the
+    requested page: a number from 1, or "last" (the default, since the last
+    page is where overflow shows). Check the image before reporting success:
+    page-break damage does not show up in the source.
     """
     p = studio.safe_path(path)
     if studio.is_letter(p):
         r = studio.render_letter(p)
         if not r.get("ok"):
-            return [f"RENDER FAILED\n\n{r.get('error')}"]
-        png = studio.WORKSPACE / r["pngs"][max(1, min(page, r["pages"])) - 1].split("path=")[1].split("&")[0]
-        return [f"Rendered {path}\nPages: {r['pages']}\nWords: {r['words']}\nPDF: {r['pdf']}",
-                ImageContent(type="image", data=base64.b64encode(png.read_bytes()).decode("ascii"),
-                             mime_type="image/png")]
-    result = render_file(p, studio.output_dir(p))
+            raise ToolError(f"RENDER FAILED\n\n{r.get('error')}")
+        pages = r["pages"]
+        pngs = [studio.WORKSPACE / u.split("path=")[1].split("&")[0] for u in r["pngs"]]
+        words_line = f"Words: {r['words']}"
+        pdf = r["pdf"]
+    else:
+        result = render_file(p, studio.output_dir(p))
+        if not result.get("ok"):
+            log = (result.get("log") or "render failed")[-2500:]
+            hint = studio.friendly(log)
+            raise ToolError("RENDER FAILED. The file is saved but does not render; fix it "
+                            "and render again.\n\n"
+                            + (f"Likely cause: {hint}\n\n" if hint else "") + log)
+        pages = result["pages"]
+        pngs = [Path(x) for x in result.get("png_pages") or []]
+        words_line = f"Words an ATS reads: {result['ats_word_count']}"
+        pdf = result["pdf"]
 
-    if not result.get("ok"):
-        log = (result.get("log") or "render failed")[-2500:]
-        hint = studio.friendly(log)
-        return [f"RENDER FAILED\n\n{('Likely cause: ' + hint) if hint else ''}\n\n{log}"]
-
-    pages = result["pages"]
-    summary = (
-        f"Rendered {path}\n"
-        f"Pages: {pages}\n"
-        f"Words an ATS reads: {result['ats_word_count']}\n"
-        f"PDF: {result['pdf']}"
-    )
-    out_blocks: list = [summary]
-
-    idx = max(1, min(page, pages)) - 1
-    if result.get("png_pages"):
-        data = Path(result["png_pages"][idx]).read_bytes()
+    if isinstance(page, str):
+        page = pages if page.strip().lower() in ("last", "") else int(page)
+    idx = max(1, min(int(page), pages)) - 1
+    # A letter's PDF comes back relative to the workspace, a CV's absolute.
+    fill = _last_page_fill(studio.WORKSPACE / pdf)
+    lines = [f"Rendered {path}", f"Pages: {pages}"]
+    if fill is not None:
+        lines.append(f"Last page: {round(fill * 100)}% full")
+    lines += [words_line, f"PDF: {pdf}"]
+    lines += [f"Warning: {n}" for n in _layout_notes(pages, fill)]
+    lines.append(f"Showing page {idx + 1} of {pages}.")
+    out_blocks: list = ["\n".join(lines)]
+    if pngs:
         out_blocks.append(ImageContent(
             type="image",
-            data=base64.b64encode(data).decode("ascii"),
+            data=base64.b64encode(pngs[idx].read_bytes()).decode("ascii"),
             mime_type="image/png",
         ))
     return out_blocks
@@ -451,7 +538,7 @@ def _document(path: str, field: str) -> str | None:
     target = studio.safe_path(path)          # raises outside the workspace
     if not target.exists():
         raise ValueError(f"There is no document at {path}.")
-    if not studio.is_cv_yaml(target):
+    if not (studio.is_cv_yaml(target) or studio.is_letter(target)):
         raise ValueError(f"{path} is not a CV or cover letter.")
     rel = studio.rel(target)
     # Which of the two columns a document belongs in is decided by where it
@@ -487,7 +574,8 @@ def _brief(job: dict) -> dict:
 def list_jobs(status: str | None = None, query: str | None = None) -> list[dict]:
     """The user's job applications. Read this before changing anything.
 
-    `status` filters exactly. `query` matches the title, company or notes.
+    `status` filters by one status (a code such as "applied", or the app's
+    label, "Awaiting reply"). `query` matches the title, company or notes.
     Returns a trimmed view: call read_job for the full posting text.
     """
     return [_brief(j) for j in
@@ -589,14 +677,12 @@ def calendar(days_ahead: int = 14, ics: bool = False) -> dict:
 
     Each interview has its wall-clock time as the invitation gave it and its
     zone (`interview_tz`, empty when it is the user's own), and `utc`, the
-    moment itself: use that when creating an event in a calendar you are
-    connected to, so it lands at the right hour wherever the user is.
+    moment itself, for comparing against events in the user's calendar.
     Follow-ups are dates, and `overdue` ones are listed too.
 
     With `ics=True` the answer also carries `ics`, the same events as an
-    iCalendar file, for a client that can import one. This app writes to no
-    calendar itself: putting these in the user's calendar is yours to do,
-    with their say-so.
+    iCalendar file the user can import themselves. Never write events into
+    a calendar you are connected to: it is a read-only source here.
     """
     import datetime as dt
     days_ahead = max(1, min(int(days_ahead or 14), 90))
@@ -637,10 +723,11 @@ def calendar(days_ahead: int = 14, ics: bool = False) -> dict:
 def set_job_status(job_id: str, status: str, append_note: str | None = None) -> dict:
     """Move one application to a new status. Confirm with the user first.
 
-    This appends to a permanent history that the funnel is drawn from, and
-    there is no undo, so show the user what you intend to change and wait.
+    This appends to a permanent history that the funnel is drawn from and
+    cannot be undone, so show the user what you intend to change and wait.
 
-    The vocabulary, and it is closed:
+    The vocabulary, and it is closed (the app's own labels, such as
+    "Awaiting reply" or "Declined by me", are accepted too):
       pending                 not sent yet
       applied                 sent, no reply
       interviewing            at least one interview happening
@@ -695,6 +782,10 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     document that was there. An empty string detaches without deleting
     anything. `letter_path` is the same for a cover letter, which is any
     document under letters/.
+
+    Dates are ISO and checked: `followup_date` is "YYYY-MM-DD",
+    `last_contact_at` a date or a date and time. Work out "next Tuesday"
+    yourself; text that is not a date is refused.
 
     `interview_at` is "YYYY-MM-DDTHH:MM:SS", the wall-clock time the
     invitation gives, not UTC. When the invitation gives it in the employer's
@@ -1021,12 +1112,10 @@ def create_letter(job_id: str) -> dict:
 def write_letter(path: str, body: str, subject: str | None = None) -> str:
     """Replace a cover letter's body, and its subject line if given.
 
-    `body` is the whole letter from greeting to closing, as Markdown, all of
-    which prints: paragraphs separated by blank lines, # to ### headings,
-    '- ' and '1. ' lists (nested by indenting), '> ' quotes, '---' rules,
-    fenced code, pipe tables, **bold**, *italic*, ~~struck~~, `code` and
-    [text](url). Most cover letters need only paragraphs; use the rest where
-    it helps the reader. The name, contact details and signature are printed
+    `body` is the whole letter from greeting to closing, as Markdown:
+    paragraphs separated by blank lines, with **bold**, *italic*, [text](url)
+    and '- ' or '1. ' lists where they help the reader. A cover letter is
+    prose: no headings, tables or code. The name, contact details and signature are printed
     from the CV the letter looks like, so leave them out. The header is kept.
     """
     p = studio.safe_path(path)

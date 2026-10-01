@@ -1,5 +1,5 @@
 /* The interface. Served as /static/app.js at the end of the page (INDEX_HTML
-   in studio.py), after i18n.js and worldmap.js; API_TOKEN and the
+   in studio.py), after i18n.js; API_TOKEN and the
    preferences are set by the page's first, inline script. */
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -240,7 +240,6 @@ const S={
   prov:null,                /* who wrote each field, and what differs from the base */
   pulse:null,               /* last workspace poll: file stamps and AI activity */
   skills:null,              /* the cv-studio skills on this machine */
-  keyShown:false,           /* the API key is masked until asked for */
   docMtime:null,            /* the open file as we last read or wrote it */
   extMtime:null,            /* a newer version on disk we have not taken */
   extTheirs:null,           /* their version, so the bar can name the fields */
@@ -398,93 +397,6 @@ const COMMON_TZ=["Europe/London","Europe/Dublin","Europe/Lisbon","Europe/Paris",
   "America/Chicago","America/Denver","America/Los_Angeles","America/Sao_Paulo","America/Mexico_City",
   "Asia/Dubai","Asia/Kolkata","Asia/Singapore","Asia/Tokyo","Australia/Sydney","UTC"];
 function allTz(){ try{ return Intl.supportedValuesOf("timeZone") }catch(e){ return COMMON_TZ } }
-/* ---- the little world on the time zone setting ------------------------ */
-const WX=lon=>(lon+180)*2, WY=lat=>(82.5-lat)*2, WW=720, WH=280;
-function tzCoords(z){ const W=window.WORLD; return W&&W.zones[z]||null }
-/* Where it is night now: the terminator from the sun's declination and the
-   meridian it stands over, closed toward the pole that is in the dark. */
-function nightPath(now){
-  const doy=(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate())-
-    Date.UTC(now.getUTCFullYear(),0,0))/864e5;
-  let dec=-23.44*Math.cos(2*Math.PI/365*(doy+10));
-  if(Math.abs(dec)<.3) dec=dec<0?-.3:.3;
-  const sunLon=-((now.getUTCHours()+now.getUTCMinutes()/60)-12)*15, r=Math.PI/180;
-  const pts=[];
-  for(let lon=-180;lon<=180;lon+=3){
-    const lat=Math.atan(-Math.cos((lon-sunLon)*r)/Math.tan(dec*r))/r;
-    pts.push(WX(lon).toFixed(1)+","+Math.max(-4,Math.min(WH+4,WY(lat))).toFixed(1));
-  }
-  const edge=dec>0?WH+4:-4;
-  return "M"+pts.join("L")+"L"+WX(180)+","+edge+"L"+WX(-180)+","+edge+"Z";
-}
-function drawTzMap(sel){
-  const host=$("#tzmap"), W=window.WORLD;
-  if(!host) return;
-  if(!W){ host.hidden=true; return }
-  const now=new Date(), zone=userTz(), here=tzCoords(zone);
-  const off=tzOffset(zone,now)/60;
-  let land="";
-  W.rows.forEach((hex,ri)=>{
-    const y=WY(W.lat0-ri*W.step);
-    for(let c=0;c<hex.length;c++){ const v=parseInt(hex[c],16);
-      for(let b=0;b<4;b++) if(v&(8>>b)) land+="M"+WX(W.lon0+(c*4+b)*W.step).toFixed(1)+" "+y.toFixed(1)+"h0" }
-  });
-  /* The band is the zone's offset as a slice of the globe: fifteen degrees an hour. */
-  const bx=WX(Math.max(-180,off*15-7.5)), bw=WX(Math.min(180,off*15+7.5))-bx;
-  const ivs=[...new Set((S.jobs||[]).filter(j=>j.interview_tz&&j.interview_at&&
-    interviewMoment(j)>=Date.now()-864e5&&j.interview_tz!==zone).map(j=>j.interview_tz))]
-    .map(z=>({z,c:tzCoords(z)})).filter(x=>x.c);
-  const arc=(a,b)=>{ const x1=WX(a[0]),y1=WY(a[1]),x2=WX(b[0]),y2=WY(b[1]);
-    const mx=(x1+x2)/2, my=(y1+y2)/2-Math.hypot(x2-x1,y2-y1)*.28;
-    return '<path class="arc" d="M'+x1+' '+y1+'Q'+mx+' '+my+' '+x2+' '+y2+'"/>' };
-  const hm=z=>DTF(uiLocale(),{timeZone:z,hour:"2-digit",minute:"2-digit",hourCycle:clock12()?"h12":"h23"}).format(now);
-  host.innerHTML='<svg viewBox="0 0 '+WW+' '+WH+'" role="img">'+
-    '<rect class="band" x="'+bx+'" y="0" width="'+bw+'" height="'+WH+'"/>'+
-    '<line class="band-edge" x1="'+bx+'" x2="'+bx+'" y1="0" y2="'+WH+'"/>'+
-    '<line class="band-edge" x1="'+(bx+bw)+'" x2="'+(bx+bw)+'" y1="0" y2="'+WH+'"/>'+
-    '<path class="land" d="'+land+'"/>'+
-    '<path class="night" d="'+nightPath(now)+'"/>'+
-    (here?ivs.map(x=>arc(here,x.c)).join(""):"")+
-    ivs.map(x=>'<circle class="iv" cx="'+WX(x.c[0])+'" cy="'+WY(x.c[1])+'" r="4.5"><title>'+
-      esc(tzCity(x.z)+" · "+hm(x.z))+'</title></circle>').join("")+
-    (here?'<circle class="ring" cx="'+WX(here[0])+'" cy="'+WY(here[1])+'" r="7"/>'+
-      '<circle class="pin" cx="'+WX(here[0])+'" cy="'+WY(here[1])+'" r="5.5"/>':"")+
-    '<circle class="ghost" r="6" cx="-20" cy="-20"/></svg>'+
-    (here?'<div class="card" id="tz-card"><div class="c1">'+esc(tzCity(zone))+'</div><div class="c2">'+esc(hm(zone))+
-      ' · '+esc(utcLabel(zone))+'</div></div>':"")+
-    '<div class="tip" hidden></div>'+
-    '<div class="cap"><span>'+esc(t("Click the map to pick the nearest city."))+'</span><span class="grow"></span>'+
-      (ivs.length?'<span class="sw"><i style="border:2px solid var(--acc);border-radius:50%;width:8px;height:8px"></i>'+
-        esc(t("Interviews"))+'</span>':"")+
-      '<span class="sw"><i style="background:var(--acc);opacity:.35"></i>'+esc(t("Your zone"))+'</span>'+
-      '<span class="sw"><i style="background:var(--t900);opacity:.2"></i>'+esc(t("Night now"))+'</span></div>';
-  /* The card sits beside the pin, on whichever side has room. */
-  const card=$("#tz-card"), svg=host.querySelector("svg");
-  const place=()=>{ if(!card||!here) return;
-    const k=svg.clientWidth/WW, x=14+WX(here[0])*k, y=14+WY(here[1])*k;
-    const left=x>svg.clientWidth*.6;
-    card.style.left=(left?x-card.offsetWidth-14:x+14)+"px"; card.style.top=(y-card.offsetHeight/2)+"px" };
-  requestAnimationFrame(place);
-  const zones=allTz().map(z=>[z,tzCoords(z)]).filter(x=>x[1]);
-  const nearest=(lon,lat)=>{ let best=null,bd=1e9;
-    for(const [z,c] of zones){ const dl=Math.abs(c[0]-lon), dx=Math.min(dl,360-dl)*Math.cos(lat*Math.PI/180),
-      d=dx*dx+(c[1]-lat)**2; if(d<bd){bd=d;best=[z,c]} } return best };
-  const at=e=>{ const r=svg.getBoundingClientRect(), k=WW/r.width;
-    return [(e.clientX-r.left)*k/2-180, 82.5-(e.clientY-r.top)*k/2] };
-  const tip=host.querySelector(".tip"), ghost=host.querySelector(".ghost");
-  svg.onmousemove=e=>{ const n=nearest(...at(e)); if(!n) return;
-    const k=svg.clientWidth/WW;
-    ghost.setAttribute("cx",WX(n[1][0])); ghost.setAttribute("cy",WY(n[1][1]));
-    tip.hidden=false; tip.textContent=tzCity(n[0])+" · "+utcLabel(n[0]);
-    tip.style.left=(14+WX(n[1][0])*k)+"px"; tip.style.top=(14+WY(n[1][1])*k)+"px" };
-  svg.onmouseleave=()=>{ tip.hidden=true; ghost.setAttribute("cx",-20) };
-  svg.onclick=e=>{ const n=nearest(...at(e)); if(!n||n[0]===zone) return;
-    if(![...sel.options].some(o=>o.value===n[0])) sel.insertAdjacentHTML("beforeend",
-      '<option value="'+esc(n[0])+'">'+esc(tzCity(n[0]))+'</option>');
-    sel.value=n[0]; sel.onchange() };
-}
-
-/* A zone as people read it: "UTC−3", "UTC+5:30". Worked out once per zone. */
 const TZ_UTC=new Map();
 function utcLabel(z){
   if(TZ_UTC.has(z)) return TZ_UTC.get(z);
@@ -887,15 +799,21 @@ async function loadAI(){
 }
 function paintAI(){
   const bits=[];
+  let shown=0;
   $$("#btn-ai .aic").forEach(el=>{
     const c=aiClient(el.dataset.client), st=(c&&c.state)||"unknown";
     el.dataset.state=st;
+    /* Only the clients this machine has, or that are set up already: four
+       logos for two clients nobody here uses is noise on every screen. */
+    el.hidden=!!c&&st==="absent"&&!c.installed;
+    if(!el.hidden) shown++;
     bits.push((c?c.label:el.dataset.client)+": "+
       (c&&st==="connected"&&c.last_seen
         ? t("Connected. Last heard from {when} ago.",{when:ago(c.last_seen*1000)})
         : c&&st==="connected" ? t("Set up, but it has not called in yet.")
         : t(AI_STATE[st])));
   });
+  $("#btn-ai .ai-none").hidden=shown>0;
   $("#btn-ai").title=bits.join("\n");
   if(!$("#ovl-settings").hidden) fillAIPanel();
 }
@@ -1028,7 +946,7 @@ function paintSkills(){
         '<span class="tag'+(k.needs_mcp?" mcp":"")+'">'+
         (k.needs_mcp?"needs the tools":"travels as is")+'</span></div>').join("")
     : '<div><span class="ds">None found'+(d?" in "+esc(d.source):"")+
-      '. They come with the Claude Code setup.</span></div>';
+      '. Copy the skills folder of the CV Studio repository there.</span></div>';
   const packed=list.some(k=>k.packaged);
   $("#s-skill-show").hidden=!packed;
   $("#s-skill-steps").hidden=!packed;
@@ -5103,13 +5021,15 @@ function drawRail(){
      is worse than no list: it trains you to stop looking at it. */
   const a=S.alerts;
   const live=a?ATTENTION.filter(([k])=>a.counts[k]>0):[];
-  $("#attentionwrap").hidden=!live.length;
+  /* The open applications still missing a letter sit with the rest of what
+     needs doing. They used to be the one entry under a "Views" heading that
+     promised views you could make and offered no way to make one. */
+  const saved=Object.keys(SAVED).map(k=>[k,S.jobs.filter(SAVED[k]).length]).filter(([,n])=>n);
+  $("#attentionwrap").hidden=!live.length&&!saved.length;
   $("#attentionlist").innerHTML=live.map(([k,label])=>
-    row(label,a.counts[k],"alert",k)).join("");
-
-  $("#savedlist").innerHTML=Object.keys(SAVED).map(k=>
-    row(k,S.jobs.filter(SAVED[k]).length,"saved",k)).join("");
-  $$("#statuslist [data-k],#attentionlist [data-k],#savedlist [data-k]").forEach(b=>b.onclick=()=>{
+    row(label,a.counts[k],"alert",k)).join("")+
+    saved.map(([k,n])=>row(k,n,"saved",k)).join("");
+  $$("#statuslist [data-k],#attentionlist [data-k]").forEach(b=>b.onclick=()=>{
     S.jfilter={kind:b.dataset.k,value:b.dataset.v};
     if(b.dataset.k!=="node") S.fnode=null;
     drawJobs();
@@ -8726,7 +8646,7 @@ document.addEventListener("keydown",e=>{
 function showSettingsPane(which){
   $$("#set-rail button").forEach(x=>
     x.setAttribute("aria-selected",String(x.dataset.s===which)));
-  ["workspace","editor","region","notify","browser","ai","api","updates","about"].forEach(k=>
+  ["workspace","editor","region","notify","browser","ai","updates","about"].forEach(k=>
     $("#sp-"+k).hidden = k!==which);
   if(which==="updates") checkUpdates(true);
   if(which==="ai") loadAI();
@@ -8765,11 +8685,8 @@ $$("[data-copy]").forEach(b=>b.onclick=async()=>{
 function fillSettings(){
   fillNotify();
   fillBackups();
-  const st=S.state||{}, base=location.origin, pr=prefs();
+  const st=S.state||{}, pr=prefs();
   $("#s-ws").textContent=st.workspace||"";
-  $("#s-base").textContent=base;
-  $("#s-spec").href=base+"/api/docs"+(st.api_token?"?token="+
-    encodeURIComponent(st.api_token):"");
   $("#s-ver").textContent="CV Studio "+(st.version||"");
   $("#s-open").onclick=async()=>{
     try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) }
@@ -8804,7 +8721,6 @@ function fillSettings(){
   tzs.onchange=()=>{ setPref("tz",tzs.value||null);
     try{ sessionStorage.setItem("cvs.reopen","region") }catch(e){}
     location.reload() };
-  drawTzMap(tzs);
   /* Examples rather than names: "30/09/2026" says what "day first" means. */
   const sample=o=>{ const p={d:"30",m:"09",y:"2026"}; return DFX_ORDERS[o].map(k=>p[k]).join(dateSep(o)) };
   const df=$("#s-datefmt"), autoOrder=(()=>{ const keep=pr.date_format; delete prefs().date_format;
@@ -8829,19 +8745,11 @@ function fillSettings(){
   sb.onclick=()=>setSample(!st.sample,sb);
   $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
   $("#s-exp-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
-  /* Revealing is deliberate and one click; copying never needs it. */
-  const key=$("#s-key");
-  key.hidden=!(S.state&&S.state.api_token);
-  key.textContent=S.keyShown?"Hide the key":"Show the key";
-  key.onclick=()=>{ S.keyShown=!S.keyShown; fillSettings() };
   $("#s-check").onclick=()=>checkUpdates(true);
 
   const live=$("#s-live");
   live.checked=pr.live!==false;
   live.onchange=()=>setPref("live",live.checked);
-  const delay=$("#s-delay");
-  delay.value=String(pr.delay||700);
-  delay.onchange=()=>setPref("delay",Number(delay.value));
   const acc=prefs().accent||"ochre";
   $("#s-accent").innerHTML=ACCENTS.map(([id,label])=>
     '<button data-accent="'+id+'" title="'+label+'" aria-label="'+label+
@@ -8870,20 +8778,6 @@ function fillSettings(){
      config format, and there is no reason for two places to know both. */
   fillAIPanel();
 
-  /* Masked by default: this pane ends up in screenshots and screen shares,
-     and the key in it is live. Copy still copies the real thing. */
-  const shown=st.api_token&&S.keyShown?st.api_token
-    :st.api_token?"•".repeat(16):"";
-  const auth=st.api_token?' \\\n  -H "X-API-Key: '+shown+'"':"";
-  $("#s-curl").textContent=
-    "curl "+base+"/api/state"+auth+"\n\n"+
-    "curl -X POST "+base+"/api/render"+auth+" \\\n"+
-    '  -H "Content-Type: application/json" \\\n'+
-    "  -d '{\"path\":\"profile/my-cv.yaml\"}'";
-  $("#s-auth").textContent=st.api_token
-    ? "An X-API-Key header is required; the key is shown in the example below."
-    : "None needed. The server accepts local connections only. Start it with "+
-      "--token to require a key, or --host to expose it, which forces one.";
 }
 
 /* ---- what a new version says about itself ------------------------------
@@ -9108,7 +9002,7 @@ const palPlaces=()=>[
   {label:t("Calendar"),icon:"cal",run:()=>setView("cal")},
   {label:t("Follow-up due"),icon:"list",run:()=>{ S.jfilter={kind:"alert",value:"followup_due"}; S.fnode=null; setView("jobs"); drawJobs() }},
   ...[["workspace","Workspace"],["editor","Editor"],["region","Language & region"],["notify","Notifications"],["browser","Save from the browser"],
-      ["ai","AI clients"],["api","API"],["updates","Updates"],["about","About"]]
+      ["ai","AI clients"],["updates","Updates"],["about","About"]]
     .map(([k,l])=>({label:t("Settings")+" › "+t(l),icon:"gear",stay:true,run:()=>openSettings(k)})),
 ];
 /* Lower case without accents, one character for one, so a position in the

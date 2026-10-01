@@ -142,7 +142,7 @@ an entry in one view selects it in all of them.
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
 | **ATS check** | The text an applicant tracking system actually gets out of the PDF, what in it will not parse, with a one-click fix for the common ones, and which of the posting's keywords the CV uses. A count, not a score: there is no universal ATS score to compute |
 | **Design** | Theme, typeface, size and colours, a photo if you want one, and every other RenderCV option, with what each costs in pages. One design for all the languages of a CV |
-| **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
+| **Save** | Or `Ctrl`/`Cmd` + `S`: writes the file and lays out the page again. The status bar reports how long it took |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, with what the line said before, and a second mark for every field that no longer matches the base. Neither is in the YAML, so neither prints |
 | **Review what it changed** | Until you have looked, a document an AI client wrote says so, on every list that shows it and in a bar over it. **Review changes** shows each change as the words it took out, struck through, and the words it put in, underlined: on a letter, marked on the page itself; on a CV, entry by entry. Keep or undo each one, or all of them. Undo puts back only what that change touched |
@@ -187,7 +187,8 @@ in the calendar you already use.
   your applications as JSON or CSV. A deleted application goes to a trash for
   thirty days, and the toast that says so has *Undo*.
 - **AI clients.** Whether Claude, OpenAI, Hermes Agent and Mistral Vibe are wired
-  up to this workspace, and a button to do it.
+  up to this workspace, and a button to do it. The title bar shows the ones
+  installed on this computer, and opens this pane.
 
 Your settings are kept beside the app, not in the workspace, so a workspace
 copied to another machine carries your documents and not your window.

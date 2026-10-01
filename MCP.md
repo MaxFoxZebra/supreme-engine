@@ -12,12 +12,17 @@ one rendered by clicking Save.
 |---|---|
 | `list_cvs` | List every CV in your workspace |
 | `read_cv` | Read a CV's YAML source |
-| `edit_cv_fields` | Change individual fields, **keeping your comments** |
+| `edit_cv_fields` | Change individual fields, **keeping your comments**. Lists take `append`, `insert` and `remove`, so a bullet can be added or dropped without rewriting the file |
 | `write_cv` | Replace a whole file (blunt; prefer `edit_cv_fields`) |
 | `create_cv` | New blank CV or cover letter, or a duplicate of one. This is how you tailor per application |
-| `render_cv` | Render to PDF and **return the page as an image** |
+| `render_cv` | Render a CV or a letter to PDF and **return a page as an image**: the last page unless asked for another, with the page count, how full the last page is, and a warning when a few lines spilled over |
+| `create_letter` | Start the cover letter for an application, with the subject, greeting, closing and date filled in, and attach it |
+| `write_letter` | Replace a letter's body (and subject) |
+| `add_language` | Start a translation of a CV, with dates and common section titles already translated |
+| `translation_status` | What a translation is missing from the CV it was translated from |
+| `mark_translation_current` | Record that a translation has caught up |
 | `design_options` | Available themes, fonts and page sizes |
-| `workspace_info` | Where the workspace is and what is in it |
+| `workspace_info` | Where the workspace is and what is in it, including the base CV to tailor from |
 
 ## The applications
 
@@ -26,8 +31,9 @@ one rendered by clicking Save.
 | `list_jobs` | Your applications, trimmed to what identifies them |
 | `read_job` | One in full, including the posting text you saved |
 | `find_job` | Which application a message or event belongs to. Reports what it found and refuses to choose |
-| `job_alerts` | The same list the Jobs view shows under Attention |
-| `set_job_status` | Move one along the funnel |
+| `job_alerts` | The same list the Applications view shows under Attention |
+| `calendar` | Interviews and follow-ups ahead, optionally as an `.ics` file |
+| `set_job_status` | Move one along the funnel. Takes the status code (`applied`) or the app's label (`Awaiting reply`) |
 | `update_job_tracking` | Interview time, follow-up date, who is writing to you, which CV or letter was sent, and the posting (link, text, place, source) |
 | `save_person` | Record someone you are talking to about an application (recruiter, hiring manager, interviewer, referral), from an email thread or an invitation. Completes someone already listed, never removes anyone |
 | `get_interview_prep` | The prep for an application's next round as the user sees it: likely questions (with where each comes from and the user's notes), stories that back the posting's asks, questions to ask. `local` means the app made it from the posting alone |
@@ -79,6 +85,20 @@ tools rather than remembered.
 
 **It cannot destroy anything.** There is no delete tool for an application and
 none for a document, and no tool renames a file. Nothing it can do loses work.
+(That is the MCP server. The app's own HTTP API on `127.0.0.1`, which its
+interface uses, can delete; a model with a shell on your machine is not bound by
+any of this, and should be told to go through the MCP tools.)
+
+**It is told why when it is refused.** A duplicate, an unknown status, a date
+that is not a date, a path outside the workspace: each refusal reaches the model
+as the tool's own explanation, so it can correct itself rather than retry
+blindly. Dates are ISO (`2026-10-14`, `2026-10-14T15:00:00`); "next Tuesday" is
+refused with an example, rather than stored and then silently missing from the
+calendar.
+
+**Clients know which tools only read.** Every tool carries MCP annotations:
+reads are marked read-only, so a client can skip asking before them, and
+`write_cv` and `set_job_status` are marked destructive.
 
 **It cannot rewrite what you wrote.** No tool takes `company`, `title` or
 `notes`. It can *append* a dated line to notes — `append_note`, on two of the
@@ -154,7 +174,7 @@ what fixes that, and the skill below tells it to re-read every interview it has
 already recorded.
 
 A status change appends to the permanent history the funnel is drawn from, and
-this app has no undo. The model is told to show you every change and wait for
+unlike a document edit it cannot be undone. The model is told to show you every change and wait for
 you. That one is a rule in prose, not a lock in the code.
 
 ### Applying, as a skill
@@ -190,8 +210,9 @@ every time.
 
 ## Setting it up
 
-**Open CV Studio, click the marks in the title bar, and press Set up next to
-the client you want.** It writes the entry into that client's config for you,
+**Open CV Studio, go to Settings → AI clients (or click the AI clients button in
+the title bar), and press Set up next to the client you want.** The title bar
+shows only the clients installed on this computer, or already set up. It writes the entry into that client's config for you,
 keeping whatever else is already in there (other servers, your own comments),
 and backing the file up first. The same panel afterwards tells you whether
 each
@@ -340,8 +361,9 @@ A healthy server answers with its name and protocol version.
 ## Things worth knowing
 
 **It edits real files.** `edit_cv_fields` and `write_cv` write to disk
-immediately. There is no undo inside the app, but the files are plain YAML, so
-keeping the workspace in git gives you a real history.
+immediately. Each change then waits under **Review** in the app, where you keep
+it or undo it (see below), and the files are plain YAML, so keeping the
+workspace in git gives you a full history as well.
 
 **Every edit is marked in the app.** Which fields a model changed, what they
 said before, and which of them no longer match the CV this one was copied from,
@@ -366,21 +388,22 @@ RenderCV out of the YAML alone.
 **A patch that lands nowhere is reported.** `edit_cv_fields` answers with how
 many of the edits it applied and names each one it could not, rather than
 counting a mis-indexed entry as a success. Applications are rows in
-`applications.db` rather than files, so git does not cover those; the Jobs view
+`applications.db` rather than files, so git does not cover those; Settings
 exports them to JSON or CSV.
 
 **Comments survive `edit_cv_fields`** because it round-trips through ruamel.
 `write_cv` replaces the file wholesale and will drop anything not in the new
 content, which is why the tool description steers toward the former.
 
-**It is local.** The server talks to your filesystem, and makes one kind of
-network request: when a model adds an application and passes the company's
-website, or calls `set_company_logo` with one, the server fetches that
-company's icon from that website -- from the page, and from wherever the page
-says its icon lives. There is no logo service in between, so nothing learns the
-list of companies you apply to that the companies do not already know. The
-interface itself makes no request at all: the logo is saved in the workspace
-and drawn from there. There is no telemetry. The mail and calendar an AI client
+**It is local.** The server talks to your filesystem, and goes online for three
+things only. It reads a posting from the link a model passes (`add_job`,
+`read_posting`, a title check in `update_job_tracking`), straight from the job
+board. It fetches a company's icon from the company's own website, when a model
+passes one -- there is no logo service in between, so nothing learns the list
+of companies you apply to that the companies do not already know. And the first
+time a theme is rendered, Typst downloads that theme's font and icon packages
+once and caches them. The interface draws logos from the workspace, and checks
+for updates. There is no telemetry. The mail and calendar an AI client
 reads reach it through *its* connectors, and this app never sees them. The AI
 client sees only what the tools return.
 
@@ -394,7 +417,7 @@ state of each.
 ## Skills
 
 The MCP tools are the *doing*; the skills are the judgement around it: reading
-a posting, tailoring from a master profile, letters, interview prep. They are
+a posting, tailoring from the base CV, letters, interview prep. They are
 delivered differently in each place, which is worth knowing before you go
 looking for them:
 
@@ -409,22 +432,25 @@ clients → Skills → Package for Claude Desktop** writes one upload-ready `.zi
 per skill into `assets/skills/` in your workspace. Then, in the desktop app,
 Customize → Skills → **+** and upload each one.
 
-**A skill that runs a local script cannot work in the desktop app.** Skills
-there execute in Claude's sandbox: no workspace on disk, no Python, no
-`127.0.0.1:8722`. Four of the seven are built that way, and the packaged copy of
-each gets a section appended pointing at the MCP tool that does the same job:
-`render_cv` instead of a render script, `edit_cv_fields` instead of writing
-YAML, and so on. The originals in `~/.claude/skills/` are never modified. The
-other three are pure judgement and travel unchanged.
+There are three, in `skills/` in this repository: `cv-studio-apply`,
+`cv-studio-interview-prep` and `cv-studio-inbox`. The app does not install them
+yet, so copy the folders into `~/.claude/skills/` first; packaging reads them
+from there. All three work through the MCP tools rather than local scripts, so
+they work the same in the desktop app's sandbox. The originals in
+`~/.claude/skills/` are never modified.
 
 ## On the command line
 
-The same server works with Claude Code and the Codex CLI, configured the same
-way. Claude Code users get more than the MCP tools: the `~/.claude/skills/`
-directory in this project holds skills for the whole job-search workflow:
-analysing a posting, tailoring a CV from a master profile, writing cover
-letters, tracking applications and interview prep. The MCP server covers CV
-editing and rendering; the skills cover the judgement around it.
+The same server works with Claude Code and the Codex CLI. The Codex CLI shares
+the ChatGPT config the app writes. Claude Code is set up by hand, with the
+command and arguments the Claude Desktop entry above uses:
+
+```bash
+claude mcp add cv-studio -- "<path to cv-studio-server>" --mcp --workspace "<your workspace>" --client claude
+```
+
+Copy the three folders under `skills/` into `~/.claude/skills/` as well: the MCP
+server covers the doing, the skills the judgement around it.
 
 ## Updates
 

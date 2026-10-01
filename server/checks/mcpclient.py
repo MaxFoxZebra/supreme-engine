@@ -117,6 +117,15 @@ if __name__ == "__main__":
           all(tools[t].get("description") for t in tools))
     check("render_cv still declares its path argument",
           "path" in tools["render_cv"]["inputSchema"]["properties"])
+    # Clients decide from these whether to ask before a call: a read should
+    # not need approval, and a permanent change should be flagged.
+    ann = {n: (t.get("annotations") or {}) for n, t in tools.items()}
+    check("reads are annotated read-only",
+          all(ann[n].get("readOnlyHint") is True for n in ("list_jobs", "read_cv", "find_job")),
+          str(ann.get("read_cv")))
+    check("permanent writes are annotated destructive",
+          ann["set_job_status"].get("destructiveHint") is True
+          and ann["set_job_status"].get("readOnlyHint") is False)
 
     def call(tool, args):
         return c.send("tools/call", {"name": tool, "arguments": args})
@@ -155,6 +164,20 @@ if __name__ == "__main__":
     body = r["result"]["content"][0]["text"]
     check("a patch that lands nowhere is reported, not swallowed",
           "1 of 2" in body and "NOT APPLIED" in body, body.split("\n")[0])
+
+    # Lists are edited item by item: a bullet appended, inserted, removed.
+    hl = ["cv", "sections", "experience", 0, "highlights"]
+    r = call("edit_cv_fields", {"path": doc, "edits": [
+        {"op": "append", "path": hl, "value": "Appended over MCP"},
+        {"op": "insert", "path": hl + [0], "value": "Inserted first"}]})
+    body = r["result"]["content"][0]["text"]
+    src = call("read_cv", {"path": doc})["result"]["content"][0]["text"]
+    check("edit_cv_fields appends and inserts list items",
+          "2 of 2" in body and src.find("Inserted first") < src.find("Appended over MCP") > 0,
+          body.split("\n")[0])
+    r = call("edit_cv_fields", {"path": doc, "edits": [{"op": "remove", "path": hl + [0]}]})
+    src = call("read_cv", {"path": doc})["result"]["content"][0]["text"]
+    check("and removes one", "Inserted first" not in src and "Appended over MCP" in src)
 
     r = call("read_cv", {"path": doc})
     text = r["result"]["content"][0]["text"]
@@ -248,6 +271,11 @@ if __name__ == "__main__":
     r = call("add_job", {"company": co, "title": "Other Role"})
     check("add_job refuses a likely duplicate", errored(r),
           "refused" if errored(r) else text(r)[:70])
+    # The refusal is written for the model. The SDK sends only "Error
+    # executing tool" for anything but a ToolError, which is how every one of
+    # these messages used to be lost on the way.
+    check("and says why, so the model can act on it",
+          "confirmed_new=True" in text(r), text(r)[:100])
 
     r = call("add_job", {"company": co, "title": "Other Role",
                          "confirmed_new": True})
@@ -276,6 +304,15 @@ if __name__ == "__main__":
 
     r = call("set_job_status", {"job_id": job_id, "status": "not_a_status"})
     check("an invented status is refused", errored(r))
+    check("and the refusal lists the vocabulary", "rejected_interviewing" in text(r),
+          text(r)[:100])
+    r = call("list_jobs", {"status": "Interviewing"})
+    check("the app's own status labels are understood",
+          not errored(r) and any(j["id"] == job_id
+                                 for j in r["result"]["structuredContent"]["result"]))
+    r = call("update_job_tracking", {"job_id": job_id, "followup_date": "next tuesday"})
+    check("a date that is not a date is refused, and says why",
+          errored(r) and "ISO" in text(r), text(r)[:100])
 
     r = call("update_job_tracking", {"job_id": job_id,
                                      "interview_at": "2099-01-02T14:00:00",
@@ -348,6 +385,15 @@ if __name__ == "__main__":
     r = call("update_job_tracking", {"job_id": job_id, "cv_path": ""})
     row = json.loads(text(r))
     check("and it can be detached again", row.get("cv_path") is None)
+
+    # Letters are Markdown, which the CV check used to refuse, so a letter
+    # could be attached only by create_letter and never swapped afterwards.
+    made = json.loads(text(call("create_letter", {"job_id": job_id})))
+    call("update_job_tracking", {"job_id": job_id, "letter_path": ""})
+    r = call("update_job_tracking", {"job_id": job_id, "letter_path": made["path"]})
+    check("a cover letter can be attached by path",
+          not errored(r) and json.loads(text(r)).get("letter_path") == made["path"],
+          text(r)[:100])
 
     # A tool returning a list arrives as one content block per item, with the
     # whole array under structuredContent. Read the array, the way a client
