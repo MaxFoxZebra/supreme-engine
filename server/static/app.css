@@ -3198,6 +3198,7 @@ ins.rvi{color:var(--rv-ins);background:var(--rv-ins-bg);text-decoration:underlin
 .rvsheet{display:flex;flex-direction:column;gap:14px}
 .rvsheet .rvlist{max-height:calc(100vh - 290px);overflow-y:auto;margin:0 -6px;padding:2px 6px}
 .rvsheet .rvc{cursor:default}
+.aich .rvx dt{text-transform:none}
 .pp-cd .pp-date{height:34px;padding:0 16px;font-size:13px}
 
 /* a page that did not lay out */

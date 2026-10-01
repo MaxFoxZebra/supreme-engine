@@ -18,7 +18,11 @@ from __future__ import annotations
 import base64
 import functools
 import inspect
+import threading
 from pathlib import Path
+
+import anyio.from_thread
+from pydantic import BaseModel, Field
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -37,6 +41,8 @@ mcp = MCPServer(
         "field. Quote such text or use a >- block.\n"
         "2. Phone numbers are validated against real numbering plans, not just "
         "their format.\n\n"
+        "To find what to edit, call cv_outline: it lists every entry and "
+        "bullet with the exact path edit_cv_fields takes.\n\n"
         "After editing, always call render_cv and look at the returned page "
         "image before telling the user it is done. Page-break problems are "
         "invisible in the source.\n\n"
@@ -49,9 +55,10 @@ mcp = MCPServer(
         "only reliable key and it is often ambiguous. If it returns nothing, "
         "or more than one candidate, ask rather than guessing.\n"
         "2. Show the user every change you intend to make and wait for them "
-        "to agree. A status change is appended to a permanent history that "
-        "the funnel is drawn from and cannot be undone. (Document edits can "
-        "be: the user reviews each one in the app and keeps or undoes it.)\n"
+        "to agree. A status change is appended to the history the funnel is "
+        "drawn from. The app lists every change you make, to documents and "
+        "applications alike, for the user to keep or undo, but a wrong "
+        "change they have to clean up is still a cost to them.\n"
         "3. An automated acknowledgement is not a status change. Record it "
         "with last_contact_at and leave the status alone. Never set a ghosted "
         "status from silence: absence of a message is not a message.\n\n"
@@ -155,7 +162,7 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # changes, so what it wrote can be shown back to the user as changes to keep
 # or undo (review.py). Watching is a stat of each document and a read of its
 # text, which is nothing next to the model's own turn.
-READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
+READ_ONLY = {"list_cvs", "read_cv", "cv_outline", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info"}
 
@@ -215,6 +222,58 @@ def _checkpoint(before: dict, tool_name: str) -> None:
         pass
 
 
+def _rows() -> dict | None:
+    try:
+        return studio.jobstore.raw_rows(_ws()) if studio.jobstore else None
+    except Exception:
+        return None
+
+
+def _record_rows(before: dict | None, tool_name: str) -> None:
+    """Keep what each application was before this tool changed it, so the
+    app can show the change and undo it (jobs.record_ai_changes)."""
+    if before is None:
+        return
+    try:
+        studio.jobstore.record_ai_changes(_ws(), before, tool=tool_name,
+                                          by=studio.CLIENT_ID or "ai",
+                                          agent=studio.CLIENT_AGENT)
+    except Exception:
+        # Bookkeeping is never what fails a tool call.
+        pass
+
+
+# The Context of the call in progress, for a tool that needs to ask the user
+# something. Sync tools run in a worker thread each, so a thread-local is the
+# call's own.
+_local = threading.local()
+
+
+class _Confirm(BaseModel):
+    confirm: bool = Field(default=True, description="Make this change")
+
+
+def ask_user(message: str) -> bool | None:
+    """Ask the user directly, through the client, when it can show a form.
+
+    True or False is their answer; None means this client cannot ask (most
+    cannot yet), and the instructions' "show the user and wait" is all there
+    is. Called from a sync tool, so it hops onto the event loop to ask.
+    """
+    ctx = getattr(_local, "ctx", None)
+    try:
+        caps = ctx.session.client_params.capabilities
+        if caps is None or caps.elicitation is None:
+            return None
+    except Exception:
+        return None
+    try:
+        res = anyio.from_thread.run(ctx.elicit, message, _Confirm)
+    except Exception:
+        return None
+    return res.action == "accept" and bool(getattr(res.data, "confirm", False))
+
+
 def tool(fn):
     """Register a tool, and leave a note in the workspace that it ran.
 
@@ -244,25 +303,34 @@ def tool(fn):
         # Record what happened, not merely that it was attempted: a refused
         # call logged like a successful one tells the user the model read a
         # file it was actually blocked from reading.
-        watch = None
+        watch = rows = None
         if fn.__name__ not in READ_ONLY:
             try:
                 watch = _snapshot()
             except Exception:
                 watch = None
+            rows = _rows()
+        # A tool can call another (update_job_tracking reads the job), and
+        # the inner call must not take the outer one's Context away.
+        outer = getattr(_local, "ctx", None)
+        _local.ctx = cvs_ctx or outer
         try:
             result = fn(*args, **kwargs)
         except Exception as exc:
             if watch is not None:
                 _checkpoint(watch, fn.__name__)
+            _record_rows(rows, fn.__name__)
             studio.note_mcp_activity(fn.__name__,
                                      str(target) if target else None,
                                      ok=False, error=str(exc)[:200])
             if isinstance(exc, EXPECTED):
                 raise ToolError(_message(exc)) from exc
             raise
+        finally:
+            _local.ctx = outer
         if watch is not None:
             _checkpoint(watch, fn.__name__)
+        _record_rows(rows, fn.__name__)
         studio.note_mcp_activity(fn.__name__,
                                  str(target) if target else None)
         return result
@@ -293,6 +361,50 @@ def list_cvs() -> list[dict]:
 def read_cv(path: str) -> str:
     """Read a CV's YAML source. `path` is relative to the workspace."""
     return studio.safe_path(path).read_text(encoding="utf-8")
+
+
+def _short(text, n: int = 90) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+@tool
+def cv_outline(path: str) -> str:
+    """A CV's structure, with the exact path of every entry and bullet.
+
+    Read this instead of the whole YAML to find what to edit: each line ends
+    with the path to pass to edit_cv_fields, so "the second bullet of the
+    Acme job" is a lookup, not a count. Bullets are cut short here; read_cv
+    has the full text.
+    """
+    p = studio.safe_path(path)
+    if studio.is_letter(p):
+        raise ValueError(f"{path} is a cover letter, which has no outline. read_cv reads it.")
+    data = studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}
+    cv = data.get("cv") or {}
+    out = [f"{path}"]
+    for key in ("name", "headline", "location", "email", "phone", "website"):
+        if cv.get(key):
+            out.append(f"  {key}: {_short(cv[key], 60)}  [cv,{key}]")
+    for name, entries in (cv.get("sections") or {}).items():
+        entries = entries or []
+        out.append(f"section {name!r}: {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}"
+                   f"  [cv,sections,{name}]")
+        for i, e in enumerate(entries):
+            at = f"cv,sections,{name},{i}"
+            if not isinstance(e, dict):
+                out.append(f"  {i}. {_short(e)}  [{at}]")
+                continue
+            title = next((e[k] for k in ("company", "institution", "name", "label", "title")
+                          if e.get(k)), "") or next(iter(e.values()), "")
+            sub = next((e[k] for k in ("position", "degree", "area", "details", "summary")
+                        if e.get(k)), "")
+            when = "–".join(str(e[k]) for k in ("start_date", "end_date") if e.get(k)) or e.get("date") or ""
+            line = " · ".join(_short(x, 60) for x in (title, sub, when) if x)
+            out.append(f"  {i}. {line}  [{at}]")
+            for j, h in enumerate(e.get("highlights") or []):
+                out.append(f"     - {j}: {_short(h)}  [{at},highlights,{j}]")
+    return "\n".join(out)
 
 
 @tool
@@ -723,8 +835,10 @@ def calendar(days_ahead: int = 14, ics: bool = False) -> dict:
 def set_job_status(job_id: str, status: str, append_note: str | None = None) -> dict:
     """Move one application to a new status. Confirm with the user first.
 
-    This appends to a permanent history that the funnel is drawn from and
-    cannot be undone, so show the user what you intend to change and wait.
+    This appends to the history the funnel is drawn from, so show the user
+    what you intend to change and wait. A client that can show a form asks
+    them here as well. The app lists every change you make to an application
+    for the user to keep or undo.
 
     The vocabulary, and it is closed (the app's own labels, such as
     "Awaiting reply" or "Declined by me", are accepted too):
@@ -748,8 +862,18 @@ def set_job_status(job_id: str, status: str, append_note: str | None = None) -> 
     `append_note` adds a dated line to the notes. Use it to record where the
     change came from, such as the subject line and date of the mail.
     """
+    code = studio.jobstore.normalize_status(status)
+    job = read_job(job_id)
+    if code != job["status"]:
+        label = studio.jobstore.STATUS_LABELS
+        said = ask_user(f"Move {job['company']} – {job['title']} from "
+                        f"{label.get(job['status'], job['status'])} to {label.get(code, code)}?"
+                        + (f"\n\nNote: {append_note}" if append_note else ""))
+        if said is False:
+            raise ToolError("The user declined this status change, so nothing was changed. "
+                            "Ask them what is right before trying again.")
     return studio.jobstore.update_job(
-        _ws(), job_id, {"status": status, "append_note": append_note})
+        _ws(), job_id, {"status": code, "append_note": append_note})
 
 
 @tool
@@ -1225,6 +1349,42 @@ def workspace_info() -> dict:
                    "rows in applications.db beside them, which export to JSON "
                    "and CSV so nothing is locked in.",
     }
+
+
+# --- Prompts ------------------------------------------------------------------
+#
+# The skills are how the work is done well: what to read first, what to
+# reorder, what a letter says, when to ask. A skill has to be installed in
+# each client by hand (uploaded to Claude Desktop, copied for Claude Code),
+# while a prompt reaches every client that connects to this server. So each
+# skill that ships with the app is offered here as a prompt too, word for word.
+
+
+def _skill_prompt(folder: Path) -> None:
+    text = (folder / "SKILL.md").read_text(encoding="utf-8")
+    meta = studio._front_matter(text)
+    body = text
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        body = text[end + 4:].lstrip() if end >= 0 else text
+    name = (meta.get("name") or folder.name).removeprefix(studio.SKILL_PREFIX + "-")
+
+    def prompt(request: str = "") -> str:
+        ask = request.strip()
+        return body + (f"\n\n---\n\nThe user's request: {ask}" if ask else "")
+
+    prompt.__name__ = name.replace("-", "_")
+    mcp.prompt(name=name, title=_short(body.splitlines()[0].lstrip("# "), 60),
+               description=meta.get("description") or None)(prompt)
+
+
+for _folder in studio.skill_folders():
+    try:
+        _skill_prompt(_folder)
+    except Exception:
+        # A skill that cannot be read is one prompt fewer, never a server
+        # that does not start.
+        pass
 
 
 def main(workspace: str | None = None, client: str | None = None) -> int:

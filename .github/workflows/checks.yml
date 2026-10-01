@@ -105,6 +105,12 @@ jobs:
       - name: Interview prep
         run: python checks/preptest.py
 
+      - name: What an AI client changed on applications
+        run: python checks/aichangestest.py
+
+      - name: Word in and out
+        run: python checks/docxtest.py
+
       - name: Posting from a link
         run: python checks/postingtest.py
 

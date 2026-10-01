@@ -941,8 +941,10 @@ async function loadSkills(){
 function paintSkills(){
   const d=S.skills, list=(d&&d.skills)||[];
   $("#s-skills").innerHTML=list.length
-    ? list.map(k=>'<div><span class="nm">'+esc(k.name)+'</span>'+
-        '<span class="ds">'+esc(k.description)+'</span>'+
+    /* The name and description are the skill's own, uploaded as they are,
+       so they stay as written. */
+    ? list.map(k=>'<div><span class="nm" data-noi18n>'+esc(k.name)+'</span>'+
+        '<span class="ds" data-noi18n>'+esc(k.description)+'</span>'+
         '<span class="tag'+(k.needs_mcp?" mcp":"")+'">'+
         (k.needs_mcp?"needs the tools":"travels as is")+'</span></div>').join("")
     : '<div><span class="ds">None found'+(d?" in "+esc(d.source):"")+
@@ -2003,8 +2005,8 @@ function obStep(){
     lede="Bring the CV you already have, or start from a blank one. Either way you get a "+
       "base CV every tailored copy starts from.";
     const srcs=[
-      ["pdf","PDF","Import your CV","A PDF, or an export from Reactive Resume or JSON "+
-        "Resume. Exports come across field by field; from a PDF, jobs, education and skills "+
+      ["pdf","PDF","Import your CV","A PDF or a Word file, or an export from Reactive Resume or JSON "+
+        "Resume. Exports come across field by field; from a PDF or a Word file, jobs, education and skills "+
         "are sorted into sections, and a connected AI client can tidy what the rules miss."],
       ["linkedin",'<svg viewBox="0 0 448 512" aria-hidden="true"><use href="#board-linkedin"/></svg>',
         "Import from LinkedIn","Your data archive or your profile saved as PDF."],
@@ -2027,12 +2029,12 @@ function obStep(){
       '<b>'+(OB.importing?"Reading it…":"Drop your "+(OB.src==="linkedin"?"LinkedIn file":"CV")+
         " here")+'</b>'+
       '<span>'+(OB.src==="linkedin"?"Your LinkedIn data archive (.zip), or your profile "+
-        "saved as PDF.":"A PDF of your CV, a Reactive Resume or JSON Resume export (.json), "+
-        "or your LinkedIn profile as a PDF or data archive (.zip).")+'</span>'+
+        "saved as PDF.":"Your CV as a PDF or a Word file (.docx), a Reactive Resume or JSON Resume "+
+        "export (.json), or your LinkedIn profile as a PDF or data archive (.zip).")+'</span>'+
       (OB.impErr?'<span class="err" role="alert">'+esc(OB.impErr)+'</span>':'')+
       '<button class="onb-btn" id="onb-pick"'+(OB.importing?" disabled":"")+'>Choose a file…</button>'+
       '<small>Read on this machine. Nothing is uploaded.</small>'+
-      '<input type="file" id="onb-file" accept=".pdf,.zip,.json,application/pdf,application/zip,application/json" hidden>'+
+      '<input type="file" id="onb-file" accept=".pdf,.docx,.zip,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,application/json" hidden>'+
     '</div>';
     if(OB.src!=="blank") say="No file? Next starts from the blank CV.";
   }else if(i===2){
@@ -2972,8 +2974,8 @@ $("#lt-export").onclick=e=>{
   let m=$("#lt-menu"); if(m){ m.remove(); return }
   m=document.createElement("div"); m.className="lt-menu"; m.id="lt-menu"; m.setAttribute("role","menu");
   m.innerHTML=[["pdf","PDF","To attach to the application"],["docx","Word (.docx)","For recruiters who ask for one"],
-    ["txt","Plain text","To paste into a form's cover letter box"]].map(([f,t,x])=>
-    '<button role="menuitem" data-f="'+f+'">'+t+'<small>'+x+'</small></button>').join("");
+    ["txt","Plain text","To paste into a form's cover letter box"]].map(([f,l,x])=>
+    '<button role="menuitem" data-f="'+f+'">'+esc(t(l))+'<small>'+esc(t(x))+'</small></button>').join("");
   $("#lt-export").parentElement.append(m);
   m.onclick=async ev=>{ const b=ev.target.closest("[data-f]"); if(!b) return; m.remove();
     if(LT.dirty) await ltSave();
@@ -3332,6 +3334,58 @@ function cvRvSheet(){
       closeSheet() }
   };
 }
+/* What AI clients changed on applications, for the user to keep or undo:
+   the tracker's counterpart of a document's Review. Each card is one tool
+   call on one application, newest first, field by field. */
+const AI_FIELD={status:"Status",interview_at:"Interview",interview_tz:"Time zone",
+  followup_date:"Follow-up",last_contact_at:"Last contact",contact_email:"Contact",cv_path:"CV",
+  letter_path:"Letter",notes:"Note added",url:"Link",description:"Posting",location:"Place",
+  source:"Source",title:"Title",language:"Language",people:"People",rounds:"Rounds",prep:"Interview prep"};
+async function aiChangesSheet(){
+  let list;
+  try{ list=(await api("/api/ai-changes")).changes }catch(e){ return toast(e.message,true) }
+  if(!list.length){ S.aiChanges=0; drawRail(); return toast(t("Nothing left to review.")) }
+  /* Dates as the app writes them everywhere else, not as stored. */
+  const val=v=>{
+    if(v==null||v==="") return '<span class="rvs">—</span>';
+    const s=String(v), m=/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/.exec(s);
+    return esc(m&&(s.length===10||m[2])?fmtDateISO(m[1])+(m[2]?" "+m[2]:""):s);
+  };
+  const body=list.map((c,i)=>{
+    const who=whoLabel(c);
+    const lines=(c.kind==="add"?'<p class="rvs">'+esc(t("Added by AI"))+'</p>':'')+
+      '<dl>'+c.changes.map(x=>x.field==="status"?{...x,from:x.from&&t(prettyStatus(x.from)),to:x.to&&t(prettyStatus(x.to))}:x)
+      .map(x=>'<dt>'+esc(t(AI_FIELD[x.field]||x.field))+'</dt><dd>'+
+      (x.from==null?'':'<del class="rvd" data-noi18n>'+val(x.from)+'</del> ')+
+      (x.to==null?'<span class="rvs">'+esc(t("Cleared"))+'</span>':'<ins class="rvi" data-noi18n>'+val(x.to)+'</ins>')+'</dd>').join("")+'</dl>';
+    return rvCard({id:c.id,label:c.company+" · "+c.title,
+      where:who+" · "+t("{t} ago",{t:ago(Date.parse(c.at))})},i,lines);
+  }).join("");
+  openSheet('<div class="rvsheet aich"><div class="rvhead">'+rvIcon(list[0].by)+'<div><h3 id="sheet-title">'+
+      esc(t("Changes by AI to your applications"))+'</h3><p>'+
+      esc(t("Keep what is right. Undo puts the application back as it was before that change, and refuses if it has changed again since."))+
+      '</p></div></div><div class="rvlist">'+body+'</div>'+
+    '<div class="foot"><button class="obtn" data-all="keep">'+esc(t("Keep all"))+'</button><div class="grow"></div>'+
+      '<button class="sbtn primary" data-cancel>'+esc(t("Close"))+'</button></div></div>',
+    ()=>$("#sheet").classList.remove("wide"));
+  const sh=$("#sheet"); sh.classList.add("wide");
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  sh.querySelector(".rvsheet").onclick=async e=>{
+    const b=e.target.closest("[data-act]"), a=e.target.closest("[data-all]");
+    if(!b&&!a) return;
+    try{
+      if(a) await post("/api/ai-changes",{action:"keep",id:"*"});
+      else{
+        const r=await post("/api/ai-changes",{action:b.dataset.act,id:b.dataset.id});
+        if(b.dataset.act==="undo") toast(r.deleted?t("Application removed. It is in the trash."):t("Undone"));
+      }
+    }catch(err){ toast(err.message,true) }
+    await loadJobs(true);
+    if(a) return closeSheet();
+    aiChangesSheet();
+  };
+}
+
 /* Badges on every list that names documents, so changes waiting are seen
    from wherever you are, not only once the document is open. */
 async function refreshDocBadges(){
@@ -4709,8 +4763,24 @@ async function runLive(){
   paintStatus();
 }
 
-$("#btn-pdf").onclick=()=>{ if(S.pdf)
-  window.open("/api/asset?path="+encodeURIComponent(S.pdf)+tok()) };
+/* The PDF to attach; Word for the agencies that ask for one; plain text to
+   paste into an application form. The last two are built from the CV's
+   fields, so they need no render. */
+$("#btn-pdf").onclick=e=>{
+  e.stopPropagation();
+  let m=$("#cv-menu"); if(m){ m.remove(); return }
+  m=document.createElement("div"); m.className="lt-menu"; m.id="cv-menu"; m.setAttribute("role","menu");
+  m.innerHTML=[["pdf","PDF","To attach to the application"],["docx","Word (.docx)","For recruiters who ask for one"],
+    ["txt","Plain text","To paste into an application form"]].map(([f,l,x])=>
+    '<button role="menuitem" data-f="'+f+'">'+esc(t(l))+'<small>'+esc(t(x))+'</small></button>').join("");
+  $("#btn-pdf").parentElement.append(m);
+  m.onclick=async ev=>{ const b=ev.target.closest("[data-f]"); if(!b) return; m.remove();
+    if(b.dataset.f==="pdf"){ if(S.pdf) window.open("/api/asset?path="+encodeURIComponent(S.pdf)+tok()); return }
+    if(S.dirty) await doRender();
+    window.open("/api/cv/export?path="+encodeURIComponent(S.path)+"&format="+b.dataset.f+tok()) };
+  setTimeout(()=>document.addEventListener("click",function off(){ m.remove();
+    document.removeEventListener("click",off) }),0);
+};
 
 /* ---- YAML: highlighting painted behind a transparent-text textarea, so
    native undo, selection and IME keep working ---- */
@@ -4795,6 +4865,7 @@ async function loadJobs(quiet){
       d.jobs.sort((a,b)=>(at.has(a.id)?at.get(a.id):-1)-(at.has(b.id)?at.get(b.id):-1));
     }
     S.jobs=d.jobs; S.statuses=d.statuses; S.nodes=d.nodes||{}; S.labels=d.labels||{};
+    S.aiChanges=d.ai_changes||0;
     S.jready=true;
   }catch(e){
     S.jready=false;
@@ -5025,10 +5096,13 @@ function drawRail(){
      needs doing. They used to be the one entry under a "Views" heading that
      promised views you could make and offered no way to make one. */
   const saved=Object.keys(SAVED).map(k=>[k,S.jobs.filter(SAVED[k]).length]).filter(([,n])=>n);
-  $("#attentionwrap").hidden=!live.length&&!saved.length;
-  $("#attentionlist").innerHTML=live.map(([k,label])=>
-    row(label,a.counts[k],"alert",k)).join("")+
+  const aiN=S.aiChanges||0;
+  $("#attentionwrap").hidden=!live.length&&!saved.length&&!aiN;
+  $("#attentionlist").innerHTML=(aiN?'<button class="row" id="ai-review"><span class="mark"></span>'+
+      '<span class="lbl">'+esc(t("Changes by AI to review"))+'</span><span class="ct mono">'+aiN+'</span></button>':"")+
+    live.map(([k,label])=>row(label,a.counts[k],"alert",k)).join("")+
     saved.map(([k,n])=>row(k,n,"saved",k)).join("");
+  const air=$("#ai-review"); if(air) air.onclick=()=>aiChangesSheet();
   $$("#statuslist [data-k],#attentionlist [data-k]").forEach(b=>b.onclick=()=>{
     S.jfilter={kind:b.dataset.k,value:b.dataset.v};
     if(b.dataset.k!=="node") S.fnode=null;

@@ -184,6 +184,23 @@ CREATE TABLE IF NOT EXISTS trash (
   data        TEXT NOT NULL,
   deleted_at  TEXT NOT NULL
 );
+-- What an AI client changed on an application, kept until the user has seen
+-- it: the fields as they were and as the client left them, so the change can
+-- be shown, and undone as long as nothing has changed those fields since.
+CREATE TABLE IF NOT EXISTS ai_changes (
+  id       TEXT PRIMARY KEY,
+  at       TEXT NOT NULL,
+  by       TEXT,
+  agent    TEXT,
+  tool     TEXT,
+  job_id   TEXT NOT NULL,
+  company  TEXT,
+  title    TEXT,
+  kind     TEXT NOT NULL,
+  before   TEXT NOT NULL,
+  after    TEXT NOT NULL,
+  state    TEXT NOT NULL DEFAULT 'pending'
+);
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_company ON jobs(company);
 """
@@ -895,3 +912,171 @@ def export(workspace: Path, fmt: str = "json") -> str:
             w.writerow(r)
         return buf.getvalue()
     return json.dumps(rows, indent=2)
+
+
+# --------------------------------------------------------------------------
+# What an AI client changed
+#
+# The documents have Review: every change a model makes to a CV or a letter
+# waits there to be kept or undone. The tracker had nothing like it, so a
+# status moved from a chat window went straight into the permanent history
+# the funnel is drawn from. This is the same idea for the rows: the MCP
+# server snapshots the table around each tool that writes it and records,
+# per application, the fields as they were and as they became.
+#
+# Undo puts back exactly those fields, and refuses when any of them has
+# changed again since, by the user or by a later tool call: putting back a
+# value over one written afterwards would quietly lose the later change.
+# --------------------------------------------------------------------------
+
+# Bookkeeping columns: compared to find a change, never shown as one.
+_QUIET = {"updated_at"}
+
+
+def raw_rows(workspace: Path) -> dict[str, dict]:
+    """Every application as stored, keyed by id."""
+    con = connect(workspace)
+    try:
+        return {r["id"]: dict(r) for r in con.execute("SELECT * FROM jobs")}
+    finally:
+        con.close()
+
+
+def record_ai_changes(workspace: Path, before: dict[str, dict], *, tool: str,
+                      by: str | None, agent: str | None) -> int:
+    """Record how each application differs from `before`. Returns how many."""
+    after = raw_rows(workspace)
+    rows = []
+    for jid, now in after.items():
+        was = before.get(jid)
+        if was is None:
+            rows.append((jid, now, "add", {}, now))
+            continue
+        cols = [c for c in now if c not in _QUIET and now[c] != was.get(c)]
+        # A logo is a picture beside the name, not a fact about the
+        # application: nothing to review.
+        if cols and set(cols) != {"logo"}:
+            keep = cols + [c for c in _QUIET if c in now]
+            rows.append((jid, now, "update", {c: was.get(c) for c in keep},
+                         {c: now[c] for c in keep}))
+    if not rows:
+        return 0
+    con = connect(workspace)
+    try:
+        for jid, now, kind, b, a in rows:
+            con.execute(
+                "INSERT INTO ai_changes (id, at, by, agent, tool, job_id, company, title, "
+                "kind, before, after) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (uuid.uuid4().hex, _now(), by, agent, tool, jid, now.get("company"),
+                 now.get("title"), kind, json.dumps(b, ensure_ascii=False),
+                 json.dumps(a, ensure_ascii=False)))
+        con.commit()
+    finally:
+        con.close()
+    return len(rows)
+
+
+def _change_lines(kind: str, before: dict, after: dict) -> list[dict]:
+    """A change as the fields a person reads, old and new."""
+    # Statuses go out as codes, for the app to put in the user's language.
+    if kind == "add":
+        return [{"field": "status", "from": None, "to": after.get("status")}]
+    out = []
+    for col, new in after.items():
+        if col in _QUIET or col == "status_history":
+            continue
+        old = before.get(col)
+        if col == "notes":
+            # Notes are only ever appended to by a tool: show what was added.
+            o, n = old or "", new or ""
+            new, old = (n[len(o):].strip() if n.startswith(o) else n), None
+            new = re.sub(r"^\[\d{4}-\d{2}-\d{2}\]\s*", "", new)
+        elif col in ("people", "rounds", "prep"):
+            old, new = None, {"people": "People updated", "rounds": "Interview rounds updated",
+                              "prep": "Interview prep rewritten"}[col]
+        elif col == "description":
+            old = f"{len((old or '').split())} words" if old else None
+            new = f"{len((new or '').split())} words" if new else None
+        out.append({"field": col, "from": old, "to": new})
+    return out
+
+
+def ai_changes(workspace: Path, state: str = "pending") -> list[dict]:
+    con = connect(workspace)
+    try:
+        # Several changes land in the same second (one tool call after
+        # another), so the insertion order breaks the tie: newest first.
+        rows = con.execute("SELECT * FROM ai_changes WHERE state=? ORDER BY at DESC, rowid DESC",
+                           (state,)).fetchall()
+    finally:
+        con.close()
+    out = []
+    for r in rows:
+        before, after = json.loads(r["before"]), json.loads(r["after"])
+        out.append({"id": r["id"], "at": r["at"], "by": r["by"], "agent": r["agent"],
+                    "tool": r["tool"], "job_id": r["job_id"], "company": r["company"],
+                    "title": r["title"], "kind": r["kind"],
+                    "changes": _change_lines(r["kind"], before, after)})
+    return out
+
+
+def keep_ai_change(workspace: Path, change_id: str) -> int:
+    """Mark one change ("*" for all) as seen. Returns how many."""
+    con = connect(workspace)
+    try:
+        if change_id == "*":
+            cur = con.execute("UPDATE ai_changes SET state='kept' WHERE state='pending'")
+        else:
+            cur = con.execute("UPDATE ai_changes SET state='kept' WHERE id=? AND state='pending'",
+                              (change_id,))
+        con.commit()
+        return cur.rowcount
+    finally:
+        con.close()
+
+
+def undo_ai_change(workspace: Path, change_id: str) -> dict:
+    """Put an application back as it was before one AI change."""
+    con = connect(workspace)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        ch = con.execute("SELECT * FROM ai_changes WHERE id=? AND state='pending'",
+                         (change_id,)).fetchone()
+        if ch is None:
+            raise ValueError("That change has already been kept or undone.")
+        cur = con.execute("SELECT * FROM jobs WHERE id=?", (ch["job_id"],)).fetchone()
+        before, after = json.loads(ch["before"]), json.loads(ch["after"])
+        if ch["kind"] == "add":
+            # Its later changes go with it: there is nothing left to apply
+            # them to, and the trash keeps the row as it was.
+            con.execute("UPDATE ai_changes SET state='undone' WHERE job_id=? AND state='pending'",
+                        (ch["job_id"],))
+            con.commit()
+            if cur is not None:
+                delete_job(workspace, ch["job_id"])
+            return {"ok": True, "deleted": ch["job_id"]}
+        if cur is None:
+            raise ValueError("That application has been deleted since.")
+        moved = [c for c in after if c not in _QUIET and cur[c] != after[c]]
+        if moved:
+            raise ValueError("This application has changed again since ("
+                             + ", ".join(moved) + "), so undoing would lose that. "
+                             "Change it by hand instead.")
+        cols = [c for c in before if c not in _QUIET]
+        sets = [f"{c}=?" for c in cols] + ["updated_at=?"]
+        con.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id=?",
+                    [before[c] for c in cols] + [_now(), ch["job_id"]])
+        con.execute("UPDATE ai_changes SET state='undone' WHERE id=?", (change_id,))
+        con.commit()
+        return {"ok": True, "job": _row(con.execute("SELECT * FROM jobs WHERE id=?",
+                                                    (ch["job_id"],)).fetchone())}
+    finally:
+        con.close()
+
+
+def ai_changes_pending(workspace: Path) -> int:
+    con = connect(workspace)
+    try:
+        return con.execute("SELECT COUNT(*) FROM ai_changes WHERE state='pending'").fetchone()[0]
+    finally:
+        con.close()

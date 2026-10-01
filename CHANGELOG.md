@@ -10,6 +10,23 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Undo what an AI client did to an application.** Every status, date,
+  contact or note it writes now waits under Attention, *Changes by AI to
+  review*, field by field. Keep it, or undo it; undo refuses if you have
+  changed the same thing since, so it never overwrites you. Undoing an
+  application it added moves it to the trash.
+- **Asked before a status moves.** A client that can show a form (MCP
+  elicitation) asks you before an application changes status; say no and
+  nothing changes.
+- **Renders offline from the first launch.** The icon package a theme needs
+  ships with the app instead of being downloaded the first time.
+- **Word in and out.** Import a CV from a .docx, and export a CV as Word, for
+  agencies that ask for one, or as plain text to paste into a form.
+- **The skills reach every AI client** as MCP prompts (apply, inbox,
+  interview-prep), and ship with the app, so Settings can package them for
+  Claude Desktop without a Claude Code setup.
+- **cv_outline** gives a model every entry and bullet with the exact path to
+  edit, instead of reading the whole file to count.
 - **An AI client is now told why it was refused.** A duplicate application, an
   unknown status, a missing file: each came with an explanation written for the
   model, and every one of them reached it as a bare "Error executing tool". It

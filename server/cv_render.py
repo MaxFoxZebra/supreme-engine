@@ -192,12 +192,59 @@ def _pages_of(out_dir: Path, stem: str | None) -> list[Path]:
 _RENDER_LOCK = threading.Lock()
 
 
+# The Typst packages a render needs beyond the one RenderCV bundles itself
+# (its icons come from @preview/fontawesome). Typst downloads a package the
+# first time a document imports it, so without these the very first render --
+# the onboarding preview, the theme thumbnails -- needed the internet, and
+# failed offline or behind a proxy. They ship in typst-packages/ and are
+# copied into Typst's own package cache, where both the in-process compiler
+# and the rendercv command line look before downloading anything.
+_VENDORED = Path(getattr(sys, "_MEIPASS", str(Path(__file__).resolve().parent))) / "typst-packages"
+if not _VENDORED.is_dir():
+    _VENDORED = Path(__file__).resolve().parent / "typst-packages"
+_packages_ready = False
+
+
+def typst_cache_dir() -> Path:
+    """Where Typst keeps downloaded packages, as Typst itself works it out."""
+    env = os.environ.get("TYPST_PACKAGE_CACHE_PATH")
+    if env:
+        return Path(env)
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches"
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return base / "typst" / "packages"
+
+
+def ensure_typst_packages() -> None:
+    """Put the vendored packages where Typst looks. Once per process, and
+    never the reason a render fails: at worst Typst downloads as before."""
+    global _packages_ready
+    if _packages_ready:
+        return
+    _packages_ready = True
+    try:
+        cache = typst_cache_dir()
+        for typ in _VENDORED.glob("*/*/*/typst.toml"):
+            version_dir = typ.parent
+            dest = cache / version_dir.relative_to(_VENDORED)
+            if not (dest / "typst.toml").is_file():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(version_dir, dest, dirs_exist_ok=True)
+    except OSError:
+        pass
+
+
 def render_file(yaml_path: str | Path, out_dir: str | Path) -> dict:
     """Render a RenderCV YAML file and describe the result.
 
     Returns {ok, pages, png_pages, pdf, markdown, typ, ats_word_count, pdf_kb,
     log}. `pages` is exact: RenderCV emits one PNG per page.
     """
+    ensure_typst_packages()
     with _RENDER_LOCK:
         return _render_file(yaml_path, out_dir)
 

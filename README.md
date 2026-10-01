@@ -56,8 +56,8 @@ Nothing else is required. Python, RenderCV, Typst and the fonts are all bundled.
 ## Using it
 
 On first launch it creates a workspace at `~/Documents/CV Studio` with a starter
-CV, and walks you through a short setup: import a CV you already have (a PDF or
-your LinkedIn export) or start blank, your name and contact details at the top,
+CV, and walks you through a short setup: import a CV you already have (a PDF, a Word
+file or your LinkedIn export) or start blank, your name and contact details at the top,
 the theme it prints in, shown on your own rendered page as you choose, and an AI
 client to connect. Each step can be skipped, and **Settings → Workspace → Run
 setup again** brings it back. Under *Skip setup*, **Try it with sample data**
@@ -146,6 +146,8 @@ an entry in one view selects it in all of them.
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, with what the line said before, and a second mark for every field that no longer matches the base. Neither is in the YAML, so neither prints |
 | **Review what it changed** | Until you have looked, a document an AI client wrote says so, on every list that shows it and in a bar over it. **Review changes** shows each change as the words it took out, struck through, and the words it put in, underlined: on a letter, marked on the page itself; on a CV, entry by entry. Keep or undo each one, or all of them. Undo puts back only what that change touched |
+| **What it changed on your applications** | Every status, date, contact or note an AI client writes on an application waits under **Attention → Changes by AI to review**, field by field. Keep it, or undo it: undo puts back exactly what that change touched, and refuses if you have changed it again since. A client that can show a form also asks you before it moves a status |
+| **Export** | The PDF to attach; a Word file (.docx) for the agencies that ask for one; plain text to paste into an application form |
 
 **Funnel** is the whole search at a glance: sent, heard back, interviewed,
 offers and accepted, with the rate between each and the biggest drop marked.

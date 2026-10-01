@@ -11,6 +11,7 @@ distributing this application under the MIT licence.
 | [RenderCV](https://github.com/rendercv/rendercv) | 2.8 | MIT |
 | [rendercv-fonts](https://pypi.org/project/rendercv-fonts/) | 0.5.1 | MIT (individual families: SIL Open Font License or Apache-2.0) |
 | [Typst](https://github.com/typst/typst) (via the `typst` package) | 0.15.0 | Apache-2.0 |
+| [typst-fontawesome](https://github.com/duskmoon314/typst-fontawesome) (`@preview/fontawesome`, vendored in `server/typst-packages/` with its licence) | 0.6.0 | MIT |
 | [ruamel.yaml](https://sourceforge.net/projects/ruamel-yaml/) | 0.19.1 | MIT |
 | [pypdf](https://github.com/py-pdf/pypdf) | 6.19.0 | BSD-3-Clause |
 | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | 2.1.1 | MIT |

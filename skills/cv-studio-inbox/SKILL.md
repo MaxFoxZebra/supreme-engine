@@ -79,5 +79,7 @@ exist. `append_note` adds a dated line and leaves everything else alone; use it
 to record where a change came from, so the user can check your reasoning later.
 
 The one thing resting on you rather than on the tools is the confirm step. A
-status change appends to a permanent history the funnel is drawn from, and the
-app has no undo. Show your work and wait.
+status change appends to the history the funnel is drawn from. The user can
+undo what you change in the app, but should not have to clean up after you.
+Show your work and wait. A client that can show a form also asks them itself
+before a status moves; a "no" there means change nothing and ask.

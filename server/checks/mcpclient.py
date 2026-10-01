@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     r = c.send("tools/list")
     tools = {t["name"]: t for t in r["result"]["tools"]}
-    documents = {"list_cvs", "read_cv", "write_cv", "edit_cv_fields",
+    documents = {"list_cvs", "read_cv", "cv_outline", "write_cv", "edit_cv_fields",
                  "create_cv", "render_cv", "ats_check", "design_options",
                  "workspace_info", "add_language", "translation_status",
                  "mark_translation_current", "create_letter", "write_letter"}
@@ -129,6 +129,22 @@ if __name__ == "__main__":
 
     def call(tool, args):
         return c.send("tools/call", {"name": tool, "arguments": args})
+
+    # The skills that ship with the app reach every client as prompts, with
+    # nothing to install.
+    r = c.send("prompts/list")
+    prompts = {p["name"] for p in r.get("result", {}).get("prompts", [])}
+    check("the skills are offered as prompts",
+          {"apply", "inbox", "interview-prep"} <= prompts, ",".join(sorted(prompts)))
+    r = c.send("prompts/get", {"name": "apply", "arguments": {"request": "https://example.com/job"}})
+    said = json.dumps(r.get("result", {}))
+    check("a prompt carries the skill and the request",
+          "add_job" in said and "https://example.com/job" in said)
+
+    r = call("cv_outline", {"path": "profile/my-cv.yaml"})
+    body = r["result"]["content"][0]["text"]
+    check("cv_outline gives each bullet its path",
+          "[cv,sections,experience,0,highlights,1]" in body, body.splitlines()[0])
 
     r = call("list_cvs", {})
     body = r["result"]["content"][0]["text"]

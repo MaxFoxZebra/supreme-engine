@@ -12,6 +12,7 @@ one rendered by clicking Save.
 |---|---|
 | `list_cvs` | List every CV in your workspace |
 | `read_cv` | Read a CV's YAML source |
+| `cv_outline` | A CV's sections, entries and bullets, each with the exact path `edit_cv_fields` takes, so the model finds what to change without reading the whole file |
 | `edit_cv_fields` | Change individual fields, **keeping your comments**. Lists take `append`, `insert` and `remove`, so a bullet can be added or dropped without rewriting the file |
 | `write_cv` | Replace a whole file (blunt; prefer `edit_cv_fields`) |
 | `create_cv` | New blank CV or cover letter, or a duplicate of one. This is how you tailor per application |
@@ -173,9 +174,19 @@ Studio will not notice until the next sweep. Asking the model to check again is
 what fixes that, and the skill below tells it to re-read every interview it has
 already recorded.
 
-A status change appends to the permanent history the funnel is drawn from, and
-unlike a document edit it cannot be undone. The model is told to show you every change and wait for
-you. That one is a rule in prose, not a lock in the code.
+A status change appends to the history the funnel is drawn from. The model is
+told to show you every change and wait for you, and a client that supports MCP
+elicitation (a form the server can put in front of you) asks you itself before
+`set_job_status` moves anything: decline and nothing changes.
+
+**Every change to an application can be undone.** Around each tool that writes
+the tracker, the server records each application's fields as they were and as
+they became. The app lists these under **Attention → Changes by AI to review**,
+one card per tool call, field by field, newest first. Keep puts it away; Undo
+puts back exactly those fields, status history and note included, and refuses
+when any of them has changed again since, so it never overwrites a later edit.
+Undoing an application the model added moves it to the trash. A logo on its own
+is not listed.
 
 ### Applying, as a skill
 
@@ -400,9 +411,9 @@ things only. It reads a posting from the link a model passes (`add_job`,
 `read_posting`, a title check in `update_job_tracking`), straight from the job
 board. It fetches a company's icon from the company's own website, when a model
 passes one -- there is no logo service in between, so nothing learns the list
-of companies you apply to that the companies do not already know. And the first
-time a theme is rendered, Typst downloads that theme's font and icon packages
-once and caches them. The interface draws logos from the workspace, and checks
+of companies you apply to that the companies do not already know. The Typst
+packages a theme needs ship with the app, so rendering works offline from the
+first launch; only a CV in Chinese, Japanese or Korean downloads its font, once. The interface draws logos from the workspace, and checks
 for updates. There is no telemetry. The mail and calendar an AI client
 reads reach it through *its* connectors, and this app never sees them. The AI
 client sees only what the tools return.
@@ -426,18 +437,23 @@ looking for them:
 | **Claude Code** | configure as above | read straight off disk from `~/.claude/skills/` |
 | **Claude Desktop** | configure as above | uploaded to your account, not read from disk |
 
+**Every client also gets them as MCP prompts**, with nothing to install: the
+server offers `apply`, `inbox` and `interview-prep`, each the skill word for
+word, with an optional `request` argument. In a client that shows prompts
+(Claude Desktop lists them under the attachment menu), pick one and add the
+job link or the name of the application.
+
 There is no folder you can drop a skill into for the desktop app, so CV Studio
 cannot install them for you. What it can do is package them: **Settings → AI
 clients → Skills → Package for Claude Desktop** writes one upload-ready `.zip`
 per skill into `assets/skills/` in your workspace. Then, in the desktop app,
 Customize → Skills → **+** and upload each one.
 
-There are three, in `skills/` in this repository: `cv-studio-apply`,
-`cv-studio-interview-prep` and `cv-studio-inbox`. The app does not install them
-yet, so copy the folders into `~/.claude/skills/` first; packaging reads them
-from there. All three work through the MCP tools rather than local scripts, so
-they work the same in the desktop app's sandbox. The originals in
-`~/.claude/skills/` are never modified.
+There are three, in `skills/` in this repository and inside the app:
+`cv-studio-apply`, `cv-studio-interview-prep` and `cv-studio-inbox`. Packaging
+uses the copies that ship with the app, or yours in `~/.claude/skills/` if you
+have edited one. All three work through the MCP tools rather than local
+scripts, so they work the same in the desktop app's sandbox.
 
 ## On the command line
 
@@ -449,8 +465,9 @@ command and arguments the Claude Desktop entry above uses:
 claude mcp add cv-studio -- "<path to cv-studio-server>" --mcp --workspace "<your workspace>" --client claude
 ```
 
-Copy the three folders under `skills/` into `~/.claude/skills/` as well: the MCP
-server covers the doing, the skills the judgement around it.
+Claude Code gets the skills as prompts from the server (`/mcp__cv-studio__apply`
+and so on). To have them trigger on their own, copy the three folders under
+`skills/` into `~/.claude/skills/` as well.
 
 ## Updates
 

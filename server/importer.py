@@ -447,7 +447,50 @@ def _entries(body: list[str]) -> tuple[list[dict], list[str]]:
 
 
 def from_pdf(data: bytes) -> dict:
-    lines = _pdf_lines(data)
+    return _from_lines(_pdf_lines(data), "PDF")
+
+
+# A Word file is a zip of XML. The text is in word/document.xml, paragraph by
+# paragraph; the name and contact details are often in the page header, so
+# that is read first. Tables, common in CV templates, are read cell by cell.
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _docx_lines(data: bytes) -> list[str]:
+    import xml.etree.ElementTree as ET
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        parts = sorted(n for n in z.namelist() if re.fullmatch(r"word/header\d*\.xml", n))
+        parts.append("word/document.xml")
+        lines: list[str] = []
+        for part in parts:
+            if part not in z.namelist():
+                continue
+            root = ET.fromstring(z.read(part))
+            for para in root.iter(W + "p"):
+                text = []
+                for node in para.iter():
+                    if node.tag == W + "t":
+                        text.append(node.text or "")
+                    elif node.tag in (W + "tab", W + "ptab"):
+                        text.append(" | " if text else "")
+                    elif node.tag in (W + "br", W + "cr"):
+                        text.append("\n")
+                lines += "".join(text).split("\n")
+    except (zipfile.BadZipFile, KeyError, ET.ParseError) as exc:
+        raise ImportError_(f"That Word file could not be read ({type(exc).__name__}).") from exc
+    lines = [re.sub(r"[ \t\u00a0]+", " ", ln).strip(" |") for ln in lines]
+    lines = [ln for ln in lines if ln]
+    if sum(len(ln) for ln in lines) < 40:
+        raise ImportError_("That Word file has almost no text in it.")
+    return lines
+
+
+def from_docx(data: bytes) -> dict:
+    return _from_lines(_docx_lines(data), "Word document")
+
+
+def _from_lines(lines: list[str], source: str) -> dict:
     notes: list[str] = []
     blob = "\n".join(lines)
     cv: dict = {}
@@ -640,11 +683,11 @@ def from_pdf(data: bytes) -> dict:
     if sections:
         cv["sections"] = sections
     if not cv.get("name"):
-        notes.append("No name could be found at the top of the PDF.")
+        notes.append(f"No name could be found at the top of the {source}.")
     if not sections:
         notes.append("No section headings were recognised, so only the contact details "
                      "came across. A connected AI client can structure the rest.")
-    return _found(cv, "PDF", notes)
+    return _found(cv, source, notes)
 
 
 # ---------------------------------------------------------------------- JSON
@@ -965,11 +1008,16 @@ def from_json(data: bytes) -> dict:
 def import_file(filename: str, data: bytes) -> dict:
     """Route a file to the reader for its kind."""
     name = (filename or "").lower()
+    if name.endswith(".docx") or (data[:2] == b"PK" and b"word/document.xml" in data[:65536]):
+        return from_docx(data)
+    if name.endswith(".doc"):
+        raise ImportError_("That is the old Word format (.doc). Open it in Word and save "
+                           "it as .docx or PDF, then import that.")
     if name.endswith(".zip") or data[:2] == b"PK":
         return from_linkedin_zip(data)
     if name.endswith(".pdf") or data[:4] == b"%PDF":
         return from_pdf(data)
     if name.endswith(".json") or data.lstrip()[:1] == b"{":
         return from_json(data)
-    raise ImportError_("CV Studio can import a PDF, LinkedIn's data archive (.zip), "
-                       "or a Reactive Resume or JSON Resume file (.json).")
+    raise ImportError_("CV Studio can import a PDF, a Word file (.docx), LinkedIn's "
+                       "data archive (.zip), or a Reactive Resume or JSON Resume file (.json).")

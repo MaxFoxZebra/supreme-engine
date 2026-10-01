@@ -829,7 +829,6 @@ def docx(meta: dict, body: str, head: dict) -> bytes:
     """A plain .docx: the same parts in the same order, in the CV's font. Built
     by hand rather than with a library, because a letter needs a dozen
     paragraph kinds and the app should not ship a dependency for them."""
-    font = html.escape(head["font"])
 
     def t(s):
         return f'<w:r><w:t xml:space="preserve">{html.escape(s, quote=False)}</w:t></w:r>'
@@ -846,6 +845,13 @@ def docx(meta: dict, body: str, head: dict) -> bytes:
         ps.append(_wp(_w_runs(str(meta["subject"]), bold=True), after=240))
     ps += _w_blocks(blocks(body), head)
     ps.append(_wp(_w_runs(head.get("signature") or head["name"], bold=True), before=480, after=0))
+    return package_docx(ps, head["font"])
+
+
+def package_docx(paragraphs: list[str], font: str) -> bytes:
+    """WordprocessingML paragraphs as a .docx file, on A4, in one font."""
+    font = html.escape(font)
+    ps = paragraphs
     document = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'

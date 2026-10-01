@@ -682,6 +682,12 @@ def ai_connect(client: str) -> dict:
 # --------------------------------------------------------------------------
 
 SKILLS_DIR = Path.home() / ".claude" / "skills"
+# The skills ship with the app, so the list and the packaging work for anyone
+# who installed it, not only for someone who also set up Claude Code. A copy
+# of the same name in ~/.claude/skills wins: it may be one they edited.
+BUNDLED_SKILLS_DIR = Path(getattr(sys, "_MEIPASS", str(_HERE))) / "skills"
+if not BUNDLED_SKILLS_DIR.is_dir():
+    BUNDLED_SKILLS_DIR = _HERE.parent / "skills"
 SKILL_PREFIX = "cv-studio"
 SKILL_JUNK = ("__pycache__", ".pyc", ".pyo", ".DS_Store")
 
@@ -732,11 +738,14 @@ LOCAL_DEP = re.compile(r"127\.0\.0\.1|localhost|~/\.claude/skills|python .*scrip
 
 
 def skill_folders() -> list[Path]:
-    if not SKILLS_DIR.is_dir():
-        return []
-    return sorted(d for d in SKILLS_DIR.iterdir()
-                  if d.is_dir() and d.name.startswith(SKILL_PREFIX)
-                  and (d / "SKILL.md").is_file())
+    found: dict[str, Path] = {}
+    for root in (BUNDLED_SKILLS_DIR, SKILLS_DIR):
+        if not root.is_dir():
+            continue
+        for d in root.iterdir():
+            if d.is_dir() and d.name.startswith(SKILL_PREFIX) and (d / "SKILL.md").is_file():
+                found[d.name] = d
+    return [found[k] for k in sorted(found)]
 
 
 def skills_list() -> dict:
@@ -2057,6 +2066,24 @@ def application_pack(job_id: str, fmt: str = "pdf", name: str | None = None,
     out = io.BytesIO()
     w.write(out)
     return out.getvalue(), "application/pdf", stem + ".pdf"
+
+
+def cv_export(path: Path, fmt: str) -> tuple[bytes, str, str]:
+    """(bytes, content type, file name) for a CV as Word or plain text."""
+    import cv_export as cvx
+    if is_letter(path):
+        return letter_export(path, fmt)
+    data = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))) or {}
+    theme = str(((data.get("design") or {}).get("theme")) or "classic")
+    head = letters.letterhead(data, design_defaults(theme))
+    base = (re.sub(r"[^A-Za-z0-9_-]+", "_", head["name"]).strip("_") or path.stem) + "_CV"
+    if fmt == "docx":
+        return (cvx.docx(data, head),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                base + ".docx")
+    if fmt == "txt":
+        return cvx.plain_text(data, head).encode("utf-8"), "text/plain; charset=utf-8", base + ".txt"
+    raise ValueError("A CV exports as docx or txt here; the PDF is the render.")
 
 
 def letter_export(path: Path, fmt: str) -> tuple[bytes, str, str]:
@@ -3665,6 +3692,13 @@ def openapi_spec() -> dict:
                 "Write a cover letter scaffold for an application, linked to it",
                 "requestBody": body({"job_id": {"type": "string"}, "name": {"type": "string"}}),
                 "responses": ok}},
+            "/api/cv/export": {"get": {"summary":
+                "A CV as Word (.docx) or plain text, built from its fields",
+                "parameters": [{"name": "path", "in": "query", "required": True,
+                                "schema": {"type": "string"}},
+                               {"name": "format", "in": "query",
+                                "schema": {"type": "string", "enum": ["docx", "txt"]}}],
+                "responses": ok}},
             "/api/letter/export": {"get": {"summary":
                 "A cover letter as PDF, Word (.docx) or plain text",
                 "parameters": [{"name": "path", "in": "query", "required": True,
@@ -3847,6 +3881,14 @@ def openapi_spec() -> dict:
             "/api/jobs/delete": {"post": {"summary":
                 "Move one job application to the trash (kept 30 days)",
                 "requestBody": body({"id": {"type": "string"}}), "responses": ok}},
+            "/api/ai-changes": {
+                "get": {"summary": "What AI clients changed on applications, not yet kept or undone",
+                        "responses": ok},
+                "post": {"summary": "Keep (one, or '*' for all) or undo one change an AI client "
+                                    "made to an application",
+                         "requestBody": body({"id": {"type": "string"},
+                                              "action": {"type": "string", "enum": ["keep", "undo"]}}),
+                         "responses": ok}},
             "/api/jobs/restore": {"post": {"summary":
                 "Put a deleted application back, with its id and history",
                 "requestBody": body({"id": {"type": "string"}}), "responses": ok}},
@@ -4407,7 +4449,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                    "statuses": jobstore.STATUSES,
                                    "nodes": jobstore.NODE_STATUSES,
                                    "labels": jobstore.LABELS,
-                                   "logos": list_logos()})
+                                   "logos": list_logos(),
+                                   "ai_changes": jobstore.ai_changes_pending(WORKSPACE)})
+            if u.path == "/api/ai-changes":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                return self._json({"changes": jobstore.ai_changes(WORKSPACE)})
             if u.path == "/api/funnel":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -4492,10 +4539,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 return
-            if u.path == "/api/letter/export":
+            # The audit reads routes as `u.path == "..."`, so both are spelled out.
+            if u.path == "/api/letter/export" or u.path == "/api/cv/export":
                 p = safe_path(q["path"][0])
+                exporter = cv_export if u.path == "/api/cv/export" else letter_export
                 try:
-                    data, ctype, fname = letter_export(p, (q.get("format") or ["pdf"])[0])
+                    data, ctype, fname = exporter(p, (q.get("format") or ["pdf"])[0])
                 except ValueError as exc:
                     return self._json({"error": str(exc)}, 422)
                 self.send_response(200)
@@ -4713,6 +4762,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "job store unavailable"}, 501)
                 jobstore.delete_job(WORKSPACE, payload.get("id", ""))
                 return self._json({"ok": True})
+            if u.path == "/api/ai-changes":
+                if jobstore is None:
+                    return self._json({"error": "job store unavailable"}, 501)
+                try:
+                    if payload.get("action") == "undo":
+                        return self._json(jobstore.undo_ai_change(WORKSPACE, payload.get("id", "")))
+                    if payload.get("action") == "keep":
+                        return self._json({"ok": True, "kept": jobstore.keep_ai_change(
+                            WORKSPACE, payload.get("id", ""))})
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 409)
+                return self._json({"error": "bad request"}, 400)
             if u.path == "/api/jobs/restore":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -4949,7 +5010,8 @@ const API_TOKEN=__API_TOKEN__;
         <span class="acts" id="act-doc">
           <button class="obtn" id="btn-ats" title="What an applicant tracking system reads from this CV">ATS check</button>
           <button class="obtn" id="btn-design" title="Theme, typeface and page size">Design</button>
-          <button class="obtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
+          <span class="lt-export"><button class="obtn" id="btn-pdf" disabled
+            aria-haspopup="menu">Export &#9662;</button></span>
           <button class="pbtn" id="btn-render" title="Save and lay out the page again (Ctrl S)">Save</button>
         </span>
       </div>
@@ -5116,8 +5178,8 @@ const API_TOKEN=__API_TOKEN__;
           <h1>Documents</h1><span class="pcount" id="dcount"></span>
           <div class="grow"></div>
           <div class="dfilter" id="dfilter" role="group" aria-label="Language" hidden></div>
-          <button class="obtn" id="btn-importdoc" title="A PDF of a CV, or your LinkedIn profile or data archive">Import&#8230;</button>
-          <input type="file" id="importdoc-file" accept=".pdf,.zip,.json,application/pdf,application/zip,application/json" hidden>
+          <button class="obtn" id="btn-importdoc" title="A CV as a PDF or a Word file, or your LinkedIn profile or data archive">Import&#8230;</button>
+          <input type="file" id="importdoc-file" accept=".pdf,.docx,.zip,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,application/json" hidden>
           <button class="pbtn" id="btn-newdoc">New document&#8230;</button>
         </div>
         <div id="docbase"></div>
@@ -5526,13 +5588,14 @@ const API_TOKEN=__API_TOKEN__;
             It cannot delete an application, rename the company or the role, or paint
             over notes you typed: it only ever appends a dated line. Those are not
             promises, they are missing parameters.</p>
-          <p><b>A status change is permanent.</b> It appends to the history the funnel
-            is drawn from, and unlike a document edit it cannot be undone. The model is told to show
-            you every change and wait, but that one is a rule in prose rather than a
-            lock in the code.</p>
+          <p><b>A status change asks you first.</b> A client that can show a form asks
+            you before it moves an application; the others are told to show you and wait.
+            Either way every change it makes to an application waits under Attention,
+            Changes by AI to review, where you keep it or undo it.</p>
           <p><b>Nothing here reaches your mail or your calendar.</b> This app only goes
             online to read a posting from its link, fetch a company's logo, check for
-            updates and download a theme's fonts the first time it is used. Your mail
+            updates and download the Chinese, Japanese or Korean font the first time a CV
+            needs one. Your mail
             and calendar come through your AI client's own connectors,
             they are only ever read, and nothing is written back to them, which is also
             why an interview time recorded here is only as fresh as the last time you

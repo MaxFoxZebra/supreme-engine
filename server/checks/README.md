@@ -19,7 +19,7 @@ cd server
 |---|---|
 | `jscheck.py` | Every script in the served page parsed with `node --check`: a stray quote leaves a page that loads and then does nothing. |
 | `audit.py` | Static audit of the served interface. No browser needed. |
-| `prefstest.py`, `langtest.py`, `lettertest.py`, `reviewtest.py`, `importtest.py`, `phototest.py`, `maptest.py`, `sampletest.py` | One area each, end to end in a scratch folder: preferences, languages, cover letters, reviewing what an AI client changed, importing, the photo, the page map, sample data. |
+| `prefstest.py`, `langtest.py`, `lettertest.py`, `reviewtest.py`, `importtest.py`, `phototest.py`, `maptest.py`, `sampletest.py`, `aichangestest.py`, `docxtest.py` | One area each, end to end in a scratch folder: preferences, languages, cover letters, reviewing what an AI client changed, importing, the photo, the page map, sample data, what an AI client changed on applications, Word in and out. |
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
