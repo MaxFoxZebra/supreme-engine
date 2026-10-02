@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CV Studio: changes to review</title>
+{{SHARED}}
+<style>
+.card{border:1px solid var(--color-border-primary);border-radius:9px;padding:9px 11px;margin-top:9px;
+  background:var(--color-background-secondary)}
+.card h3{margin:0;font-size:13px;font-weight:600}
+dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:3px 12px;margin:7px 0}
+dt{color:var(--color-text-secondary)}
+dd{margin:0;overflow-wrap:anywhere}
+del{color:var(--color-text-danger)}
+ins{color:var(--color-text-success);text-decoration:underline}
+ul{margin:6px 0;padding-left:18px}
+.done{opacity:.55}
+</style></head>
+<body>
+<div id="app" class="empty muted">Reading what changed…</div>
+<script>
+/* review_changes' result, with the decision left to the user: Keep and Undo
+   call resolve_change, a tool only this view can call. The model can show
+   the changes; it cannot keep or undo them itself. */
+let S = null;
+const FIELD = { status: "Status", interview_at: "Interview", interview_tz: "Time zone", followup_date: "Follow-up",
+  last_contact_at: "Last contact", contact_email: "Contact", cv_path: "CV", letter_path: "Letter", notes: "Note added",
+  url: "Link", description: "Posting", location: "Place", source: "Source", title: "Title", language: "Language",
+  people: "People", rounds: "Rounds", prep: "Interview prep" };
+const v = x => x == null || x === "" ? '<span class="muted">—</span>' : esc(x);
+function paint() {
+  const el = document.getElementById("app"); el.className = "";
+  const apps = S.applications, docs = S.documents;
+  if (!apps.length && !docs.length) { el.innerHTML = '<div class="empty muted">Nothing left to review.</div>'; return }
+  el.innerHTML =
+    '<div class="row"><b>Changes by AI</b><span class="muted">' + esc(S.summary) + '</span><span class="grow"></span>' +
+    '<button id="keepall">Keep all</button></div>' +
+    docs.map(d => '<div class="card' + (d.done ? " done" : "") + '"><div class="row"><h3>' + esc(d.path) + '</h3>' +
+      '<span class="muted">' + esc(d.by || "") + '</span></div><ul>' +
+      d.units.map(u => '<li>' + esc(u) + '</li>').join("") + '</ul>' + actions("document", d.path, d.done) + '</div>').join("") +
+    apps.map(a => '<div class="card' + (a.done ? " done" : "") + '"><div class="row"><h3>' + esc(a.company + " – " + a.title) + '</h3>' +
+      '<span class="muted">' + esc((a.kind === "add" ? "added" : a.tool) + (a.by ? " · " + a.by : "")) + '</span></div><dl>' +
+      a.changes.map(c => '<dt>' + esc(FIELD[c.field] || c.field) + '</dt><dd>' +
+        (c.from == null ? "" : '<del>' + v(c.from) + '</del> ') + (c.to == null ? '<span class="muted">cleared</span>' : '<ins>' + v(c.to) + '</ins>') +
+        '</dd>').join("") + '</dl>' + actions("application", a.id, a.done) + '</div>').join("");
+  el.querySelectorAll("[data-act]").forEach(b => b.onclick = () => resolve(b.dataset.kind, b.dataset.id, b.dataset.act));
+  document.getElementById("keepall").onclick = keepAll;
+}
+const actions = (kind, id, done) => done ? '<div class="muted">' + esc(done) + '</div>' :
+  '<div class="row"><span class="grow"></span><button data-kind="' + kind + '" data-id="' + esc(id) + '" data-act="undo">Undo</button>' +
+  '<button class="primary" data-kind="' + kind + '" data-id="' + esc(id) + '" data-act="keep">Keep</button></div>';
+async function resolve(kind, id, action) {
+  const list = kind === "document" ? S.documents : S.applications;
+  const item = list.find(x => (x.id || x.path) === id);
+  try {
+    await Host.call("resolve_change", { kind, id, action });
+    item.done = action === "keep" ? "Kept" : "Undone";
+    Host.tellModel("In the review view the user " + (action === "keep" ? "kept" : "undid") + " the change to " +
+      (kind === "document" ? id : item.company + " – " + item.title) + ".");
+  } catch (e) { item.done = null; flash(e.message) }
+  paint();
+}
+async function keepAll() {
+  for (const d of S.documents.filter(x => !x.done)) await resolve("document", d.path, "keep");
+  for (const a of S.applications.filter(x => !x.done)) await resolve("application", a.id, "keep");
+}
+Host.on("ui/notifications/tool-result", r => {
+  if (r.isError || !r.structuredContent) {
+    document.getElementById("app").innerHTML = '<div class="empty err">' + esc(textOf(r)) + '</div>'; return;
+  }
+  S = r.structuredContent; paint();
+});
+Host.start("CV Studio review");
+</script>
+</body></html>

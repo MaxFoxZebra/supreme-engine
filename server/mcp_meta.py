@@ -45,6 +45,8 @@ TITLES = {
     "set_company_logo": "Set a company logo",
     "review_changes": "Review changes by AI",
     "show_themes": "Show the CV in other themes",
+    "preview_image": "A rendered page (for the views)",
+    "resolve_change": "Keep or undo a change (for the review view)",
 }
 
 # 24x24 outline glyphs, one per kind of tool, in a neutral ink that reads on
@@ -69,6 +71,7 @@ KIND = {
     "add_job": "job", "set_job_status": "job", "update_job_tracking": "job",
     "set_company_logo": "job", "save_person": "person", "calendar": "calendar",
     "get_interview_prep": "person", "save_interview_prep": "person", "read_posting": "web",
+    "preview_image": "page", "resolve_change": "check",
 }
 
 

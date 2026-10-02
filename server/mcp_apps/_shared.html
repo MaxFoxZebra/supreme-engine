@@ -1,0 +1,103 @@
+<style>
+/* The host's own colours and type when it passes them (MCP Apps theming
+   variables), these otherwise, in light and dark. */
+:root{color-scheme:light dark;
+  --color-background-primary:light-dark(#ffffff,#1c1c1a);
+  --color-background-secondary:light-dark(#f5f4f0,#262623);
+  --color-text-primary:light-dark(#1a1a17,#ecebe6);
+  --color-text-secondary:light-dark(#5f5e58,#a9a79f);
+  --color-border-primary:light-dark(#dedcd4,#3a3935);
+  --color-text-danger:light-dark(#b3261e,#f2b8b5);
+  --color-text-success:light-dark(#1d6b45,#8fd4b6);
+  --font-sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --accent:#b07a2c}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;font:13px/1.45 var(--font-sans);color:var(--color-text-primary);
+  background:var(--color-background-primary)}
+button{font:inherit;cursor:pointer;border-radius:7px;padding:5px 11px;border:1px solid var(--color-border-primary);
+  background:var(--color-background-secondary);color:var(--color-text-primary)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.muted{color:var(--color-text-secondary)}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.grow{flex:1}
+.err{color:var(--color-text-danger)}
+.ok{color:var(--color-text-success)}
+.page{display:block;width:100%;max-width:640px;margin:10px auto 0;background:#fff;
+  box-shadow:0 1px 4px rgba(0,0,0,.18);border-radius:2px}
+.empty{padding:22px;text-align:center}
+.flash{margin-bottom:8px;padding:7px 10px;border-radius:7px;background:var(--color-background-secondary)}
+</style>
+<script>
+/* MCP Apps, by hand: JSON-RPC 2.0 over postMessage with the host, which
+   stands between this view and the CV Studio server. No library, so nothing
+   is fetched: the view works under the host's default, network-less CSP. */
+const Host = (() => {
+  let next = 1;
+  const waiting = new Map(), listeners = {};
+  const post = msg => window.parent.postMessage({ jsonrpc: "2.0", ...msg }, "*");
+  window.addEventListener("message", e => {
+    const m = e.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id != null && waiting.has(m.id) && ("result" in m || "error" in m)) {
+      const [ok, no] = waiting.get(m.id); waiting.delete(m.id);
+      return m.error ? no(new Error(m.error.message || "The request failed")) : ok(m.result);
+    }
+    if (m.method) {
+      (listeners[m.method] || []).forEach(f => { try { f(m.params || {}) } catch (err) { console.error(err) } });
+      // The host asks before taking the view down; nothing here needs saving.
+      if (m.id != null) post({ id: m.id, result: {} });
+    }
+  });
+  const request = (method, params) => new Promise((ok, no) => {
+    const id = next++; waiting.set(id, [ok, no]); post({ id, method, params: params || {} });
+  });
+  const notify = (method, params) => post({ method, params: params || {} });
+  const on = (method, f) => (listeners[method] = listeners[method] || []).push(f);
+
+  function applyContext(c) {
+    if (!c) return;
+    if (c.theme) document.documentElement.dataset.theme = c.theme;
+    const vars = c.styles && c.styles.variables;
+    if (vars) for (const [k, v] of Object.entries(vars)) if (v) document.documentElement.style.setProperty(k, v);
+  }
+  on("ui/notifications/host-context-changed", applyContext);
+
+  let caps = {};
+  async function start(name) {
+    try {
+      const r = await request("ui/initialize", {
+        appInfo: { name, version: "1.0.0" },
+        appCapabilities: { availableDisplayModes: ["inline"] },
+        protocolVersion: "2026-01-26",
+      });
+      caps = (r && r.hostCapabilities) || {};
+      applyContext(r && r.hostContext);
+    } catch (e) { /* an older host: carry on with the defaults */ }
+    notify("ui/notifications/initialized");
+    // The host sizes the frame to the view, so say how tall it is.
+    const report = () => notify("ui/notifications/size-changed",
+      { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight });
+    new ResizeObserver(report).observe(document.body);
+    report();
+  }
+  const call = async (name, args) => {
+    const r = await request("tools/call", { name, arguments: args || {} });
+    if (r && r.isError) throw new Error(((r.content || [])[0] || {}).text || "The tool failed");
+    return r;
+  };
+  // What the user did here, for the model to know on its next turn.
+  const tellModel = text => request("ui/update-model-context",
+    { content: [{ type: "text", text }] }).catch(() => {});
+  return { start, on, call, request, tellModel, caps: () => caps };
+})();
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/* Errors are shown in the page: a sandboxed frame usually may not alert(). */
+function flash(msg) {
+  const d = document.createElement("div"); d.className = "flash err"; d.setAttribute("role", "alert"); d.textContent = msg;
+  document.body.prepend(d); setTimeout(() => d.remove(), 7000);
+}
+const textOf = r => ((r && r.content) || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+</script>

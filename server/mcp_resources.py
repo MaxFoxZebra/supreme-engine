@@ -176,6 +176,10 @@ class Live:
     async def read_resource(self, ctx, params: ReadResourceRequestParams) -> ReadResourceResult:
         self._seen(ctx)
         uri = str(params.uri)
+        if not uri.startswith(SCHEME):
+            # The MCP Apps views (ui://) and anything else registered with the
+            # SDK itself are read the SDK's way.
+            return await self.mcp._handle_read_resource(ctx, params)
         try:
             mime, content = await anyio.to_thread.run_sync(read, uri)
         except MCPError:

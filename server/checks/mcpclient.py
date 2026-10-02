@@ -96,6 +96,7 @@ if __name__ == "__main__":
     documents = {"list_cvs", "read_cv", "cv_outline", "write_cv", "edit_cv_fields",
                  "create_cv", "render_cv", "ats_check", "design_options",
                  "workspace_info", "add_language", "translation_status", "save_theme",
+                 "show_themes", "review_changes",
                  "mark_translation_current", "create_letter", "write_letter"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
@@ -103,6 +104,10 @@ if __name__ == "__main__":
                     "set_company_logo", "read_posting"}
     check("every tool is advertised", set(tools) == documents | applications,
           ",".join(sorted(set(tools) ^ (documents | applications))) or "exact match")
+    # This client shows no MCP Apps views, so the views' own tools are not
+    # offered to it: resolve_change is the user's Keep and Undo.
+    check("the views' own tools are kept from a client without views",
+          not ({"preview_image", "resolve_change"} & set(tools)))
     check("no delete tool reaches the applications",
           not any("delete" in t or "remove" in t for t in tools),
           ",".join(sorted(tools)))
@@ -447,6 +452,12 @@ if __name__ == "__main__":
     leaked = "root:" in json.dumps(res)
     check("a path outside the workspace is refused", refused and not leaked,
           "refused" if refused else json.dumps(r)[:80])
+
+    r = call("resolve_change", {"kind": "application", "id": "x", "action": "keep"})
+    check("and refused if called anyway", errored(r) and "view" in text(r), text(r)[:80])
+    r = call("review_changes", {})
+    check("review_changes lists what is waiting",
+          not errored(r) and "applications" in r["result"]["structuredContent"])
 
     # ---- Resources ---------------------------------------------------------
     # What a person attaches, rather than what a model calls. Listed fresh

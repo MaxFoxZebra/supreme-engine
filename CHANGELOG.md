@@ -10,6 +10,14 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Your CV in the chat.** In an AI app that supports MCP Apps, rendering a
+  CV shows the page itself, with how full it is and a Download PDF button.
+  Asking to compare themes shows your CV in each, side by side, with *Use
+  this theme*. And everything a model changed can be reviewed there, with
+  Keep and Undo that only you can press.
+- **AI apps show CV Studio properly:** titles and icons on every tool,
+  autocomplete for application names, progress for slow steps, typed
+  results, prompt lists that update when your skills do, and cache hints.
 - **Themes of your own.** *Save as theme* in Design keeps the look of a CV as
   a theme you can pick for any CV, based on any theme the app ships. It is a
   folder in your workspace (`themes/<name>/`), so it travels with your CVs;

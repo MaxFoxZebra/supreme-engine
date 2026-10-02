@@ -24,7 +24,49 @@ one rendered by clicking Save.
 | `mark_translation_current` | Record that a translation has caught up |
 | `design_options` | Available themes (the user's own first), fonts and page sizes |
 | `save_theme` | Keep a CV's design as a theme of the user's own, in `themes/<name>/` |
+| `show_themes` | Render a CV in several themes to compare; the user can switch from the view |
+| `review_changes` | What AI clients changed that the user has not kept or undone yet: documents and applications |
 | `workspace_info` | Where the workspace is and what is in it, including the base CV to tailor from |
+
+## Views in the chat (MCP Apps)
+
+In a client that supports MCP Apps, three tools come with a small interactive
+page, shown in the conversation beside the answer:
+
+| Tool | The view |
+|---|---|
+| `render_cv` | The page itself, with the page count, how full the last page is, the words an ATS reads, each page on demand and **Download PDF** |
+| `show_themes` | Your CV in several themes side by side, as real renders, with **Use this theme** |
+| `review_changes` | Every change waiting for you, field by field, with **Keep** and **Undo** |
+
+What you do in a view is yours, and the model is told about it: switch a
+theme and its next turn knows which one you chose. Keep and Undo go through
+`resolve_change`, a tool only the review view can call. A client that shows
+views keeps it from the model, and CV Studio hides it from any client that
+does not, and refuses it if called anyway. A model can show you what it
+changed, but never keep or undo it for you.
+
+The views are plain HTML with their script inline. They fetch nothing,
+pictures included: page images come through `preview_image`, another
+view-only tool, rather than through the model's context. They follow your
+AI app's light or dark theme. Every tool still answers in text, and
+`render_cv` still with an image, for a client without views.
+
+## Polish a client may show
+
+- **Titles and icons:** each tool has a title ("Render and look at the page")
+  and an icon, and the server has CV Studio's mark, all inline.
+- **Autocomplete:** the `interview-prep` prompt takes an `application`,
+  completed from your applications with the ones in interviews first.
+  Resource addresses complete document paths and application ids.
+- **Progress:** a render, an ATS check or reading a posting reports its steps
+  to a client that asked for them.
+- **Typed results:** every structured result has an output schema, so a model
+  knows the shape of the answer before it calls.
+- **Prompt list changes:** add or edit a skill in `~/.claude/skills/` and
+  connected clients are told the prompts changed.
+- **Cache hints** (2026-07-28): a client may reuse the tool list for an hour
+  and the prompt list for five minutes; resources are never cached.
 
 ## Resources, and what changed
 

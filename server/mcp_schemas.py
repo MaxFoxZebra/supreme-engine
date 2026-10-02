@@ -243,3 +243,53 @@ class Workspace(TypedDict):
 class Translation(TypedDict):
     __pydantic_config__ = _OPEN
     changes: NotRequired[list[dict[str, Any]]]
+
+
+class ThemeTile(TypedDict):
+    theme: str
+    label: str
+    pages: int | None
+    ok: bool
+
+
+class ThemeGallery(TypedDict):
+    path: str
+    current: str
+    themes: list[ThemeTile]
+    note: str
+
+
+class DocumentReview(TypedDict):
+    path: str
+    by: str | None
+    units: list[str]
+
+
+class ApplicationChange(TypedDict):
+    __pydantic_config__ = _OPEN
+    id: str
+    company: str | None
+    title: str | None
+    kind: str
+    tool: str | None
+    changes: list[dict[str, Any]]
+
+
+class Review(TypedDict):
+    documents: list[DocumentReview]
+    applications: list[ApplicationChange]
+    summary: str
+
+
+class Picture(TypedDict):
+    png: str
+    page: int
+    pages: int
+
+
+class Resolved(TypedDict):
+    ok: bool
+    kind: str
+    id: str
+    action: str
+    deleted: bool

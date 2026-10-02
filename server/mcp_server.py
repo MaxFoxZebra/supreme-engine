@@ -28,6 +28,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, ToolAnnotations
 
+import mcp_apps
 import mcp_meta
 import mcp_schemas as S
 import review
@@ -44,6 +45,8 @@ mcp = MCPServer(
     # The tools only change with a new version; prompts and resources are
     # announced when they change, so the hints only save idle re-asking.
     cache_hints=mcp_meta.CACHE_HINTS,
+    # MCP Apps: the views some tools show in a client that can (mcp_apps.py).
+    extensions=[mcp_apps.build()],
     instructions=(
         "Read, edit and render CVs in the user's CV Studio workspace.\n\n"
         "CVs are RenderCV YAML files. Two rules save most failures:\n"
@@ -54,8 +57,12 @@ mcp = MCPServer(
         "To find what to edit, call cv_outline: it lists every entry and "
         "bullet with the exact path edit_cv_fields takes.\n\n"
         "The look is the design block. design_options lists the themes, the "
-        "user's own first. When they like a look you shaped on a CV, "
-        "save_theme keeps it as a theme of theirs for any CV.\n\n"
+        "user's own first. When the user wants to choose one, show_themes "
+        "renders their CV in several to compare. When they like a look you "
+        "shaped on a CV, save_theme keeps it as a theme of theirs.\n\n"
+        "After a round of changes, review_changes lists everything you "
+        "changed that the user has not yet kept or undone; in a client that "
+        "shows views they decide there, with Keep and Undo.\n\n"
         "After editing, always call render_cv and look at the returned page "
         "image before telling the user it is done. Page-break problems are "
         "invisible in the source.\n\n"
@@ -181,7 +188,7 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # changes, so what it wrote can be shown back to the user as changes to keep
 # or undo (review.py). Watching is a stat of each document and a read of its
 # text, which is nothing next to the model's own turn.
-READ_ONLY = {"list_cvs", "read_cv", "cv_outline", "render_cv", "list_jobs", "read_job", "find_job",
+READ_ONLY = {"list_cvs", "read_cv", "cv_outline", "show_themes", "review_changes", "preview_image", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info"}
 
@@ -191,6 +198,9 @@ READ_ONLY = {"list_cvs", "read_cv", "cv_outline", "render_cv", "list_jobs", "rea
 # history. Reaching outside the machine is the posting and the logo fetches.
 DESTRUCTIVE = {"write_cv", "set_job_status"}
 UNSTRUCTURED = {"render_cv"}
+# What the user does from a view, through a tool: their own decision, not a
+# change an AI client made, so it is neither checkpointed nor journalled.
+USER_ACTIONS = {"resolve_change"}
 OPEN_WORLD = {"read_posting", "add_job", "set_company_logo", "update_job_tracking"}
 
 # The exceptions the tools raise on purpose, with a message written for the
@@ -444,7 +454,7 @@ def tool(fn):
         # call logged like a successful one tells the user the model read a
         # file it was actually blocked from reading.
         watch = rows = None
-        if fn.__name__ not in READ_ONLY:
+        if fn.__name__ not in READ_ONLY and fn.__name__ not in USER_ACTIONS:
             try:
                 watch = _snapshot()
             except Exception:
@@ -502,6 +512,7 @@ def tool(fn):
     # render_cv answers with a picture beside its text, which is content, not
     # a structured result.
     return mcp.tool(title=mcp_meta.TITLES.get(name), icons=mcp_meta.tool_icons(name),
+                    meta=mcp_apps.tool_meta(name),
                     structured_output=False if name in UNSTRUCTURED else None,
                     annotations=ToolAnnotations(
         title=mcp_meta.TITLES.get(name),
@@ -1591,6 +1602,138 @@ def save_theme(name: str, path: str, label: str | None = None) -> S.SavedTheme:
             "next": f"Use it on any CV with edit_cv_fields: path [design, theme], value {saved['name']!r}."}
 
 
+# --- Views (MCP Apps) ---------------------------------------------------------
+
+
+@tool
+def show_themes(path: str, themes: list[str] | None = None) -> S.ThemeGallery:
+    """Render a CV in several themes, for the user to compare and pick from.
+
+    A client that shows MCP Apps puts the pages side by side with a button to
+    switch; otherwise the answer lists each theme and its page count. Leave
+    `themes` out for the user's own themes, the one in use and a spread of
+    the rest (up to eight); design_options lists them all. The CV itself is
+    not changed: each is rendered from a copy.
+    """
+    p = studio.safe_path(path)
+    if studio.is_letter(p):
+        raise ValueError("A letter looks like its CV; show the CV's themes instead.")
+    data = studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}
+    current = str((data.get("design") or {}).get("theme") or "classic")
+    offered = studio.available_themes()
+    if themes:
+        unknown = [t for t in themes if t not in offered]
+        if unknown:
+            raise ValueError(f"Unknown theme(s): {', '.join(unknown)}. design_options lists them.")
+        pick = list(dict.fromkeys(themes))[:12]
+    else:
+        mine = [c["name"] for c in studio.themes.custom_list() if not c["error"]]
+        spread = ["swiss", "crisp", "bold", "airy", "terminal", "sidebar", "classic", "harvard"]
+        pick = list(dict.fromkeys([current, *mine, *spread]))[:8]
+    out = []
+    for i, theme in enumerate(pick):
+        progress(i, len(pick), f"Rendering in {theme}")
+        r = studio.theme_preview(p, theme)
+        custom = next((c for c in studio.themes.custom_list() if c["name"] == theme), None)
+        out.append({"theme": theme, "label": custom["label"] if custom else theme.capitalize(),
+                    "pages": r.get("pages"), "ok": bool(r.get("ok"))})
+    progress(len(pick), len(pick), "Done")
+    return {"path": studio.rel(p), "current": current, "themes": out,
+            "note": "Switch with edit_cv_fields: path [design, theme]. The user can also switch "
+                    "in the view, which tells you which they chose."}
+
+
+@tool
+def review_changes() -> S.Review:
+    """What AI clients changed that the user has not yet kept or undone: the
+    documents (CVs and letters) and the applications.
+
+    A client that shows MCP Apps gives the user Keep and Undo for each; that
+    decision is theirs, so there is no tool here to make it. Elsewhere, list
+    the changes and tell them they can review them in the app.
+    """
+    docs = []
+    for rel_path, info in studio.review.pending(_ws()).items():
+        payload = studio.review_payload(studio.safe_path(rel_path)) or {}
+        docs.append({"path": rel_path, "by": info.get("agent") or info.get("by"),
+                     "units": [u.get("label") or u.get("id") for u in payload.get("units") or []]})
+    apps = studio.jobstore.ai_changes(_ws()) if studio.jobstore else []
+    labels = studio.jobstore.STATUS_LABELS if studio.jobstore else {}
+    for a in apps:
+        for c in a["changes"]:
+            if c["field"] == "status":
+                c["from"], c["to"] = labels.get(c["from"], c["from"]), labels.get(c["to"], c["to"])
+    n = len(docs) + len(apps)
+    return {"documents": docs, "applications": apps,
+            "summary": "Nothing to review." if not n else
+                       f"{len(docs)} document(s) and {len(apps)} application change(s) waiting."}
+
+
+def _from_a_view() -> None:
+    """Refuse a view's tool to a client with no views.
+
+    A host that shows MCP Apps keeps these tools away from the model and lets
+    only the view call them. A client without them would list them to the
+    model like any other, and resolve_change would let it keep or undo its
+    own work, which is the user's call. So they are hidden from such clients
+    (tools/list below) and refused here if called anyway."""
+    from mcp.server.apps import client_supports_apps
+    ctx = getattr(_local, "ctx", None)
+    try:
+        ok = ctx is not None and client_supports_apps(ctx)
+    except Exception:
+        ok = False
+    if not ok:
+        raise ValueError("Only a CV Studio view can do this. Ask the user to review the "
+                         "changes in the app, under Changes by AI to review.")
+
+
+@tool
+def preview_image(path: str, page: int = 1, theme: str | None = None) -> S.Picture:
+    """A page already rendered, as a PNG: of the document, or of its preview
+    in another theme. For the views only: nothing is rendered here."""
+    _from_a_view()
+    p = studio.safe_path(path)
+    if theme:
+        stem = __import__("re").sub(r"[^A-Za-z0-9_-]+", "-", p.stem) or "doc"
+        folder = _ws() / "assets" / ".themes" / stem / theme
+        pngs = sorted(folder.glob("*_1.png")) if folder.is_dir() else []
+        if not pngs:
+            raise ValueError(f"{path} has not been rendered in {theme}; show_themes does that.")
+        return {"png": base64.b64encode(pngs[0].read_bytes()).decode("ascii"), "page": 1, "pages": 1}
+    pdf = studio.last_pdf(p)
+    pages = sorted(pdf.parent.glob(f"{pdf.stem}_*.png")) if pdf else []
+    if not pages:
+        raise ValueError(f"{path} has not been rendered yet; render_cv does that.")
+    page = max(1, min(int(page), len(pages)))
+    f = pdf.with_name(f"{pdf.stem}_{page}.png")
+    return {"png": base64.b64encode(f.read_bytes()).decode("ascii"), "page": page, "pages": len(pages)}
+
+
+@tool
+def resolve_change(kind: str, id: str, action: str) -> S.Resolved:
+    """Keep or undo one change an AI client made, from the review view.
+
+    Only the view calls this, because the decision is the user's: `kind` is
+    "document" (`id` its path; every change to it at once) or "application"
+    (`id` the change's id), `action` "keep" or "undo".
+    """
+    _from_a_view()
+    if action not in ("keep", "undo"):
+        raise ValueError('action is "keep" or "undo".')
+    if kind == "document":
+        r = studio.review_resolve(studio.safe_path(id), ["*"], action, None)
+        return {"ok": True, "kind": kind, "id": id, "action": action, "deleted": bool(r.get("deleted"))}
+    if kind == "application":
+        if action == "keep":
+            if not studio.jobstore.keep_ai_change(_ws(), id):
+                raise ValueError("That change has already been kept or undone.")
+            return {"ok": True, "kind": kind, "id": id, "action": action, "deleted": False}
+        r = studio.jobstore.undo_ai_change(_ws(), id)
+        return {"ok": True, "kind": kind, "id": id, "action": action, "deleted": bool(r.get("deleted"))}
+    raise ValueError('kind is "document" or "application".')
+
+
 @tool
 def workspace_info() -> S.Workspace:
     """Where the workspace is and what is in it."""
@@ -1623,6 +1766,24 @@ def workspace_info() -> S.Workspace:
                    "rows in applications.db beside them, which export to JSON "
                    "and CSV so nothing is locked in.",
     }
+
+
+async def _list_tools(ctx, params):
+    """tools/list, without the views' own tools for a client that has no views."""
+    from mcp.server.apps import client_supports_apps
+    result = await mcp._handle_list_tools(ctx, params)
+    try:
+        views = client_supports_apps(ctx)
+    except Exception:
+        views = False
+    if not views:
+        result = result.model_copy(update={"tools": [t for t in result.tools
+                                                     if t.name not in mcp_apps.APP_ONLY]})
+    return result
+
+
+from mcp.types import PaginatedRequestParams as _Paginated  # noqa: E402
+mcp._lowlevel_server.add_request_handler("tools/list", _Paginated, _list_tools)
 
 
 # --- Prompts ------------------------------------------------------------------

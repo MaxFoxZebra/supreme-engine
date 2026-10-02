@@ -188,6 +188,7 @@ jobs:
             --add-data "themes${SEP}themes" \
             --add-data "../skills${SEP}skills" \
             --add-data "typst-packages${SEP}typst-packages" \
+            --add-data "mcp_apps${SEP}mcp_apps" \
             --collect-all rendercv \
             --collect-all rendercv_fonts \
             --collect-all typst \
@@ -202,6 +203,7 @@ jobs:
             --hidden-import mcp_resources \
             --hidden-import mcp_meta \
             --hidden-import mcp_schemas \
+            --hidden-import mcp_apps \
             --hidden-import ats \
             --hidden-import importer \
             --hidden-import languages \

@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CV Studio: themes</title>
+{{SHARED}}
+<style>
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:10px}
+.card{border:1px solid var(--color-border-primary);border-radius:9px;padding:8px;display:flex;flex-direction:column;gap:6px;
+  background:var(--color-background-secondary)}
+.card.cur{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.card .pic{aspect-ratio:210/297;background:#fff;border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.card .pic img{width:100%;height:100%;object-fit:cover;object-position:top}
+.card b{font-weight:600}
+</style></head>
+<body>
+<div id="app" class="empty muted">Rendering your CV in each theme…</div>
+<script>
+/* show_themes' result: the user's own CV in several themes, each a real
+   render, and one click to switch. The switch goes through edit_cv_fields
+   like any edit, so it is marked in the app and can be undone there. */
+let S = null;
+function paint() {
+  const el = document.getElementById("app"); el.className = "";
+  el.innerHTML = '<div class="row"><b>' + esc(S.path) + '</b><span class="muted">is on ' + esc(label(S.current)) +
+    '</span></div><div class="grid">' + S.themes.map(t =>
+      '<div class="card' + (t.theme === S.current ? " cur" : "") + '" data-t="' + esc(t.theme) + '">' +
+      '<div class="pic">' + (t.img ? '<img alt="' + esc(t.label) + '" src="data:image/png;base64,' + t.img + '">'
+        : '<span class="muted">' + (t.ok ? "…" : "did not render") + '</span>') + '</div>' +
+      '<div class="row"><b>' + esc(t.label) + '</b><span class="grow"></span><span class="muted">' +
+        (t.pages ? t.pages + " p." : "") + '</span></div>' +
+      (t.theme === S.current ? '<span class="muted">In use</span>'
+        : '<button class="use" ' + (t.ok ? "" : "disabled") + '>Use this theme</button>') + '</div>').join("") + '</div>';
+  el.querySelectorAll(".use").forEach(b => b.onclick = () => use(b.closest(".card").dataset.t, b));
+}
+const label = t => ((S.themes.find(x => x.theme === t) || {}).label) || t;
+async function use(theme, button) {
+  button.disabled = true; button.textContent = "Switching…";
+  try {
+    await Host.call("edit_cv_fields", { path: S.path, edits: [{ path: ["design", "theme"], value: theme }] });
+    S.current = theme; paint();
+    Host.tellModel("In the theme view, the user switched " + S.path + " to the " + label(theme) +
+      " theme (design.theme: " + theme + "). Render it again before describing the page.");
+  } catch (e) { button.disabled = false; button.textContent = "Use this theme"; flash(e.message) }
+}
+Host.on("ui/notifications/tool-result", async r => {
+  if (r.isError || !r.structuredContent) {
+    document.getElementById("app").innerHTML = '<div class="empty err">' + esc(textOf(r)) + '</div>'; return;
+  }
+  S = { ...r.structuredContent, themes: r.structuredContent.themes.map(t => ({ ...t })) };
+  paint();
+  // The pictures come one by one, straight to this view: the model never
+  // carries a dozen page images in its context.
+  for (const t of S.themes.filter(t => t.ok)) {
+    try { t.img = (await Host.call("preview_image", { path: S.path, theme: t.theme })).structuredContent.png; paint() }
+    catch (e) { t.ok = false; paint() }
+  }
+});
+Host.start("CV Studio themes");
+</script>
+</body></html>

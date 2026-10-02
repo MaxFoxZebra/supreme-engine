@@ -21,6 +21,8 @@ cd server
 | `audit.py` | Static audit of the served interface. No browser needed. |
 | `prefstest.py`, `langtest.py`, `lettertest.py`, `reviewtest.py`, `importtest.py`, `phototest.py`, `maptest.py`, `sampletest.py`, `aichangestest.py`, `elicittest.py`, `docxtest.py`, `customthemetest.py` | One area each, end to end in a scratch folder: preferences, languages, cover letters, reviewing what an AI client changed, importing, the photo, the page map, sample data, what an AI client changed on applications, what a tool asks the user directly, Word in and out, themes of your own. |
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
+| `mcpapps.py` | MCP Apps from the host's side: the views it reads, the tools that name them, what the views call, and that the view-only tools stay away from a client without views. |
+| `appshost.py`, `appsflow.js` | A stand-in MCP Apps host, and the views used in it in headless Chrome: a page paged and downloaded, a theme switched, a change undone. |
 | `mcpmodern.py` | The same server at protocol 2026-07-28, through the SDK's own client: questions as input-required rounds, change events on a listen stream. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |

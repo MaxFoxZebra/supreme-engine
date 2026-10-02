@@ -1,0 +1,75 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CV Studio: the page</title>
+{{SHARED}}
+<style>
+.stats{display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.stats b{font-weight:600}
+.fill{display:inline-block;width:70px;height:6px;border-radius:3px;background:var(--color-border-primary);
+  vertical-align:middle;overflow:hidden;margin-left:4px}
+.fill i{display:block;height:100%;background:var(--accent)}
+.warn{margin-top:8px;padding:7px 10px;border-radius:7px;background:var(--color-background-secondary)}
+</style></head>
+<body>
+<div id="app" class="empty muted">Laying out the page…</div>
+<script>
+/* render_cv's result as the page itself: what an ATS reads, how full the
+   last page is, each page on demand, and the PDF to download. */
+const S = { path: null, page: 1, pages: 1, img: null, stats: {} };
+
+function parse(text) {
+  const g = re => { const m = re.exec(text); return m ? m[1] : null };
+  return { pages: +(g(/^Pages: (\d+)/m) || 1), fill: g(/^Last page: (\d+)% full/m),
+           words: g(/^Words(?: an ATS reads)?: (\d+)/m), shown: +(g(/^Showing page (\d+)/m) || 1),
+           warnings: [...text.matchAll(/^Warning: (.+)$/gm)].map(m => m[1]) };
+}
+function paint() {
+  const s = S.stats, el = document.getElementById("app");
+  el.className = "";
+  el.innerHTML =
+    '<div class="row"><div class="stats">' +
+      '<span><b>' + S.pages + '</b> page' + (S.pages === 1 ? "" : "s") + '</span>' +
+      (s.fill != null ? '<span>last page <b>' + s.fill + '%</b> full<span class="fill"><i style="width:' + s.fill + '%"></i></span></span>' : "") +
+      (s.words ? '<span><b>' + s.words + '</b> words an ATS reads</span>' : "") +
+    '</div><div class="grow"></div>' +
+    (S.pages > 1 ? '<button id="prev" aria-label="Previous page">‹</button><span class="muted">' + S.page + ' / ' + S.pages +
+      '</span><button id="next" aria-label="Next page">›</button>' : "") +
+    '<button id="pdf">Download PDF</button></div>' +
+    (s.warnings || []).map(w => '<div class="warn">' + esc(w) + '</div>').join("") +
+    (S.img ? '<img class="page" alt="Page ' + S.page + ' of ' + esc(S.path) + '" src="data:image/png;base64,' + S.img + '">' : "");
+  const go = d => async () => {
+    const p = Math.min(S.pages, Math.max(1, S.page + d));
+    if (p === S.page) return;
+    try {
+      const r = await Host.call("preview_image", { path: S.path, page: p });
+      S.page = p; S.img = r.structuredContent.png; paint();
+    } catch (e) { flash(e.message) }
+  };
+  const prev = document.getElementById("prev"), next = document.getElementById("next");
+  if (prev) prev.onclick = go(-1);
+  if (next) next.onclick = go(1);
+  document.getElementById("pdf").onclick = download;
+}
+async function download() {
+  try {
+    const r = await Host.request("resources/read", { uri: "cvstudio://pdf/" + encodeURI(S.path) });
+    const c = r.contents[0];
+    await Host.request("ui/download-file", { contents: [{ type: "resource", resource: {
+      uri: "file:///" + S.path.split("/").pop().replace(/\.(ya?ml|md)$/, ".pdf"),
+      mimeType: "application/pdf", blob: c.blob } }] });
+  } catch (e) { flash("Download: " + e.message) }
+}
+Host.on("ui/notifications/tool-input", p => { S.path = (p.arguments || {}).path });
+Host.on("ui/notifications/tool-result", r => {
+  if (r.isError) {
+    document.getElementById("app").innerHTML = '<div class="empty err">' + esc(textOf(r)).replace(/\n/g, "<br>") + '</div>';
+    return;
+  }
+  S.stats = parse(textOf(r)); S.pages = S.stats.pages; S.page = S.stats.shown;
+  const img = (r.content || []).find(b => b.type === "image");
+  S.img = img ? img.data : null;
+  paint();
+});
+Host.start("CV Studio page");
+</script>
+</body></html>

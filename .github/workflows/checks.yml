@@ -150,6 +150,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/mcp-ws-modern"
           python checks/mcpmodern.py python "$RUNNER_TEMP/mcp-ws-modern"
 
+      - name: MCP Apps, from the host's side
+        run: |
+          mkdir -p "$RUNNER_TEMP/mcp-ws-apps"
+          python checks/mcpapps.py python "$RUNNER_TEMP/mcp-ws-apps"
+
       - name: Browser flows
         run: |
           mkdir -p "$RUNNER_TEMP/flow-ws"
@@ -175,6 +180,14 @@ jobs:
 
       - name: Accessibility (contrast, keyboard, names)
         run: node checks/a11yscan.js "http://127.0.0.1:8750/?token=t"
+
+      # The MCP Apps views in a stand-in host, in the same headless Chrome.
+      - name: MCP Apps views in a browser
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps-ws"
+          python checks/appshost.py --workspace "$RUNNER_TEMP/apps-ws" --port 8790 > "$RUNNER_TEMP/appshost.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8790/ > /dev/null && break; sleep 1; done
+          node checks/appsflow.js http://127.0.0.1:8790 profile/my-cv.yaml
 
       - name: Quick with 500 applications
         run: node checks/scaletest.js "http://127.0.0.1:8750/?token=t"
