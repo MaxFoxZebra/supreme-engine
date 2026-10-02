@@ -28,12 +28,22 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, ToolAnnotations
 
+import mcp_meta
+import mcp_schemas as S
 import review
 import studio
 from cv_render import render_file
 
 mcp = MCPServer(
     name="cv-studio",
+    title="CV Studio",
+    description="Your CVs, cover letters and job applications, on this computer.",
+    version=studio.VERSION,
+    icons=mcp_meta.server_icons(studio.STATIC_DIR),
+    # How long a client may reuse a list without asking again (2026-07-28).
+    # The tools only change with a new version; prompts and resources are
+    # announced when they change, so the hints only save idle re-asking.
+    cache_hints=mcp_meta.CACHE_HINTS,
     instructions=(
         "Read, edit and render CVs in the user's CV Studio workspace.\n\n"
         "CVs are RenderCV YAML files. Two rules save most failures:\n"
@@ -180,6 +190,7 @@ READ_ONLY = {"list_cvs", "read_cv", "cv_outline", "render_cv", "list_jobs", "rea
 # taken back. write_cv replaces a whole file; a status change is permanent
 # history. Reaching outside the machine is the posting and the logo fetches.
 DESTRUCTIVE = {"write_cv", "set_job_status"}
+UNSTRUCTURED = {"render_cv"}
 OPEN_WORLD = {"read_posting", "add_job", "set_company_logo", "update_job_tracking"}
 
 # The exceptions the tools raise on purpose, with a message written for the
@@ -350,6 +361,19 @@ def _elicit(message: str, schema: type[BaseModel]):
     return res.data if res.action == "accept" else DECLINED
 
 
+def progress(done: float, total: float | None = None, message: str | None = None) -> None:
+    """Tell the client how far a slow call has got. Nothing happens unless
+    it asked (a progressToken on the call), and a failure to say so never
+    stops the work."""
+    ctx = getattr(_local, "ctx", None)
+    if ctx is None:
+        return
+    try:
+        anyio.from_thread.run(ctx.report_progress, done, total, message)
+    except Exception:
+        pass
+
+
 def ask_user(message: str) -> bool | None:
     """Yes or no. None when the client cannot ask."""
     got = _elicit(message, _Confirm)
@@ -460,15 +484,27 @@ def tool(fn):
                                  str(target) if target else None)
         return result
 
-    wrapper.__signature__ = signature.replace(parameters=[
+    # The return type, resolved: under `from __future__ import annotations`
+    # it is a string, and the output schema is built from the real type.
+    import typing
+    try:
+        returns = typing.get_type_hints(fn).get("return", signature.return_annotation)
+    except Exception:
+        returns = signature.return_annotation
+    wrapper.__signature__ = signature.replace(return_annotation=returns, parameters=[
         *signature.parameters.values(),
         inspect.Parameter("cvs_ctx", inspect.Parameter.KEYWORD_ONLY,
                           annotation=Context, default=None),
     ])
     wrapper.__annotations__ = {**getattr(fn, "__annotations__", {}),
-                               "cvs_ctx": Context}
+                               "cvs_ctx": Context, "return": returns}
     name = fn.__name__
-    return mcp.tool(annotations=ToolAnnotations(
+    # render_cv answers with a picture beside its text, which is content, not
+    # a structured result.
+    return mcp.tool(title=mcp_meta.TITLES.get(name), icons=mcp_meta.tool_icons(name),
+                    structured_output=False if name in UNSTRUCTURED else None,
+                    annotations=ToolAnnotations(
+        title=mcp_meta.TITLES.get(name),
         read_only_hint=name in READ_ONLY,
         destructive_hint=name in DESTRUCTIVE,
         idempotent_hint=name in READ_ONLY,
@@ -477,7 +513,7 @@ def tool(fn):
 
 
 @tool
-def list_cvs() -> list[dict]:
+def list_cvs() -> list[S.Document]:
     """List every CV in the workspace, with its path and where it lives."""
     return studio.list_documents()
 
@@ -676,6 +712,7 @@ def render_cv(path: str, page: int | str = "last") -> list:
     page-break damage does not show up in the source.
     """
     p = studio.safe_path(path)
+    progress(0, 3, "Laying out the page")
     if studio.is_letter(p):
         r = studio.render_letter(p)
         if not r.get("ok"):
@@ -697,6 +734,7 @@ def render_cv(path: str, page: int | str = "last") -> list:
         words_line = f"Words an ATS reads: {result['ats_word_count']}"
         pdf = result["pdf"]
 
+    progress(2, 3, "Measuring the last page")
     if isinstance(page, str):
         page = pages if page.strip().lower() in ("last", "") else int(page)
     idx = max(1, min(int(page), pages)) - 1
@@ -708,6 +746,7 @@ def render_cv(path: str, page: int | str = "last") -> list:
     lines += [words_line, f"PDF: {pdf}"]
     lines += [f"Warning: {n}" for n in _layout_notes(pages, fill)]
     lines.append(f"Showing page {idx + 1} of {pages}.")
+    progress(3, 3, f"{pages} page{'s' if pages != 1 else ''}")
     out_blocks: list = ["\n".join(lines)]
     if pngs:
         out_blocks.append(ImageContent(
@@ -825,7 +864,7 @@ def _brief(job: dict) -> dict:
 
 
 @tool
-def list_jobs(status: str | None = None, query: str | None = None) -> list[dict]:
+def list_jobs(status: str | None = None, query: str | None = None) -> list[S.Brief]:
     """The user's job applications. Read this before changing anything.
 
     `status` filters by one status (a code such as "applied", or the app's
@@ -837,7 +876,7 @@ def list_jobs(status: str | None = None, query: str | None = None) -> list[dict]
 
 
 @tool
-def read_job(job_id: str) -> dict:
+def read_job(job_id: str) -> S.Application:
     """One application in full, including the posting text and its history.
 
     The posting stored in `description` is what to write against when the user
@@ -880,7 +919,7 @@ def _candidates(company: str, title: str | None = None,
 
 @tool
 def find_job(company: str, title: str | None = None,
-             sender_email: str | None = None, about: str | None = None) -> dict:
+             sender_email: str | None = None, about: str | None = None) -> S.Match:
     """Which application does this message or event belong to?
 
     Call this before every write. Matching is genuinely uncertain: people apply
@@ -923,7 +962,7 @@ def find_job(company: str, title: str | None = None,
 
 
 @tool
-def job_alerts() -> dict:
+def job_alerts() -> S.Alerts:
     """What needs the user's attention, ready to read out.
 
     Interviews coming up, follow-ups due, interviews that have been and gone
@@ -946,7 +985,7 @@ def job_alerts() -> dict:
 
 
 @tool
-def calendar(days_ahead: int = 14, ics: bool = False) -> dict:
+def calendar(days_ahead: int = 14, ics: bool = False) -> S.Calendar:
     """The user's calendar in CV Studio: interviews and follow-ups ahead.
 
     Each interview has its wall-clock time as the invitation gave it and its
@@ -994,7 +1033,7 @@ def calendar(days_ahead: int = 14, ics: bool = False) -> dict:
 
 
 @tool
-def set_job_status(job_id: str, status: str, append_note: str | None = None) -> dict:
+def set_job_status(job_id: str, status: str, append_note: str | None = None) -> S.Application:
     """Move one application to a new status. Confirm with the user first.
 
     This appends to the history the funnel is drawn from, so show the user
@@ -1051,7 +1090,7 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                         source: str | None = None,
                         replace_posting: bool = False,
                         title: str | None = None,
-                        append_note: str | None = None) -> dict:
+                        append_note: str | None = None) -> S.Application:
     """Record dates, contacts and which documents were sent, without moving it.
 
     Deliberately separate from set_job_status: these are facts about the
@@ -1174,7 +1213,7 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
 
 @tool
 def save_person(job_id: str, name: str | None = None, email: str | None = None,
-                role: str | None = None, link: str | None = None) -> dict:
+                role: str | None = None, link: str | None = None) -> S.People:
     """Record someone the user is talking to about an application: a
     recruiter, a hiring manager, an interviewer, whoever referred them.
 
@@ -1203,7 +1242,7 @@ def save_person(job_id: str, name: str | None = None, email: str | None = None,
 
 
 @tool
-def get_interview_prep(job_id: str) -> dict:
+def get_interview_prep(job_id: str) -> S.Prep:
     """The interview prep for an application's next round, as the user sees
     it: the likely questions (each with `src` posting, cv, round or you, the
     posting line or CV line it comes from, the user's notes, and `state`
@@ -1220,7 +1259,7 @@ def get_interview_prep(job_id: str) -> dict:
 @tool
 def save_interview_prep(job_id: str, questions: list[dict],
                         stories: list[dict] | None = None,
-                        asks: list[str] | None = None) -> dict:
+                        asks: list[str] | None = None) -> S.Prep:
     """Write the interview prep for an application's next round.
 
     `questions`: 6 to 10 likely questions, each {"q", "src", "why", "cv"}:
@@ -1254,7 +1293,7 @@ def add_job(company: str, title: str, status: str = "pending",
             contact_email: str | None = None,
             company_website: str | None = None,
             language: str | None = None,
-            confirmed_new: bool = False) -> dict:
+            confirmed_new: bool = False) -> S.Application:
     """Add an application. Call find_job first.
 
     Pass `company_website` -- the company's own domain, such as stripe.com,
@@ -1298,7 +1337,9 @@ def add_job(company: str, title: str, status: str = "pending",
                     f"different application, ask the user, then call again with "
                     f"confirmed_new=True.")
     notes: dict = {}
+    steps = 1 + bool(url) + bool(company_website)
     if url:
+        progress(0, steps, "Reading the posting from the job board")
         try:
             read = studio.posting.read(url)
         except Exception as exc:  # the application matters, the reading does not
@@ -1334,6 +1375,7 @@ def add_job(company: str, title: str, status: str = "pending",
     if job.get("logo"):
         job["logo_note"] = f"Reused the logo already saved for {company}."
     elif company_website:
+        progress(steps - 1, steps, f"Fetching {company}'s logo")
         try:
             saved = studio.fetch_logo(company, company_website)
             studio.jobstore.set_company_logo(_ws(), company, saved["logo"])
@@ -1369,7 +1411,7 @@ def _thin_note(words: int) -> str:
 
 
 @tool
-def read_posting(url: str) -> dict:
+def read_posting(url: str) -> S.Posting:
     """Read a job posting from its link, exactly as the company published it.
 
     CV Studio fetches it on this machine from the job board's own data
@@ -1382,11 +1424,14 @@ def read_posting(url: str) -> dict:
     matter on a CV written against them. If it raises, ask the user to paste
     the posting; never fill the gap from memory.
     """
-    return studio.posting.read(url)
+    progress(0, 1, "Reading the posting from the job board")
+    out = studio.posting.read(url)
+    progress(1, 1, "Read")
+    return out
 
 
 @tool
-def ats_check(path: str, job_id: str | None = None) -> dict:
+def ats_check(path: str, job_id: str | None = None) -> S.AtsReport:
     """Read a CV's rendered PDF the way an applicant tracking system does.
 
     Renders first if the PDF is older than the YAML. Returns the parsing
@@ -1402,7 +1447,9 @@ def ats_check(path: str, job_id: str | None = None) -> dict:
     `display_urls_instead_of_usernames: true` fix the two commonest parsing
     problems.
     """
+    progress(0, 2, "Rendering, then reading the PDF as an ATS does")
     r = studio.ats_report(studio.safe_path(path), job_id)
+    progress(2, 2, "Read")
     if not r.get("ok"):
         raise ValueError(r.get("error") or "The check could not run.")
     kw = r.get("keywords")
@@ -1419,7 +1466,7 @@ def ats_check(path: str, job_id: str | None = None) -> dict:
 
 
 @tool
-def create_letter(job_id: str) -> dict:
+def create_letter(job_id: str) -> S.Letter:
     """Start a cover letter for an application, and attach it to it.
 
     Writes letters/cover-<company>.md with everything but the words filled in:
@@ -1480,7 +1527,7 @@ def add_language(path: str, language: str) -> dict:
 
 
 @tool
-def translation_status(path: str) -> dict:
+def translation_status(path: str) -> S.Translation:
     """What a translated CV is missing from the CV it was translated from.
 
     Lists every field the source changed since the translation was last
@@ -1506,7 +1553,7 @@ def mark_translation_current(path: str) -> dict:
 
 
 @tool
-def design_options() -> dict:
+def design_options() -> S.DesignOptions:
     """The themes, fonts and page sizes available for the design block."""
     # available_themes() asks RenderCV rather than trusting the fallback list,
     # which is what the Design screen shows -- the two should not disagree.
@@ -1522,7 +1569,7 @@ def design_options() -> dict:
 
 
 @tool
-def save_theme(name: str, path: str, label: str | None = None) -> dict:
+def save_theme(name: str, path: str, label: str | None = None) -> S.SavedTheme:
     """Keep the design of the CV at `path` as a theme of the user's own.
 
     It is written to themes/<name>/theme.yaml in the workspace: the theme the
@@ -1545,7 +1592,7 @@ def save_theme(name: str, path: str, label: str | None = None) -> dict:
 
 
 @tool
-def workspace_info() -> dict:
+def workspace_info() -> S.Workspace:
     """Where the workspace is and what is in it."""
     ws = _ws()
     base = studio.base_cv()
@@ -1587,7 +1634,7 @@ def workspace_info() -> dict:
 # skill that ships with the app is offered here as a prompt too, word for word.
 
 
-def _skill_prompt(folder: Path) -> None:
+def _skill_prompt(folder: Path) -> str:
     text = (folder / "SKILL.md").read_text(encoding="utf-8")
     meta = studio._front_matter(text)
     body = text
@@ -1596,22 +1643,104 @@ def _skill_prompt(folder: Path) -> None:
         body = text[end + 4:].lstrip() if end >= 0 else text
     name = (meta.get("name") or folder.name).removeprefix(studio.SKILL_PREFIX + "-")
 
-    def prompt(request: str = "") -> str:
-        ask = request.strip()
-        return body + (f"\n\n---\n\nThe user's request: {ask}" if ask else "")
+    def ask_of(request: str, application: str = "") -> str:
+        lines = []
+        if application.strip():
+            lines.append(f"The application: {application.strip()}")
+        if request.strip():
+            lines.append(f"The user's request: {request.strip()}")
+        return body + ("\n\n---\n\n" + "\n".join(lines) if lines else "")
+
+    # Interview prep is about one application, so it takes one by name, and
+    # the client can complete the name (see complete() below).
+    if name in APPLICATION_PROMPTS:
+        def prompt(application: str = "", request: str = "") -> str:
+            return ask_of(request, application)
+    else:
+        def prompt(request: str = "") -> str:
+            return ask_of(request)
 
     prompt.__name__ = name.replace("-", "_")
-    mcp.prompt(name=name, title=_short(body.splitlines()[0].lstrip("# "), 60),
-               description=meta.get("description") or None)(prompt)
+    mcp._prompt_manager.remove_prompt(name) if mcp._prompt_manager.get_prompt(name) else None
+    mcp.prompt(name=name, title=mcp_meta.PROMPT_TITLES.get(name) or _short(body.splitlines()[0].lstrip("# "), 60),
+               description=meta.get("description") or None,
+               icons=mcp_meta.tool_icons({"apply": "add_job", "inbox": "job_alerts",
+                                          "interview-prep": "save_interview_prep"}.get(name, "")))(prompt)
+    return name
 
 
-for _folder in studio.skill_folders():
-    try:
-        _skill_prompt(_folder)
-    except Exception:
-        # A skill that cannot be read is one prompt fewer, never a server
-        # that does not start.
-        pass
+APPLICATION_PROMPTS = {"interview-prep"}
+_prompt_stamp: tuple | None = None
+_prompt_names: set[str] = set()
+
+
+def sync_prompts() -> bool:
+    """Offer each skill as a prompt, as the skill folders now stand.
+
+    Returns True when the list changed, for the watcher to tell the client:
+    a skill edited or added in ~/.claude/skills shows up without reconnecting.
+    """
+    global _prompt_stamp, _prompt_names
+    folders = studio.skill_folders()
+    stamp = tuple((str(f), (f / "SKILL.md").stat().st_mtime) for f in folders)
+    if stamp == _prompt_stamp:
+        return False
+    _prompt_stamp = stamp
+    names = set()
+    for folder in folders:
+        try:
+            names.add(_skill_prompt(folder))
+        except Exception:
+            # A skill that cannot be read is one prompt fewer, never a server
+            # that does not start.
+            pass
+    for gone in _prompt_names - names:
+        mcp._prompt_manager.remove_prompt(gone)
+    _prompt_names = names
+    return True
+
+
+sync_prompts()
+
+
+# --- Completions --------------------------------------------------------------
+#
+# What a client offers as you type an argument: the applications by name for
+# a prompt about one, and the documents and applications that a resource
+# address can name.
+
+
+def _application_names() -> list[str]:
+    jobs = studio.jobstore.list_jobs(_ws()) if studio.jobstore else []
+    live = {"interviewing": 0, "offer": 1, "applied": 2, "pending": 3}
+    jobs.sort(key=lambda j: live.get(j.get("status"), 9))
+    return [f"{j['company']} – {j['title']}" for j in jobs]
+
+
+def completion_values(kind: str, field: str, typed: str) -> list[str]:
+    """Candidates for one argument, those matching what was typed first."""
+    if kind == "prompt" and field == "application":
+        pool = _application_names()
+    elif kind == "resource" and field == "path":
+        pool = [studio.rel(f) for f, _, _ in studio.document_files()]
+    elif kind == "resource" and field == "id":
+        pool = [j["id"] for j in (studio.jobstore.list_jobs(_ws()) if studio.jobstore else [])]
+    else:
+        return []
+    t = (typed or "").casefold()
+    starts = [v for v in pool if v.casefold().startswith(t)]
+    inside = [v for v in pool if t in v.casefold() and v not in starts]
+    return starts + inside
+
+
+@mcp.completion()
+async def complete(ref, argument, context):
+    from mcp.types import Completion
+    kind = "prompt" if getattr(ref, "type", "") == "ref/prompt" else "resource"
+    if kind == "prompt" and getattr(ref, "name", "") not in APPLICATION_PROMPTS:
+        return None
+    values = await anyio.to_thread.run_sync(completion_values, kind, argument.name, argument.value)
+    return Completion(values=values[:100], total=len(values), has_more=len(values) > 100)
 
 
 def main(workspace: str | None = None, client: str | None = None) -> int:
@@ -1626,5 +1755,5 @@ def main(workspace: str | None = None, client: str | None = None) -> int:
     # Not mcp.run(): the resources are served and the workspace watched for
     # changes alongside the stdio session (mcp_resources.py).
     import mcp_resources
-    anyio.run(mcp_resources.run_stdio, mcp)
+    anyio.run(mcp_resources.run_stdio, mcp, sync_prompts)
     return 0

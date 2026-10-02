@@ -29,7 +29,7 @@ from urllib.parse import quote, unquote
 
 import anyio
 from mcp.shared.exceptions import MCPError
-from mcp.shared.subscriptions import ResourcesListChanged, ResourceUpdated
+from mcp.shared.subscriptions import PromptsListChanged, ResourcesListChanged, ResourceUpdated
 from mcp.types import (Annotations, BlobResourceContents, EmptyResult, ListResourcesResult,
                        ListResourceTemplatesResult, PaginatedRequestParams, ReadResourceRequestParams,
                        ReadResourceResult, Resource, ResourceTemplate, SubscribeRequestParams,
@@ -126,8 +126,11 @@ class Live:
     server process. A process serves one client over stdio, but nothing here
     assumes that."""
 
-    def __init__(self, mcp) -> None:
+    def __init__(self, mcp, prompts_changed=None) -> None:
         self.mcp = mcp
+        # Called on every tick, in a worker thread: True when the prompts were
+        # re-read from changed skills, so clients are told to list them again.
+        self.prompts_changed = prompts_changed
         # Each request hands over its own session object around one shared
         # connection, so both are keyed by the connection: one client, one
         # notification.
@@ -195,8 +198,15 @@ class Live:
         self.subscribed.get(str(params.uri), {}).pop(self._key(ctx.session), None)
         return EmptyResult()
 
+    async def _note_session(self, ctx, call_next):
+        """Middleware: every request names its session, so list changes reach
+        a client that only ever calls tools or lists prompts."""
+        self._seen(ctx)
+        return await call_next(ctx)
+
     def install(self) -> None:
         low = self.mcp._lowlevel_server
+        low.middleware.append(self._note_session)
         low.add_request_handler("resources/list", PaginatedRequestParams, self.list_resources)
         low.add_request_handler("resources/templates/list", PaginatedRequestParams, self.list_templates)
         low.add_request_handler("resources/read", ReadResourceRequestParams, self.read_resource)
@@ -204,6 +214,16 @@ class Live:
         low.add_request_handler("resources/unsubscribe", UnsubscribeRequestParams, self.unsubscribe)
 
     # ---- the watcher -----------------------------------------------------
+
+    async def check_prompts(self) -> None:
+        if self.prompts_changed is None or not await anyio.to_thread.run_sync(self.prompts_changed):
+            return
+        await self.mcp._subscriptions.publish(PromptsListChanged())
+        for key, session in list(self.sessions.items()):
+            try:
+                await session.send_prompt_list_changed()
+            except Exception:
+                self.sessions.pop(key, None)
 
     async def check(self) -> None:
         """Compare the workspace with the last look, and say what changed."""
@@ -233,22 +253,23 @@ class Live:
         while True:
             try:
                 await self.check()
+                await self.check_prompts()
             except Exception:
                 log.debug("resource watch failed", exc_info=True)
             await anyio.sleep(POLL_SECONDS)
 
 
-async def run_stdio(mcp) -> None:
+async def run_stdio(mcp, prompts_changed=None) -> None:
     """mcp.run(transport="stdio"), with the resources served and watched,
     and list changes advertised to pre-2026 clients."""
     from mcp.server.lowlevel.server import NotificationOptions
     from mcp.server.stdio import stdio_server
 
-    live = Live(mcp)
+    live = Live(mcp, prompts_changed)
     live.install()
     low = mcp._lowlevel_server
     async with stdio_server() as (read_stream, write_stream), anyio.create_task_group() as tg:
         tg.start_soon(live.watch)
         await low.run(read_stream, write_stream, low.create_initialization_options(
-            NotificationOptions(resources_changed=True)))
+            NotificationOptions(resources_changed=True, prompts_changed=True)))
         tg.cancel_scope.cancel()

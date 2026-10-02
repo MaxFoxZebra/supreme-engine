@@ -45,10 +45,39 @@ second = lambda props: types.ElicitResult(action="accept", content={"choice": pr
 
 
 async def main(py: str, ws: Path) -> int:
+    import os
+    home = Path(tempfile.mkdtemp())     # a ~/.claude of its own, for the skill added below
     params = StdioServerParameters(command=py, args=["server_main.py", "--mcp", "--workspace", str(ws)],
-                                   cwd=str(HERE))
+                                   cwd=str(HERE), env={**os.environ, "HOME": str(home)})
     async with Client(params, elicitation_callback=on_elicit) as c:
         check("the connection is 2026-07-28", c.protocol_version == "2026-07-28", c.protocol_version)
+
+        # What a client shows: titles, icons, the shapes results come in, and
+        # how long it may keep the lists.
+        tl = await c.list_tools()
+        tools = {t.name: t for t in tl.tools}
+        check("every tool has a title and an icon",
+              all(t.title and t.icons for t in tools.values()),
+              [n for n, t in tools.items() if not (t.title and t.icons)])
+        check("structured results say their shape",
+              "candidates" in json.dumps(tools["find_job"].output_schema or {})
+              and tools["render_cv"].output_schema is None)
+        check("the tool list may be cached for an hour", getattr(tl, "ttl_ms", None) == 3_600_000,
+              getattr(tl, "ttl_ms", None))
+        await c.call_tool("add_job", {"company": "Monzo", "title": "SRE", "status": "interviewing"})
+        r = await c.complete(types.PromptReference(type="ref/prompt", name="interview-prep"),
+                             {"name": "application", "value": "mon"})
+        check("a prompt's application completes from the applications",
+              r.completion.values == ["Monzo – SRE"], r.completion.values)
+        r = await c.complete(types.ResourceTemplateReference(type="ref/resource", uri="cvstudio://documents/{+path}"),
+                             {"name": "path", "value": "prof"})
+        check("a resource address completes the documents", "profile/my-cv.yaml" in r.completion.values)
+        seen = []
+
+        async def on_progress(p, total, message):
+            seen.append(message)
+        await c.call_tool("render_cv", {"path": "profile/my-cv.yaml"}, progress_callback=on_progress)
+        check("a render reports its progress", len(seen) >= 2, seen)
         body = lambda r: json.loads(r.content[0].text) if not r.is_error else r.content[0].text
 
         # Resources
@@ -106,6 +135,26 @@ async def main(py: str, ws: Path) -> int:
                 tg.cancel_scope.cancel()
         check("an edit made outside is announced to a subscriber", "ResourceUpdated" in got, got)
         check("and a new document changes the list", "ResourcesListChanged" in got, got)
+
+        # A skill added while connected becomes a prompt, and the client is told.
+        got = []
+        async with c.listen(prompts_list_changed=True) as sub:
+            async def add_skill():
+                await anyio.sleep(2.5)
+                d = home / ".claude" / "skills" / "cv-studio-salary"
+                d.mkdir(parents=True)
+                (d / "SKILL.md").write_text("---\nname: cv-studio-salary\ndescription: Negotiate an "
+                                            "offer.\n---\n\n# Negotiating\n", encoding="utf-8")
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(add_skill)
+                with anyio.move_on_after(12):
+                    async for ev in sub:
+                        got.append(type(ev).__name__)
+                        break
+                tg.cancel_scope.cancel()
+        names = [p.name for p in (await c.list_prompts()).prompts]
+        check("a new skill becomes a prompt, and the client is told",
+              got == ["PromptsListChanged"] and "salary" in names, (got, names))
 
     print(f"\n{fails} failure(s)" if fails else "\nevery 2026-07-28 check passes")
     return 1 if fails else 0

@@ -200,6 +200,8 @@ jobs:
             --hidden-import studio \
             --hidden-import mcp_server \
             --hidden-import mcp_resources \
+            --hidden-import mcp_meta \
+            --hidden-import mcp_schemas \
             --hidden-import ats \
             --hidden-import importer \
             --hidden-import languages \
