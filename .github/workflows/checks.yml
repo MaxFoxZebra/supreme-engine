@@ -93,6 +93,9 @@ jobs:
       - name: Applications as files
         run: python checks/trackertest.py
 
+      - name: The connector and the skills
+        run: python checks/connectortest.py
+
       - name: Search
         run: python checks/searchtest.py
 

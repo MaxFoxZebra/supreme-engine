@@ -8,6 +8,36 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Updating CV Studio no longer disconnects Claude.** On Windows the
+  installer closes the app's background program before replacing it, and
+  the connector Claude Desktop runs was the same program, so every update
+  cut Claude off until it was restarted. The connector now runs from a copy
+  of its own for each version, which an update never touches. After an
+  update the app points Claude, ChatGPT/Codex, Hermes and Vibe at the new
+  copy (each picks it up the next time it starts) and deletes old copies
+  once nothing is running them.
+- **The skills come with the app, and go in in one step.** Applying from a
+  job link, catching the tracker up from your inbox and preparing an
+  interview used to need copying folders or uploading a zip per skill. Now:
+  - **Claude Desktop** takes them as one plugin. Customize → Plugins → Add →
+    Add marketplace, enter `MaxFoxZebra/supreme-engine`, and new versions
+    arrive on their own; or Upload plugin with the single file Settings → AI
+    clients makes. If you uploaded CV Studio skills one by one before,
+    remove those: the plugin replaces them.
+  - **Codex, Mistral Vibe and Hermes** get them in their skills folder when
+    you press Connect, and an update of the app updates them. A folder of the
+    same name you made yourself is never touched.
+  - **Claude Code**: `/plugin marketplace add MaxFoxZebra/supreme-engine`.
+- **The skills are also offered as prompts**, so a client without skills
+  still has them: in Claude Desktop, *Apply to a job*, *Catch up from my
+  inbox* and *Prepare an interview* are under the **+** menu.
+- **Clients know what each tool does.** Every tool has a readable title and
+  says whether it only reads, can overwrite something, or reaches a website,
+  so a client can let the read-only ones through and keep asking about the
+  ones that rewrite a file. The connector shows the app's icon.
+
 ## 0.36.0
 
 - **Applications are files now, one each, so a workspace can follow you to

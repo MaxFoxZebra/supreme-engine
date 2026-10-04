@@ -223,7 +223,15 @@ cannot delete an application, rename one, or overwrite your notes, because no
 tool takes those arguments.
 
 See [MCP.md](MCP.md) for the config and the full tool list. It is the same
-bundled binary run with `--mcp`, so nothing extra to install.
+bundled binary run with `--mcp`, so nothing extra to install. On Windows it
+runs from a copy of its own, so updating CV Studio never cuts off a
+conversation in Claude.
+
+The skills (applying from a job link, catching the tracker up from your inbox,
+preparing an interview) come with the app. Connecting Codex, Mistral Vibe or
+Hermes puts them in that client's skills folder. In Claude Desktop they are
+one plugin: Customize → Plugins → Add → Add marketplace, and enter
+`MaxFoxZebra/supreme-engine`.
 
 ## Why it looks the way it does
 

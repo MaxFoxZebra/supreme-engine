@@ -339,7 +339,7 @@ none of which can use the packaged skills at all.
 Three to start, mirroring the skills that are pure judgement:
 
 - `tailor` -- read the posting, duplicate the base CV, tailor it, check the page
-- `sweep-inbox` -- what `skills/cv-studio-inbox/SKILL.md` already says
+- `sweep-inbox` -- what `plugin/skills/cv-studio-inbox/SKILL.md` already says
 - `interview-prep`
 
 They cost nothing at rest: prompts are listed, not injected, until invoked.

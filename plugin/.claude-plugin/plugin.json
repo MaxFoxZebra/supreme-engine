@@ -1,0 +1,7 @@
+{
+  "name": "cv-studio",
+  "description": "Skills for CV Studio: from a job link to a tailored CV and letter, catching the tracker up from your mail and calendar, and preparing an interview. They work through the CV Studio connector, which the app sets up.",
+  "author": { "name": "CV Studio" },
+  "homepage": "https://github.com/MaxFoxZebra/supreme-engine",
+  "keywords": ["cv", "resume", "job search", "cover letter", "interview"]
+}

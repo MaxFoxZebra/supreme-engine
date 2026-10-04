@@ -996,8 +996,10 @@ function fillAIPanel(){
     try{
       const r=await post("/api/ai/connect",{client:b.dataset.connect});
       await loadAI();
-      toast(r.action==="unchanged" ? t("Already set up.")
-        : t("{c} is connected.",{c:c?c.label:"CV Studio"})+" "+tx(r.restart||""));
+      const sk=r.skills&&r.skills.installed&&r.skills.installed.length
+        ? " "+t("Its skills are installed too.") : "";
+      toast((r.action==="unchanged" ? t("Already set up.")
+        : t("{c} is connected.",{c:c?c.label:"CV Studio"})+" "+tx(r.restart||""))+sk);
     }catch(e){ toast(e.message,true); await loadAI() }
   });
   /* Not a reveal: these files live outside the workspace, and /api/reveal is
@@ -1014,39 +1016,59 @@ function fillAIPanel(){
   paintAILog();
   loadSkills();
 }
-/* Claude Code already reads these off disk; the desktop app cannot, so the
-   button packages them for upload rather than pretending to install them. */
+/* The skills ship with the app. Claude Desktop takes them as one plugin, from
+   the repository or a file; the clients that read a skills folder get them
+   copied there, by Connect or by the buttons here. */
 async function loadSkills(){
   try{ S.skills=await api("/api/skills") }catch(e){ S.skills=null }
   paintSkills();
 }
 function paintSkills(){
-  const d=S.skills, list=(d&&d.skills)||[];
+  const d=S.skills||{}, list=d.skills||[];
   $("#s-skills").innerHTML=list.length
-    ? list.map(k=>'<div><span class="nm">'+esc(k.name)+'</span>'+
-        '<span class="ds">'+esc(k.description)+'</span>'+
-        '<span class="tag'+(k.needs_mcp?" mcp":"")+'">'+
-        (k.needs_mcp?"needs the tools":"travels as is")+'</span></div>').join("")
-    : '<div><span class="ds">None found'+(d?" in "+esc(d.source):"")+
-      '. They come with the Claude Code setup.</span></div>';
-  const packed=list.some(k=>k.packaged);
-  $("#s-skill-show").hidden=!packed;
-  $("#s-skill-steps").hidden=!packed;
-  const pack=$("#s-skill-pack");
+    /* Their names and descriptions are the skills' own words, in English
+       like the skills themselves: not interface text to translate. */
+    ? list.map(k=>'<div data-noi18n><span class="nm">'+esc(k.name)+'</span>'+
+        '<span class="ds" title="'+esc(k.description)+'">'+esc(k.description)+'</span></div>').join("")
+    : '<div><span class="ds">This build has no skills.</span></div>';
+  const pack=$("#s-skill-pack"), show=$("#s-skill-show");
+  show.hidden=!d.plugin;
   pack.disabled=!list.length;
-  pack.textContent=packed?"Package again":"Package for Claude Desktop";
+  pack.textContent=d.plugin?"Make it again":"Make the plugin file";
   pack.onclick=async()=>{
-    pack.disabled=true; pack.textContent="Packaging…";
+    pack.disabled=true;
     try{
       const r=await post("/api/skills/package",{});
       await loadSkills();
-      toast(t("{n} skill(s) ready to upload in {dir}",{n:r.skills.length,dir:r.dir}));
+      toast(t("{file} is ready in {dir}. Upload it in Claude.",{file:"cv-studio.plugin",dir:r.dir}));
     }catch(e){ toast(e.message,true); await loadSkills() }
   };
-  $("#s-skill-show").onclick=async()=>{
-    try{ await post("/api/reveal",{path:(S.skills&&S.skills.out_dir)||""}) }
+  show.onclick=async()=>{
+    try{ await post("/api/reveal",{path:d.plugin||d.out_dir||""}) }
     catch(e){ toast(e.message,true) }
   };
+  $("#s-mk-copy").onclick=async()=>{
+    try{ await navigator.clipboard.writeText(d.marketplace||$("#s-mk").textContent); toast("Copied") }
+    catch(e){ toast("Select the path and copy manually",true) }
+  };
+  const SAY={installed:"Installed",outdated:"An older version",absent:"Not installed"};
+  const DO={installed:"Install again",outdated:"Update",absent:"Install"};
+  $("#s-skill-clients").innerHTML=Object.entries(d.clients||{}).map(([id,c])=>
+    '<div><span class="nm">'+esc((aiClient(id)||{}).label||id)+'</span>'+
+    '<span class="ds"><span>'+SAY[c.state]+'</span>'+
+    ' <span class="mono" title="'+esc(c.dir)+'" data-noi18n>'+esc(shortPath(c.dir))+'</span></span>'+
+    '<button class="obtn" data-skills-for="'+esc(id)+'">'+DO[c.state]+'</button></div>').join("");
+  $$("#s-skill-clients [data-skills-for]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.skillsFor;
+    b.disabled=true;
+    try{
+      const r=await post("/api/skills/install",{client:id});
+      await loadSkills();
+      toast(r.kept_yours&&r.kept_yours.length
+        ? t("Installed. Left your own {names} as they were.",{names:r.kept_yours.join(", ")})
+        : t("Skills installed for {c}.",{c:(aiClient(id)||{}).label||id}));
+    }catch(e){ toast(e.message,true); await loadSkills() }
+  });
 }
 /* Which tool calls changed something. The prose above this log warns that
    these write immediately and there is no undo, so the log has to tell the two

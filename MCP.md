@@ -159,30 +159,29 @@ you. That one is a rule in prose, not a lock in the code.
 
 ### Applying, as a skill
 
-`skills/cv-studio-apply/SKILL.md` takes a job link to an application ready to
+`plugin/skills/cv-studio-apply/SKILL.md` takes a job link to an application ready to
 send: it adds the job with the posting read from the board, copies the base CV
 in the posting's language and tailors it (never adding experience), checks it
 renders and passes the ATS check, attaches it, then writes and attaches a
 cover letter. Adding a job without the skill gets the same steps from the
 server's instructions and from `add_job`'s `next`, but the skill carries the
-judgement: what to reorder, what to cut, what a letter says. Copy the folder
-into `~/.claude/skills/`, or package it for Claude Desktop under Settings.
+judgement: what to reorder, what to cut, what a letter says. See
+[Skills](#skills) for how it reaches each client.
 
 ### Interview prep, as a skill
 
-`skills/cv-studio-interview-prep/SKILL.md` is how a coach would prepare a round:
+`plugin/skills/cv-studio-interview-prep/SKILL.md` is how a coach would prepare a round:
 read the posting and the CV that was actually sent, write the questions this
 round will bring, match every ask of the posting to a line of the CV (or say it
 is a gap), and suggest questions to ask back, all saved with
-`save_interview_prep` so the user rehearses them in the app. Copy it into
-`~/.claude/skills/` and ask "prepare my Monzo interview".
+`save_interview_prep` so the user rehearses them in the app. Ask "prepare my
+Monzo interview".
 
 ### The sweep, as a skill
 
-`skills/cv-studio-inbox/SKILL.md` in this repository is the procedure: what to
+`plugin/skills/cv-studio-inbox/SKILL.md` in this repository is the procedure: what to
 read, how to match a message to an application, what each kind of reply means,
-and when to ask rather than write. Copy the folder into `~/.claude/skills/` and
-ask Claude to catch your applications up.
+and when to ask rather than write. Ask Claude to catch your applications up.
 
 Without it the tools still work and the server's own instructions still carry
 the three rules that matter. The skill is what saves you explaining the workflow
@@ -395,38 +394,58 @@ state of each.
 
 ## Skills
 
-The MCP tools are the *doing*; the skills are the judgement around it: reading
-a posting, tailoring from a master profile, letters, interview prep. They are
-delivered differently in each place, which is worth knowing before you go
-looking for them:
+The MCP tools are the *doing*; the skills are the procedure around it: from a
+job link to an application, the tracker caught up from the inbox, an interview
+prepared. They ship with the app as a Claude plugin (`plugin/` in this
+repository, bundled beside the server), and reach each client the way that
+client reads skills:
 
-| | MCP tools | Skills |
-|---|---|---|
-| **Claude Code** | configure as above | read straight off disk from `~/.claude/skills/` |
-| **Claude Desktop** | configure as above | uploaded to your account, not read from disk |
+| | Skills |
+|---|---|
+| **Claude Desktop** | One plugin, added once. Customize → Plugins → Add → **Add marketplace** and enter `MaxFoxZebra/supreme-engine` (new versions arrive on their own), or **Upload plugin** with the `cv-studio.plugin` file **Settings → AI clients → Skills → Make the plugin file** writes. |
+| **Codex** | Copied into `~/.agents/skills/` when you connect it. |
+| **Mistral Vibe** | Copied into `~/.vibe/skills/` when you connect it. |
+| **Hermes Agent** | Copied into the `skills/` folder in Hermes' home when you connect it. |
+| **Claude Code** | `/plugin marketplace add MaxFoxZebra/supreme-engine`, then `/plugin install cv-studio@cv-studio`. |
 
-There is no folder you can drop a skill into for the desktop app, so CV Studio
-cannot install them for you. What it can do is package them: **Settings → AI
-clients → Skills → Package for Claude Desktop** writes one upload-ready `.zip`
-per skill into `assets/skills/` in your workspace. Then, in the desktop app,
-Customize → Skills → **+** and upload each one.
+The app keeps the copies it made current after an update, and never replaces a
+folder of the same name you made yourself; each of its own carries an
+`.installed-by-cv-studio` marker. The plugin carries only the skills: the
+connector stays in Claude Desktop's config, because a local server bundled in a
+plugin runs in Cowork and Claude Code but not in chat.
 
-**A skill that runs a local script cannot work in the desktop app.** Skills
-there execute in Claude's sandbox: no workspace on disk, no Python, no
-`127.0.0.1:8722`. Four of the seven are built that way, and the packaged copy of
-each gets a section appended pointing at the MCP tool that does the same job:
-`render_cv` instead of a render script, `edit_cv_fields` instead of writing
-YAML, and so on. The originals in `~/.claude/skills/` are never modified. The
-other three are pure judgement and travel unchanged.
+If you uploaded CV Studio skills to Claude one at a time before, remove them
+under Customize → Skills: the plugin replaces them.
 
-## On the command line
+**The skills are prompts too.** The server offers each one as an MCP prompt
+(*Apply to a job*, *Catch up from my inbox*, *Prepare an interview*), so a
+client without skills still has them: in Claude Desktop under the **+** menu,
+and wherever else a client lists a server's prompts.
 
-The same server works with Claude Code and the Codex CLI, configured the same
-way. Claude Code users get more than the MCP tools: the `~/.claude/skills/`
-directory in this project holds skills for the whole job-search workflow:
-analysing a posting, tailoring a CV from a master profile, writing cover
-letters, tracking applications and interview prep. The MCP server covers CV
-editing and rendering; the skills cover the judgement around it.
+## What a client is told about each tool
+
+Every tool has a title and the standard hints: whether it only reads, whether
+it can overwrite something (`write_cv`, a status change) or only adds (a new
+CV, a new application), whether calling it twice changes anything more, and
+whether it reaches a website (`add_job`, `read_posting`, `set_company_logo`).
+Clients use these to decide what to ask permission for, so the read-only tools
+can be allowed once and the ones that rewrite a file keep asking. The server
+also gives its name, version and the app's icon.
+
+## The connector keeps running through an update
+
+An AI client starts the connector itself and keeps it running as long as the
+client is open. On Windows the installer has to close everything running from
+the app's folder before it can replace the files, and that used to include the
+connector Claude Desktop was using: it stayed disconnected until Claude was
+restarted. Now the connector runs from a copy of its own, one per version, in
+`%LOCALAPPDATA%\CV Studio\mcp\<version>\cv-studio-mcp.exe`. An update never
+touches it. When the app starts after an update it makes the new version's
+copy, points every client that runs one of its connectors at it (keeping each
+one's workspace and every other server in the file), and deletes old copies
+once nothing runs from them. A client picks up the new version the next time
+it starts. On macOS and Linux a running program's files can be replaced, so the
+connector runs from the app as it always did.
 
 ## Updates
 

@@ -1,0 +1,11 @@
+{
+  "name": "cv-studio",
+  "owner": { "name": "CV Studio" },
+  "plugins": [
+    {
+      "name": "cv-studio",
+      "source": "./plugin",
+      "description": "Skills for CV Studio: tailored applications from a job link, the tracker kept in step with your inbox, and interview prep."
+    }
+  ]
+}

@@ -167,6 +167,7 @@ PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
   --name cv-studio-server \
   --add-data "static${SEP}static" \
   --add-data "themes${SEP}themes" \
+  --add-data "../plugin${SEP}plugin" \
   --collect-all rendercv \
   --collect-all rendercv_fonts \
   --collect-all typst \

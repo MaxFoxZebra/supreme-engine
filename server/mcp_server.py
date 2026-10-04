@@ -19,16 +19,35 @@ import base64
 import functools
 import inspect
 from pathlib import Path
+from typing import Annotated
+
+from pydantic import Field
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ImageContent
+from mcp.server.mcpserver.prompts.base import Prompt
+from mcp.types import Icon, ImageContent, ToolAnnotations
 
 import review
 import studio
 from cv_render import render_file
 
+def _icons() -> list[Icon]:
+    """The app's mark, inline: a client shows it beside the connector and its
+    tools, and an inline image needs no network to show."""
+    try:
+        mark = (Path(__file__).resolve().parent / "static" / "brand-mark.png").read_bytes()
+    except OSError:
+        return []
+    return [Icon(src="data:image/png;base64," + base64.b64encode(mark).decode(),
+                 mime_type="image/png", sizes=["64x64"])]
+
+
 mcp = MCPServer(
     name="cv-studio",
+    title="CV Studio",
+    version=studio.VERSION,
+    website_url="https://github.com/MaxFoxZebra/supreme-engine",
+    icons=_icons(),
     instructions=(
         "Read, edit and render CVs in the user's CV Studio workspace.\n\n"
         "CVs are RenderCV YAML files. Two rules save most failures:\n"
@@ -157,6 +176,44 @@ READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info"}
 
+# What a client shows for each tool, and what it may assume of it. Claude
+# Desktop and others use the hints to decide what to ask permission for:
+# a read-only tool can be allowed once for good, a destructive one is the
+# one worth a second look. Every tool not read-only is destructive unless it
+# only ever adds (a new CV, a new application); idempotent ones give the same
+# result called twice; open-world ones reach a website.
+TITLES = {
+    "list_cvs": "List CVs and letters", "read_cv": "Read a CV",
+    "write_cv": "Replace a CV", "edit_cv_fields": "Edit fields of a CV",
+    "create_cv": "Create a CV", "render_cv": "Render a page",
+    "set_company_logo": "Set a company's logo", "list_jobs": "List applications",
+    "read_job": "Read an application", "find_job": "Find an application",
+    "job_alerts": "What needs attention", "calendar": "Interviews and follow-ups",
+    "set_job_status": "Change an application's status",
+    "update_job_tracking": "Update an application", "save_person": "Save a contact",
+    "get_interview_prep": "Read interview prep", "save_interview_prep": "Save interview prep",
+    "add_job": "Add an application", "read_posting": "Read a job posting",
+    "ats_check": "Check how an ATS reads a CV", "create_letter": "Start a cover letter",
+    "write_letter": "Write a cover letter", "add_language": "Translate a CV",
+    "translation_status": "What a translation is missing",
+    "mark_translation_current": "Mark a translation up to date",
+    "design_options": "Themes, fonts and page sizes", "workspace_info": "About the workspace",
+}
+ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
+IDEMPOTENT = {"write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
+              "save_interview_prep", "write_letter", "mark_translation_current"}
+OPEN_WORLD = {"add_job", "read_posting", "set_company_logo"}
+
+
+def _annotations(name: str) -> ToolAnnotations:
+    ro = name in READ_ONLY
+    return ToolAnnotations(
+        title=TITLES.get(name),
+        read_only_hint=ro,
+        destructive_hint=None if ro else name not in ADDITIVE,
+        idempotent_hint=True if ro else name in IDEMPOTENT,
+        open_world_hint=name in OPEN_WORLD)
+
 
 def _snapshot() -> dict:
     out = {}
@@ -246,7 +303,8 @@ def tool(fn):
     ])
     wrapper.__annotations__ = {**getattr(fn, "__annotations__", {}),
                                "cvs_ctx": Context}
-    return mcp.tool()(wrapper)
+    return mcp.tool(title=TITLES.get(fn.__name__),
+                    annotations=_annotations(fn.__name__))(wrapper)
 
 
 @tool
@@ -1148,6 +1206,32 @@ def workspace_info() -> dict:
                    "tools, which keep the status history and the app in step. "
                    "They also export to JSON and CSV.",
     }
+
+
+# The skills, offered as prompts too. A client that reads skills has them
+# already (the app installs them); one that does not -- ChatGPT, or Claude
+# Desktop before the plugin is added -- still lists these, in Claude Desktop
+# under the + menu, and picking one hands the model the same procedure.
+PROMPT_TITLES = {"cv-studio-apply": "Apply to a job",
+                 "cv-studio-inbox": "Catch up from my inbox",
+                 "cv-studio-interview-prep": "Prepare an interview"}
+
+
+def _skill_prompt(skill: dict):
+    def prompt(request: Annotated[str, Field(
+            description="What you want, in your words: a job link, a company, "
+                        "an interview (optional)")] = "") -> str:
+        ask = request.strip()
+        return skill["body"] + ("\n\n---\n\nWhat the user asked: " + ask if ask else "")
+    return Prompt.from_function(
+        prompt, name=skill["name"],
+        title=PROMPT_TITLES.get(skill["name"])
+        or skill["name"].replace("cv-studio-", "").replace("-", " ").capitalize(),
+        description=skill["description"])
+
+
+for _skill in studio.skill_texts():
+    mcp.add_prompt(_skill_prompt(_skill))
 
 
 def main(workspace: str | None = None, client: str | None = None) -> int:

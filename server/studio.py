@@ -120,7 +120,8 @@ def server_launch() -> dict:
     itself; a source checkout needs the interpreter plus the script path.
     """
     if getattr(sys, "frozen", False):
-        return {"command": str(Path(sys.executable).resolve()), "args": []}
+        own = mcp_copy_target()
+        return {"command": str(own or Path(sys.executable).resolve()), "args": []}
     # server_main.py, not this file: --mcp is routed there, and studio.py's own
     # argument parser rejects it outright. Pointing a client at the wrong one
     # produces a server that exits before it says hello.
@@ -598,7 +599,10 @@ def ai_status(client: str, seen: dict | None = None) -> dict:
                  else str(DEFAULT_WORKSPACE))
     out["command"] = str(entry["command"])
     out["workspace"] = workspace
-    if not _same_file(out["command"], want["command"]):
+    # An older copy of this same app (the installed server, or the copy of a
+    # version before) is not "another CV Studio": the app moves it to this
+    # version's copy when it starts.
+    if not _same_file(out["command"], want["command"]) and not _ours(out["command"]):
         out["state"] = "elsewhere"
     elif not _same_file(workspace, str(WORKSPACE)):
         out["state"] = "other-workspace"
@@ -612,8 +616,9 @@ def ai_clients() -> list[dict]:
     return [ai_status(client, seen) for client in AI_CLIENTS]
 
 
-def ai_connect(client: str) -> dict:
-    """Add this workspace to a client's config, leaving the rest alone.
+def _write_entry(client: str, want: dict) -> dict | None:
+    """Put `want` in a client's config, leaving the rest alone, and return
+    what was there before.
 
     People keep other servers in these files, so each is read, merged and
     written back rather than replaced -- and backed up first. A file that is
@@ -622,12 +627,8 @@ def ai_connect(client: str) -> dict:
     is made in the text, the result is read back and checked before it is
     allowed to stand.
     """
-    if client not in AI_CLIENTS:
-        raise ValueError(f"unknown client: {client}")
     spec = AI_CLIENTS[client]
     path = ai_config_path(client)
-    want = ai_entry(client)
-
     before, backup = None, None
     if path.is_file():
         try:
@@ -640,7 +641,7 @@ def ai_connect(client: str) -> dict:
         backup = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup)
     if before == want:
-        return {"ok": True, "action": "unchanged", **ai_status(client)}
+        return before
 
     path.parent.mkdir(parents=True, exist_ok=True)
     spec["write"](path, want)
@@ -655,49 +656,191 @@ def ai_connect(client: str) -> dict:
         raise ValueError(
             f"Writing to {path} did not produce the entry it should have, so "
             "the file has been put back as it was. Add it by hand instead.")
-    return {"ok": True, "action": "updated" if before else "added",
-            **ai_status(client)}
+    return before
+
+
+def ai_connect(client: str) -> dict:
+    """Add this workspace to a client's config, and the skills to the
+    client's skills folder when it reads them from one."""
+    if client not in AI_CLIENTS:
+        raise ValueError(f"unknown client: {client}")
+    ensure_mcp_copy()
+    want = ai_entry(client)
+    before = _write_entry(client, want)
+    skills = install_skills(client) if client_skills_dir(client) else None
+    action = "unchanged" if before == want else "updated" if before else "added"
+    return {"ok": True, "action": action, "skills": skills, **ai_status(client)}
+
+
+# --------------------------------------------------------------------------
+# The connector's own copy
+#
+# An AI client starts the connector itself and keeps it running for as long as
+# the client is open, which can be days. On Windows a running program's files
+# cannot be replaced, so the installer closes every cv-studio-server.exe before
+# an update -- and that used to include the one Claude Desktop was talking to,
+# which then stayed dead until Claude was restarted. So on Windows the
+# connector runs from a copy of its own, one folder per version beside the
+# app's data, under a name of its own (cv-studio-mcp.exe, which the
+# installer's taskkill does not match). An update never touches it. When the
+# app starts after one, it makes the new version's copy and points each
+# client at it, which the client picks up the next time it starts; a copy
+# nothing is running any more is deleted.
+#
+# Elsewhere a running program's files can be replaced under it, so the
+# connector runs from the app as it always did.
+# --------------------------------------------------------------------------
+
+MCP_COPY_EXE = "cv-studio-mcp.exe"
+_mcp_copy_lock = threading.Lock()
+
+
+def mcp_copy_root() -> Path:
+    return backup_dir() / "mcp"
+
+
+def _mcp_copy_wanted() -> bool:
+    if os.environ.get("CVSTUDIO_MCP_COPY") == "1":         # the checks, anywhere
+        return True
+    return getattr(sys, "frozen", False) and sys.platform == "win32"
+
+
+def mcp_copy_target() -> Path | None:
+    """Where this version's connector runs from, or None where it runs from
+    the app itself."""
+    if not _mcp_copy_wanted():
+        return None
+    return mcp_copy_root() / VERSION / MCP_COPY_EXE
+
+
+def ensure_mcp_copy() -> Path | None:
+    """This version's copy of the connector, made if it is not there yet.
+
+    Made beside where it goes and renamed into place, with a marker written
+    last, so a copy cut short (the app closed halfway) is never mistaken for a
+    whole one.
+    """
+    target = mcp_copy_target()
+    if target is None:
+        return None
+    done = target.parent / ".complete"
+    if done.is_file() and target.is_file():
+        return target
+    with _mcp_copy_lock:
+        if done.is_file() and target.is_file():
+            return target
+        exe = Path(sys.executable).resolve()
+        part = target.parent.with_name(f".{target.parent.name}.part-{os.getpid()}")
+        shutil.rmtree(part, ignore_errors=True)
+        shutil.copytree(exe.parent, part)
+        (part / exe.name).replace(part / MCP_COPY_EXE)
+        (part / ".complete").write_text(VERSION, encoding="utf-8")
+        if target.parent.exists():
+            shutil.rmtree(target.parent, ignore_errors=True)
+        part.replace(target.parent)
+    return target
+
+
+def _ours(command: str) -> bool:
+    """Whether a configured command is this app's connector: the app's own
+    server, or one of the per-version copies."""
+    if _same_file(command, sys.executable):
+        return True
+    try:
+        root = os.path.normcase(os.path.realpath(mcp_copy_root()))
+        return os.path.normcase(os.path.realpath(command)).startswith(root + os.sep)
+    except OSError:
+        return False
+
+
+def refresh_connectors() -> dict:
+    """After an update: point every client that runs one of this app's
+    connectors at this version's copy, keeping its workspace and arguments,
+    bring the skills installed for it up to date, and delete the copies
+    nothing points at or runs."""
+    target = ensure_mcp_copy()
+    moved, skills = [], {}
+    for client, spec in AI_CLIENTS.items():
+        path = ai_config_path(client)
+        try:
+            entry = spec["read"](path) if path.is_file() else None
+        except Exception:
+            continue
+        if not entry or not entry.get("command") or not _ours(str(entry["command"])):
+            continue
+        if target is not None and not _same_file(str(entry["command"]), str(target)):
+            try:
+                _write_entry(client, {"command": str(target),
+                                      "args": [str(a) for a in entry.get("args") or []]})
+                moved.append(client)
+            except ValueError as exc:
+                print(f"could not re-point {client}: {exc}", file=sys.stderr)
+        if client_skills_dir(client):
+            skills[client] = install_skills(client, only_ours=True)
+    pruned = []
+    root = mcp_copy_root()
+    if target is not None and root.is_dir():
+        for d in root.iterdir():
+            if d == target.parent or not d.is_dir():
+                continue
+            # A folder with a running program in it cannot be renamed on
+            # Windows, so a rename that works is the proof nothing runs from
+            # it: deleting file by file could leave a running connector
+            # without the fonts it renders with.
+            gone = d.with_name(f".gone-{d.name}-{os.getpid()}")
+            try:
+                d.replace(gone)
+            except OSError:
+                continue
+            shutil.rmtree(gone, ignore_errors=True)
+            pruned.append(d.name)
+    return {"moved": moved, "pruned": pruned, "skills": skills}
+
+
+def start_connector_refresh() -> None:
+    def run() -> None:
+        try:
+            r = refresh_connectors()
+            if r["moved"] or r["pruned"]:
+                print(f"connectors: re-pointed {r['moved'] or 'none'}, "
+                      f"removed old copies {r['pruned'] or 'none'}")
+        except Exception as exc:        # never take the app down over this
+            print(f"connector refresh failed: {exc}", file=sys.stderr)
+    threading.Thread(target=run, daemon=True).start()
 
 
 # --------------------------------------------------------------------------
 # Skills
 #
-# Claude Code reads skills off the filesystem; Claude Desktop does not -- there
-# they are uploaded to the account as a zip and synced back down. So the most
-# this app can honestly do is hand over archives that are ready to upload.
+# The procedures around the tools: from a job link to an application, the
+# tracker caught up from the inbox, an interview prepared. They ship with the
+# app as a Claude plugin (plugin/ in the repository, bundled beside the
+# server), and reach each client the way that client reads skills:
 #
-# The split that matters: a skill of pure judgement travels as it is, while one
-# that shells out to a local script cannot work in Desktop's sandbox at all.
-# Those get an appended note pointing at the MCP tools, which are how the same
-# work gets done over there.
+# - Codex, Mistral Vibe and Hermes read a skills folder beside their config,
+#   so connecting one copies them there, and the app keeps that copy current
+#   after an update. Only folders it put there itself are ever replaced or
+#   removed; each carries a marker saying so.
+# - Claude Desktop keeps skills in the account, not on disk. It takes them as
+#   one plugin, uploaded once, or follows this repository as a plugin
+#   marketplace and updates itself. The connector stays in its config rather
+#   than in the plugin: a local server bundled in a plugin runs in Cowork and
+#   Claude Code but not in chat.
 # --------------------------------------------------------------------------
 
-SKILLS_DIR = Path.home() / ".claude" / "skills"
-SKILL_PREFIX = "cv-studio"
+MARKETPLACE = "MaxFoxZebra/supreme-engine"
+SKILL_MARK = ".installed-by-cv-studio"
+PLUGIN_FILE = "cv-studio.plugin"
 SKILL_JUNK = ("__pycache__", ".pyc", ".pyo", ".DS_Store")
 
-DESKTOP_NOTE = """
 
----
-
-## Running inside the Claude Desktop app
-
-This copy was packaged by CV Studio. In the desktop app a skill has no local
-filesystem, no Python and no localhost, so any command above that runs a script
-or opens `127.0.0.1` cannot work here. **Use the `cv-studio` MCP tools instead**
--- they do the same work in the user's real workspace:
-
-| Instead of | Use |
-|---|---|
-| running a render script | `render_cv` -- renders and returns the page as an image to look at |
-| reading or writing a YAML file | `read_cv`, `edit_cv_fields` (keeps comments), `write_cv` |
-| creating or duplicating a document | `create_cv` |
-| listing the workspace | `list_cvs`, `workspace_info` |
-| checking available themes or fonts | `design_options` |
-
-If those tools are not present, say so rather than guessing: the user needs to
-connect CV Studio under Settings, Developer, Edit config.
-"""
+def plugin_dir() -> Path | None:
+    """The bundled plugin: beside the frozen server, or in the checkout."""
+    here = Path(__file__).resolve().parent
+    for base in (getattr(sys, "_MEIPASS", None), here, here.parent):
+        if base and (Path(base) / "plugin" / ".claude-plugin" / "plugin.json").is_file():
+            return Path(base) / "plugin"
+    return None
 
 
 def _front_matter(text: str) -> dict:
@@ -718,61 +861,155 @@ def _front_matter(text: str) -> dict:
     return out
 
 
-# A skill that runs something local cannot do that inside Desktop's sandbox.
-LOCAL_DEP = re.compile(r"127\.0\.0\.1|localhost|~/\.claude/skills|python .*scripts/|uv run")
-
-
 def skill_folders() -> list[Path]:
-    if not SKILLS_DIR.is_dir():
+    d = plugin_dir()
+    if d is None or not (d / "skills").is_dir():
         return []
-    return sorted(d for d in SKILLS_DIR.iterdir()
-                  if d.is_dir() and d.name.startswith(SKILL_PREFIX)
-                  and (d / "SKILL.md").is_file())
+    return sorted(f for f in (d / "skills").iterdir() if (f / "SKILL.md").is_file())
 
 
-def skills_list() -> dict:
+def skill_texts() -> list[dict]:
+    """Each skill's name, description and body, for the list and for the
+    MCP prompts that offer them to clients without skills."""
     out = []
     for d in skill_folders():
         text = (d / "SKILL.md").read_text(encoding="utf-8", errors="replace")
         fm = _front_matter(text)
-        zipped = WORKSPACE / "assets" / "skills" / f"{d.name}.zip"
-        out.append({
-            "name": fm.get("name") or d.name,
-            "description": (fm.get("description") or "")[:220],
-            "needs_mcp": bool(LOCAL_DEP.search(text)),
-            "packaged": zipped.is_file(),
-            "path": rel(zipped) if zipped.is_file() else None,
-        })
-    return {"skills": out, "source": str(SKILLS_DIR),
-            "out_dir": rel(WORKSPACE / "assets" / "skills")}
+        end = text.find("\n---", 3) if text.startswith("---") else -1
+        out.append({"name": fm.get("name") or d.name, "folder": d.name,
+                    "description": fm.get("description") or "",
+                    "body": text[end + 4:].lstrip() if end >= 0 else text})
+    return out
+
+
+def _skills_digest() -> str:
+    h = hashlib.sha1()
+    for d in skill_folders():
+        for f in sorted(d.rglob("*")):
+            if f.is_file() and not any(j in str(f) for j in SKILL_JUNK):
+                h.update(f.relative_to(d.parent).as_posix().encode())
+                h.update(f.read_bytes())
+    return h.hexdigest()[:12]
+
+
+def client_skills_dir(client: str) -> Path | None:
+    """The folder a client reads skills from, or None for Claude Desktop,
+    which keeps them in the account.
+
+    Codex reads ~/.agents/skills (~/.codex/skills is its legacy place, still
+    read but on the way out), Vibe ~/.vibe/skills, and Hermes the skills/
+    folder in its home, which is where its config is.
+    """
+    if client not in ("openai", "mistral", "hermes"):
+        return None
+    override = os.environ.get(f"CVSTUDIO_{client.upper()}_SKILLS")
+    if override:
+        return Path(override)
+    if client == "openai":
+        return Path.home() / ".agents" / "skills"
+    return ai_config_path(client).parent / "skills"
+
+
+def skills_state(client: str) -> str | None:
+    """installed, outdated, absent, or None for a client without a folder.
+    A folder the user made under one of the names counts as theirs, not as
+    missing."""
+    d = client_skills_dir(client)
+    if d is None:
+        return None
+    want = _skills_digest()
+    seen = []
+    for f in skill_folders():
+        mark = d / f.name / SKILL_MARK
+        if mark.is_file():
+            seen.append("ok" if mark.read_text(encoding="utf-8").strip() == want else "old")
+        else:
+            seen.append("yours" if (d / f.name).exists() else "missing")
+    if not seen or all(x in ("missing", "yours") for x in seen) and "missing" in seen:
+        return "absent"
+    return "outdated" if any(x in ("old", "missing") for x in seen) else "installed"
+
+
+def install_skills(client: str, only_ours: bool = False) -> dict:
+    """Copy the skills into a client's skills folder.
+
+    A folder of the same name the user made themselves is left alone, and
+    said so. `only_ours` is the update after an app update: it refreshes
+    copies this app made and adds none, so a client someone removed them
+    from stays without.
+    """
+    d = client_skills_dir(client)
+    if d is None:
+        return {"state": None}
+    want = _skills_digest()
+    names = {f.name for f in skill_folders()}
+    done, kept = [], []
+    for src in skill_folders():
+        dest = d / src.name
+        if dest.exists() and not (dest / SKILL_MARK).is_file():
+            kept.append(src.name)
+            continue
+        if only_ours and not dest.exists():
+            continue
+        if (dest / SKILL_MARK).is_file() and \
+                (dest / SKILL_MARK).read_text(encoding="utf-8").strip() == want:
+            continue
+        d.mkdir(parents=True, exist_ok=True)
+        part = d / f".{src.name}.part-{os.getpid()}"
+        shutil.rmtree(part, ignore_errors=True)
+        shutil.copytree(src, part, ignore=shutil.ignore_patterns(
+            "__pycache__", "*.pyc", "*.pyo", ".DS_Store"))
+        (part / SKILL_MARK).write_text(want + "\n", encoding="utf-8")
+        if dest.exists():
+            shutil.rmtree(dest)
+        part.replace(dest)
+        done.append(src.name)
+    # A skill this app installed that it no longer ships.
+    if d.is_dir():
+        for old in d.iterdir():
+            if old.name.startswith("cv-studio") and old.name not in names \
+                    and (old / SKILL_MARK).is_file():
+                shutil.rmtree(old, ignore_errors=True)
+    return {"state": skills_state(client), "installed": done, "kept_yours": kept,
+            "dir": str(d)}
+
+
+def skills_list() -> dict:
+    return {"skills": [{"name": k["name"], "description": k["description"][:220]}
+                       for k in skill_texts()],
+            "clients": {c: {"state": skills_state(c), "dir": str(client_skills_dir(c))}
+                        for c in AI_CLIENTS if client_skills_dir(c)},
+            "plugin": rel(WORKSPACE / "assets" / "claude" / PLUGIN_FILE)
+            if (WORKSPACE / "assets" / "claude" / PLUGIN_FILE).is_file() else None,
+            "out_dir": rel(WORKSPACE / "assets" / "claude"),
+            "marketplace": MARKETPLACE}
 
 
 def package_skills() -> dict:
-    """Write one upload-ready zip per skill into the workspace."""
-    folders = skill_folders()
-    if not folders:
-        raise ValueError(
-            f"No CV Studio skills found in {SKILLS_DIR}. They ship with the "
-            "Claude Code setup; there is nothing to package without them.")
-    dest = WORKSPACE / "assets" / "skills"
+    """The plugin as one file for Claude Desktop: Customize, Plugins, Add,
+    Upload plugin. Stamped with this version, so a new upload replaces the
+    old one rather than sitting beside it."""
+    src = plugin_dir()
+    if src is None or not skill_folders():
+        raise ValueError("This build has no skills to package.")
+    dest = WORKSPACE / "assets" / "claude"
     dest.mkdir(parents=True, exist_ok=True)
-    made = []
-    for d in folders:
-        text = (d / "SKILL.md").read_text(encoding="utf-8", errors="replace")
-        needs = bool(LOCAL_DEP.search(text))
-        target = dest / f"{d.name}.zip"
-        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in sorted(d.rglob("*")):
-                if not f.is_file() or any(j in str(f) for j in SKILL_JUNK):
-                    continue
-                arc = Path(d.name) / f.relative_to(d)
-                if f.name == "SKILL.md" and needs:
-                    z.writestr(str(arc).replace("\\", "/"), text + DESKTOP_NOTE)
-                else:
-                    z.write(f, str(arc).replace("\\", "/"))
-        made.append({"name": d.name, "path": rel(target), "needs_mcp": needs,
-                     "kb": round(target.stat().st_size / 1024, 1)})
-    return {"ok": True, "dir": rel(dest), "skills": made}
+    target = dest / PLUGIN_FILE
+    manifest = json.loads((src / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    manifest["version"] = VERSION
+    part = target.with_name(target.name + ".part")
+    with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(".claude-plugin/plugin.json", json.dumps(manifest, indent=2) + "\n")
+        for f in sorted(src.rglob("*")):
+            arc = f.relative_to(src).as_posix()
+            if not f.is_file() or arc.startswith(".claude-plugin/") \
+                    or any(j in arc for j in SKILL_JUNK):
+                continue
+            z.write(f, arc)
+    part.replace(target)
+    return {"ok": True, "path": rel(target), "dir": rel(dest),
+            "skills": [k["name"] for k in skill_texts()],
+            "kb": round(target.stat().st_size / 1024, 1)}
 
 
 def note_mcp_activity(tool: str, path: str | None = None, ok: bool = True,
@@ -3788,10 +4025,15 @@ def openapi_spec() -> dict:
                                                 "enum": list(AI_CLIENTS)}}),
                 "responses": ok}},
             "/api/skills": {"get": {"summary":
-                "The CV Studio skills on this machine, and whether they need the MCP",
+                "The skills that ship with CV Studio, and where each client has them",
                 "responses": ok}},
             "/api/skills/package": {"post": {"summary":
-                "Zip each skill for upload to the Claude Desktop app",
+                "The skills as one plugin file, for Claude Desktop's Upload plugin",
+                "responses": ok}},
+            "/api/skills/install": {"post": {"summary":
+                "Copy the skills into a client's skills folder (Codex, Vibe, Hermes)",
+                "requestBody": body({"client": {"type": "string",
+                                                "enum": ["openai", "mistral", "hermes"]}}),
                 "responses": ok}},
             "/api/pulse": {"get": {"summary":
                 "Document timestamps and recent AI activity, cheap to poll",
@@ -4545,6 +4787,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/skills/package":
                 try:
                     return self._json(package_skills())
+                except (ValueError, OSError) as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if u.path == "/api/skills/install":
+                client = payload.get("client", "")
+                if not client_skills_dir(client):
+                    return self._json({"error": f"unknown client: {client}"}, 400)
+                try:
+                    return self._json(install_skills(client))
                 except (ValueError, OSError) as exc:
                     return self._json({"error": str(exc)}, 400)
             if u.path == "/api/ai/connect":
@@ -5497,25 +5747,36 @@ const API_TOKEN=__API_TOKEN__;
         <div id="s-cl-log" class="mcplog"></div>
 
         <p class="sp-sub">Skills</p>
-        <p class="sp-note" style="margin-top:0">Skills are the judgement around the
-          documents: reading a posting, tailoring from a master profile, letters,
-          interview prep. Claude Code reads them off disk and already has them. The
-          desktop app does not: there they are uploaded to your account, so the most
-          this app can do is hand you archives that are ready to upload.</p>
+        <p class="sp-note" style="margin-top:0">Skills are the procedures around the
+          tools: from a job link to a tailored CV and letter, the tracker caught up from
+          your mail, an interview prepared. They come with this app.</p>
         <div class="skills" id="s-skills"></div>
-        <div class="skillcta">
-          <button class="obtn primary" id="s-skill-pack">Package for Claude Desktop</button>
-          <button class="obtn" id="s-skill-show" hidden>Show the folder</button>
-        </div>
-        <ol class="steps" id="s-skill-steps" hidden>
-          <li>Open the Claude Desktop app, then Customize, then Skills.</li>
-          <li>Press <b>+</b> and upload each <code>.zip</code> from that folder.</li>
-        </ol>
+
+        <p class="sp-sub">Skills in Claude Desktop</p>
+        <p class="sp-note" style="margin-top:0">Claude keeps skills in your account, so
+          they go in once, together, as a plugin. In Claude, open Customize, then
+          Plugins, then Add, and either:</p>
+        <ul class="steps">
+          <li><span>Choose Add marketplace and enter</span> <code id="s-mk">MaxFoxZebra/supreme-engine</code>
+            <button class="linkish" id="s-mk-copy">Copy</button><span>. New versions arrive
+            on their own.</span></li>
+          <li><span>Or choose Upload plugin and pick the file this makes:</span>
+            <button class="linkish" id="s-skill-pack">Make the plugin file</button>
+            <button class="linkish" id="s-skill-show" hidden>Show it</button></li>
+        </ul>
+        <p class="sp-note">If you uploaded CV Studio skills one at a time before, remove
+          them under Customize, then Skills: the plugin replaces them.</p>
+
+        <p class="sp-sub">Skills in Codex, Mistral Vibe and Hermes</p>
+        <p class="sp-note" style="margin-top:0">These read skills from a folder, so
+          connecting one puts them there, and an update of this app updates them.</p>
+        <div class="skills" id="s-skill-clients"></div>
+
         <p class="sp-sub">On the command line</p>
         <p class="sp-note">The same server works with Claude Code and the Codex CLI.
-          Beyond the tools above, the skills in <code>~/.claude/skills/</code> cover the
-          judgement around the documents: reading a posting, tailoring from a master
-          profile, letters, tracking applications and interview prep.</p>
+          Claude Code takes the skills as the same plugin:</p>
+        <pre class="code">/plugin marketplace add MaxFoxZebra/supreme-engine
+/plugin install cv-studio@cv-studio</pre>
 
         <details class="fold"><summary>Set them up by hand instead</summary>
           <div id="s-ai-manual"></div>
@@ -5630,6 +5891,7 @@ def main() -> int:
     FIRST_RUN = bootstrap(WORKSPACE)
     cjkfonts.register()
     start_backups()
+    start_connector_refresh()
 
     API_TOKEN = args.token
     if args.host not in ("127.0.0.1", "localhost", "::1") and not API_TOKEN:

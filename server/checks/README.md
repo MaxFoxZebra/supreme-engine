@@ -21,6 +21,7 @@ cd server
 | `audit.py` | Static audit of the served interface. No browser needed. |
 | `prefstest.py`, `langtest.py`, `lettertest.py`, `reviewtest.py`, `importtest.py`, `phototest.py`, `maptest.py`, `sampletest.py` | One area each, end to end in a scratch folder: preferences, languages, cover letters, reviewing what an AI client changed, importing, the photo, the page map, sample data. |
 | `trackertest.py` | Applications as files in `tracker/`: what a file looks like, an edit made in another editor, a sync client's conflicted copy, two processes writing at once, the index being only a copy, and moving out of `applications.db`, including on a second computer that has not synced yet. |
+| `connectortest.py` | The connector an AI client runs: a copy per version under its own name (so an update never closes it), clients re-pointed after an update, old copies removed; the skills installed into Codex, Vibe and Hermes and kept current, packed as one plugin for Claude Desktop, and the repository as a plugin marketplace; tool titles, hints and prompts. |
 | `mcpclient.py` | Speaks MCP over stdio exactly as Claude Desktop does. |
 | `shot.js` | Drives Chromium over the DevTools Protocol: click through to a state, then photograph it. |
 | `flow.js` | User flows against the running app, with assertions. |
