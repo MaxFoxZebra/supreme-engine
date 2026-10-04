@@ -365,9 +365,11 @@ RenderCV out of the YAML alone.
 
 **A patch that lands nowhere is reported.** `edit_cv_fields` answers with how
 many of the edits it applied and names each one it could not, rather than
-counting a mis-indexed entry as a success. Applications are rows in
-`applications.db` rather than files, so git does not cover those; the Jobs view
-exports them to JSON or CSV.
+counting a mis-indexed entry as a success. Applications are files
+too, one YAML file each in `tracker/`, so git covers those as well; the Jobs
+view also exports them to JSON or CSV. The CV tools refuse to write them: a
+model changes an application through `update_job_tracking`, which keeps its
+status history and cannot erase notes.
 
 **Comments survive `edit_cv_fields`** because it round-trips through ruamel.
 `write_cv` replaces the file wholesale and will drop anything not in the new

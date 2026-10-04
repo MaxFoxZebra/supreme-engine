@@ -261,6 +261,17 @@ def read_cv(path: str) -> str:
     return studio.safe_path(path).read_text(encoding="utf-8")
 
 
+def _doc_path(path: str):
+    """A document this tool may write. Applications are files in tracker/
+    too, but a model changes them through the tracking tools, which keep the
+    history and cannot erase notes; writing the file would do both."""
+    p = studio.safe_path(path)
+    if studio.rel(p).split("/")[0] in (studio.jobstore.DIR, ".trash"):
+        raise PermissionError(f"{path} is an application, not a CV. Change it with "
+                              "update_job_tracking.")
+    return p
+
+
 @tool
 def write_cv(path: str, content: str) -> str:
     """Overwrite a CV's YAML source with `content`.
@@ -268,7 +279,7 @@ def write_cv(path: str, content: str) -> str:
     Prefer edit_cv_fields for small changes: this replaces the whole file and
     will drop any comments the user wrote that are not in `content`.
     """
-    p = studio.safe_path(path)
+    p = _doc_path(path)
     changed = studio.write_doc(p, content, "write_cv")["changed"]
     return (f"Wrote {len(content)} characters to {path}. "
             f"{len(changed)} field(s) changed.")
@@ -281,7 +292,7 @@ def edit_cv_fields(path: str, edits: list[dict]) -> str:
     Each edit is {"path": ["cv", "headline"], "value": "Solutions Engineer"}.
     List positions are integers: ["cv","sections","experience",0,"company"].
     """
-    p = studio.safe_path(path)
+    p = _doc_path(path)
     result = studio.apply_patches(p, edits, "edit_cv_fields")
     lines = [f"{len(result['applied'])} of {len(edits)} edit(s) applied to {path}."]
     # A patch whose path does not exist is skipped. Reporting that as a success
@@ -1133,8 +1144,9 @@ def workspace_info() -> dict:
             if studio.photo_info() else
             "None. The user adds one in the app, under Design, Photo."),
         "storage": "CVs are plain YAML files the user owns. Applications are "
-                   "rows in applications.db beside them, which export to JSON "
-                   "and CSV so nothing is locked in.",
+                   "too, one file each in tracker/; change them through the "
+                   "tools, which keep the status history and the app in step. "
+                   "They also export to JSON and CSV.",
     }
 
 

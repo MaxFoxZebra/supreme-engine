@@ -16,11 +16,9 @@ keeps using it: it is a separate process with its own workspace.
 from __future__ import annotations
 
 import datetime as dt
-import json
 import random
 import re
 import shutil
-import sqlite3
 import unicodedata
 from pathlib import Path
 
@@ -475,16 +473,11 @@ def build(studio, applications: int = 64) -> dict:
                   (["interviewing"] if "interviewing" in steps else [])
         sent_at = next((h["at"] for h in hist if h["status"] == "applied"), None)
         people = jobs.clean_people(_people(P, company, lang, source, reached, sent_at, now))
-        con = sqlite3.connect(jobs.db_path(ws))
         rounds = _rounds(status, hist, data.get("interview_at"), data.get("interview_tz"), people)
-        con.execute("UPDATE jobs SET status=?, status_history=?, created_at=?, updated_at=?, people=?, "
-                    "contact_email=?, rounds=? WHERE id=?",
-                    (status, json.dumps([{"status": h["status"], "at": _iso(h["at"])} for h in hist]),
-                     _iso(start), _iso(hist[-1]["at"]), json.dumps(people),
-                     next((q["email"] for q in people if q["email"]), ""),
-                     json.dumps(rounds, ensure_ascii=False), j["id"]))
-        con.commit()
-        con.close()
+        jobs.set_stored(ws, j["id"], {
+            "status": status, "status_history": [{"status": h["status"], "at": _iso(h["at"])} for h in hist],
+            "created_at": _iso(start), "updated_at": _iso(hist[-1]["at"]), "people": people,
+            "contact_email": next((q["email"] for q in people if q["email"]), ""), "rounds": rounds})
         made.append({**j, "status": status, "lang": plang})
 
     # Two interviews abroad, so the time zones show: London is an hour behind
@@ -511,7 +504,6 @@ def build(studio, applications: int = 64) -> dict:
                    + slug + ".example", "link": "", "last": (now - dt.timedelta(days=9)).date().isoformat()},
                   {"id": slug + "2", "name": "Tom Reid" if city == "London" else "Rafael Souza",
                    "role": "Hiring manager", "email": "", "link": "", "last": ""}]
-        con = sqlite3.connect(jobs.db_path(ws))
         # A screen with the recruiter, the round coming up with the manager,
         # and in London one more still to be set.
         at_next = _iso(_weekday(now + dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0))[:16]
@@ -521,12 +513,10 @@ def build(studio, applications: int = 64) -> dict:
                    "at": at_next, "tz": ZONES[city], "with": people[1]["name"], "outcome": "", "note": ""}]
         if city == "London":
             rounds.append({"id": "r3", "kind": "Team fit", "at": "", "tz": "", "with": "", "outcome": "", "note": ""})
-        con.execute("UPDATE jobs SET status='interviewing', status_history=?, created_at=?, updated_at=?, "
-                    "people=?, contact_email=?, rounds=? WHERE id=?",
-                    (json.dumps(hist), hist[0]["at"], hist[-1]["at"], json.dumps(people),
-                     people[0]["email"], json.dumps(rounds, ensure_ascii=False), j["id"]))
-        con.commit()
-        con.close()
+        jobs.set_stored(ws, j["id"], {
+            "status": "interviewing", "status_history": hist, "created_at": hist[0]["at"],
+            "updated_at": hist[-1]["at"], "people": people, "contact_email": people[0]["email"],
+            "rounds": rounds})
         made.append({**j, "status": "interviewing", "lang": j["language"]})
 
     # Tailored CVs for the applications furthest along, and letters for some.

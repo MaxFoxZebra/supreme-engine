@@ -39,7 +39,7 @@ def main() -> int:
     check("a new workspace is due", backups.due(data, ws))
     b = backups.make(data, ws)
     names = zipfile.ZipFile(backups.folder(data, ws) / b["name"]).namelist()
-    check("the database is in it", "applications.db" in names, ",".join(names))
+    check("the applications are in it", any(n.startswith("tracker/") for n in names), ",".join(names))
     check("the CVs are in it", any(n.startswith("profile/") for n in names))
     check("rendered pages are not", not any(n.startswith("assets/render-cache") for n in names))
     check("and it is not due again today", not backups.due(data, ws))

@@ -18,9 +18,9 @@ Everything runs on your machine, with no account, no server, no telemetry,
 which matters more once a model is editing the files, not less. Your CVs are
 plain YAML in a folder you own, with no database between you and them, so you
 can read, grep, diff, back up and version them without this app, and take them
-somewhere else whenever you like. Applications are rows in `applications.db`
-beside them, which exports to JSON or CSV for the same reason. Both halves only
-ever touch that folder.
+somewhere else whenever you like. Applications are too: one YAML file each in
+`tracker/` beside them, and they export to JSON or CSV for a spreadsheet. Both
+halves only ever touch that folder.
 
 Connecting a client is one button in **Settings → AI clients**: Claude Desktop;
 OpenAI, where the same config file covers the ChatGPT app, the Codex CLI and the
@@ -73,7 +73,7 @@ name and by what is written in them, the words inside postings and notes, and
 places in the app (Settings › Notifications is a few letters away). Before you
 type, it offers what you opened last.
 
-**Applications** is home, and it is `applications.db`. The list takes the
+**Applications** is home, and it is the `tracker/` folder. The list takes the
 middle: company and logo, role, where it was found, the documents written for
 it, status, when it was sent and when to follow up. Down the left, *Attention*
 gathers what needs you (an interview soon, a follow-up due, no reply for a
@@ -191,6 +191,21 @@ in the calendar you already use.
 
 Your settings are kept beside the app, not in the workspace, so a workspace
 copied to another machine carries your documents and not your window.
+
+### On two computers
+
+The workspace is `Documents/CV Studio`, and everything in it is a plain file,
+applications included, so a sync client copies it the way it copies anything
+else. If your Documents folder is already kept in step (OneDrive's folder
+backup on Windows, iCloud's Desktop & Documents on a Mac), CV Studio on a
+second computer opens the same workspace. The index that keeps a long list
+quick, the backups and your settings stay on each computer; connect your AI
+client on each one too.
+
+Change one application on both computers before they have synced and the sync
+client keeps both files; CV Studio shows the newer and leaves the other in
+`tracker/` for you to compare or delete. Nothing else is shared between the
+two, so nothing else can clash.
 
 ## Connect it to Claude Desktop
 

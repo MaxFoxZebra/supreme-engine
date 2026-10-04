@@ -8,6 +8,29 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Applications are files now, one each, so a workspace can follow you to
+  another computer.** Each application is a YAML file in the workspace's
+  `tracker/` folder, readable and editable in any editor, the way CVs
+  already were. A workspace in a synced folder (OneDrive, Dropbox, iCloud
+  Drive, Syncthing) now works on two computers: before, every application
+  was in one database file, and a sync client copying it mid-write or from
+  both computers could lose the whole tracker. Now the worst a sync clash
+  can do is keep two copies of one application, and the app shows the newer.
+  An edit made outside the app shows up within a couple of seconds.
+- **Moving over is automatic.** The first launch writes your applications
+  and the trash out of `applications.db` into files and puts the database in
+  `.trash`. A second computer that opens the synced workspace with its old
+  database still there does not bring back what you deleted or put an old
+  status over a new one. A backup from before restores as it always did.
+- **Still quick with hundreds of applications.** What was read is kept in an
+  index beside the backups, outside the workspace, and only files that
+  changed are read again. Deleting it loses nothing.
+- **An AI client cannot write an application's file directly.** It changes
+  applications through the tracking tools, which keep the status history and
+  cannot erase your notes, as before.
+
 ## 0.35.0
 
 - **The CV editor no longer loses your place after a save.** Saving (Ctrl+S

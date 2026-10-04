@@ -295,7 +295,7 @@ installer is `currentUser` mode, so there is no admin prompt.
 │   ├── studio.py           the API, and the page's markup (INDEX_HTML)
 │   ├── cv_render.py        RenderCV wrapper
 │   ├── cv_map.py           where each block landed on the page
-│   ├── jobs.py             applications.db
+│   ├── jobs.py             applications, one YAML file each in tracker/
 │   ├── mcp_server.py       MCP surface (see MCP.md)
 │   ├── dev.py              hot-restarting dev server
 │   ├── i18n/               the translation catalogue; build.py writes static/i18n.js

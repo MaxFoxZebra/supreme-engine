@@ -2444,6 +2444,7 @@ def bootstrap(workspace: Path) -> bool:
     created = not workspace.exists()
     (workspace / "profile").mkdir(parents=True, exist_ok=True)
     (workspace / "applications").mkdir(exist_ok=True)
+    (workspace / "tracker").mkdir(exist_ok=True)
     (workspace / "letters").mkdir(exist_ok=True)
     (workspace / "assets").mkdir(exist_ok=True)
     if not any((workspace / "profile").glob("*.y*ml")):
@@ -2828,27 +2829,19 @@ def pulse() -> dict:
 
 
 def jobs_stamp() -> str | None:
-    """A fingerprint of the applications table, for the same reason as `docs`.
+    """A fingerprint of the applications, for the same reason as `docs`.
 
     An AI client changing a status is another process writing the workspace,
-    and until this existed the open Jobs table had no way to find out: it
-    reloaded on boot, on a view switch, and after its own edits, so a status
-    moved from a chat sat there stale until the user happened to navigate.
-
-    The newest timestamp and the row count together catch every change that
-    matters, including a delete, which a timestamp alone would miss. Cheap
-    enough to ask for every couple of seconds.
+    and so is a sync client bringing in what was done on another computer.
+    Without this the open Jobs table had no way to find out: it reloaded on
+    boot, on a view switch, and after its own edits, so a status moved from a
+    chat sat there stale until the user happened to navigate. Cheap enough to
+    ask for every couple of seconds.
     """
     if jobstore is None:
         return None
     try:
-        con = jobstore.connect(WORKSPACE)
-        try:
-            row = con.execute(
-                "SELECT COUNT(*) n, MAX(updated_at) m FROM jobs").fetchone()
-            return f"{row['n']}:{row['m'] or ''}"
-        finally:
-            con.close()
+        return jobstore.stamp(WORKSPACE)
     except Exception:
         # Never let the poll fail because of the job store: the rest of the
         # payload is what keeps the open document in step.
@@ -5310,9 +5303,10 @@ const API_TOKEN=__API_TOKEN__;
     <div>
       <section class="sp" id="sp-workspace">
         <h3>Workspace</h3>
-        <p class="sp-lede">Everything lives in one folder you own. CVs are plain YAML,
-          letters plain Markdown, and applications a single SQLite file. Copy the folder
-          and you have copied everything.</p>
+        <p class="sp-lede">Everything lives in one folder you own. CVs and applications
+          are plain YAML, one file each, and letters plain Markdown. Copy the folder and
+          you have copied everything; keep it in a synced folder and it follows you to
+          another computer.</p>
         <div class="srow"><div><b>Setup</b><span>The welcome and the steps from the
           first launch: import a CV from a PDF or LinkedIn, your name at the top of the
           base CV, how it prints, and an AI client.</span></div>

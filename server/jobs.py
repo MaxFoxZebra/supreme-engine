@@ -1,27 +1,48 @@
-"""Job application records, stored in SQLite.
+"""Job application records: one YAML file each, in the workspace's tracker folder.
 
-Why a database here when CVs are plain files: CVs are *documents*. You read
-them, diff them, and they should outlive this program, so they stay as YAML.
-Job applications are *records* -- dozens to hundreds of them, filtered, sorted,
-aggregated, and appended to every time a status changes. One YAML file per job
-would be parsed in full on every list and rewritten on every status change.
+CVs are documents and applications are records, but both are the user's, so
+both are plain files in the folder they own. An application is
+tracker/acme-backend-engineer-3f9a1c2e.yaml, readable and editable in any
+editor, and the workspace can sit in OneDrive, Dropbox, iCloud or Syncthing and
+follow them from one computer to the next. A database file could not: a sync
+client copies it whole, mid-write or from two machines at once, and the whole
+tracker goes with it. With a file each, the worst a sync conflict can do is
+leave two copies of one application, and the newer one is shown.
 
-sqlite3 is in the Python standard library, so this costs no dependency, and the
-whole store is one file in the workspace that can be copied or deleted. Export
-to JSON and CSV is provided so nothing is locked in.
+Parsing hundreds of YAML files on every list would be slow, so what was read is
+kept in an index outside the workspace, beside the backups, keyed by each
+file's size and modification time. It is only ever a copy: delete it and the
+next list reads the files again. This is how Obsidian keeps a vault of
+Markdown files fast.
 
-The schema follows the one from the job tracker this was ported from, including
+Two processes write here, the app and an AI client's MCP server. Every write
+goes to a temporary file renamed into place, so a reader never sees half of
+one, and every read-modify-write holds a lock (on this machine, outside the
+workspace), so two status changes cannot both read the same history and drop
+one of its entries.
+
+A workspace from before this kept its applications in applications.db. The
+first read moves them out into files and the database into .trash.
+
+The record follows the one from the job tracker this was ported from, including
 `status_history`, which is what makes the funnel chart meaningful over time.
+Export to JSON and CSV stays, for spreadsheets.
 """
 
 from __future__ import annotations
 
+import contextlib
+import copy
 import csv
+import datetime as dt
+import hashlib
 import io
 import json
+import os
 import re
-import sqlite3
+import threading
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -85,45 +106,21 @@ FLOWS: list[tuple[str, str, list[str]]] = [
     ("offer_s", "refused", ["refused"]),
 ]
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS jobs (
-  id               TEXT PRIMARY KEY,
-  title            TEXT NOT NULL,
-  company          TEXT NOT NULL,
-  location         TEXT,
-  country          TEXT,
-  description      TEXT,
-  url              TEXT,
-  source           TEXT,
-  score            INTEGER,
-  status           TEXT NOT NULL DEFAULT 'pending',
-  notes            TEXT,
-  followup_date    TEXT,
-  interview_at     TEXT,
-  interview_tz     TEXT,
-  contact_email    TEXT,
-  last_contact_at  TEXT,
-  salary_expected  INTEGER,
-  salary_offered   INTEGER,
-  salary_currency  TEXT NOT NULL DEFAULT 'EUR',
-  status_history   TEXT NOT NULL DEFAULT '[]',
-  cv_path          TEXT,
-  letter_path      TEXT,
-  logo             TEXT,
-  language         TEXT,
-  created_at       TEXT NOT NULL,
-  updated_at       TEXT NOT NULL
-);
--- A deleted application, whole, for thirty days: Undo puts it back with its
--- id and its history rather than as a new row.
-CREATE TABLE IF NOT EXISTS trash (
-  id          TEXT PRIMARY KEY,
-  data        TEXT NOT NULL,
-  deleted_at  TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
-CREATE INDEX IF NOT EXISTS jobs_company ON jobs(company);
-"""
+DIR = "tracker"
+TRASH_DIR = ".trash/tracker"
+LEGACY_DB = "applications.db"
+
+# The order a file's keys are written in: what you look for first at the top,
+# the long text at the bottom, the bookkeeping last. Keys someone added by hand
+# are kept, after these. Empty ones are left out; reading puts them back.
+ORDER = [
+    "company", "title", "status", "location", "country", "url", "source",
+    "language", "score", "salary_expected", "salary_offered", "salary_currency",
+    "followup_date", "interview_at", "interview_tz", "contact_email",
+    "last_contact_at", "cv_path", "letter_path", "logo", "people", "rounds",
+    "status_history", "prep", "notes", "description",
+    "id", "created_at", "updated_at",
+]
 
 FIELDS = [
     "title", "company", "location", "country", "description", "url", "source",
@@ -152,78 +149,466 @@ TERMINAL = {"accepted", "refused", "rejected", "ghosted",
 
 
 
-def set_company_logo(workspace: Path, company: str, logo: str) -> int:
-    """Point every application to one company at the same logo.
-
-    Applications are per-role but a logo belongs to the company, so this is
-    matched on the name rather than set on one row.
-    """
-    con = connect(workspace)
-    try:
-        cur = con.execute(
-            "UPDATE jobs SET logo = ?, updated_at = ? WHERE lower(company) = ?",
-            (logo, _now(), company.strip().lower()))
-        con.commit()
-        return cur.rowcount
-    finally:
-        con.close()
-
-def db_path(workspace: Path) -> Path:
-    return workspace / "applications.db"
-
-
-def connect(workspace: Path) -> sqlite3.Connection:
-    # An AI client writing statuses is a second process on this file, so a
-    # contended write is now routine rather than theoretical. The default
-    # five seconds is generous for the writes here, all of which are a single
-    # small row, but it is left explicit so it reads as a decision.
-    con = sqlite3.connect(db_path(workspace), timeout=15.0)
-    con.row_factory = sqlite3.Row
-    # WAL keeps reads from blocking on writes, which matters because the UI
-    # polls while a status is being written.
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA busy_timeout=15000")
-    con.execute("PRAGMA foreign_keys=ON")
-    con.executescript(SCHEMA)
-    have = {r["name"] for r in con.execute("PRAGMA table_info(jobs)")}
-    for col, decl in (("cv_path", "TEXT"), ("letter_path", "TEXT"),
-                      ("logo", "TEXT"), ("interview_at", "TEXT"),
-                      ("contact_email", "TEXT"), ("last_contact_at", "TEXT"),
-                      ("language", "TEXT"), ("interview_tz", "TEXT"),
-                      ("people", "TEXT"), ("rounds", "TEXT"), ("prep", "TEXT")):
-        if col not in have:
-            con.execute(f"ALTER TABLE jobs ADD COLUMN {col} {decl}")
-    con.commit()
-    return con
+# What is kept on disk besides FIELDS. Everything a list returns, so a row
+# read back is the row that was written.
+STORED = ["id", *FIELDS, "people", "rounds", "prep", "status_history",
+          "created_at", "updated_at"]
 
 
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def _row(r: sqlite3.Row) -> dict:
-    d = dict(r)
+def tracker_dir(workspace: Path) -> Path:
+    return workspace / DIR
+
+
+# --- the files ---------------------------------------------------------------
+
+def _plain(v):
+    """A value as JSON would hold it. YAML reads an unquoted 2026-09-12 as a
+    date; everything here compares and sorts them as ISO text."""
+    if isinstance(v, dt.datetime):
+        return v.replace(tzinfo=None).isoformat(timespec="seconds")
+    if isinstance(v, dt.date):
+        return v.isoformat()
+    if isinstance(v, dict):
+        return {str(k): _plain(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_plain(x) for x in v]
+    return v
+
+
+def _empty(v) -> bool:
+    return v is None or v == "" or v == [] or v == {}
+
+
+def _same(a, b) -> bool:
+    """Equal as stored: an empty field is not written, so "" and None and []
+    are the same nothing."""
+    return (None if _empty(a) else a) == (None if _empty(b) else b)
+
+
+def _block(v):
+    """Notes and postings as indented blocks rather than one long quoted line."""
+    from ruamel.yaml.scalarstring import LiteralScalarString
+    if isinstance(v, str) and "\n" in v and all(c in "\n\t" or c.isprintable() for c in v):
+        return LiteralScalarString(v)
+    if isinstance(v, dict):
+        return {k: _block(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_block(x) for x in v]
+    return v
+
+
+def _text(rec: dict) -> str:
+    from ruamel.yaml import YAML
+    out = {k: _block(rec[k]) for k in ORDER + [k for k in rec if k not in ORDER]
+           if k in rec and not _empty(rec[k])}
+    y = YAML(typ="rt")
+    y.width = 4096                  # a long line stays one line
+    y.allow_unicode = True
+    y.indent(mapping=2, sequence=4, offset=2)
+    buf = io.StringIO()
+    y.dump(out, buf)
+    return buf.getvalue()
+
+
+def _parse(path: Path, mtime: float) -> dict | None:
+    """One file as a record, or None when it is not one (broken YAML, a list,
+    a sync client's half-written copy). A file written by hand needs no id or
+    dates: the file's name and time stand in until the app next saves it."""
+    from ruamel.yaml import YAML
     try:
-        d["status_history"] = json.loads(d.get("status_history") or "[]")
-    except json.JSONDecodeError:
-        d["status_history"] = []
+        data = YAML(typ="safe", pure=True).load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    rec = _plain(data)
+    rec["id"] = str(rec.get("id") or hashlib.sha1(path.name.encode("utf-8")).hexdigest())
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
+    rec.setdefault("created_at", stamp)
+    rec.setdefault("updated_at", stamp)
+    return rec
+
+
+def _replace(tmp: Path, dest: Path) -> None:
+    # Windows refuses to replace a file someone has open, and a sync client or
+    # the other process reading it counts; that lasts milliseconds.
+    for attempt in range(40):
+        try:
+            os.replace(tmp, dest)
+            return
+        except PermissionError:
+            if attempt == 39:
+                raise
+            time.sleep(0.05)
+
+
+def _write(path: Path, rec: dict) -> None:
+    """Whole or not at all: a reader never sees half a file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(_text(rec))
+    _replace(tmp, path)
+
+
+def _slug(text: str) -> str:
+    text = unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _filename(rec: dict) -> str:
+    """company-role-id.yaml: findable by eye, unique by the id. Given once,
+    when the application is made; a renamed role keeps its file."""
+    words = [_slug(rec.get(k))[:40].strip("-") for k in ("company", "title")]
+    stem = "-".join(w for w in words if w) or "application"
+    return f"{stem}-{rec['id'][:8]}.yaml"
+
+
+# --- the index, and the lock: both outside the workspace, on this machine ----
+
+def _key(workspace: Path) -> str:
+    ws = workspace.resolve()
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in ws.name)[:40] or "workspace"
+    return f"{safe}-{hashlib.sha1(str(ws).encode('utf-8')).hexdigest()[:10]}"
+
+
+def _index_dir() -> Path:
     try:
-        d["people"] = json.loads(d.get("people") or "[]")
-    except json.JSONDecodeError:
-        d["people"] = []
+        import cjkfonts
+        return cjkfonts.cache_dir().parent / "index"
+    except Exception:
+        import tempfile
+        return Path(tempfile.gettempdir()) / "cv-studio-index"
+
+
+INDEX_VERSION = 1
+
+# Per workspace: {"files": {name: [mtime_ns, size, inode, record]}, "ids":
+# {id: name}, "dirty": bool}. The record is None for a file that is not one.
+_mem: dict[str, dict] = {}
+_mem_lock = threading.Lock()
+_conflicts: dict[str, dict[str, list[str]]] = {}
+
+
+def _load_index(workspace: Path) -> dict:
+    try:
+        data = json.loads((_index_dir() / f"{_key(workspace)}.json").read_text(encoding="utf-8"))
+        if data.get("version") == INDEX_VERSION and isinstance(data.get("files"), dict):
+            return {"files": data["files"], "ids": {}, "dirty": False}
+    except (OSError, ValueError, AttributeError):
+        pass
+    return {"files": {}, "ids": {}, "dirty": False}
+
+
+def _save_index(workspace: Path, state: dict) -> None:
+    d = _index_dir()
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / f"{_key(workspace)}.json"
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps({"version": INDEX_VERSION, "files": state["files"]},
+                                  ensure_ascii=False), encoding="utf-8")
+        _replace(tmp, path)
+        state["dirty"] = False
+    except OSError:
+        pass                            # only ever a copy: the files are the truth
+
+
+_tlocks: dict[str, threading.RLock] = {}
+_held = threading.local()
+
+
+@contextlib.contextmanager
+def _locked(workspace: Path):
+    """One writer at a time on this workspace, across processes. Reentrant,
+    because a write reads first and the first read may migrate."""
+    key = _key(workspace)
+    with _mem_lock:
+        rl = _tlocks.setdefault(key, threading.RLock())
+    with rl:
+        depth = getattr(_held, "depth", {})
+        _held.depth = depth
+        if depth.get(key):
+            depth[key] += 1
+            try:
+                yield
+            finally:
+                depth[key] -= 1
+            return
+        d = _index_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        fh = open(d / f"{key}.lock", "a+b")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                while True:
+                    try:
+                        fh.seek(0)
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                        break
+                    except OSError:     # LK_LOCK gives up after ten seconds
+                        continue
+            else:
+                import fcntl
+                fcntl.flock(fh, fcntl.LOCK_EX)
+            depth[key] = 1
+            try:
+                yield
+            finally:
+                depth[key] = 0
+                if os.name == "nt":
+                    import msvcrt
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh, fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
+def _sig(st: os.stat_result) -> list:
+    # The inode as well: every write is a new file renamed into place, so it
+    # changes even when the size and the clock tick do not. Not on Windows,
+    # where a directory listing reports it as 0 and a stat does not, and
+    # NTFS keeps time to a tenth of a microsecond anyway.
+    return [st.st_mtime_ns, st.st_size, 0 if os.name == "nt" else st.st_ino]
+
+
+def _scan(workspace: Path) -> dict:
+    """The folder as it is now, reading only the files that changed."""
+    d = tracker_dir(workspace)
+    key = _key(workspace)
+    with _mem_lock:
+        state = _mem.get(key)
+        if state is None:
+            state = _mem[key] = _load_index(workspace)
+        files = state["files"]
+        seen: dict[str, list] = {}
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            entries = []
+        for e in entries:
+            if e.name.startswith(".") or not e.name.endswith((".yaml", ".yml")):
+                continue
+            try:
+                if not e.is_file():
+                    continue
+                st = e.stat()
+            except OSError:
+                continue
+            sig = _sig(st)
+            hit = files.get(e.name)
+            if hit and hit[:3] == sig:
+                seen[e.name] = hit
+            else:
+                seen[e.name] = [*sig, _parse(Path(e.path), st.st_mtime)]
+                state["dirty"] = True
+        if seen.keys() != files.keys():
+            state["dirty"] = True
+        state["files"] = seen
+        # One application, two files: a sync client keeping both sides of a
+        # conflict ("… (conflicted copy).yaml"), or a copy made by hand. The
+        # newer is the application; the others are listed by conflicts().
+        ids: dict[str, str] = {}
+        dup: dict[str, list[str]] = {}
+        for name in sorted(seen):
+            rec = seen[name][3]
+            if not rec:
+                continue
+            other = ids.get(rec["id"])
+            if other is None:
+                ids[rec["id"]] = name
+                continue
+            # A tie goes to the shorter name: the copy is the one the sync
+            # client added words to.
+            mine = (str(rec.get("updated_at") or ""), -len(name))
+            theirs = (str(seen[other][3].get("updated_at") or ""), -len(other))
+            keep, drop = (name, other) if mine > theirs else (other, name)
+            ids[rec["id"]] = keep
+            dup.setdefault(rec["id"], []).append(drop)
+        state["ids"] = ids
+        _conflicts[key] = dup
+        if state["dirty"]:
+            _save_index(workspace, state)
+        return state
+
+
+def _records(workspace: Path) -> list[dict]:
+    if (workspace / LEGACY_DB).exists():
+        migrate(workspace)
+    state = _scan(workspace)
+    return [state["files"][n][3] for n in state["ids"].values()]
+
+
+def _find(workspace: Path, job_id: str) -> tuple[str, dict] | None:
+    """The file an application is in, without rescanning the folder when
+    the one file it was in last time is still as it was."""
+    if (workspace / LEGACY_DB).exists():
+        migrate(workspace)
+    key = _key(workspace)
+    with _mem_lock:
+        state = _mem.get(key)
+        name = state and state["ids"].get(job_id)
+        if name:
+            try:
+                if _sig((tracker_dir(workspace) / name).stat()) == state["files"][name][:3]:
+                    return name, state["files"][name][3]
+            except OSError:
+                pass
+    state = _scan(workspace)
+    name = state["ids"].get(job_id)
+    return (name, state["files"][name][3]) if name else None
+
+
+def _put(workspace: Path, name: str, rec: dict) -> None:
+    """Write one application and remember it as written."""
+    path = tracker_dir(workspace) / name
+    _write(path, rec)
+    key = _key(workspace)
+    with _mem_lock:
+        state = _mem.get(key)
+        if state is not None:
+            try:
+                state["files"][name] = [*_sig(path.stat()), _plain(json.loads(json.dumps(rec)))]
+                state["ids"][rec["id"]] = name
+                state["dirty"] = True
+            except OSError:
+                pass
+
+
+def _new_name(workspace: Path, rec: dict) -> str:
+    name = _filename(rec)
+    if (tracker_dir(workspace) / name).exists():
+        name = name[:-5] + rec["id"][8:16] + ".yaml"
+    return name
+
+
+def conflicts(workspace: Path) -> dict[str, list[str]]:
+    """Applications that are in more than one file, by id: the files that
+    are not the one shown, in tracker/."""
+    _records(workspace)
+    return dict(_conflicts.get(_key(workspace), {}))
+
+
+def stamp(workspace: Path) -> str:
+    """A fingerprint of the folder, for the open app to notice a change made
+    by another process (an AI client, a sync client, an editor) every couple
+    of seconds. Stats every file and parses only the changed ones."""
+    state = _scan(workspace)
+    h = hashlib.sha1()
+    for name in sorted(state["files"]):
+        h.update(f"{name}:{state['files'][name][:3]};".encode("utf-8"))
+    return f"{len(state['ids'])}:{h.hexdigest()[:16]}"
+
+
+# --- moving out of applications.db -------------------------------------------
+
+def _from_sqlite(row: dict) -> dict:
+    rec = {k: v for k, v in row.items() if k in STORED}
+    for k, empty in (("status_history", []), ("people", []), ("rounds", []), ("prep", None)):
+        try:
+            rec[k] = json.loads(rec.get(k) or "null") or empty
+        except (TypeError, ValueError):
+            rec[k] = empty
+    return rec
+
+
+def migrate(workspace: Path, overwrite: bool = False) -> int:
+    """Move applications.db's applications into files, its trash into
+    .trash/tracker, and the database itself into .trash. Returns how many
+    applications were written.
+
+    Only applications that have no file yet are written, so a second computer
+    opening a synced workspace whose database it still has does not bring
+    back what the first one deleted or put an old status over a new one.
+    `overwrite` is for a restored backup, where the database is what was
+    asked for.
+    """
+    import sqlite3
+    db = workspace / LEGACY_DB
+    with _locked(workspace):
+        if not db.exists():
+            return 0
+        con = sqlite3.connect(db, timeout=15.0)
+        con.row_factory = sqlite3.Row
+        try:
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            rows = [dict(r) for r in con.execute("SELECT * FROM jobs")] if "jobs" in tables else []
+            trashed = [dict(r) for r in con.execute("SELECT * FROM trash")] if "trash" in tables else []
+        finally:
+            con.close()
+        state = _scan(workspace)
+        binned = {t["id"] for t in _trash_files(workspace).values()}
+        written = 0
+        for row in rows:
+            rec = _from_sqlite(row)
+            name = state["ids"].get(rec["id"])
+            if (name and not overwrite) or (rec["id"] in binned and not overwrite):
+                continue
+            _put(workspace, name or _new_name(workspace, rec), rec)
+            written += 1
+        for t in trashed:
+            if t["id"] in binned or t["id"] in state["ids"]:
+                continue
+            try:
+                rec = _from_sqlite(json.loads(t["data"]))
+            except (TypeError, ValueError):
+                continue
+            rec["deleted_at"] = t["deleted_at"]
+            _write(workspace / TRASH_DIR / _filename(rec), rec)
+        bin_ = workspace / ".trash"
+        bin_.mkdir(exist_ok=True)
+        try:
+            db.replace(bin_ / f"{time.strftime('%Y%m%d-%H%M%S')}-{LEGACY_DB}")
+            for side in ("-wal", "-shm"):
+                (workspace / (LEGACY_DB + side)).unlink(missing_ok=True)
+        except OSError:
+            pass        # still open somewhere; nothing is written twice next time
+        return written
+
+
+def set_company_logo(workspace: Path, company: str, logo: str) -> int:
+    """Point every application to one company at the same logo.
+
+    Applications are per-role but a logo belongs to the company, so this is
+    matched on the name rather than set on one application.
+    """
+    want = company.strip().lower()
+    n = 0
+    with _locked(workspace):
+        state = _scan(workspace)
+        for job_id, name in list(state["ids"].items()):
+            rec = state["files"][name][3]
+            if str(rec.get("company") or "").lower() != want:
+                continue
+            n += 1
+            if rec.get("logo") != logo:
+                _put(workspace, name, dict(rec, logo=logo, updated_at=_now()))
+    return n
+
+
+def _row(rec: dict) -> dict:
+    """A stored application as everything else reads it: every field there,
+    empty ones as None, the lists as lists, and its own copies of them."""
+    d = {k: copy.deepcopy(rec.get(k)) for k in STORED}
+    d["status"] = d["status"] or "pending"
+    d["salary_currency"] = d["salary_currency"] or "EUR"
+    for k in ("status_history", "people", "rounds"):
+        if not isinstance(d[k], list):
+            d[k] = []
+    if not isinstance(d["prep"], dict):
+        d["prep"] = None
     # Before people, an application had one contact email. It is the first
     # person until someone is added.
     if not d["people"] and d.get("contact_email"):
         d["people"] = [{"id": "contact", "name": "", "role": "", "email": d["contact_email"],
                         "link": "", "last": ""}]
-    try:
-        d["rounds"] = json.loads(d.get("rounds") or "[]")
-    except json.JSONDecodeError:
-        d["rounds"] = []
-    try:
-        d["prep"] = json.loads(d.get("prep") or "null")
-    except json.JSONDecodeError:
-        d["prep"] = None
     # Before rounds, an application had one interview time. It is the first
     # round until the rounds are written.
     if not d["rounds"] and d.get("interview_at"):
@@ -331,27 +716,17 @@ def clean_people(people) -> list[dict]:
 
 def list_jobs(workspace: Path, status: str | None = None, q: str | None = None,
               node: str | None = None) -> list[dict]:
-    con = connect(workspace)
-    sql = "SELECT * FROM jobs"
-    args: list = []
-    where = []
+    rows = [_row(r) for r in _records(workspace)]
     if node and node in NODE_STATUSES:
-        wanted = NODE_STATUSES[node]
-        where.append(f"status IN ({', '.join('?' * len(wanted))})")
-        args += wanted
+        rows = [r for r in rows if r["status"] in NODE_STATUSES[node]]
     if status:
-        where.append("status = ?")
-        args.append(status)
+        rows = [r for r in rows if r["status"] == status]
     if q:
-        where.append("(title LIKE ? OR company LIKE ? OR notes LIKE ?)")
-        args += [f"%{q}%"] * 3
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY datetime(updated_at) DESC"
-    try:
-        return [_row(r) for r in con.execute(sql, args)]
-    finally:
-        con.close()
+        needle = q.casefold()
+        rows = [r for r in rows if any(needle in str(r.get(k) or "").casefold()
+                                       for k in ("title", "company", "notes"))]
+    rows.sort(key=lambda r: str(r.get("updated_at") or ""), reverse=True)
+    return rows
 
 
 def add_job(workspace: Path, data: dict) -> dict:
@@ -365,7 +740,7 @@ def add_job(workspace: Path, data: dict) -> dict:
         "id": uuid.uuid4().hex,
         "created_at": now,
         "updated_at": now,
-        "status_history": json.dumps([{"status": status, "at": now}]),
+        "status_history": [{"status": status, "at": now}],
     }
     for f in FIELDS:
         job[f] = data.get(f)
@@ -383,74 +758,81 @@ def add_job(workspace: Path, data: dict) -> dict:
         except Exception:
             job["language"] = None
 
-    cols = ", ".join(job)
-    con = connect(workspace)
-    try:
-        con.execute(f"INSERT INTO jobs ({cols}) VALUES ({', '.join('?' * len(job))})",
-                    list(job.values()))
-        con.commit()
-        return _row(con.execute("SELECT * FROM jobs WHERE id=?", (job["id"],)).fetchone())
-    finally:
-        con.close()
+    with _locked(workspace):
+        _put(workspace, _new_name(workspace, job), job)
+    return _row(job)
+
+
+def set_stored(workspace: Path, job_id: str, fields: dict) -> dict:
+    """Set stored fields exactly as given: no history appended, no time
+    stamped. For the sample data, which makes up a past."""
+    with _locked(workspace):
+        found = _find(workspace, job_id)
+        if found is None:
+            raise ValueError("No such job.")
+        name, rec = found
+        rec = dict(rec, **{k: v for k, v in fields.items() if k in STORED and k != "id"})
+        _put(workspace, name, rec)
+    return _row(rec)
 
 
 def update_job(workspace: Path, job_id: str, data: dict) -> dict:
     """Change fields on one application, appending to its status history.
 
-    `append_note` is not a column: it adds a dated line to `notes` rather than
+    `append_note` is not a field: it adds a dated line to `notes` rather than
     replacing them. That is what the MCP tools use, so a model can record why
     it changed something without being able to erase what the user typed.
     """
     if data.get("interview_tz"):
         valid_tz(data["interview_tz"])
-    con = connect(workspace)
-    try:
-        # The history append below is a read-modify-write, and an AI client is
-        # now a second writer on this file. Without an immediate transaction
-        # two concurrent status changes both read the same history and the
-        # second write silently drops the first one's entry.
-        con.execute("BEGIN IMMEDIATE")
-        cur = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-        if cur is None:
+    # The history append below is a read-modify-write, and an AI client is a
+    # second writer on this folder. Without the lock two concurrent status
+    # changes both read the same history and the second write silently drops
+    # the first one's entry.
+    with _locked(workspace):
+        found = _find(workspace, job_id)
+        if found is None:
             raise ValueError("No such job.")
-        sets, args = [], []
+        name, cur = found
+        cur = copy.deepcopy(cur)
+        new = copy.deepcopy(cur)
+        touched: set[str] = set()
+
+        def put(k, v):
+            new[k] = v
+            touched.add(k)
+
         for f in FIELDS:
             # Only fields that actually differ. A reconcile against a mailbox
             # re-derives the same interview time from the same event on every
             # run, and writing it back unchanged would bump updated_at, jump
-            # the row to the top of a table sorted by it, and tell the open app
-            # the jobs changed when nothing did.
-            if f in data and data[f] != cur[f]:
-                sets.append(f"{f}=?")
-                args.append(data[f])
+            # the application to the top of a list sorted by it, and tell the
+            # open app the jobs changed when nothing did.
+            if f in data and not _same(data[f], cur.get(f)):
+                put(f, data[f])
         if "prep" in data:
-            prep = clean_prep(data["prep"])
-            stored = json.dumps(prep, ensure_ascii=False) if prep else None
-            if stored != cur["prep"]:
-                sets.append("prep=?")
-                args.append(stored)
+            prep = clean_prep(data["prep"]) or None
+            if not _same(prep, cur.get("prep")):
+                put("prep", prep)
         if "people" in data:
             people = clean_people(data["people"])
-            stored = json.dumps(people, ensure_ascii=False)
-            if stored != (cur["people"] or "[]"):
-                sets.append("people=?")
-                args.append(stored)
+            if not _same(people, cur.get("people")):
+                put("people", people)
                 # contact_email is what the mail matching reads: keep it the
                 # first person's.
                 first = next((p["email"] for p in people if p["email"]), None)
-                if first != cur["contact_email"] and "contact_email=?" not in sets:
-                    sets.append("contact_email=?")
-                    args.append(first)
+                if not _same(first, cur.get("contact_email")) and "contact_email" not in touched:
+                    put("contact_email", first)
         # Rounds carry the interview time: writing them moves interview_at to
         # the next one. Writing interview_at alone (the calendar, a mail
         # reconcile) moves that round, or adds one when none is waiting.
         rounds = None
         if "rounds" in data:
             rounds = clean_rounds(data["rounds"])
-        elif "interview_at" in data and cur["rounds"]:
-            rounds = json.loads(cur["rounds"] or "[]")
+        elif "interview_at" in data and cur.get("rounds"):
+            rounds = copy.deepcopy(cur["rounds"])
             at = str(data["interview_at"] or "")[:16]
-            tz = data.get("interview_tz", cur["interview_tz"]) or ""
+            tz = data.get("interview_tz", cur.get("interview_tz")) or ""
             nxt = next((r for r in rounds if not r.get("outcome")), None)
             if nxt is not None:
                 nxt.update(at=at, tz=tz)
@@ -459,98 +841,90 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
                                "with": "", "outcome": "", "note": ""})
             rounds = clean_rounds(rounds)
         if rounds is not None:
-            stored = json.dumps(rounds, ensure_ascii=False)
-            if stored != (cur["rounds"] or "[]"):
-                sets.append("rounds=?")
-                args.append(stored)
+            if not _same(rounds, cur.get("rounds")):
+                put("rounds", rounds)
             if "rounds" in data:
                 at, tz = interview_of(rounds)
                 for col, val in (("interview_at", at), ("interview_tz", tz)):
-                    if val != cur[col] and f"{col}=?" not in sets:
-                        sets.append(f"{col}=?")
-                        args.append(val)
+                    if not _same(val, cur.get(col)) and col not in touched:
+                        put(col, val)
         note = (data.get("append_note") or "").strip()
         if note:
             stamped = f"[{time.strftime('%Y-%m-%d')}] {note}"
-            existing = (cur["notes"] or "").rstrip()
-            sets.append("notes=?")
-            args.append(f"{existing}\n{stamped}" if existing else stamped)
+            existing = (cur.get("notes") or "").rstrip()
+            put("notes", f"{existing}\n{stamped}" if existing else stamped)
         # A status change appends to the history rather than overwriting it;
         # the history is the whole point of the funnel.
         new_status = data.get("status")
-        if new_status and new_status != cur["status"]:
+        if new_status and new_status != (cur.get("status") or "pending"):
             if new_status not in STATUSES:
                 raise ValueError(f"Unknown status: {new_status}")
-            hist = json.loads(cur["status_history"] or "[]")
+            hist = list(cur.get("status_history") or [])
             hist.append({"status": new_status, "at": _now()})
-            sets.append("status_history=?")
-            args.append(json.dumps(hist))
-        if not sets:
-            con.rollback()
+            put("status_history", hist)
+        if not touched:
             return _row(cur)
-        sets.append("updated_at=?")
-        args.append(_now())
-        args.append(job_id)
-        con.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id=?", args)
-        con.commit()
-        return _row(con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
-    finally:
-        con.close()
+        new["updated_at"] = _now()
+        _put(workspace, name, new)
+        return _row(new)
 
 
 TRASH_DAYS = 30
 
 
+def _trash_files(workspace: Path) -> dict[Path, dict]:
+    out = {}
+    d = workspace / TRASH_DIR
+    if d.is_dir():
+        for f in d.glob("*.y*ml"):
+            if f.name.startswith("."):
+                continue
+            rec = _parse(f, f.stat().st_mtime)
+            if rec:
+                out[f] = rec
+    return out
+
+
 def delete_job(workspace: Path, job_id: str) -> None:
-    """Move an application to the trash. restore_job brings it back as it
-    was; after TRASH_DAYS it is gone for good."""
-    con = connect(workspace)
-    try:
-        row = con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
-        if row is None:
+    """Move an application to the workspace's .trash folder. restore_job
+    brings it back as it was; after TRASH_DAYS it is gone for good."""
+    with _locked(workspace):
+        found = _find(workspace, job_id)
+        if found is None:
             return
-        con.execute("INSERT OR REPLACE INTO trash (id, data, deleted_at) VALUES (?,?,?)",
-                    (job_id, json.dumps(dict(row), ensure_ascii=False), _now()))
-        con.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        name, rec = found
+        _write(workspace / TRASH_DIR / name, dict(rec, deleted_at=_now()))
+        (tracker_dir(workspace) / name).unlink(missing_ok=True)
         cutoff = time.strftime("%Y-%m-%dT%H:%M:%S",
                                time.localtime(time.time() - TRASH_DAYS * 86400))
-        con.execute("DELETE FROM trash WHERE deleted_at < ?", (cutoff,))
-        con.commit()
-    finally:
-        con.close()
+        for f, t in _trash_files(workspace).items():
+            if str(t.get("deleted_at") or "") < cutoff:
+                f.unlink(missing_ok=True)
 
 
 def restore_job(workspace: Path, job_id: str) -> dict:
     """Put a deleted application back, with the id and history it had."""
-    con = connect(workspace)
-    try:
-        row = con.execute("SELECT data FROM trash WHERE id=?", (job_id,)).fetchone()
-        if row is None:
+    with _locked(workspace):
+        hit = next(((f, t) for f, t in _trash_files(workspace).items() if t["id"] == job_id), None)
+        if hit is None:
             raise ValueError("That application is no longer in the trash.")
-        data = json.loads(row["data"])
-        cols = [r["name"] for r in con.execute("PRAGMA table_info(jobs)")]
-        keep = [c for c in cols if c in data]
-        con.execute(f"INSERT OR REPLACE INTO jobs ({', '.join(keep)}) VALUES "
-                    f"({', '.join('?' for _ in keep)})", [data[c] for c in keep])
-        con.execute("DELETE FROM trash WHERE id=?", (job_id,))
-        con.commit()
-        return _row(con.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone())
-    finally:
-        con.close()
+        f, rec = hit
+        rec.pop("deleted_at", None)
+        found = _find(workspace, job_id)
+        _put(workspace, found[0] if found else f.name, rec)
+        f.unlink(missing_ok=True)
+    return _row(rec)
 
 
 def list_trash(workspace: Path) -> list[dict]:
-    """What is in the trash, newest first: id, company, title and when."""
-    con = connect(workspace)
-    try:
-        out = []
-        for r in con.execute("SELECT id, data, deleted_at FROM trash ORDER BY deleted_at DESC"):
-            d = json.loads(r["data"])
-            out.append({"id": r["id"], "company": d.get("company"), "title": d.get("title"),
-                        "deleted_at": r["deleted_at"]})
-        return out
-    finally:
-        con.close()
+    """What is in the trash, newest first: id, company, title and when. One
+    that is back in the list (a restored backup brought its file back) is not."""
+    live = {r["id"] for r in _records(workspace)}
+    out = [{"id": t["id"], "company": t.get("company"), "title": t.get("title"),
+            "deleted_at": t.get("deleted_at")}
+           for t in _trash_files(workspace).values() if t["id"] not in live]
+    out.sort(key=lambda t: str(t["deleted_at"] or ""), reverse=True)
+    return out
 
 
 def _reply_days(history: list[dict]) -> int | None:
@@ -706,26 +1080,13 @@ def funnel(workspace: Path, since: str | None = None) -> dict:
     `since` is an ISO date; jobs created before it are left out, which is what
     the range control on the funnel screen selects.
     """
-    con = connect(workspace)
-    where, args = "", []
+    rows = [_row(r) for r in _records(workspace)]
     if since:
-        where, args = " WHERE created_at >= ?", [since]
-    try:
-        counts = {r["status"]: r["n"] for r in con.execute(
-            "SELECT status, COUNT(*) n FROM jobs" + where + " GROUP BY status", args)}
-        histories = [r["status_history"] for r in con.execute(
-            "SELECT status_history FROM jobs" + where, args)]
-    finally:
-        con.close()
-
-    replies = []
-    for raw in histories:
-        try:
-            days = _reply_days(json.loads(raw or "[]"))
-        except json.JSONDecodeError:
-            days = None
-        if days is not None:
-            replies.append(days)
+        rows = [r for r in rows if str(r.get("created_at") or "") >= since]
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    replies = [d for d in (_reply_days(r["status_history"]) for r in rows) if d is not None]
 
     total = sum(counts.values())
     nodes = [{"id": nid, "label": LABELS[nid],
@@ -812,7 +1173,7 @@ def ics(workspace: Path, job_id: str | None = None) -> str:
 
 
 def export(workspace: Path, fmt: str = "json") -> str:
-    """Everything back out as text, so the database is never a lock-in."""
+    """Everything in one file, for a spreadsheet or another tracker."""
     rows = list_jobs(workspace)
     if fmt == "csv":
         buf = io.StringIO()

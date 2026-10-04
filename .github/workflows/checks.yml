@@ -90,6 +90,9 @@ jobs:
       - name: Backups
         run: python checks/backuptest.py
 
+      - name: Applications as files
+        run: python checks/trackertest.py
+
       - name: Search
         run: python checks/searchtest.py
 
