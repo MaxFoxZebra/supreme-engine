@@ -168,6 +168,11 @@ jobs:
       - name: Quick with 500 applications
         run: node checks/scaletest.js "http://127.0.0.1:8750/?token=t"
 
+      # The page view an AI client shows with render_cv (MCP Apps): this
+      # check is the client, over stdio and in Chrome.
+      - name: The CV page in the chat
+        run: node checks/pageview.js
+
       - name: Server log, when something failed
         if: failure()
         run: cat "$RUNNER_TEMP/server.log" || true

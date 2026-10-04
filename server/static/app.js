@@ -6184,13 +6184,13 @@ function drawJobInspector(){
 
   const field=([k,label,kind])=>{
     let ctl;
-    if(kind==="status") ctl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span><select data-j="status">'+S.statuses.map(s=>
+    if(kind==="status") ctl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span><select data-j="status" aria-label="'+esc(label)+'">'+S.statuses.map(s=>
       '<option value="'+s+'"'+(s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+
       '</option>').join("")+'</select></span>';
     else if(kind==="lang"){
       /* Stored once said; until then a guess from the posting, offered. */
       const guess=j.language_guess, cur=j.language||"";
-      ctl='<select data-j="language">'+
+      ctl='<select data-j="language" aria-label="'+esc(label)+'">'+
         '<option value=""'+(cur?"":" selected")+'>'+(guess?"Looks like "+
           esc(langOf(guess).native):"Not set")+'</option>'+
         ((S.state&&S.state.languages)||[]).map(l=>'<option value="'+l.code+'"'+
@@ -6209,7 +6209,7 @@ function drawJobInspector(){
 
   const docRow=(label,key,group)=>{
     const linked=j[key];
-    return '<div class="drow"><select data-j="'+key+'" class="'+(linked?"":"empty")+'">'+
+    return '<div class="drow"><select data-j="'+key+'" class="'+(linked?"":"empty")+'" aria-label="'+esc(label)+'">'+
       '<option value="">'+(key==="cv_path"?"no CV yet":"no cover letter")+'</option>'+
       ((S.state&&S.state.documents||[]).filter(d=>d.group===group).map(d=>
         '<option value="'+esc(d.path)+'"'+(d.path===linked?" selected":"")+'>'+

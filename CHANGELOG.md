@@ -33,6 +33,14 @@ tag, so a release is never published with nothing said about it.
 - **The skills are also offered as prompts**, so a client without skills
   still has them: in Claude Desktop, *Apply to a job*, *Catch up from my
   inbox* and *Prepare an interview* are under the **+** menu.
+- **Your CV, in the conversation.** In Claude, rendering a CV now shows the
+  page itself inside the chat, every page of it. Click a block (the summary,
+  a job, a degree) and say what should change there, or pick *Make it
+  shorter*, *Make it stronger*, *Match the posting more closely* or *Remove
+  it*: it goes to Claude as your message, naming exactly which block you
+  mean, and the new page appears when Claude has made the change. Typing
+  "make this shorter" in the chat works too, once a block is selected.
+  Clients without this keep the image they had.
 - **Clients know what each tool does.** Every tool has a readable title and
   says whether it only reads, can overwrite something, or reaches a website,
   so a client can let the read-only ones through and keep asking about the

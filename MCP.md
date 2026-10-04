@@ -422,6 +422,27 @@ under Customize → Skills: the plugin replaces them.
 client without skills still has them: in Claude Desktop under the **+** menu,
 and wherever else a client lists a server's prompts.
 
+## The page, in the conversation
+
+In a client that shows views (MCP Apps: Claude, and VS Code's chat), `render_cv`
+also shows the rendered CV inside the conversation: every page, with each
+block on it clickable, the same way the page is in the app's editor. Click a
+block and:
+
+- Claude is told which one you mean (its name, and where it is in the YAML),
+  so "make this shorter" typed in the chat means that block.
+- A box opens under the page: say what should change, or pick *Make it
+  shorter*, *Make it stronger*, *Match the posting more closely* or *Remove
+  it*, and it goes to the chat as your message, naming the file and the block.
+  Claude edits it and renders again, and the new page shows under the old one.
+
+The model still gets the same summary and page image as before, and a client
+without views gets exactly that and nothing more: the pages and the block map
+for the view travel in the result's structured content, which the server only
+sends to a client that said it can show views. The view is
+`server/static/mcp-page.html`, one file with no network access, which follows
+the client's light or dark theme.
+
 ## What a client is told about each tool
 
 Every tool has a title and the standard hints: whether it only reads, whether

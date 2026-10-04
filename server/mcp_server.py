@@ -16,6 +16,7 @@ Run it with:  cv-studio-server --mcp
 from __future__ import annotations
 
 import base64
+import contextvars
 import functools
 import inspect
 from pathlib import Path
@@ -23,9 +24,10 @@ from typing import Annotated
 
 from pydantic import Field
 
+from mcp.server.apps import Apps, client_supports_apps
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.prompts.base import Prompt
-from mcp.types import Icon, ImageContent, ToolAnnotations
+from mcp.types import CallToolResult, Icon, ImageContent, TextContent, ToolAnnotations
 
 import review
 import studio
@@ -42,8 +44,23 @@ def _icons() -> list[Icon]:
                  mime_type="image/png", sizes=["64x64"])]
 
 
+# Views a client can show inside the conversation (MCP Apps). A tool bound to
+# one still answers in text and an image, which is all a client without MCP
+# Apps sees and all the model ever reads; the view gets the rest in the
+# result's structured content, which is sent only to a client that said it
+# can show views, so it never lands in a model's context by mistake.
+PAGE_VIEW = "ui://cv-studio/page.html"
+apps = Apps()
+apps.add_html_resource(
+    PAGE_VIEW,
+    (Path(__file__).resolve().parent / "static" / "mcp-page.html").read_text(encoding="utf-8"),
+    name="cv-page", title="CV page",
+    description="The rendered page, every page of it; click a block to tell "
+                "Claude what to change there.")
+
 mcp = MCPServer(
     name="cv-studio",
+    extensions=[apps],
     title="CV Studio",
     version=studio.VERSION,
     website_url="https://github.com/MaxFoxZebra/supreme-engine",
@@ -246,8 +263,24 @@ def _checkpoint(before: dict, tool_name: str) -> None:
         pass
 
 
-def tool(fn):
+# The client context of the call in progress, for a tool that answers
+# differently to a client that can show views.
+_CALL_CTX: contextvars.ContextVar = contextvars.ContextVar("cvs_call_ctx", default=None)
+
+
+def _shows_views() -> bool:
+    ctx = _CALL_CTX.get()
+    try:
+        return ctx is not None and client_supports_apps(ctx)
+    except Exception:
+        return False
+
+
+def tool(fn=None, *, view: str | None = None):
     """Register a tool, and leave a note in the workspace that it ran.
+
+    `view` binds it to a ui:// view a client that supports MCP Apps shows
+    with its result.
 
     The app is very likely open on the file being edited, in another process
     that cannot see this one. The note is how it finds out, so it can offer to
@@ -260,12 +293,18 @@ def tool(fn):
     it is handed, which is this wrapper, so the signature has to advertise it
     rather than inherit the wrapped function's through functools.wraps.
     """
-    signature = inspect.signature(fn)
+    if fn is None:
+        return lambda f: tool(f, view=view)
+    # Resolved, not the strings `from __future__ import annotations` leaves:
+    # the SDK reads the return type to decide whether a tool has an output
+    # schema, and a CallToolResult it cannot recognise gets one it then fails.
+    signature = inspect.signature(fn, eval_str=True)
 
     @functools.wraps(fn)
     def wrapper(*args, cvs_ctx: Context = None, **kwargs):
         if cvs_ctx is not None:
             _identify(cvs_ctx)
+        _CALL_CTX.set(cvs_ctx)
         try:
             bound = signature.bind(*args, **kwargs)
             target = next((bound.arguments[k] for k in TARGET_KEYS
@@ -304,7 +343,8 @@ def tool(fn):
     wrapper.__annotations__ = {**getattr(fn, "__annotations__", {}),
                                "cvs_ctx": Context}
     return mcp.tool(title=TITLES.get(fn.__name__),
-                    annotations=_annotations(fn.__name__))(wrapper)
+                    annotations=_annotations(fn.__name__),
+                    meta={"ui": {"resourceUri": view}} if view else None)(wrapper)
 
 
 @tool
@@ -402,29 +442,77 @@ def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
     return f"Created {folder}/{safe}.yaml"
 
 
-@tool
-def render_cv(path: str, page: int = 1) -> list:
+def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
+               words, pdf, bands=None, box=None) -> dict:
+    """What the page view shows: every page (up to six) as an image, and
+    where each block of the CV landed on them, named the way the outline
+    names it, so a click can say "Experience · Acme" rather than a position."""
+    labels = {}
+    try:
+        data = studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}
+        sections = ((data.get("cv") or {}).get("sections") or {})
+    except Exception:
+        sections = {}
+    for b in bands or []:
+        if b["k"] == "header":
+            label = "Header"
+        else:
+            label = str(b.get("name") or "").replace("_", " ").strip().capitalize()
+            if b["k"] == "entry":
+                entries = sections.get(b.get("name")) or []
+                i = b.get("i") or 0
+                label += " · " + (studio.entry_title(entries[i], i) if i < len(entries)
+                                  else f"entry {i + 1}")
+        labels[f"{b['k']}|{b.get('name')}|{b.get('i')}"] = label
+    return {
+        "view": "cv-page", "path": path, "page": page, "pages": pages,
+        "words": words, "pdf": pdf, "letter": studio.is_letter(p),
+        "images": ["data:image/png;base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+                   for f in pngs[:6]],
+        "map": [{**b, "label": labels.get(f"{b['k']}|{b.get('name')}|{b.get('i')}")}
+                for b in bands or []],
+        "box": box,
+    }
+
+
+@tool(view=PAGE_VIEW)
+def render_cv(path: str, page: int = 1) -> CallToolResult:
     """Render a CV to PDF and return the page as an image to look at.
 
     Returns the page count, the word count an ATS would extract, the PDF's
     location, and an image of the requested page. Check the image before
     reporting success: page-break damage does not show up in the YAML.
+
+    In a client that shows views, the user also sees every page in the
+    conversation and can click a block to tell you what to change there:
+    their message names the block and its place in the YAML.
     """
     p = studio.safe_path(path)
+
+    def failed(text: str) -> CallToolResult:
+        return CallToolResult(content=[TextContent(type="text", text=text)], is_error=True)
+
+    def image(f: Path) -> ImageContent:
+        return ImageContent(type="image", data=base64.b64encode(f.read_bytes()).decode("ascii"),
+                            mime_type="image/png")
+
     if studio.is_letter(p):
         r = studio.render_letter(p)
         if not r.get("ok"):
-            return [f"RENDER FAILED\n\n{r.get('error')}"]
-        png = studio.WORKSPACE / r["pngs"][max(1, min(page, r["pages"])) - 1].split("path=")[1].split("&")[0]
-        return [f"Rendered {path}\nPages: {r['pages']}\nWords: {r['words']}\nPDF: {r['pdf']}",
-                ImageContent(type="image", data=base64.b64encode(png.read_bytes()).decode("ascii"),
-                             mime_type="image/png")]
-    result = render_file(p, studio.output_dir(p))
+            return failed(f"RENDER FAILED\n\n{r.get('error')}")
+        pngs = [studio.WORKSPACE / u.split("path=")[1].split("&")[0] for u in r["pngs"]]
+        idx = max(1, min(page, r["pages"])) - 1
+        summary = f"Rendered {path}\nPages: {r['pages']}\nWords: {r['words']}\nPDF: {r['pdf']}"
+        return CallToolResult(
+            content=[TextContent(type="text", text=summary), image(pngs[idx])],
+            structured_content=_page_view(path, p, pngs, idx + 1, r["pages"], r["words"], r["pdf"])
+            if _shows_views() else None)
 
+    result = render_file(p, studio.output_dir(p))
     if not result.get("ok"):
         log = (result.get("log") or "render failed")[-2500:]
         hint = studio.friendly(log)
-        return [f"RENDER FAILED\n\n{('Likely cause: ' + hint) if hint else ''}\n\n{log}"]
+        return failed(f"RENDER FAILED\n\n{('Likely cause: ' + hint) if hint else ''}\n\n{log}")
 
     pages = result["pages"]
     summary = (
@@ -433,17 +521,18 @@ def render_cv(path: str, page: int = 1) -> list:
         f"Words an ATS reads: {result['ats_word_count']}\n"
         f"PDF: {result['pdf']}"
     )
-    out_blocks: list = [summary]
-
+    content: list = [TextContent(type="text", text=summary)]
+    pngs = [Path(f) for f in result.get("png_pages") or []]
     idx = max(1, min(page, pages)) - 1
-    if result.get("png_pages"):
-        data = Path(result["png_pages"][idx]).read_bytes()
-        out_blocks.append(ImageContent(
-            type="image",
-            data=base64.b64encode(data).decode("ascii"),
-            mime_type="image/png",
-        ))
-    return out_blocks
+    if pngs:
+        content.append(image(pngs[idx]))
+    view = None
+    if _shows_views() and pngs:
+        mapped, _ = studio.block_map(result, p)
+        view = _page_view(path, p, pngs, idx + 1, pages, result["ats_word_count"],
+                          studio.rel(Path(result["pdf"])) if result.get("pdf") else None,
+                          (mapped or {}).get("bands"), (mapped or {}).get("box"))
+    return CallToolResult(content=content, structured_content=view)
 
 
 @tool
