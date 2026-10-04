@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.36.0
 
 - **Applications are files now, one each, so a workspace can follow you to
   another computer.** Each application is a YAML file in the workspace's
