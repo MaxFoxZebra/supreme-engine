@@ -297,7 +297,7 @@
   function statsHtml() {
     const d = data, out = [];
     out.push('<span class="stat">' + (d.pages === 1 ? "1 page" : d.pages + " pages") + "</span>");
-    if (d.words) out.push('<span class="stat">' + d.words + " words</span>");
+    if (d.words) out.push('<span class="stat">' + esc(d.words) + " words</span>");
     const lastFill = fills[d.images.length - 1];
     if (lastFill != null && d.pages === d.images.length) {
       if (d.pages > 1 && lastFill < 0.3)
@@ -320,7 +320,7 @@
     if (data.images.length < 2) return "";
     return data.images.map((src, i) => '<button class="thumb" data-page="' + i + '"' +
       (i === page ? ' aria-current="page"' : "") + ' aria-label="Page ' + (i + 1) + '"><img alt="" src="' +
-      src + '">' + (i + 1) + "</button>").join("");
+      esc(src) + '">' + (i + 1) + "</button>").join("");
   }
 
   function outline() {
@@ -345,7 +345,7 @@
       '<aside class="side"><div class="outline" id="outline">' + outline() + "</div>" +
         (n > 1 ? '<div class="pages">' + thumbs() + "</div>" : "") + "</aside>" +
       '<div class="body"><div class="stage" id="stage"><div class="sheet" id="sheet"><img id="pg" alt="Page ' +
-        (page + 1) + ' of ' + d.pages + '" src="' + d.images[page] + '"></div>' +
+        (page + 1) + ' of ' + esc(d.pages) + '" src="' + esc(d.images[page]) + '"></div>' +
         '<div class="tag" id="tag"></div>' +
         (!seen && (d.map || []).length ? '<div class="coach" id="coach">Click any part of the page to change it</div>' : "") +
       "</div>" + (n > 1 ? '<div class="rail">' + thumbs() + "</div>" : "") + "</div>" +
@@ -402,23 +402,42 @@
     if (sel) openPop(); else if (sent) openSent();
   }
 
+  /* Text from the CV goes into what Claude reads, and a CV can carry text
+     from an imported PDF or a posting. So it goes in as one short line of
+     plain words: no line breaks or control characters to start a new
+     "instruction", nothing long enough to carry one. */
+  const clean = (s, n = 80) => {
+    s = String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
+      .replace(/\s+/g, " ").trim();
+    return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
+  };
+  const name = b => clean(b.label) || "this part of the CV";
+  const key_ = s => String(s ?? "").replace(/[^\w.-]/g, "");   /* a YAML key, nothing else */
+
   /* Where in the YAML the block is, so the model edits the right thing. */
   function where(b) {
     if (b.k === "header") return "cv.name, cv.headline and the contact details";
-    if (b.k === "section") return "cv.sections." + b.name;
-    return "cv.sections." + b.name + "[" + b.i + "]";
+    if (b.k === "section") return "cv.sections." + key_(b.name);
+    return "cv.sections." + key_(b.name) + "[" + (+b.i || 0) + "]";
+  }
+
+  /* What Claude is told, out of sight of the chat: the file, the exact place,
+     and what to do after. Each update replaces the one before. */
+  function tellModel(b, asked) {
+    if (!host.caps.updateModelContext) return Promise.resolve(false);
+    const text = "CV Studio page view: the user " + (asked ? "asked for a change to" : "selected") +
+      " the block \"" + name(b) + "\" in " + clean(data.path, 200) + ", at " + where(b) + ". " +
+      (asked ? "Their next message says what to change. Edit only that block, then call render_cv on " +
+               clean(data.path, 200) + " so they see the new page."
+             : "If their next message says \"this\", it means that block.");
+    return request("ui/update-model-context", {content: [{type: "text", text}]}).then(() => true, () => false);
   }
 
   function select(b) {
     sel = b; sent = null;
     if (!seen) { seen = true; try { localStorage.setItem("cvs-page-coached", "1"); } catch (e) {} }
     paint();
-    /* So "make this shorter", typed in the chat itself, means this block. */
-    if (host.caps.updateModelContext) {
-      request("ui/update-model-context", {content: [{type: "text", text:
-        "In the CV page view, the user selected " + (b.label || "a block") + " in " + data.path +
-        " (" + where(b) + "). \"This\" in their next message means that block."}]}).catch(() => {});
-    }
+    tellModel(b, false);
   }
 
   function close() { sel = null; sent = null; paint(); }
@@ -475,8 +494,14 @@
     text = (text || "").trim();
     const b = sel;
     if (!text || !b) return;
-    const out = "In " + data.path + ", " + (b.label || "this block") + " (" + where(b) + "): " + text +
-      "\nEdit it, then render the CV again so I can see it.";
+    /* The message is what the user would have typed: the block and the
+       change, in one line they can read before sending. The file and the
+       YAML path go to Claude through the context instead; a client without
+       that gets them in the message. */
+    const told = await tellModel(b, true);
+    const out = told ? name(b) + " — " + clean(text, 500)
+      : name(b) + " — " + clean(text, 500) + " (" + clean(data.path, 200) + ", " + where(b) +
+        "; render it again after)";
     try {
       await request("ui/message", {role: "user", content: [{type: "text", text: out}]});
       sel = null; sent = b; paint();
@@ -491,8 +516,8 @@
     const stage = document.getElementById("stage");
     const pop = document.createElement("div");
     pop.id = "ask"; pop.className = "pop below"; pop.setAttribute("role", "status");
-    pop.innerHTML = '<div class="done">' + ICON.ok + "<span>Sent to Claude. The new page will appear below " +
-      "when the change is made.</span></div>";
+    pop.innerHTML = '<div class="done">' + ICON.ok + "<span>Passed to the chat. Once it is sent, Claude " +
+      "makes the change and the new page appears below.</span></div>";
     stage.appendChild(pop);
     place(pop);
     setTimeout(() => { if (sent && document.body.contains(pop)) { sent = null; paint(); } }, 4500);

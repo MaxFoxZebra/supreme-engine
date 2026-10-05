@@ -463,7 +463,11 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                 i = b.get("i") or 0
                 label += " · " + (studio.entry_title(entries[i], i) if i < len(entries)
                                   else f"entry {i + 1}")
-        labels[f"{b['k']}|{b.get('name')}|{b.get('i')}"] = label
+        # One short line of plain text: a label is CV text, which can come
+        # from an imported PDF or a posting, and the view puts it in front of
+        # the model.
+        label = " ".join("".join(ch if ch.isprintable() else " " for ch in label).split())
+        labels[f"{b['k']}|{b.get('name')}|{b.get('i')}"] = label[:79] + "…" if len(label) > 80 else label
     return {
         "view": "cv-page", "path": path, "page": page, "pages": pages,
         "words": words, "pdf": pdf, "letter": studio.is_letter(p),

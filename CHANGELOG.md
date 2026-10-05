@@ -14,10 +14,17 @@ tag, so a release is never published with nothing said about it.
   lays out: pages, words, and whether it fits on one page, or warns when the
   last page is mostly empty. Several pages sit side by side as thumbnails.
   Clicking a block opens a box right beside it rather than under the page;
-  Enter sends, Esc closes, and it says when your change has gone to Claude.
+  Enter sends, Esc closes, and it says when your change is in the chat.
   Full screen fits the page to the window with an outline of every block
   beside it. It takes Claude's own colours and type, in light and dark, and
   a first visit says what the page is for.
+- **The message a click puts in the chat reads like you typed it:** "Experience
+  · Ateme Inc. — Make it stronger", nothing more. Where the block is in the
+  file, and to render again after, go to Claude out of sight. And text from
+  the CV (a company name, a heading) reaches Claude only as one short plain
+  line, so a CV built from an imported PDF or a posting cannot slip a line of
+  instructions in. Claude still asks you before sending anything a page puts
+  in your message.
 
 ## 0.37.0
 
