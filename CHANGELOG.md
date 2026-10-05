@@ -8,6 +8,17 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **The page in the chat, redesigned.** The bar over the page says how it
+  lays out: pages, words, and whether it fits on one page, or warns when the
+  last page is mostly empty. Several pages sit side by side as thumbnails.
+  Clicking a block opens a box right beside it rather than under the page;
+  Enter sends, Esc closes, and it says when your change has gone to Claude.
+  Full screen fits the page to the window with an outline of every block
+  beside it. It takes Claude's own colours and type, in light and dark, and
+  a first visit says what the page is for.
+
 ## 0.37.0
 
 - **Updating CV Studio no longer disconnects Claude.** On Windows the

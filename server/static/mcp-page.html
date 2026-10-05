@@ -9,85 +9,197 @@
   client's sandboxed frame with no network, so everything is in this file and
   the pages arrive as images in the tool result. It speaks to the client over
   postMessage (JSON-RPC 2.0): ui/initialize, then it is handed the tool's
-  input and result. A click on a block selects it, tells the model what the
-  user is pointing at (ui/update-model-context), and offers to send the
-  change as the user's next message (ui/message).
+  input and result.
+
+  What it is for: seeing the page, and pointing at a part of it. A click on a
+  block selects it, tells the model what the user is pointing at
+  (ui/update-model-context), and opens a box beside the block whose text goes
+  to the chat as the user's next message (ui/message).
+
+  Preview it without Claude: node checks/viewdev.js
 -->
 <style>
   :root{
     --bg:var(--color-background-primary,#fff);
-    --bg2:var(--color-background-secondary,#f5f4f0);
-    --tx:var(--color-text-primary,#1d1b16);
-    --tx2:var(--color-text-secondary,#6b665c);
-    --rule:var(--color-border-secondary,#e3dfd6);
-    --acc:var(--color-ring-primary,#c08a3e);
-    --font:var(--font-sans,system-ui,-apple-system,"Segoe UI",sans-serif);
-    --radius:var(--border-radius-md,8px);
+    --bg2:var(--color-background-secondary,#f5f4ef);
+    --bg3:var(--color-background-tertiary,#eeece5);
+    --tx:var(--color-text-primary,#1f1e1d);
+    --tx2:var(--color-text-secondary,#5e5d59);
+    --tx3:var(--color-text-tertiary,#87867f);
+    --rule:var(--color-border-secondary,#e2e0d9);
+    --rule2:var(--color-border-primary,#c9c7bf);
+    --acc:var(--color-ring-primary,#c96442);
+    --warn:var(--color-text-warning,#9a5b13);
+    --warnbg:var(--color-background-warning,#fbf1e2);
+    --ok:var(--color-text-success,#2f6b3b);
+    --font:var(--font-sans,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif);
+    --mono:var(--font-mono,ui-monospace,"SFMono-Regular",Menlo,monospace);
+    --r:var(--border-radius-md,8px);
+    --sheet:560px;
   }
   :root[data-theme=dark]{
-    --bg:var(--color-background-primary,#1b1a17);
-    --bg2:var(--color-background-secondary,#25231f);
-    --tx:var(--color-text-primary,#f2efe8);
-    --tx2:var(--color-text-secondary,#aaa497);
-    --rule:var(--color-border-secondary,#3a3731);
+    --bg:var(--color-background-primary,#262624);
+    --bg2:var(--color-background-secondary,#30302e);
+    --bg3:var(--color-background-tertiary,#1f1e1d);
+    --tx:var(--color-text-primary,#faf9f5);
+    --tx2:var(--color-text-secondary,#c2c0b6);
+    --tx3:var(--color-text-tertiary,#9a9890);
+    --rule:var(--color-border-secondary,#3a3936);
+    --rule2:var(--color-border-primary,#4a4945);
+    --acc:var(--color-ring-primary,#d97757);
+    --warn:var(--color-text-warning,#e6b26a);
+    --warnbg:var(--color-background-warning,#3a2f20);
+    --ok:var(--color-text-success,#8cc79a);
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:transparent;color:var(--tx);font:14px/1.45 var(--font)}
-  .bar{display:flex;align-items:center;gap:8px;padding:6px 2px 8px;flex-wrap:wrap;
-    margin:0 auto;max-width:560px}
-  .bar .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
-  .bar .meta{color:var(--tx2);font-size:12.5px}
-  .bar .sp{flex:1}
   button{font:inherit;color:inherit}
-  .btn{border:1px solid var(--rule);background:var(--bg);border-radius:var(--radius);
-    padding:3px 10px;cursor:pointer;font-size:12.5px}
-  .btn:hover{background:var(--bg2)}
-  .btn:disabled{opacity:.45;cursor:default}
-  .btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
-  .sheet{position:relative;margin:0 auto;max-width:560px;background:#fff;
-    border:1px solid var(--rule);border-radius:4px;overflow:hidden;
-    box-shadow:0 1px 3px rgba(0,0,0,.08)}
-  .sheet img{display:block;width:100%;height:auto;user-select:none}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+  /* The bar: what this is, how it lays out, and the one action. */
+  .bar{display:flex;align-items:center;gap:10px;margin:0 auto 10px;max-width:calc(var(--sheet) + 104px);
+    min-height:32px}
+  .doc{min-width:0;display:flex;flex-direction:column;line-height:1.25}
+  .doc b{font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .doc span{color:var(--tx3);font:11.5px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sp{flex:1}
+  .stats{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .stat{font-size:12px;color:var(--tx2);background:var(--bg2);border-radius:99px;padding:2px 9px;
+    white-space:nowrap}
+  .stat.warn{color:var(--warn);background:var(--warnbg)}
+  .stat.ok::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--ok);margin-right:6px;vertical-align:1px}
+  .icon{width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--rule);
+    background:var(--bg);border-radius:var(--r);cursor:pointer;color:var(--tx2);flex:none}
+  .icon:hover{background:var(--bg2);color:var(--tx)}
+  .icon svg{width:15px;height:15px}
+
+  /* The page and, when there are several, the others beside it. */
+  .body{display:flex;gap:14px;justify-content:center;align-items:flex-start}
+  .stage{position:relative;flex:0 1 var(--sheet);min-width:0}
+  .sheet{position:relative;background:#fff;border-radius:3px;overflow:hidden;
+    box-shadow:0 0 0 1px var(--rule),0 2px 10px rgba(0,0,0,.06)}
+  :root[data-theme=dark] .sheet{box-shadow:0 0 0 1px var(--rule),0 2px 14px rgba(0,0,0,.35)}
+  .sheet img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
+  .rail{display:flex;flex-direction:column;gap:10px;flex:none;width:90px}
+  .thumb{border:0;padding:0;background:none;cursor:pointer;text-align:center;color:var(--tx3);font-size:11px}
+  .thumb img{display:block;width:100%;border-radius:2px;background:#fff;
+    box-shadow:0 0 0 1px var(--rule);margin-bottom:3px;transition:box-shadow .12s}
+  .thumb:hover img{box-shadow:0 0 0 1px var(--rule2)}
+  .thumb[aria-current=page] img{box-shadow:0 0 0 2px var(--acc)}
+  .thumb[aria-current=page]{color:var(--tx)}
+
+  /* Click targets: invisible until pointed at. */
   .hit{position:absolute;border:0;background:transparent;padding:0;cursor:pointer;
-    border-radius:3px;outline-offset:-2px}
-  .hit:hover,.hit:focus-visible{background:rgba(192,138,62,.10);
-    box-shadow:inset 0 0 0 1.5px rgba(192,138,62,.55)}
-  .hit.sel{background:rgba(192,138,62,.06);box-shadow:0 0 0 2px var(--acc)}
-  .tip{position:absolute;left:8px;top:8px;background:rgba(29,27,22,.88);color:#fff;
-    font-size:12px;padding:2px 8px;border-radius:99px;pointer-events:none;display:none}
-  .ask{margin:10px auto 2px;max-width:560px;border:1px solid var(--rule);
-    border-radius:var(--radius);background:var(--bg);padding:10px 12px}
-  .ask[hidden]{display:none}
-  .ask .what{font-weight:600;margin-bottom:6px}
-  .ask .what span{color:var(--tx2);font-weight:400}
-  .ask textarea{width:100%;min-height:58px;resize:vertical;border:1px solid var(--rule);
-    border-radius:6px;padding:7px 9px;font:inherit;color:var(--tx);background:var(--bg)}
-  .ask .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
-  .chip{border:1px solid var(--rule);background:var(--bg2);border-radius:99px;
-    padding:2px 10px;cursor:pointer;font-size:12.5px}
-  .note{color:var(--tx2);font-size:12.5px;margin:8px auto 0;max-width:560px}
-  /* A whole page inline is a lot of chat; full screen is where it gets room. */
-  :root[data-mode=fullscreen] .sheet,:root[data-mode=fullscreen] .ask,:root[data-mode=fullscreen] .bar,
-  :root[data-mode=fullscreen] .note{max-width:880px}
-  .empty{color:var(--tx2);padding:28px 8px;text-align:center}
-  .err{white-space:pre-wrap;font:12px/1.4 var(--font-mono,ui-monospace,monospace);
-    background:var(--bg2);border-radius:var(--radius);padding:10px;max-height:300px;overflow:auto}
+    border-radius:4px;outline:none;transition:background .1s,box-shadow .1s}
+  .hit:hover,.hit:focus-visible{background:color-mix(in srgb,var(--acc) 7%,transparent);
+    box-shadow:0 0 0 1.5px color-mix(in srgb,var(--acc) 55%,transparent)}
+  .hit.sel{background:color-mix(in srgb,var(--acc) 6%,transparent);box-shadow:0 0 0 2px var(--acc)}
+  .hit.sent{box-shadow:0 0 0 1.5px var(--acc);background:none;
+    background-image:repeating-linear-gradient(135deg,transparent 0 6px,
+      color-mix(in srgb,var(--acc) 10%,transparent) 6px 7px)}
+  .tag{position:absolute;z-index:3;pointer-events:none;font-size:11.5px;font-weight:500;
+    color:#fff;background:var(--acc);padding:1px 8px;border-radius:99px;white-space:nowrap;
+    transform:translateY(-100%);margin-top:-3px;display:none;max-width:70%;overflow:hidden;
+    text-overflow:ellipsis}
+
+  /* The first time: one line saying what the page is for. */
+  .coach{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:2;
+    background:rgba(31,30,29,.88);color:#fff;font-size:12.5px;padding:6px 12px;border-radius:99px;
+    white-space:nowrap;pointer-events:none;animation:rise .35s ease-out both .4s}
+  @keyframes rise{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+
+  /* The box beside the block. */
+  .pop{position:absolute;z-index:4;left:6%;right:6%;background:var(--bg);color:var(--tx);
+    border:1px solid var(--rule2);border-radius:calc(var(--r) + 2px);padding:10px 10px 9px;
+    box-shadow:0 8px 28px rgba(0,0,0,.16),0 1px 3px rgba(0,0,0,.08);animation:pop .14s ease-out}
+  :root[data-theme=dark] .pop{box-shadow:0 10px 32px rgba(0,0,0,.5)}
+  @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .pop::before{content:"";position:absolute;left:28px;width:10px;height:10px;background:inherit;
+    border:inherit;border-width:1px 0 0 1px;transform:rotate(45deg)}
+  .pop.below::before{top:-6px}
+  .pop.above::before{bottom:-6px;transform:rotate(225deg)}
+  .pop .what{display:flex;align-items:baseline;gap:6px;margin:0 2px 7px;min-width:0}
+  .pop .what b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pop .what code{color:var(--tx3);font:11px var(--mono);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .pop .what .x{margin-left:auto;border:0;background:none;color:var(--tx3);cursor:pointer;
+    padding:0 2px;font-size:16px;line-height:1}
+  .field{display:flex;gap:6px;align-items:flex-end;border:1px solid var(--rule2);border-radius:var(--r);
+    padding:5px 5px 5px 9px;background:var(--bg)}
+  .field:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
+  .field textarea{flex:1;border:0;outline:0;resize:none;background:transparent;color:var(--tx);
+    font:inherit;min-height:22px;max-height:120px;padding:2px 0;line-height:1.4}
+  .send{flex:none;width:28px;height:28px;border-radius:7px;border:0;background:var(--acc);color:#fff;
+    display:grid;place-items:center;cursor:pointer}
+  .send:disabled{opacity:.35;cursor:default}
+  .send svg{width:14px;height:14px}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+  .chip{border:1px solid var(--rule);background:var(--bg2);border-radius:99px;padding:2px 10px;
+    cursor:pointer;font-size:12.5px;color:var(--tx2)}
+  .chip:hover{color:var(--tx);border-color:var(--rule2)}
+  .hint{color:var(--tx3);font-size:11.5px;margin:7px 2px 0}
+  .done{display:flex;align-items:center;gap:8px;color:var(--tx2);font-size:13px;padding:2px 2px}
+  .done svg{width:16px;height:16px;color:var(--ok);flex:none}
+
+  /* Full screen: the page fits the height; the outline beside it. */
+  :root[data-mode=fullscreen]{--sheet:auto}
+  :root[data-mode=fullscreen] body{height:100vh;overflow:hidden}
+  :root[data-mode=fullscreen] #app{display:grid;grid-template-columns:250px 1fr;height:100vh}
+  :root[data-mode=fullscreen] .bar{grid-column:1/3;max-width:none;margin:0;padding:10px 16px;
+    border-bottom:1px solid var(--rule)}
+  :root[data-mode=fullscreen] .side{display:flex}
+  :root[data-mode=fullscreen] .body{min-height:0;overflow:auto;padding:18px;background:var(--bg3)}
+  :root[data-mode=fullscreen] .stage{flex:none}
+  :root[data-mode=fullscreen] .sheet img{width:auto;height:calc(100vh - 92px)}
+  :root[data-mode=fullscreen] .rail{display:none}
+  .side{display:none;flex-direction:column;min-height:0;border-right:1px solid var(--rule);background:var(--bg)}
+  .outline{overflow:auto;padding:10px 8px;flex:1}
+  .outline h4{margin:10px 8px 4px;font-size:11px;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--tx3)}
+  .ol{display:block;width:100%;text-align:left;border:0;background:none;padding:5px 8px;border-radius:6px;
+    cursor:pointer;color:var(--tx2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ol.sec{color:var(--tx);font-weight:500}
+  .ol.ent{padding-left:18px}
+  .ol:hover{background:var(--bg2);color:var(--tx)}
+  .ol[aria-current=true]{background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--tx)}
+  .side .pages{display:flex;gap:8px;padding:10px;border-top:1px solid var(--rule);overflow:auto}
+  .side .pages .thumb{width:58px;flex:none}
+
+  .state{color:var(--tx2);padding:28px 8px;text-align:center}
+  .skel{max-width:var(--sheet);margin:0 auto;aspect-ratio:1/1.414;border-radius:3px;background:
+    linear-gradient(100deg,var(--bg2) 40%,var(--bg3) 50%,var(--bg2) 60%) 0 0/200% 100%;
+    animation:shim 1.2s linear infinite}
+  @keyframes shim{to{background-position:-200% 0}}
+  .err{white-space:pre-wrap;font:12px/1.45 var(--mono);background:var(--bg2);border-radius:var(--r);
+    padding:10px 12px;max-height:300px;overflow:auto;color:var(--tx2)}
+  .err b{display:block;font:600 13px var(--font);color:var(--tx);margin-bottom:6px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
-<div id="app"><div class="empty">Rendering…</div></div>
+<div id="app"><div class="bar"></div><div class="skel" aria-label="Rendering"></div></div>
 <script>
 (() => {
   "use strict";
   const PROTOCOL = "2026-01-26";
-  let nextId = 1, host = {caps: {}, ctx: {}}, data = null, page = 0, sel = null;
+  let nextId = 1, host = {caps: {}, ctx: {}}, data = null, page = 0, sel = null, sent = null;
+  const fills = [];
   const pending = new Map();
   const $app = document.getElementById("app");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
     ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const ICON = {
+    full: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/></svg>',
+    exit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13 7H9V3M3 9h4v4M9 7l4.5-4.5M7 9l-4.5 4.5"/></svg>',
+    send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>',
+    ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 1.9 1.9 3.7-4"/></svg>',
+  };
+  let seen = false;
+  try { seen = localStorage.getItem("cvs-page-coached") === "1"; } catch (e) { /* sandboxed */ }
 
-  /* JSON-RPC over postMessage, to the client that framed this page. */
-  function send(msg) { window.parent.postMessage({jsonrpc: "2.0", ...msg}, "*"); }
+  /* ---- JSON-RPC over postMessage, to the client that framed this page ---- */
+  const send = msg => window.parent.postMessage({jsonrpc: "2.0", ...msg}, "*");
   function request(method, params) {
     const id = nextId++;
     send({id, method, params});
@@ -105,92 +217,158 @@
       return;
     }
     switch (m.method) {
-      case "ui/notifications/tool-input":
-        if (!data) $app.innerHTML = '<div class="empty">Rendering ' +
-          esc((m.params && m.params.arguments && m.params.arguments.path) || "") + "…</div>";
+      case "ui/notifications/tool-input": {
+        const p = m.params && m.params.arguments && m.params.arguments.path;
+        if (!data && p) $app.querySelector(".bar").innerHTML = docLabel(p);
         break;
+      }
       case "ui/notifications/tool-result": onResult(m.params || {}); break;
       case "ui/notifications/tool-cancelled":
-        if (!data) $app.innerHTML = '<div class="empty">The render was cancelled.</div>';
+        if (!data) $app.innerHTML = '<div class="state">The render was cancelled.</div>';
         break;
       case "ui/notifications/host-context-changed": applyContext(m.params || {}); break;
       case "ui/resource-teardown": send({id: m.id, result: {}}); break;
       case "ping": send({id: m.id, result: {}}); break;
       default:
-        /* A request this view does not handle gets an answer, not silence. */
         if (m.id != null && m.method) send({id: m.id, error: {code: -32601, message: "Method not found"}});
     }
   });
 
   function applyContext(ctx) {
+    const was = host.ctx.displayMode;
     host.ctx = {...host.ctx, ...ctx};
-    if (ctx.theme) document.documentElement.dataset.theme = ctx.theme;
+    const root = document.documentElement;
+    if (ctx.theme) root.dataset.theme = ctx.theme;
     const vars = ctx.styles && ctx.styles.variables;
-    if (vars) for (const [k, v] of Object.entries(vars)) if (v) document.documentElement.style.setProperty(k, v);
+    if (vars) for (const [k, v] of Object.entries(vars)) if (v) root.style.setProperty(k, v);
     if (ctx.styles && ctx.styles.css && ctx.styles.css.fonts) {
       const st = document.createElement("style"); st.textContent = ctx.styles.css.fonts;
       document.head.appendChild(st);
     }
-    if (ctx.displayMode) document.documentElement.dataset.mode = ctx.displayMode;
-    if (ctx.displayMode && data) paint();
+    root.dataset.mode = host.ctx.displayMode || "inline";
+    if (data && host.ctx.displayMode !== was) paint();
   }
 
+  /* ---- the result ---- */
   function onResult(r) {
     const sc = r.structuredContent || r.structured_content;
     if (r.isError || !sc || !sc.images) {
       const text = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
       $app.innerHTML = r.isError
-        ? '<div class="err">' + esc(text || "The render failed.") + "</div>"
-        : '<div class="empty">' + esc(text || "Nothing to show.") + "</div>";
+        ? '<div class="err"><b>The CV did not render.</b>' + esc(text.replace(/^RENDER FAILED\s*/, "")) + "</div>"
+        : '<div class="state">' + esc(text || "Nothing to show.") + "</div>";
       return;
     }
-    data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.images.length - 1)); sel = null;
+    data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.images.length - 1));
+    sel = null; sent = null;
     paint();
+    measure();
   }
 
-  const can = cap => !!(host.caps && host.caps[cap]);
-  const modes = () => host.ctx.availableDisplayModes || [];
+  /* How full each page is, read off the image: the lowest line of ink above
+     the footer zone. A last page with a few lines on it is the commonest way
+     a CV goes wrong, and it is invisible in the YAML. */
+  function measure() {
+    data.images.forEach((src, i) => {
+      const im = new Image();
+      im.onload = () => {
+        const w = 120, h = Math.round(im.naturalHeight / im.naturalWidth * w);
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const g = c.getContext("2d", {willReadFrequently: true}); g.drawImage(im, 0, 0, w, h);
+        const px = g.getImageData(0, 0, w, h).data;
+        const ink = y => { for (let x = 0; x < w; x++) { const k = (y * w + x) * 4;
+          if (px[k] + px[k + 1] + px[k + 2] < 600) return true; } return false; };
+        const limit = Math.floor(h * 0.93);       /* below this is page numbers and footers */
+        let last = 0, first = -1;
+        for (let y = 0; y < limit; y++) if (ink(y)) { if (first < 0) first = y; last = y; }
+        fills[i] = first < 0 ? 0 : Math.min(1, (last - first) / (limit - first || 1));
+        if (fills.filter(x => x != null).length === data.images.length) paintStats();
+      };
+      im.src = src;
+    });
+  }
 
-  function bandsOn(p) { return (data.map || []).filter(b => b.page === p + 1); }
-  const same = (a, b) => !!a && !!b && a.k === b.k && a.name === b.name && a.i === b.i;
+  const docLabel = p => {
+    const file = String(p || "").split("/").pop(), stem = file.replace(/\.(ya?ml|md)$/, "");
+    const pretty = stem.replace(/^cv-/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    return '<div class="doc"><b>' + esc(pretty || file) + '</b><span title="' + esc(p) + '">' + esc(p) + "</span></div>";
+  };
+
+  function statsHtml() {
+    const d = data, out = [];
+    out.push('<span class="stat">' + (d.pages === 1 ? "1 page" : d.pages + " pages") + "</span>");
+    if (d.words) out.push('<span class="stat">' + d.words + " words</span>");
+    const lastFill = fills[d.images.length - 1];
+    if (lastFill != null && d.pages === d.images.length) {
+      if (d.pages > 1 && lastFill < 0.3)
+        out.push('<span class="stat warn" title="The last page is mostly empty: trim a little to fit on ' +
+          (d.pages - 1) + ' page' + (d.pages > 2 ? "s" : "") + ', or add to fill it">Last page ' +
+          Math.max(1, Math.round(lastFill * 100)) + "% full</span>");
+      else if (d.pages === 1 && !d.letter) out.push('<span class="stat ok">Fits on one page</span>');
+    }
+    return out.join("");
+  }
+  function paintStats() { const s = document.getElementById("stats"); if (s) s.innerHTML = statsHtml(); }
+
+  const modes = () => host.ctx.availableDisplayModes || [];
+  const full = () => host.ctx.displayMode === "fullscreen";
+  const key = b => b.k + "|" + b.name + "|" + b.i;
+  const same = (a, b) => !!a && !!b && key(a) === key(b);
+  const bandsOn = p => (data.map || []).filter(b => b.page === p + 1);
+
+  function thumbs(cls) {
+    if (data.images.length < 2) return "";
+    return data.images.map((src, i) => '<button class="thumb" data-page="' + i + '"' +
+      (i === page ? ' aria-current="page"' : "") + ' aria-label="Page ' + (i + 1) + '"><img alt="" src="' +
+      src + '">' + (i + 1) + "</button>").join("");
+  }
+
+  function outline() {
+    const seenK = new Set(), rows = [];
+    (data.map || []).forEach(b => { if (!seenK.has(key(b))) { seenK.add(key(b)); rows.push(b); } });
+    if (!rows.length) return '<p class="state" style="padding:16px 8px;text-align:left">This page has no blocks to point at.</p>';
+    return rows.map(b => b.k === "section" ? '<h4>' + esc((b.label || "").split(" · ")[0]) + "</h4>"
+      : '<button class="ol ' + (b.k === "header" ? "sec" : "ent") + '" data-key="' + esc(key(b)) + '"' +
+        (same(b, sel) ? ' aria-current="true"' : "") + ">" +
+        esc(b.k === "header" ? "Header" : (b.label || "").split(" · ").slice(1).join(" · ") || b.label) + "</button>").join("");
+  }
 
   function paint() {
-    const d = data, n = d.images.length, full = host.ctx.displayMode === "fullscreen";
-    const name = String(d.path || "").split("/").pop();
+    const d = data, n = d.images.length;
+    const canFull = modes().includes("fullscreen");
     $app.innerHTML =
-      '<div class="bar"><span class="name" title="' + esc(d.path) + '">' + esc(name) + "</span>" +
-      '<span class="meta">' + (d.pages > 1 ? "Page " + (page + 1) + " of " + d.pages : "1 page") +
-      (d.words ? " · " + d.words + " words" : "") + "</span><span class=\"sp\"></span>" +
-      (n > 1 ? '<button class="btn" id="prev"' + (page ? "" : " disabled") + ">‹ Previous</button>" +
-               '<button class="btn" id="next"' + (page < n - 1 ? "" : " disabled") + ">Next ›</button>" : "") +
-      (modes().includes("fullscreen")
-        ? '<button class="btn" id="mode">' + (full ? "Close full screen" : "Full screen") + "</button>" : "") +
-      "</div>" +
-      '<div class="sheet" id="sheet"><img id="pg" alt="Page ' + (page + 1) + ' of the CV" src="' +
-      d.images[page] + '"><div class="tip" id="tip"></div></div>' +
-      '<div class="ask" id="ask" hidden></div>' +
-      (d.map && d.map.length
-        ? '<p class="note">Click a block on the page to tell Claude what to change there.</p>'
-        : d.letter ? "" : '<p class="note">This page could not be mapped, so blocks cannot be clicked.</p>') +
-      (d.pages > n ? '<p class="note">Showing the first ' + n + " of " + d.pages + " pages.</p>" : "");
+      '<div class="bar">' + docLabel(d.path) + '<span class="sp"></span><div class="stats" id="stats">' +
+        statsHtml() + "</div>" +
+        (canFull ? '<button class="icon" id="mode" title="' + (full() ? "Back to the chat" : "Full screen") +
+          '" aria-label="' + (full() ? "Back to the chat" : "Full screen") + '">' + (full() ? ICON.exit : ICON.full) +
+          "</button>" : "") + "</div>" +
+      '<aside class="side"><div class="outline" id="outline">' + outline() + "</div>" +
+        (n > 1 ? '<div class="pages">' + thumbs() + "</div>" : "") + "</aside>" +
+      '<div class="body"><div class="stage" id="stage"><div class="sheet" id="sheet"><img id="pg" alt="Page ' +
+        (page + 1) + ' of ' + d.pages + '" src="' + d.images[page] + '"></div>' +
+        '<div class="tag" id="tag"></div>' +
+        (!seen && (d.map || []).length ? '<div class="coach" id="coach">Click any part of the page to change it</div>' : "") +
+      "</div>" + (n > 1 ? '<div class="rail">' + thumbs() + "</div>" : "") + "</div>" +
+      (d.pages > n ? '<p class="state" style="padding:8px">Showing the first ' + n + " of " + d.pages + " pages.</p>" : "");
+
     const img = document.getElementById("pg");
-    if (img.complete) hits(); else img.onload = hits;
-    const prev = document.getElementById("prev"), next = document.getElementById("next");
-    if (prev) prev.onclick = () => { page--; paint(); };
-    if (next) next.onclick = () => { page++; paint(); };
+    if (img.complete && img.naturalHeight) hits(); else img.onload = hits;
+    document.querySelectorAll("[data-page]").forEach(t => t.onclick = () => { page = +t.dataset.page; paint(); });
+    document.querySelectorAll("[data-key]").forEach(o => o.onclick = () => {
+      const b = (data.map || []).find(x => key(x) === o.dataset.key);
+      if (b) { page = b.page - 1; select(b); }
+    });
     const mode = document.getElementById("mode");
     if (mode) mode.onclick = async () => {
       try {
-        const r = await request("ui/request-display-mode", {mode: full ? "inline" : "fullscreen"});
-        host.ctx.displayMode = r && r.mode;
-        document.documentElement.dataset.mode = host.ctx.displayMode || "inline"; paint();
-      } catch (e) { /* the client said no; nothing to undo */ }
+        const r = await request("ui/request-display-mode", {mode: full() ? "inline" : "fullscreen"});
+        applyContext({displayMode: (r && r.mode) || host.ctx.displayMode});
+      } catch (e) { /* the client said no */ }
     };
-    if (sel) showAsk();
   }
 
-  /* The click targets: one per block, the strip of page it owns, hugging the
-     text column when the map knows where it is. Same geometry as the editor's
+  /* One target per block: the strip of the page it owns, hugging the text
+     column when the map knows where it is. Same geometry as the editor's
      page in the app. */
   function hits() {
     const sheet = document.getElementById("sheet"), img = document.getElementById("pg");
@@ -202,31 +380,38 @@
     const left = box ? Math.max(0, (box.x0 - pad) / W * 100) : 0;
     const right = box ? Math.max(0, (W - box.x1 - pad) / W * 100) : 0;
     const pct = y => Math.max(0, Math.min(H, y)) / H * 100;
-    const tip = document.getElementById("tip");
+    const tag = document.getElementById("tag");
     bandsOn(page).forEach(b => {
       const top = pct(b.y0), bottom = b.y1 == null ? 100 : pct(b.y1);
-      if (bottom - top <= 0) return;
+      if (bottom - top <= 0.4) return;
       const el = document.createElement("button");
-      el.className = "hit" + (same(b, sel) ? " sel" : "");
+      el.className = "hit" + (same(b, sel) ? " sel" : "") + (same(b, sent) ? " sent" : "");
       el.style.cssText = "top:" + top + "%;height:" + (bottom - top) + "%;left:" + left + "%;right:" + right + "%";
+      el.dataset.key = key(b);
       el.setAttribute("aria-label", "Change " + (b.label || "this block"));
-      el.onmouseenter = () => { tip.textContent = b.label || ""; tip.style.display = b.label ? "block" : "none";
-        tip.style.top = Math.max(4, el.offsetTop - 26) + "px"; tip.style.left = el.offsetLeft + "px"; };
-      el.onmouseleave = () => { tip.style.display = "none"; };
+      const show = () => {
+        if (same(b, sel)) { tag.style.display = "none"; return; }
+        tag.textContent = b.label || ""; tag.style.display = b.label ? "block" : "none";
+        tag.style.top = el.offsetTop + "px"; tag.style.left = el.offsetLeft + "px";
+      };
+      el.onmouseenter = show; el.onfocus = show;
+      el.onmouseleave = el.onblur = () => { tag.style.display = "none"; };
       el.onclick = () => select(b);
       sheet.appendChild(el);
     });
+    if (sel) openPop(); else if (sent) openSent();
   }
 
   /* Where in the YAML the block is, so the model edits the right thing. */
   function where(b) {
-    if (b.k === "header") return "the header (cv.name, cv.headline, the contact details)";
-    if (b.k === "section") return "the section cv.sections." + b.name;
+    if (b.k === "header") return "cv.name, cv.headline and the contact details";
+    if (b.k === "section") return "cv.sections." + b.name;
     return "cv.sections." + b.name + "[" + b.i + "]";
   }
 
   function select(b) {
-    sel = b;
+    sel = b; sent = null;
+    if (!seen) { seen = true; try { localStorage.setItem("cvs-page-coached", "1"); } catch (e) {} }
     paint();
     /* So "make this shorter", typed in the chat itself, means this block. */
     if (host.caps.updateModelContext) {
@@ -236,53 +421,101 @@
     }
   }
 
-  function showAsk() {
-    const ask = document.getElementById("ask"), b = sel;
-    const canSend = !!host.caps.message;
-    ask.hidden = false;
-    ask.innerHTML = '<div class="what">' + esc(b.label || "This block") + " <span>· " + esc(where(b)) + "</span></div>" +
-      (canSend
-        ? '<textarea id="msg" placeholder="What should change here?"></textarea>' +
-          '<div class="row">' +
-          ["Make it shorter", "Make it stronger", "Match the posting more closely", "Remove it"]
-            .map(c => '<button class="chip" data-chip="' + esc(c) + '">' + esc(c) + "</button>").join("") +
-          '<span style="flex:1"></span><button class="btn" id="clear">Cancel</button>' +
-          '<button class="btn primary" id="go">Send to Claude</button></div>'
-        : '<div class="note" style="margin:0">Now say in the chat what should change here: ' +
-          "Claude knows which block you mean.</div>");
-    const msg = document.getElementById("msg");
-    const go = async text => {
-      text = (text || "").trim();
-      if (!text) { msg && msg.focus(); return; }
-      const out = "In " + data.path + ", " + (b.label || "this block") + " (" + where(b) + "): " + text +
-        "\nEdit it, then render the CV again so I can see it.";
-      try {
-        await request("ui/message", {role: "user", content: [{type: "text", text: out}]});
-        sel = null; paint();
-      } catch (e) {
-        ask.insertAdjacentHTML("beforeend", '<div class="note">The message could not be sent: ' +
-          esc(e.message) + ". Type it in the chat instead.</div>");
-      }
-    };
-    if (msg) {
-      msg.focus();
-      msg.onkeydown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) go(msg.value); };
-      document.getElementById("go").onclick = () => go(msg.value);
-      document.getElementById("clear").onclick = () => { sel = null; paint(); };
-      ask.querySelectorAll("[data-chip]").forEach(c => c.onclick = () => go(c.dataset.chip));
+  function close() { sel = null; sent = null; paint(); }
+
+  /* Below the block when there is room on the page, above it otherwise. */
+  function place(pop) {
+    const stage = document.getElementById("stage");
+    const hit = stage.querySelector('.hit[data-key="' + CSS.escape(key(sel || sent)) + '"]');
+    if (!hit) return;
+    const sheetH = stage.querySelector(".sheet").offsetHeight;
+    const below = hit.offsetTop + hit.offsetHeight + 10;
+    const h = pop.offsetHeight;
+    if (below + h <= sheetH + 40 || hit.offsetTop - h - 10 < 0) {
+      pop.style.top = below + "px"; pop.className = "pop below";
+    } else {
+      pop.style.top = (hit.offsetTop - h - 10) + "px"; pop.className = "pop above";
     }
   }
 
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && sel) { sel = null; paint(); } });
+  function openPop() {
+    const stage = document.getElementById("stage"), b = sel;
+    const coach = document.getElementById("coach"); if (coach) coach.remove();
+    const canSend = !!host.caps.message;
+    const pop = document.createElement("div");
+    pop.id = "ask"; pop.className = "pop below"; pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", "Change " + (b.label || "this block"));
+    pop.innerHTML = '<div class="what"><b>' + esc(b.label || "This block") + "</b><code>" + esc(where(b)) +
+      '</code><button class="x" id="clear" aria-label="Close">×</button></div>' +
+      (canSend
+        ? '<div class="field"><textarea id="msg" rows="1" placeholder="What should change here?"></textarea>' +
+          '<button class="send" id="go" aria-label="Send to Claude" disabled>' + ICON.send + "</button></div>" +
+          '<div class="chips">' + ["Make it shorter", "Make it stronger", "Match the posting", "Remove it"]
+            .map(c => '<button class="chip" data-chip="' + esc(c) + '">' + esc(c) + "</button>").join("") + "</div>"
+        : '<p class="hint" style="margin:0 2px">Say in the chat what should change here: Claude knows which part you mean.</p>');
+    stage.appendChild(pop);
+    place(pop);
+    document.getElementById("clear").onclick = close;
+    const msg = document.getElementById("msg");
+    if (!msg) return;
+    const go = document.getElementById("go");
+    const grow = () => { msg.style.height = "auto"; msg.style.height = Math.min(120, msg.scrollHeight) + "px";
+      go.disabled = !msg.value.trim(); place(pop); };
+    msg.oninput = grow;
+    msg.onkeydown = e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(msg.value); }
+      if (e.key === "Escape") close();
+    };
+    go.onclick = () => submit(msg.value);
+    pop.querySelectorAll("[data-chip]").forEach(c => c.onclick = () => submit(c.dataset.chip));
+    msg.focus({preventScroll: true});
+  }
+
+  async function submit(text) {
+    text = (text || "").trim();
+    const b = sel;
+    if (!text || !b) return;
+    const out = "In " + data.path + ", " + (b.label || "this block") + " (" + where(b) + "): " + text +
+      "\nEdit it, then render the CV again so I can see it.";
+    try {
+      await request("ui/message", {role: "user", content: [{type: "text", text: out}]});
+      sel = null; sent = b; paint();
+    } catch (e) {
+      const pop = document.getElementById("ask");
+      if (pop) pop.insertAdjacentHTML("beforeend", '<p class="hint">It could not be sent (' + esc(e.message) +
+        "). Type it in the chat instead.</p>");
+    }
+  }
+
+  function openSent() {
+    const stage = document.getElementById("stage");
+    const pop = document.createElement("div");
+    pop.id = "ask"; pop.className = "pop below"; pop.setAttribute("role", "status");
+    pop.innerHTML = '<div class="done">' + ICON.ok + "<span>Sent to Claude. The new page will appear below " +
+      "when the change is made.</span></div>";
+    stage.appendChild(pop);
+    place(pop);
+    setTimeout(() => { if (sent && document.body.contains(pop)) { sent = null; paint(); } }, 4500);
+  }
+
+  document.addEventListener("keydown", e => {
+    if (e.target.closest && e.target.closest("textarea")) return;
+    if (e.key === "Escape" && (sel || sent)) close();
+    if (data && data.images.length > 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      const p = page + (e.key === "ArrowRight" ? 1 : -1);
+      if (p >= 0 && p < data.images.length) { page = p; paint(); }
+    }
+  });
 
   /* The client sizes the frame to what is in it. */
   new ResizeObserver(() => {
+    if (full()) return;
     const r = document.documentElement.getBoundingClientRect();
     notify("ui/notifications/size-changed", {width: Math.ceil(r.width), height: Math.ceil(r.height)});
   }).observe(document.documentElement);
 
   request("ui/initialize", {
-    appInfo: {name: "CV Studio page", version: "1"},
+    appInfo: {name: "CV Studio page", version: "2"},
     appCapabilities: {availableDisplayModes: ["inline", "fullscreen"]},
     protocolVersion: PROTOCOL,
   }).then(r => {

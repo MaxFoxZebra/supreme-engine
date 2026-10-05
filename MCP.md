@@ -436,6 +436,19 @@ block and:
   it*, and it goes to the chat as your message, naming the file and the block.
   Claude edits it and renders again, and the new page shows under the old one.
 
+The bar over the page says how it lays out: the page count, the words, and
+whether it fits on one page or leaves a last page mostly empty. With several
+pages, the others sit beside it to click through. Full screen fits the page to
+the window and lists every block beside it, to select from there.
+
+To work on the view, `node checks/viewdev.js` in `server/` shows it the way
+Claude frames it, inline in light and dark and full screen, and reloads when
+the file changes; `--shots dir` saves screenshots instead. To see it in Claude
+itself without a release, point Claude Desktop's config at the checkout
+(`python server_main.py --mcp --workspace <your workspace> --client claude`,
+run from `server/`) and restart the connector after each change: a client may
+keep the view it loaded.
+
 The model still gets the same summary and page image as before, and a client
 without views gets exactly that and nothing more: the pages and the block map
 for the view travel in the result's structured content, which the server only
