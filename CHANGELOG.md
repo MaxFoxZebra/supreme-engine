@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.37.2
 
 - **The page sits in the conversation like part of it.** No frame or
   background of its own: it takes Claude's colours, fonts and text sizes,
