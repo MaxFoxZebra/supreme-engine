@@ -17,10 +17,11 @@ tag, so a release is never published with nothing said about it.
   page in the conversation to one line, *Earlier version · 2 changes since*,
   so the chat no longer turns into a long scroll of pages. Click it to look
   at it again.
-- **Pages load lighter.** Only the page you see first comes with the result;
-  the others load while you look at it. The page shows sooner, long CVs no
-  longer risk the client's size limit, and up to twelve pages show instead
-  of six.
+- **The page shows for long CVs too.** A CV of three pages or more could
+  show only "Rendered … The tool's structured result was too large to
+  return" instead of the page: the pages went in the part of the result
+  Claude caps. They now load one by one as images, the page you see first,
+  and up to twelve pages show instead of six.
 
 ## 0.37.2
 

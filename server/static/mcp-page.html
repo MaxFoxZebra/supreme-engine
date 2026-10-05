@@ -7,9 +7,10 @@
 <!--
   The page view an AI client shows with render_cv (MCP Apps). It runs in the
   client's sandboxed frame with no network, so everything is in this file.
-  The page it opens on arrives in the tool result; the others it fetches by
-  id through the server (page_view_data) when they are shown, so a long CV
-  does not make a heavy result. It speaks to the client over postMessage
+  The pages come by id in the tool result, and it fetches each as an image
+  through the server (page_view_data): the one it opens on first, then the
+  others. A client drops a structured result over its size cap whole, and
+  one dense page is enough to go over. It speaks to the client over postMessage
   (JSON-RPC 2.0): ui/initialize, then it is handed the tool's input and
   result.
 
@@ -264,6 +265,7 @@
   .fold{display:flex;align-items:center;gap:12px;width:100%;margin:0 auto;
     max-width:calc(var(--sheet) + 104px);border:0;background:none;padding:6px 0;text-align:left;
     cursor:pointer;color:var(--tx);border-radius:var(--r)}
+  .fold img:not([src]){aspect-ratio:1/1.414;background:#f3f2ee}
   .fold img{width:34px;border-radius:2px;background:#fff;flex:none;
     box-shadow:0 0 0 1px var(--rule)}
   .fold .who span{white-space:normal}
@@ -372,7 +374,7 @@
     }
     data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.shots.length - 1));
     sel = null; sent = null; showBefore = false; busy = false; earlier = null; unfolded = false;
-    if (sc.first) { cache.set(sc.first.id, sc.first.src); measure(sc.first.id); }
+    if (sc.first && sc.first.src) { cache.set(sc.first.id, sc.first.src); measure(sc.first.id); }
     if (!review()) listOpen = false;
     /* After a change, open on the first page it touched. */
     const first = changedBands()[0];
@@ -642,10 +644,11 @@
     const d = data, file = String(d.path || "").split("/").pop();
     const title = d.title || file.replace(/\.(ya?ml|md)$/, "").replace(/[-_]+/g, " ");
     $app.innerHTML = '<button class="fold" id="unfold" aria-label="Show this earlier version">' +
-      (d.first ? '<img alt="" src="' + esc(d.first.src) + '">' : "") +
+      (d.first ? imgTag(d.first.id, 'alt=""') : "") +
       '<span class="who"><b>' + esc(title) + "</b><span>Earlier version · " + esc(sinceText()) + "</span></span>" +
       '<span class="more">Show</span></button>';
     document.getElementById("unfold").onclick = () => { unfolded = true; paint(); };
+    if (d.first) fetchPage(d.first.id);
   }
 
   /* The PDF, handed over by the client as a file: the last step of an

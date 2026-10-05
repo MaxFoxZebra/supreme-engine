@@ -739,12 +739,11 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
         # Whose CV and for what, which says more than a file name.
         "title": _one_line(cv.get("name"), 60) or None,
         "subtitle": _one_line(cv.get("headline") or cv.get("label"), 90) or None,
-        # Each page by its id, fetched by the view when it is shown; only
-        # the page it opens on comes inline, so the result stays small
-        # however long the CV is and the page appears without a round trip.
+        # Each page by its id, fetched by the view as an image of its own.
+        # None inline: clients cap the structured part of a result well below
+        # what one dense page weighs, and drop all of it when it is over.
         "shots": shots,
-        "first": {"id": shots[first], "src": "data:image/png;base64," +
-                  base64.b64encode(pngs[first].read_bytes()).decode("ascii")} if shots else None,
+        "first": {"id": shots[first]} if shots else None,
         "map": [{**b, "label": labels.get(f"{b['k']}|{b.get('name')}|{b.get('i')}")}
                 for b in bands or []],
         "box": box,

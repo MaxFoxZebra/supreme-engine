@@ -39,11 +39,12 @@ async function main() {
   check("the render succeeds", !call.isError, call.isError ? JSON.stringify(call.content).slice(0, 300) : "");
   check("the model still gets the summary and the page image",
     call.content.some(b => b.type === "text") && call.content.some(b => b.type === "image"));
-  check("the view gets every page by id, and the one it opens on inline",
-    sc && sc.shots && sc.shots.length === sc.pages && sc.first && sc.first.id === sc.shots[0] &&
-    sc.first.src.startsWith("data:image/png;base64,"), sc ? `${(sc.shots || []).length} of ${sc.pages}` : "none");
-  check("so a result carries one page image, however long the CV",
-    sc && (JSON.stringify(sc).match(/data:image/g) || []).length === 1);
+  check("the view gets every page by id",
+    sc && sc.shots && sc.shots.length === sc.pages && sc.first && sc.first.id === sc.shots[0],
+    sc ? `${(sc.shots || []).length} of ${sc.pages}` : "none");
+  check("and no image in the structured result, which clients cap and drop whole when over",
+    sc && !/data:image/.test(JSON.stringify(sc)) && JSON.stringify(sc).length < 40000,
+    sc ? JSON.stringify(sc).length + " chars" : "");
   const fetched = (await c.send("tools/call", {name: "page_view_data",
     arguments: {what: "page", page: sc.shots[0]}})).result;
   check("the view can fetch a page by its id",
