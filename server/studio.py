@@ -564,6 +564,41 @@ def ai_config_path(client: str) -> Path:
     return Path(override) if override else AI_CLIENTS[client]["path"]()
 
 
+def claude_extension() -> dict | None:
+    """CV Studio installed in Claude Desktop as an extension (pack_mcpb.py),
+    if it is: {path, version, enabled, workspace}.
+
+    Claude Desktop unpacks extensions next to its config file, one folder
+    each with the manifest inside, and keeps each one's settings (enabled,
+    and the folder the user picked) in a JSON file named after it. Read
+    defensively: none of this is a published contract.
+    """
+    root = ai_config_path("claude").parent
+    try:
+        folders = [d for d in (root / "Claude Extensions").iterdir() if d.is_dir()]
+    except OSError:
+        return None
+    for d in folders:
+        try:
+            m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(m, dict) or m.get("name") != "cv-studio":
+            continue
+        settings = {}
+        try:
+            settings = json.loads((root / "Claude Extensions Settings" / f"{d.name}.json")
+                                  .read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            pass
+        config = settings.get("userConfig") if isinstance(settings, dict) else None
+        ws = (config or {}).get("workspace") if isinstance(config, dict) else None
+        return {"path": str(d), "version": m.get("version"),
+                "enabled": settings.get("isEnabled", True) is not False if isinstance(settings, dict) else True,
+                "workspace": str(ws) if isinstance(ws, str) and ws else None}
+    return None
+
+
 def ai_status(client: str, seen: dict | None = None) -> dict:
     """Whether a client is pointed at this build and this workspace.
 
@@ -611,9 +646,28 @@ def ai_status(client: str, seen: dict | None = None) -> dict:
     return out
 
 
+def _ai_status(client: str, seen: dict) -> dict:
+    """ai_status, and for Claude Desktop the extension: installed, it is how
+    Claude reaches CV Studio, and an entry in the config as well would give
+    Claude every tool twice."""
+    out = ai_status(client, seen)
+    if client != "claude":
+        return out
+    ext = claude_extension()
+    if not ext or not ext["enabled"]:
+        return out
+    out["extension"] = ext
+    out["also_in_config"] = out["state"] != "absent"
+    out["state"] = "extension"
+    if ext["workspace"]:
+        out["workspace"] = ext["workspace"]
+    out["other_workspace"] = bool(ext["workspace"]) and not _same_file(ext["workspace"], str(WORKSPACE))
+    return out
+
+
 def ai_clients() -> list[dict]:
     seen = mcp_activity().get("seen") or {}
-    return [ai_status(client, seen) for client in AI_CLIENTS]
+    return [_ai_status(client, seen) for client in AI_CLIENTS]
 
 
 def _write_entry(client: str, want: dict) -> dict | None:
@@ -664,6 +718,11 @@ def ai_connect(client: str) -> dict:
     client's skills folder when it reads them from one."""
     if client not in AI_CLIENTS:
         raise ValueError(f"unknown client: {client}")
+    ext = claude_extension() if client == "claude" else None
+    if ext and ext["enabled"]:
+        raise ValueError("CV Studio is installed in Claude Desktop as an extension, so it is "
+                         "connected already. Adding it to the config too would give Claude "
+                         "every tool twice.")
     ensure_mcp_copy()
     want = ai_entry(client)
     before = _write_entry(client, want)

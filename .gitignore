@@ -4,6 +4,8 @@ src-tauri/server-dist/
 src-tauri/gen/
 server/build/
 server/dist/
+dist-mcpb/
+mcpb-check/
 server/.venv/
 node_modules/
 

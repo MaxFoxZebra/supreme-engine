@@ -547,6 +547,28 @@ once nothing runs from them. A client picks up the new version the next time
 it starts. On macOS and Linux a running program's files can be replaced, so the
 connector runs from the app as it always did.
 
+## As a Claude Desktop extension
+
+Each release also packs the connector as a Claude Desktop extension (MCPB),
+one per platform: `CV-Studio-<version>-macos-arm64.mcpb`, `-macos-x64` and
+`-windows-x64`. It is the same frozen server the app ships, signed the same
+way, with a `manifest.json` that tells Claude Desktop how to start it
+(`--mcp --workspace <folder> --client claude`) and asks for the one setting
+it has, the workspace folder (default `Documents/CV Studio`). A double-click
+installs it; installing a newer one replaces it.
+
+Claude Desktop runs it from its own folder (`Claude Extensions/` beside its
+config), which the app's installer never touches, so the per-version copy
+above is not needed there. The app reads that folder: with the extension
+installed, *Settings → AI clients* shows Claude as connected through it,
+warns if the config file has a `cv-studio` entry as well (Claude would see
+every tool twice) or if the extension points at another folder, and *Connect*
+will not add a second copy.
+
+To build one from a local build: `python server/pack_mcpb.py --server
+server/dist/cv-studio-server --out dist-mcpb`, then `npx @anthropic-ai/mcpb
+validate` on its `manifest.json`.
+
 ## Updates
 
 The app checks for updates on launch and under Settings, About. Updates are

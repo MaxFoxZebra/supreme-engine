@@ -227,6 +227,16 @@ bundled binary run with `--mcp`, so nothing extra to install. On Windows it
 runs from a copy of its own, so updating CV Studio never cuts off a
 conversation in Claude.
 
+**Only Claude Desktop, no app?** Each release also has a Claude Desktop
+extension, `CV-Studio-<version>-<macos-arm64|macos-x64|windows-x64>.mcpb`.
+Double-click it and Claude Desktop installs CV Studio, asks which folder to
+keep your CVs in, and keeps it up to date from then on. Everything in the
+chat works the same; the app's screens (the tracker board, the editor,
+backups) are what you go without. Pick `Documents/CV Studio` and the app,
+installed later, opens the same folder. Use the extension or the app's
+*Connect*, not both: the app sees the extension and will not add a second
+copy.
+
 The skills (applying from a job link, catching the tracker up from your inbox,
 preparing an interview) come with the app. Connecting Codex, Mistral Vibe or
 Hermes puts them in that client's skills folder. In Claude Desktop they are

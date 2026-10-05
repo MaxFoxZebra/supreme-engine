@@ -11,7 +11,9 @@ ours, keeping their workspace and every other server in the file), and the
 removal of old copies. Then the skills: installed into the folder Codex, Vibe
 and Hermes read, kept current, never over a folder the user made; packed as one
 plugin for Claude Desktop; and the repository as a plugin marketplace. Last,
-what the MCP server tells a client about its tools and prompts.
+what the MCP server tells a client about its tools and prompts. And the
+server as a Claude Desktop extension (.mcpb): what its bundle holds, and the
+app recognising it once Claude Desktop has installed it.
 """
 
 from __future__ import annotations
@@ -179,6 +181,78 @@ def skills() -> None:
           (root / entry["source"]).resolve() == studio.plugin_dir().resolve())
 
 
+def extension() -> None:
+    print("The Claude Desktop extension")
+    import stat as st_
+    import pack_mcpb
+    frozen = SCRATCH / "frozen" / "cv-studio-server"
+    (frozen / "_internal" / "lib").mkdir(parents=True)
+    (frozen / "cv-studio-server").write_bytes(b"#!/bin/sh\n")
+    (frozen / "cv-studio-server").chmod(0o755)
+    (frozen / "_internal" / "lib" / "real.so").write_bytes(b"lib")
+    os.symlink("lib/real.so", frozen / "_internal" / "link.so")
+    out = pack_mcpb.pack(frozen, "darwin", SCRATCH / "mcpb", studio.VERSION)
+    with zipfile.ZipFile(out) as z:
+        m = json.loads(z.read("manifest.json"))
+        infos = {i.filename: i for i in z.infolist()}
+    cfg = m["server"]["mcp_config"]
+    check("one file, named for the version and the computer",
+          out.suffix == ".mcpb" and studio.VERSION in out.name and "macos" in out.name, out.name)
+    check("a manifest Claude Desktop reads: MCPB 0.3, this version, a binary server",
+          m["manifest_version"] == "0.3" and m["version"] == studio.VERSION and m["name"] == "cv-studio"
+          and m["server"]["type"] == "binary" and m["server"]["entry_point"] in infos, m["server"]["entry_point"])
+    check("started as the connector, on the folder the user picks",
+          cfg["command"] == "${__dirname}/server/cv-studio-server"
+          and cfg["args"][:3] == ["--mcp", "--workspace", "${user_config.workspace}"]
+          and m["user_config"]["workspace"]["type"] == "directory"
+          and m["user_config"]["workspace"]["default"] == "${DOCUMENTS}/CV Studio", json.dumps(cfg))
+    exe = infos["server/cv-studio-server"]
+    check("the server stays executable", (exe.external_attr >> 16) & 0o111 == 0o111, oct(exe.external_attr >> 16))
+    link = infos.get("server/_internal/link.so")
+    check("and a symlink stays a symlink", link is not None and st_.S_ISLNK(link.external_attr >> 16))
+    check("with the icon", "icon.png" in infos and m["icon"] == "icon.png")
+    win = SCRATCH / "frozen-win"
+    win.mkdir()
+    (win / "cv-studio-server.exe").write_bytes(b"MZ")
+    with zipfile.ZipFile(pack_mcpb.pack(win, "win32", SCRATCH / "mcpb", studio.VERSION)) as z:
+        wm = json.loads(z.read("manifest.json"))
+    check("the Windows one runs the .exe, on Windows only",
+          wm["server"]["mcp_config"]["command"].endswith("cv-studio-server.exe")
+          and wm["compatibility"]["platforms"] == ["win32"])
+
+    # Claude Desktop, having installed it: a folder per extension beside its
+    # config, and that extension's settings in a file named after it.
+    root = Path(os.environ["CVSTUDIO_CLAUDE_CONFIG"]).parent
+    ext = root / "Claude Extensions" / "local.mcpb.maxime-bidault.cv-studio"
+    ext.mkdir(parents=True)
+    (ext / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    (root / "Claude Extensions Settings").mkdir()
+    settings = root / "Claude Extensions Settings" / f"{ext.name}.json"
+    settings.write_text(json.dumps({"isEnabled": True, "userConfig": {"workspace": str(studio.WORKSPACE)}}),
+                        encoding="utf-8")
+    found = studio.claude_extension()
+    check("the app finds CV Studio installed as an extension, and its folder",
+          found and found["version"] == studio.VERSION and found["workspace"] == str(studio.WORKSPACE), str(found))
+    claude = next(c for c in studio.ai_clients() if c["id"] == "claude")
+    check("and says Claude is connected through it", claude["state"] == "extension"
+          and not claude["other_workspace"], claude["state"])
+    check("noticing the config entry too, which would give Claude every tool twice",
+          claude["also_in_config"] is True)
+    try:
+        studio.ai_connect("claude")
+        refused = False
+    except ValueError:
+        refused = True
+    check("so Connect does not add a second one", refused)
+    settings.write_text(json.dumps({"isEnabled": True, "userConfig": {"workspace": str(SCRATCH / "other")}}),
+                        encoding="utf-8")
+    claude = next(c for c in studio.ai_clients() if c["id"] == "claude")
+    check("an extension on another folder is said to be", claude["other_workspace"] is True)
+    settings.write_text(json.dumps({"isEnabled": False}), encoding="utf-8")
+    claude = next(c for c in studio.ai_clients() if c["id"] == "claude")
+    check("and a disabled one is not counted", claude["state"] != "extension", claude["state"])
+
+
 def mcp() -> None:
     print("What the connector tells a client")
     import mcp_server
@@ -204,6 +278,7 @@ def mcp() -> None:
 def main() -> int:
     copies()
     skills()
+    extension()
     mcp()
     print()
     print(f"{fails} failure(s)" if fails else "every connector check passes")

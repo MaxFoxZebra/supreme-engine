@@ -861,6 +861,7 @@ const AI_STATE={
   elsewhere:"Configured, but pointing at a different copy of CV Studio.",
   "other-workspace":"Configured, but pointing at a different workspace.",
   unreadable:"The config file could not be read.",
+  extension:"Installed as a Claude Desktop extension.",
   unknown:"Checking…",
 };
 const aiClient=id=>(S.ai||[]).find(c=>c.id===id)||null;
@@ -869,7 +870,7 @@ const aiClient=id=>(S.ai||[]).find(c=>c.id===id)||null;
    before any of this existed, and for a client that names itself something
    nobody here recognises. */
 function loneClient(){
-  const on=(S.ai||[]).filter(c=>c.state==="connected");
+  const on=(S.ai||[]).filter(c=>c.state==="connected"||c.state==="extension");
   return on.length===1?on[0].label:null;
 }
 function clientName(entry){
@@ -891,7 +892,7 @@ function paintAI(){
     const c=aiClient(el.dataset.client), st=(c&&c.state)||"unknown";
     el.dataset.state=st;
     bits.push((c?c.label:el.dataset.client)+": "+
-      (c&&st==="connected"&&c.last_seen
+      (c&&(st==="connected"||st==="extension")&&c.last_seen
         ? t("Connected. Last heard from {when} ago.",{when:ago(c.last_seen*1000)})
         : c&&st==="connected" ? t("Set up, but it has not called in yet.")
         : t(AI_STATE[st])));
@@ -908,12 +909,23 @@ $("#btn-ai").onclick=()=>openSettings("ai");
 const AI_PILL={
   connected:"Connected", absent:"Not set up", elsewhere:"Another copy",
   "other-workspace":"Another workspace", unreadable:"Unreadable",
-  unknown:"Checking",
+  extension:"Extension", unknown:"Checking",
 };
 /* "Configured" and "Connected" are different claims and the card should not
    make the second on the strength of the first. */
 const aiPill=c=>c.state==="connected"&&!c.last_seen?"Configured":AI_PILL[c.state];
 function aiSay(c){
+  /* Installed in Claude Desktop as an extension: Claude Desktop starts it and
+     updates it, and the app has nothing to write. */
+  if(c.state==="extension"){
+    if(c.also_in_config)
+      return t("It is also in Claude Desktop's config file, so Claude sees every tool twice. Remove the cv-studio entry from the config.");
+    if(c.other_workspace)
+      return t("Installed as a Claude Desktop extension, pointing at {path}, so it is editing CVs you are not looking at. Change its folder in Claude Desktop's Extensions settings.",{path:shortPath(c.workspace)});
+    return c.last_seen
+      ? t("Installed as a Claude Desktop extension, which keeps itself up to date. Last heard from {when} ago.",{when:ago(c.last_seen*1000)})
+      : t("Installed as a Claude Desktop extension, which keeps itself up to date.");
+  }
   if(c.state==="connected"){
     /* A config file says a client has been *told* where the server is, not
        that it ever started it. A tool call is the only evidence the handshake
@@ -941,7 +953,7 @@ function aiSay(c){
    Step 2 is the one that actually connects anything, and it used to exist only
    in a toast that fired once and vanished. */
 function aiSteps(c){
-  if(c.state==="unreadable") return "";
+  if(c.state==="unreadable"||c.state==="extension") return "";
   const wrote=c.state==="connected";
   const live=wrote&&c.last_seen;
   const step=(n,done,text)=>'<li'+(done?' class="done"':"")+'><i>'+
@@ -970,7 +982,8 @@ function fillAIPanel(){
   const clients=S.ai||[];
   $("#s-ai-clients").innerHTML=clients.map(c=>{
     const st=c.state;
-    const wrong=st==="elsewhere"||st==="other-workspace"||st==="unreadable";
+    const wrong=st==="elsewhere"||st==="other-workspace"||st==="unreadable"||
+      (st==="extension"&&(c.also_in_config||c.other_workspace));
     return '<div class="client'+(wrong?" wrong":"")+'" data-client="'+c.id+'">'+
       '<span class="badge"><svg width="19" height="19" viewBox="0 0 24 24"'+
         ' aria-hidden="true"><use href="#'+c.id+'-mark"/></svg></span>'+
@@ -978,10 +991,10 @@ function fillAIPanel(){
         '<span class="pill" data-state="'+(st==="connected"&&!c.last_seen?"unknown":st)+
           '"><i></i>'+aiPill(c)+'</span></div>'+
       '<div class="say">'+esc(aiSay(c))+'</div>'+
-      '<div class="go"><button class="obtn" data-connect="'+c.id+'">'+
+      (st==="extension"?"":'<div class="go"><button class="obtn" data-connect="'+c.id+'">'+
         (st==="connected"?"Set up again"
           :st==="absent"?"Add to its config":"Point it at this workspace")+
-        '</button></div>'+
+        '</button></div>')+
       aiSteps(c)+
       '<div class="path"><span title="'+esc(c.config_path)+'">'+
         esc(shortPath(c.config_path))+'</span>'+

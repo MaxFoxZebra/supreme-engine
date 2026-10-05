@@ -8,6 +8,16 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **CV Studio in Claude Desktop without the app.** Each release now has a
+  Claude Desktop extension (a `.mcpb` file for Mac or Windows): double-click
+  it, pick your CV folder, and Claude can tailor, render and check your CVs
+  and keep your applications, with the page view and everything else in the
+  chat. It updates through Claude Desktop, so an update of the app can never
+  cut off a conversation. The app recognises it and will not add a second
+  copy.
+
 ## 0.40.0
 
 - **See exactly what Claude changed, on the page.** After a change, the page

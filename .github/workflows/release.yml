@@ -414,6 +414,34 @@ jobs:
           # so it must not fail the build.
           spctl --assess --type execute --verbose=4 "$APP" || true
 
+      # The same server, signed the same way, as a Claude Desktop extension:
+      # one file a person double-clicks to add CV Studio to Claude Desktop,
+      # with the desktop app or without it. Claude Desktop runs it from its
+      # own folder, which the app's installer never touches.
+      - name: Pack the Claude Desktop extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.artifact }}" in
+            windows) PLAT=win32; ARCH=x64 ;;
+            macos-arm64) PLAT=darwin; ARCH=arm64 ;;
+            macos-x64) PLAT=darwin; ARCH=x64 ;;
+          esac
+          MCPB_ARCH=$ARCH python server/pack_mcpb.py --server src-tauri/server-dist \
+            --platform "$PLAT" --out dist-mcpb
+          # Checked against Anthropic's own schema, so a manifest Claude
+          # Desktop would refuse fails here rather than on a user's machine.
+          python -c "import glob, zipfile; zipfile.ZipFile(glob.glob('dist-mcpb/*.mcpb')[0]).extract('manifest.json', 'mcpb-check')"
+          npx -y @anthropic-ai/mcpb validate mcpb-check/manifest.json
+          ls -la dist-mcpb
+
+      - name: Attach the extension to the release
+        if: env.RELEASE_TAG != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$RELEASE_TAG" dist-mcpb/*.mcpb --clobber
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -421,4 +449,5 @@ jobs:
           path: |
             src-tauri/target/**/release/bundle/nsis/*.exe
             src-tauri/target/**/release/bundle/dmg/*.dmg
+            dist-mcpb/*.mcpb
           if-no-files-found: warn
