@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.37.1
 
 - **Keep or undo Claude's changes right on the page.** Every change Claude
   made to a CV and you have not looked at yet is marked on the page. Click
