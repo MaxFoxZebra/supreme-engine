@@ -8,6 +8,16 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.40.0
+
+- **See exactly what Claude changed, on the page.** After a change, the page
+  opens with Claude's new words highlighted in green and a red stroke where
+  words were cut, like tracked changes in a word processor. Switch between
+  *Before*, *Changes* and *After* above the page.
+- **Changes read word by word.** Clicking a changed part, or opening
+  *Review*, now shows the sentence once with the replaced words struck
+  through and the new ones in green, instead of the whole block twice.
+
 ## 0.39.0
 
 - **Check a CV against the posting, on the page.** When Claude checks a CV

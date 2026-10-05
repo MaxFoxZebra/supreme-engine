@@ -37,6 +37,7 @@ from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource, I
 
 import ats
 import cjkfonts
+import marks
 import review
 import studio
 from cv_render import render_file
@@ -614,7 +615,10 @@ def _write(target: Path, data: bytes) -> None:
 
 def _keep_page(f: Path) -> str:
     """Store a page image by what it is; its id is what the view asks for."""
-    data = f.read_bytes()
+    return _keep_bytes(f.read_bytes())
+
+
+def _keep_bytes(data: bytes) -> str:
     pid = hashlib.sha256(data).hexdigest()[:32]
     target = _views_dir() / "pages" / f"{pid}.png"
     try:
@@ -709,8 +713,97 @@ def _pdf_resource(path: str) -> EmbeddedResource:
         blob=base64.b64encode(p.read_bytes()).decode("ascii")))
 
 
+# --- What changed, marked on the page (marks.py) ------------------------------
+
+def _mark_rules(p: Path, letter: bool, data: dict, last: dict | None, changes: dict) -> str:
+    """Show rules highlighting what is new: against what the review keeps
+    when there is a review, else against the last render."""
+    pairs: list[tuple[list[str], list[str]]] = []
+    try:
+        payload = studio.review_payload(p)
+    except Exception:
+        payload = None
+    if payload and payload.get("units"):
+        for u in payload["units"]:
+            if u.get("after") not in (None, "", []):
+                pairs.append((marks.texts(u.get("before")), marks.texts(u.get("after"))))
+    elif last and last.get("data"):
+        old = last["data"]
+        if letter:
+            ol, nl = old.get("letter") or {}, data.get("letter") or {}
+            for b in changes.get("blocks") or []:
+                if b["k"] == "para" and b["i"] is not None and b["i"] < len(nl.get("chunks") or []):
+                    pairs.append((ol.get("chunks") or [], [nl["chunks"][b["i"]]]))
+                elif b["k"] == "header":
+                    pairs.append((marks.texts(ol.get("meta")), marks.texts(nl.get("meta"))))
+        else:
+            oc, nc = old.get("cv") or {}, data.get("cv") or {}
+            os_, ns = oc.get("sections") or {}, nc.get("sections") or {}
+            for b in changes.get("blocks") or []:
+                if b["k"] == "header":
+                    pairs.append((marks.texts({k: v for k, v in oc.items() if k != "sections"}),
+                                  marks.texts({k: v for k, v in nc.items() if k != "sections"})))
+                elif b["k"] == "entry" and b["i"] < len(ns.get(b["name"]) or []):
+                    pairs.append((marks.texts(os_.get(b["name"])), marks.texts(ns[b["name"]][b["i"]])))
+    if not pairs:
+        return ""
+    if letter:
+        nl = data.get("letter") or {}
+        document = list(nl.get("chunks") or []) + marks.texts(nl.get("meta"))
+    else:
+        document = marks.texts(data.get("cv"))
+    return marks.rules(pairs, document)
+
+
+def _marked_pages(p: Path, letter: bool, typ: Path, count: int, rules: str) -> list[str] | None:
+    """The pages again with `rules` applied, kept by id like the pages, or
+    None unless every block is exactly where it is on the real page."""
+    if not rules or not typ.is_file():
+        return None
+    import typst
+    import cv_map
+    src = typ.read_text(encoding="utf-8")
+    if letter:
+        plain, lit = studio.letter_map(p), studio.letter_map(p, prefix=rules)
+        if not plain or not lit:
+            return None
+        where = lambda m: [(b["k"], b["i"], b["page"], round(b["y0"], 1)) for b in m["bands"]]
+        if where(plain) != where(lit):
+            return None
+        meta, _ = studio.letters.parse(p.read_text(encoding="utf-8"))
+        cvp = studio.letter_cv(studio.dated(meta, p))
+        fonts = studio.letters._font_paths(([cvp.parent / "fonts"] if cvp else []) + [p.parent / "fonts"])
+        extra = {}
+    else:
+        from rendercv.renderer.pdf_png import get_package_path
+        probed, probes = cv_map._inject(src)
+        if not probes:
+            return None
+        lit_src = probed.replace(cv_map.HELPER, cv_map.HELPER + rules, 1)
+        a = cv_map._positions(typ, probed, p.parent)
+        b = cv_map._positions(typ, lit_src, p.parent)
+        if [(x["n"], x["p"], round(x["y"], 1)) for x in a] != [(x["n"], x["p"], round(x["y"], 1)) for x in b]:
+            return None
+        fonts = cv_map._fonts(p.parent)
+        extra = {"package_path": get_package_path()}
+    scratch = typ.parent / ".cvstudio-marks.typ"
+    try:
+        scratch.write_text(rules + src, encoding="utf-8")
+        out = typst.compile(str(scratch), format="png", ppi=150 if letter else 144,
+                            root=str(typ.parent), font_paths=fonts, **extra)
+    finally:
+        try:
+            scratch.unlink()
+        except OSError:
+            pass
+    out = out if isinstance(out, list) else [out]
+    if len(out) != count or len(out) > MAX_VIEW_PAGES:
+        return None
+    return [_keep_bytes(b) for b in out]
+
+
 def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
-               words, pdf, bands=None, box=None) -> dict:
+               words, pdf, bands=None, box=None, typ: Path | None = None) -> dict:
     """What the page view shows: every page (up to twelve) by id, where
     each block of the CV landed on them, named the way the outline names it
     so a click can say "Experience · Acme" rather than a position, and what
@@ -763,6 +856,12 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                    "review": pending}
     if not changes and last and letter and last.get("data") and last.get("images") != images:
         changes = _changes(last["data"], data) or {"blocks": [], "removed": 0, "design": False, "page": True}
+    marked = None
+    if changes and typ:
+        try:
+            marked = _marked_pages(p, letter, typ, len(shots), _mark_rules(p, letter, data, last, changes))
+        except Exception:
+            marked = None
     _LAST_RENDER[str(p)] = {"data": data, "images": images}
     rid = _record_render(p, data, shots)
     first = min(max(page, 1), len(shots)) - 1 if shots else 0
@@ -777,6 +876,8 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
         # what one dense page weighs, and drop all of it when it is over.
         "shots": shots,
         "first": {"id": shots[first]} if shots else None,
+        # The same pages with what changed highlighted, laid out identically.
+        "marked": marked,
         "map": [{**b, "label": labels.get(f"{b['k']}|{b.get('name')}|{b.get('i')}")}
                 for b in bands or []],
         "box": box,
@@ -825,8 +926,10 @@ def _render(path: str, page: int, views: bool) -> CallToolResult:
                 mapped = studio.letter_map(p)
             except Exception:
                 mapped = None
+            typs = [f for f in studio.output_dir(p).glob("*.typ") if not f.name.startswith(".")]
             view = _page_view(path, p, pngs, idx + 1, r["pages"], r["words"], r["pdf"],
-                              (mapped or {}).get("bands"), (mapped or {}).get("box"))
+                              (mapped or {}).get("bands"), (mapped or {}).get("box"),
+                              max(typs, key=lambda f: f.stat().st_mtime) if typs else None)
         return CallToolResult(
             content=[TextContent(type="text", text=summary), image(pngs[idx])],
             structured_content=view)
@@ -854,7 +957,8 @@ def _render(path: str, page: int, views: bool) -> CallToolResult:
         mapped, _ = studio.block_map(result, p)
         view = _page_view(path, p, pngs, idx + 1, pages, result["ats_word_count"],
                           studio.rel(Path(result["pdf"])) if result.get("pdf") else None,
-                          (mapped or {}).get("bands"), (mapped or {}).get("box"))
+                          (mapped or {}).get("bands"), (mapped or {}).get("box"),
+                          Path(result["typ"]) if result.get("typ") else None)
     return CallToolResult(content=content, structured_content=view)
 
 

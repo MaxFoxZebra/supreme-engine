@@ -97,7 +97,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.39.0"
+VERSION = "0.40.0"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -2077,13 +2077,14 @@ def render_letter(path: Path) -> dict:
 
 
 
-def letter_map(path: Path) -> dict | None:
+def letter_map(path: Path, prefix: str = "") -> dict | None:
     """Where each paragraph of a rendered letter is on its pages (letters.page_map)."""
     meta, body = letters.parse(path.read_text(encoding="utf-8"))
     meta = dated(meta, path)
     cvp = letter_cv(meta)
     return letters.page_map(meta, body, letter_head(meta), output_dir(path),
-                            [p for p in ([cvp.parent / "fonts"] if cvp else []) + [path.parent / "fonts"]])
+                            [p for p in ([cvp.parent / "fonts"] if cvp else []) + [path.parent / "fonts"]],
+                            prefix)
 
 def _slug_name(*parts: str) -> str:
     """"Alex Moreau", "Mistral AI", "Senior Platform Engineer" ->

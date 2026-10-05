@@ -634,7 +634,8 @@ def chunks(body: str) -> list[str]:
     return [c.strip("\n") for c in re.split(r"\n\s*\n", (body or "").strip()) if c.strip()]
 
 
-def page_map(meta: dict, body: str, head: dict, out: Path, font_dirs: list[Path] | None = None) -> dict | None:
+def page_map(meta: dict, body: str, head: dict, out: Path, font_dirs: list[Path] | None = None,
+             prefix: str = "") -> dict | None:
     """{"bands": [{k: "header" | "para", i, page, y0, y1}], "box"} in points,
     or None when the paragraphs cannot be told apart reliably (a code block
     or a loose list with blank lines inside it)."""
@@ -650,7 +651,7 @@ def page_map(meta: dict, body: str, head: dict, out: Path, font_dirs: list[Path]
             parts.append(f"#{cv_map.LABEL}({i})\n" + "\n\n".join(ps))
     if not parts:
         return None
-    src = cv_map.HELPER + typst_source(meta, body, head, parts, end=f"#{cv_map.LABEL}(-1)\n")
+    src = cv_map.HELPER + prefix + typst_source(meta, body, head, parts, end=f"#{cv_map.LABEL}(-1)\n")
     scratch = out / ".cvstudio-map.typ"
     try:
         out.mkdir(parents=True, exist_ok=True)

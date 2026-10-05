@@ -199,6 +199,12 @@ async function main() {
   const ch = await b.evalJs(`(()=>{const d=${doc}; return {delta: (d.querySelector(".delta")||{}).textContent||"",
     marked: [...d.querySelectorAll(".hit.new")].map(h=>h.dataset.key), src: d.getElementById("pg").src.slice(-40)}})()`);
   check("the view says what changed, and who", /changed 1 thing/.test(ch.delta), ch.delta);
+  check("the change comes marked on the page itself, laid out as it prints",
+    Array.isArray(sc2.marked) && sc2.marked.length === sc2.shots.length && sc2.marked[0] !== sc2.shots[0],
+    JSON.stringify(sc2.marked));
+  const shownId = await b.evalJs(`${doc}.getElementById("pg").dataset.h`);
+  const pressed = await b.evalJs(`(${doc}.querySelector('[data-cmp][aria-pressed="true"]')||{}).textContent||""`);
+  check("and the view opens on it", shownId === sc2.marked[0] && pressed === "Changes", shownId + " " + pressed);
   check("and marks that block on the page", JSON.stringify(ch.marked) === JSON.stringify(["entry|summary|0"]),
     JSON.stringify(ch.marked));
   await b.evalJs(`${doc}.querySelector('[data-cmp="before"]').click()`);

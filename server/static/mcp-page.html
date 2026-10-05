@@ -97,7 +97,9 @@
     max-width:calc(var(--sheet) + 104px);padding:0 0 10px;font-size:var(--fs-sm);
     border-bottom:1px solid var(--rule);animation:in .3s var(--ease) both}
   .delta .mark{width:7px;height:7px;border-radius:50%;background:var(--new);flex:none}
-  .delta span{flex:1;min-width:0;color:var(--tx2)}
+  .delta{flex-wrap:wrap;row-gap:8px}
+  .delta span{flex:1 1 auto;min-width:0;color:var(--tx2);white-space:nowrap}
+  .delta .seg+.acts,.delta .seg{margin-left:auto}
   .delta span b{color:var(--tx);font-weight:600}
   .seg{display:inline-flex;background:color-mix(in srgb,var(--tx) 6%,transparent);border-radius:7px;padding:2px;flex:none}
   .seg button{border:0;background:none;padding:3px 10px;border-radius:5px;font-size:12px;
@@ -253,6 +255,20 @@
   .diff .now-l{color:var(--tx)}
   .diff .now-l::before{content:"+";color:var(--new)}
   .diff .none{padding:0;font-style:italic;color:var(--tx3)}
+  /* A change in its sentence: what went struck through, what came in green. */
+  .diff p.w{padding-left:0}
+  .diff p.w::before{content:none}
+  .diff del{color:var(--tx2);text-decoration:line-through;text-decoration-thickness:1.5px;
+    text-decoration-color:color-mix(in srgb,var(--warn) 75%,transparent);
+    background:color-mix(in srgb,var(--warn) 10%,transparent);border-radius:3px;padding:0 1px}
+  .diff ins{text-decoration:none;color:var(--tx);font-weight:500;
+    background:color-mix(in srgb,var(--new) 22%,transparent);border-radius:3px;padding:0 1px}
+  .diff .gap{color:var(--tx3);padding-left:0;margin:0 0 3px;letter-spacing:.2em}
+  .diff .gap::before{content:none}
+  .rev .d{display:block;font-size:12px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .rev .d del{color:var(--tx3);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--warn) 75%,transparent)}
+  .rev .d ins{text-decoration:none;color:var(--tx);background:color-mix(in srgb,var(--new) 22%,transparent);border-radius:3px;padding:0 1px}
+  .rev .wrap{flex:1;min-width:0}
   .revs{margin:-6px auto 12px;max-width:calc(var(--sheet) + 104px);
     border-bottom:1px solid var(--rule);animation:in .2s var(--ease) both}
   .rev{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:var(--fs-sm)}
@@ -286,6 +302,8 @@
     background:color-mix(in srgb,var(--tx) 6%,transparent)}
   .fold:hover .more{background:color-mix(in srgb,var(--tx) 11%,transparent);color:var(--tx)}
   .delta.old .mark{background:var(--tx3)}
+  .seg .sw.lit{display:inline-block;width:9px;height:9px;border-radius:2px;background:#c4efd1;
+    box-shadow:inset -2px 0 0 #e0684f;margin-right:5px;vertical-align:-1px}
 
   /* ---- against the posting (ats_check) ---- */
   .match{margin:0 auto 14px;max-width:calc(var(--sheet) + 104px);padding:0 0 12px;
@@ -343,6 +361,9 @@
   const PROTOCOL = "2026-01-26";
   let nextId = 1, host = {caps: {}, ctx: {}}, data = null, page = 0, sel = null, sent = null;
   let showBefore = false, listOpen = false, busy = false;
+  /* The page after a change without its marks (After), rather than with
+     them (Changes). */
+  let plain = false;
   /* Page images by id, as they arrive; and how full each is. */
   const cache = new Map(), loading = new Map(), fills = new Map();
   /* Set when a later render of this CV exists: {changed}. */
@@ -436,7 +457,7 @@
     if (!sc.match && data && data.match && data.path === sc.path) sc = {...sc, match: {...data.match, stale: true}};
     data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.shots.length - 1));
     spot = null; prefill = null;
-    sel = null; sent = null; showBefore = false; busy = false; earlier = null; unfolded = false;
+    sel = null; sent = null; showBefore = false; plain = false; busy = false; earlier = null; unfolded = false;
     editing = false; form = null;
     if (sc.first && sc.first.src) { cache.set(sc.first.id, sc.first.src); measure(sc.first.id); }
     if (!review()) listOpen = false;
@@ -470,7 +491,7 @@
   /* The others, one at a time once the first is up: flipping is then
      instant, and the last page can be measured. */
   async function prefetch() {
-    for (const id of data.shots) { if (earlier) return; await fetchPage(id); }
+    for (const id of images().concat(data.shots.slice(-1))) { if (earlier) return; await fetchPage(id); }
   }
   const imgTag = (id, attrs) => '<img data-h="' + esc(id) + '"' + (cache.has(id) ? ' src="' + esc(cache.get(id)) + '"' : "") +
     " " + attrs + ">";
@@ -517,7 +538,7 @@
       let last = 0, first = -1;
       for (let y = 0; y < limit; y++) if (ink(y)) { if (first < 0) first = y; last = y; }
       fills.set(id, first < 0 ? 0 : Math.min(1, (last - first) / (limit - first || 1)));
-      if (data && id === data.shots[data.shots.length - 1]) paintFacts();
+      if (data && (id === data.shots[data.shots.length - 1] || id === (data.marked || [])[data.shots.length - 1])) paintFacts();
     };
     im.src = cache.get(id);
   }
@@ -550,12 +571,15 @@
       if (c.page && !bits.length) bits.push("the letter changed");
       if (!bits.length) bits.push("small changes");
     }
-    const canCompare = data.before && data.before.length;
+    const canCompare = data.before && data.before.length, lit = marked();
+    const mode = showBefore ? "before" : lit && !plain ? "changes" : "after";
+    const opt = (v, label, title) => '<button data-cmp="' + v + '" aria-pressed="' + (mode === v) + '" title="' + title + '">' + label + "</button>";
     return '<div class="delta" role="status"><i class="mark"></i><span>' +
       (r ? "" : "Since the last render: ") + bits.join(", ") + "</span>" +
-      (canCompare ? '<div class="seg" role="group" aria-label="Compare"><button data-cmp="before" aria-pressed="' +
-        showBefore + '">Before</button><button data-cmp="after" aria-pressed="' + !showBefore +
-        '">After</button></div>' : "") +
+      (canCompare || lit ? '<div class="seg" role="group" aria-label="Compare">' +
+        (canCompare ? opt("before", "Before", "The page before the change") : "") +
+        (lit ? opt("changes", '<i class="sw lit"></i>Changes', "What changed, marked on the page: new words in green, a red stroke where words were cut") : "") +
+        opt("after", "After", "The page as it prints") + "</div>" : "") +
       (r && canAct() ? '<div class="acts"><button class="btn ghost" id="revlist" aria-expanded="' + listOpen +
         '">' + (listOpen ? "Hide list" : "Review") + '</button><button class="btn undo" data-act="undo" data-ids="*">Undo all</button>' +
         '<button class="btn keep" data-act="keep" data-ids="*">Keep all</button></div>' : "") + "</div>" +
@@ -565,8 +589,9 @@
   function revsHtml(r) {
     return '<div class="revs" id="revs">' + r.units.map(u =>
       '<div class="rev"><span class="t' + (u.tag === "del" || (u.kind === "section" && !u.after) ? " del" : "") + '">' +
-        esc(u.label) + '</span><button class="w" data-goto="' + esc(u.block ? key(u.block) : "") + '"' +
+        esc(u.label) + '</span><span class="wrap"><button class="w" data-goto="' + esc(u.block ? key(u.block) : "") + '"' +
         (u.block ? "" : " disabled") + ' title="' + esc(u.where) + '">' + esc(u.where) + "</button>" +
+        (u.before && u.after ? '<span class="d">' + briefDiff(u.before, u.after) + "</span>" : "") + "</span>" +
         '<button class="btn undo" data-act="undo" data-ids="' + esc(u.id) + '">Undo</button>' +
         '<button class="btn keep" data-act="keep" data-ids="' + esc(u.id) + '">Keep</button></div>').join("") + "</div>";
   }
@@ -583,7 +608,8 @@
     const d = data, out = [];
     out.push('<span class="fact">' + (d.pages === 1 ? "1 page" : esc(d.pages) + " pages") + "</span>");
     if (d.words) out.push('<i class="dot"></i><span class="fact">' + esc(d.words) + " words</span>");
-    const lastFill = fills.get(d.shots[d.shots.length - 1]);
+    const n = d.shots.length - 1;
+    const lastFill = fills.has(d.shots[n]) ? fills.get(d.shots[n]) : fills.get((d.marked || [])[n]);
     if (lastFill != null && d.pages === d.shots.length && !d.letter) {
       if (d.pages > 1 && lastFill < 0.3)
         out.push('<span class="badge warn" title="The last page is mostly empty">Last page ' +
@@ -606,7 +632,8 @@
 
   const modes = () => host.ctx.availableDisplayModes || [];
   const full = () => host.ctx.displayMode === "fullscreen";
-  const images = () => (showBefore && data.before ? data.before : data.shots);
+  const marked = () => !!(data.marked && data.marked.length === data.shots.length);
+  const images = () => (showBefore && data.before ? data.before : marked() && !plain ? data.marked : data.shots);
   const canDownload = () => !!(host.caps.downloadFile && host.caps.serverTools && data.pdf && !earlier);
 
   function thumbs() {
@@ -667,7 +694,7 @@
       if (!src && document.getElementById("pg") === img) img.alt = "This page could not be loaded. Render the CV again.";
     });
     /* The pages before a change are fetched only when asked to compare. */
-    if (showBefore) imgs.forEach(fetchPage);
+    imgs.forEach(id => fetchPage(id));
     const dl = document.getElementById("dl");
     if (dl) dl.onclick = () => download(dl);
     const rf = document.getElementById("refold");
@@ -678,7 +705,7 @@
       if (b) { showBefore = false; page = b.page - 1; select(b); }
     });
     document.querySelectorAll("[data-cmp]").forEach(x => x.onclick = () => {
-      showBefore = x.dataset.cmp === "before"; sel = null; paint();
+      showBefore = x.dataset.cmp === "before"; plain = x.dataset.cmp === "after"; sel = null; paint();
     });
     wireActs(document);
     const rl = document.getElementById("revlist");
@@ -1065,17 +1092,92 @@
     }
   }
 
-  /* Only the lines that differ: what went, struck through, and what came,
-     in green. The lines both share are what the page already shows. */
+  /* What changed, the way an editor marks it: the sentence once, the words
+     that went struck through and the words that came in green. Lines that
+     did not change are left out, a ⋯ where they were. */
+  function lcs(a, b, eq) {
+    const n = a.length, m = b.length, w = m + 1, t = new Uint16Array((n + 1) * w);
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+      t[i * w + j] = eq(a[i], b[j]) ? t[(i + 1) * w + j + 1] + 1 : Math.max(t[(i + 1) * w + j], t[i * w + j + 1]);
+    const ops = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (eq(a[i], b[j])) { ops.push(["eq", i++, j++]); }
+      else if (t[(i + 1) * w + j] >= t[i * w + j + 1]) ops.push(["del", i++, null]);
+      else ops.push(["ins", null, j++]);
+    }
+    while (i < n) ops.push(["del", i++, null]);
+    while (j < m) ops.push(["ins", null, j++]);
+    return ops;
+  }
+  /* Words, the spaces between them, and punctuation on its own, so a
+     colon added after a word does not strike the word. "99.99%", "can't"
+     and "e-mail" stay whole. */
+  const words = s => String(s).match(/\s+|[\p{L}\p{N}]+(?:['’.,\-][\p{L}\p{N}]+)*%?|[^\s]/gu) || [];
+  /* One line against another, word by word. A run of change comes out as
+     the words removed, then the words put in; a space between two changed
+     words belongs to the run, so "2 million" replaced reads as one change. */
+  function wordDiff(x, y) {
+    const a = words(x), b = words(y);
+    if (a.length * b.length > 90000) return "<del>" + esc(x) + "</del> <ins>" + esc(y) + "</ins>";
+    const ops = lcs(a, b, (p, q) => p === q);
+    let out = "", del = "", ins = "";
+    const flush = () => {
+      const d = del.trim(), n = ins.trim();
+      if (d || n) {
+        /* The space before the change stays plain text before it. */
+        if (/^\s/.test(del) || /^\s/.test(ins)) out += " ";
+        if (d) out += "<del>" + esc(d) + "</del>";
+        if (d && n && !/^[^\p{L}\p{N}]/u.test(n)) out += " ";
+        if (n) out += "<ins>" + esc(n) + "</ins>";
+        if (/\s$/.test(n ? ins : del)) out += " ";
+      }
+      del = ""; ins = "";
+    };
+    ops.forEach(([op, i, j], k) => {
+      if (op === "eq") {
+        const next = ops[k + 1];
+        if ((del || ins) && /^\s+$/.test(a[i]) && next && next[0] !== "eq") { del += a[i]; ins += a[i]; return; }
+        flush(); out += esc(a[i]);
+      } else if (op === "del") del += a[i];
+      else ins += b[j];
+    });
+    flush();
+    return out;
+  }
   function diffHtml(before, after) {
     const b = String(before || "").split("\n").filter(Boolean), a = String(after || "").split("\n").filter(Boolean);
-    if (!b.length) return '<div class="diff"><p class="none">Not there before: Claude added it.</p></div>';
-    if (!a.length) return '<div class="diff">' + b.map(l => '<p class="was-l">' + esc(l) + "</p>").join("") + "</div>";
-    const inA = new Set(a), inB = new Set(b);
-    const gone = b.filter(l => !inA.has(l)), came = a.filter(l => !inB.has(l));
-    if (!gone.length && !came.length) return '<div class="diff"><p class="none">Only the order changed.</p></div>';
-    return '<div class="diff">' + gone.map(l => '<p class="was-l">' + esc(l) + "</p>").join("") +
-      came.map(l => '<p class="now-l">' + esc(l) + "</p>").join("") + "</div>";
+    const wrap = rows => '<div class="diff">' + rows.join("") + "</div>";
+    if (!b.length) return wrap(['<p class="none">Not there before: Claude added it.</p>'].concat(
+      a.map(l => '<p class="w"><ins>' + esc(l) + "</ins></p>")));
+    if (!a.length) return wrap(b.map(l => '<p class="w"><del>' + esc(l) + "</del></p>"));
+    const ops = lcs(b, a, (p, q) => p === q), rows = [];
+    let k = 0, skipped = false;
+    while (k < ops.length) {
+      if (ops[k][0] === "eq") { skipped = true; k++; continue; }
+      const dels = [], inss = [];
+      while (k < ops.length && ops[k][0] !== "eq") { ops[k][0] === "del" ? dels.push(b[ops[k][1]]) : inss.push(a[ops[k][2]]); k++; }
+      if (skipped && rows.length) rows.push('<p class="gap">⋯</p>');
+      skipped = false;
+      for (let x = 0; x < Math.max(dels.length, inss.length); x++) {
+        if (x < dels.length && x < inss.length) rows.push('<p class="w">' + wordDiff(dels[x], inss[x]) + "</p>");
+        else if (x < dels.length) rows.push('<p class="w"><del>' + esc(dels[x]) + "</del></p>");
+        else rows.push('<p class="w"><ins>' + esc(inss[x]) + "</ins></p>");
+      }
+    }
+    if (!rows.length) return wrap(['<p class="none">Only the order changed.</p>']);
+    return wrap(rows);
+  }
+  /* The first change only, with a few words either side: a line in the
+     review list. */
+  function briefDiff(before, after) {
+    const html = diffHtml(before, after);
+    const m = html.match(/<p class="w">(.*?)<\/p>/);
+    if (!m) return "";
+    const line = m[1], at = line.search(/<(del|ins)>/);
+    if (at < 0) return line;
+    const lead = line.slice(0, at).replace(/&[a-z#0-9]+;/g, " ").split(/\s+/).filter(Boolean);
+    return (lead.length > 5 ? "… " + esc(lead.slice(-5).join(" ")) + " " : line.slice(0, at)) + line.slice(at);
   }
 
   /* Keep or undo, here and now: no message, no model, the page drawn again

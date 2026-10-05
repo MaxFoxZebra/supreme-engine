@@ -458,6 +458,17 @@ whether it fits on one page or leaves a last page mostly empty. With several
 pages, the others sit beside it to click through. Full screen fits the page to
 the window and lists every block beside it, to select from there.
 
+**What changed, marked on the page.** After Claude changes a CV or a
+letter, the page opens on *Changes*: the real page with Claude's new words
+highlighted in green and a thin red stroke where words were cut, like
+tracked changes. Typst lays the page out again with a show rule per new
+phrase (`server/marks.py`); highlighting takes no room, and the marked page
+is used only if every block sits exactly where it does on the page that
+prints. *After* is the page without the marks, *Before* the page before the
+change. A changed block's box, and each row of *Review*, show the change in
+its sentence: the words that went struck through, the words that came in
+green, unchanged lines left out.
+
 **Letters too.** A cover letter's paragraphs are blocks like a CV's
 entries, and its header (to, date, subject) is one: click one to ask for a
 change, and keep or undo Claude's changes paragraph by paragraph.
