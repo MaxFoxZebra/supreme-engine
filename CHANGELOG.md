@@ -8,12 +8,15 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## 0.37.1
+## Unreleased
 
 - **The page sits in the conversation like part of it.** No frame or
   background of its own: it takes Claude's colours, fonts and text sizes,
   in light and dark, and only the page itself is white. The bar, the
   "what changed" line and the buttons are plain text on the chat.
+
+## 0.37.1
+
 - **Keep or undo Claude's changes right on the page.** Every change Claude
   made to a CV and you have not looked at yet is marked on the page. Click
   one and its box shows what went and what came (the old line struck
