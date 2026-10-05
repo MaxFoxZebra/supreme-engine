@@ -417,3 +417,34 @@ def match(terms: list[dict], cv_text: str) -> dict:
     total = len(terms)
     return {"found": found, "missing": missing, "total": total,
             "rate": round(100 * len(found) / total) if total else None}
+
+
+
+BULLET = re.compile(r"^(?:[-*+•●▪–]|\d+[.)])\s+(.+)$")
+
+
+def requirements(posting: str, terms: list[dict], limit: int = 12) -> list[dict]:
+    """The posting's asks as it lists them: the bullets of its requirement
+    part (or every bullet, when it has no such part), each with the keywords
+    it names. Lines that name none still count; they are the ones a person
+    has to judge."""
+    out, in_req, bullets = [], False, []
+    for line in (posting or "").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        m = BULLET.match(s)
+        if m:
+            text = re.sub(r"[*_`]+", "", m.group(1)).strip()
+            if text:
+                bullets.append((in_req, text))
+            continue
+        # A heading, or a short line that reads as one, opens or closes the
+        # part that lists what is asked.
+        if len(s) < 90:
+            in_req = bool(REQUIREMENT_CUES.search(s))
+    chosen = [t for r, t in bullets if r] or [t for _, t in bullets]
+    for text in chosen[:limit]:
+        low = _norm(text)
+        out.append({"text": text, "terms": [t["key"] for t in terms if _has(t["key"], low)]})
+    return out

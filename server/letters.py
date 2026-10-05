@@ -583,13 +583,15 @@ def override_head(head: dict, over) -> dict:
 # Laying it out
 # --------------------------------------------------------------------------
 
-def typst_source(meta: dict, body: str, head: dict) -> str:
+def typst_source(meta: dict, body: str, head: dict, parts: list[str] | None = None,
+                 end: str = "") -> str:
     m = head["margins"]
     contact = " #h(0.8em)#text(fill: grey)[•]#h(0.8em) ".join(
         _typ_escape(c) for c in head["contact"])
     to = meta.get("to")
     to_lines = to if isinstance(to, list) else [l for l in str(to or "").split("\n") if l.strip()]
-    parts = [_typ_block(b, head) for b in blocks(body)]
+    if parts is None:
+        parts = [_typ_block(b, head) for b in blocks(body)]
     lang = str(meta.get("language") or "en")
     return f'''#let accent = rgb("{head["name_color"]}")
 #let grey = rgb("{head["contact_color"]}")
@@ -616,11 +618,68 @@ def typst_source(meta: dict, body: str, head: dict) -> str:
 #align(right)[#text(fill: grey)[{_typ_escape(date_line(meta))}]]
 #v(1.6em)
 {("#text(weight: \"bold\")[" + _typ_escape(str(meta.get("subject"))) + "]\n#v(0.9em)") if meta.get("subject") else ""}
-{chr(10).join(p + chr(10) for p in parts)}
+{chr(10).join(p + chr(10) for p in parts)}{end}
 #v(2.2em)
 #text(weight: "bold")[{_typ_escape(head.get("signature") or head["name"])}]
 '''
 
+
+
+# Where each paragraph landed, for the page view: the same position probes
+# the CV map uses (cv_map), one on its own line before each paragraph, which
+# leaves the page byte-identical. A paragraph here is what the review calls
+# one: the text between blank lines.
+
+def chunks(body: str) -> list[str]:
+    return [c.strip("\n") for c in re.split(r"\n\s*\n", (body or "").strip()) if c.strip()]
+
+
+def page_map(meta: dict, body: str, head: dict, out: Path, font_dirs: list[Path] | None = None) -> dict | None:
+    """{"bands": [{k: "header" | "para", i, page, y0, y1}], "box"} in points,
+    or None when the paragraphs cannot be told apart reliably (a code block
+    or a loose list with blank lines inside it)."""
+    import json
+    import typst
+    import cv_map
+    parts_of = [[_typ_block(b, head) for b in blocks(c)] for c in chunks(body)]
+    if [b for c in chunks(body) for b in blocks(c)] != blocks(body):
+        return None
+    parts = []
+    for i, ps in enumerate(parts_of):
+        if ps:
+            parts.append(f"#{cv_map.LABEL}({i})\n" + "\n\n".join(ps))
+    if not parts:
+        return None
+    src = cv_map.HELPER + typst_source(meta, body, head, parts, end=f"#{cv_map.LABEL}(-1)\n")
+    scratch = out / ".cvstudio-map.typ"
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        scratch.write_text(src, encoding="utf-8")
+        raw = typst.query(input=str(scratch), selector=f"<{cv_map.LABEL}>", field="value",
+                          format="json", font_paths=_font_paths(font_dirs or []))
+        values = json.loads(raw)
+    except Exception:
+        return None
+    finally:
+        try:
+            scratch.unlink()
+        except OSError:
+            pass
+    marks = [{"kind": "header", "page": 1, "y": 0.0}]
+    for v in values:
+        n = v.get("n")
+        marks.append({"kind": "end" if n == -1 else "para", "i": None if n == -1 else n,
+                      "page": v["p"], "y": v["y"], "x": v.get("x"), "h": v.get("h")})
+    bands = [b for b in cv_map._bands(marks) if b["k"] != "end"]
+    width = cv_map.PAGE_PT.get(str(head.get("paper") or "a4"))
+    right = cv_map._length(str(head["margins"].get("right") or ""))
+    lefts = [m["x"] for m in marks if isinstance(m.get("x"), (int, float))]
+    heights = [m["h"] for m in marks if isinstance(m.get("h"), (int, float))]
+    box = None
+    if width and right is not None and lefts and width[0] - right > min(lefts):
+        box = {"x0": min(lefts), "x1": width[0] - right, "page_width": width[0],
+               "page_height": max(heights) if heights else width[1]}
+    return {"bands": bands, "box": box}
 
 def _typ_list(node: dict, depth: int = 0) -> str:
     pad = "  " * depth

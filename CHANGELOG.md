@@ -8,6 +8,19 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Check a CV against the posting, on the page.** When Claude checks a CV
+  against an application's posting, the page shows the posting's
+  requirements and keywords, each found in your CV or missing. Click a
+  found one to see where it is; click a missing one and the box opens on
+  your best-fitting job with "Add evidence for …" ready to finish and send.
+- **Fix a typo without Claude.** Double-click any part of the page (or
+  press Edit) to change its text yourself: a date, a word, a bullet. It is
+  saved at once as your edit, and Claude is told so it keeps your wording.
+- **Cover letters are clickable.** Each paragraph, and the header, can be
+  pointed at, edited, and kept or undone on its own, like a CV's entries.
+
 ## 0.38.0
 
 - **Download the PDF from the page in the chat.** A *PDF* button in the bar

@@ -273,6 +273,94 @@ async function main() {
     sentOut.length >= 2 && sentOut.every(t => !/[\n\r\u2028\u2029]/.test(t) && t.length < 700),
     JSON.stringify(sentOut.map(t => t.slice(0, 90))));
 
+  const show = async (result, p) => {
+    fs.writeFileSync(hostFile, hostPage(item.text, {path: p}, result, {width: 720}));
+    await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+    await sleep(2200);
+  };
+  const lastOf = method => b.evalJs(`(LOG.filter(m=>m.method===${JSON.stringify(method)}).pop()||{}).params`);
+  const textOf = r => (r.content || []).map(x => x.text || "").join("");
+
+  console.log("Small edits, without Claude");
+  const call5 = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  const job5 = call5.structuredContent.map.find(m => m.k === "entry" && m.name === "experience");
+  await show(call5, cvPath);
+  await b.evalJs(`(()=>{const d=${doc}; const h=[...d.querySelectorAll(".hit")].find(x=>x.dataset.key===${JSON.stringify(key(job5))});
+    h.dispatchEvent(new MouseEvent("dblclick",{bubbles:true}))})()`);
+  for (let i = 0; i < 40 && !(await b.evalJs(`!!${doc}.querySelector("#ask [data-k]")`)); i++) await sleep(250);
+  const form = await b.evalJs(`[...${doc}.querySelectorAll("#ask [data-k]")].map(x=>[x.dataset.k,x.value])`);
+  check("a double-click opens the block's own text to edit", form.length > 1 && form.some(f => f[0] === "company"),
+    JSON.stringify(form).slice(0, 120));
+  await b.evalJs(`(()=>{const x=${doc}.querySelector('#ask [data-k="company"]'); x.value=x.value+" Ltd";
+    x.dispatchEvent(new Event("input",{bubbles:true}));
+    x.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))})()`);
+  for (let i = 0; i < 60 && !(await b.evalJs(`[...${doc}.querySelectorAll(".delta")].some(x=>/Saved/.test(x.textContent))`)); i++) await sleep(250);
+  const disk5 = (await c.send("tools/call", {name: "read_cv", arguments: {path: cvPath}})).result.content[0].text;
+  check("Enter saves it to the file", / Ltd/.test(disk5));
+  const rv5 = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result.structuredContent.changes;
+  check("as the user's edit: nothing for them to review as Claude's", !(rv5 && rv5.review), JSON.stringify(rv5 || {}).slice(0, 120));
+  const told5 = await lastOf("ui/update-model-context");
+  check("and Claude is told, out of the chat", told5 && /edited/.test(told5.content[0].text) && /themselves/.test(told5.content[0].text),
+    told5 && told5.content[0].text);
+
+  console.log("A cover letter");
+  const added = (await c.send("tools/call", {name: "add_job", arguments: {company: "Monzo", title: "Site Reliability Engineer",
+    description: "## Requirements\n\n- Production experience with Prometheus and Grafana\n- Comfortable in Go\n" +
+      "- Experience with Kubernetes and Terraform\n\nWe use Prometheus, Grafana, Kubernetes and Terraform every day."}})).result;
+  const jobId = (JSON.stringify(added).match(/[0-9a-f]{32}/) || [])[0];
+  const made = (await c.send("tools/call", {name: "create_letter", arguments: {job_id: jobId}})).result;
+  const letterPath = (JSON.stringify(made).match(/letters\/[\w.-]+\.md/) || [])[0];
+  await c.send("tools/call", {name: "write_letter", arguments: {path: letterPath, body:
+    "Dear Hiring Team,\n\nI run platforms that stay up.\n\nAt Northwind I cut deploy time from three hours to eleven minutes.\n\nBest regards,"}});
+  const lt = (await c.send("tools/call", {name: "render_cv", arguments: {path: letterPath}})).result;
+  const lmap = (lt.structuredContent || {}).map || [];
+  check("its bar counts its words", Number.isInteger(lt.structuredContent.words), String(lt.structuredContent.words));
+  check("its paragraphs are blocks on the page", lmap.filter(m => m.k === "para").length === 4 &&
+    lmap.some(m => m.k === "header"), JSON.stringify(lmap.map(m => m.label)));
+  await show(lt, letterPath);
+  const para = lmap.find(m => m.k === "para" && m.i === 2);
+  await b.evalJs(`(()=>{const d=${doc}; [...d.querySelectorAll(".hit")].find(x=>x.dataset.key===${JSON.stringify(key(para))}).click()})()`);
+  await sleep(400);
+  const lctx = await lastOf("ui/update-model-context");
+  const lchips = await b.evalJs(`[...${doc}.querySelectorAll("[data-chip]")].map(c=>c.textContent)`);
+  check("a click on one names it as a paragraph of the letter",
+    lctx && /paragraph 3 of the body/.test(lctx.content[0].text) && /in letters\//.test(lctx.content[0].text) &&
+    lchips.includes("More specific to the company"), lctx && lctx.content[0].text);
+
+  console.log("Against the posting");
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
+    {path: ["cv", "sections", "summary", 0], value: "Platform engineer running Go services, watched with Prometheus."}]}});
+  const ats = (await c.send("tools/call", {name: "ats_check", arguments: {path: cvPath, job_id: jobId}})).result;
+  const asc = ats.structuredContent || {};
+  check("ats_check still answers the model in text", /"keywords"/.test(textOf(ats)) && /"problems"/.test(textOf(ats)));
+  check("and gives the view the page with the match",
+    asc.view === "cv-match" && asc.match && asc.match.found && asc.match.missing && asc.match.requirements.length === 3,
+    JSON.stringify(asc.match || {}).slice(0, 200));
+  await show(ats, cvPath);
+  const panel = await b.evalJs(`(${doc}.querySelector(".match")||{}).textContent||""`);
+  check("the view lists the requirements and the keywords", /Against Site Reliability Engineer at Monzo/.test(panel) &&
+    /Comfortable in Go/.test(panel) && /keywords/.test(panel), panel.slice(0, 120));
+  const miss = asc.match.missing.find(m => /kubernetes|terraform/i.test(m.term)) || asc.match.missing[0];
+  if (miss) {
+    await b.evalJs(`(()=>{const d=${doc}; [...d.querySelectorAll("[data-miss]")].find(x=>x.textContent===${JSON.stringify(miss.term)}).click()})()`);
+    await sleep(500);
+    const box = await b.evalJs(`(()=>{const d=${doc}, a=d.getElementById("ask"), m=d.getElementById("msg");
+      return {what: a ? a.querySelector(".what b").textContent : "", text: m ? m.value : ""}})()`);
+    check("a missing keyword opens the box on the job that fits it best, with a start to finish",
+      /^Experience · /.test(box.what) && box.text.includes("Add evidence for " + miss.term), JSON.stringify(box));
+    check("and nothing is sent until the user sends it",
+      (await b.evalJs(`LOG.filter(m=>m.method==="ui/message").length`)) === 0);
+  }
+  const fnd = asc.match.found.find(f => f.where.length);
+  check("a keyword the CV has is found, with where", !!fnd, JSON.stringify(asc.match.found));
+  if (fnd) {
+    await b.evalJs(`(()=>{const d=${doc}; [...d.querySelectorAll("[data-kw]")].find(x=>x.textContent===${JSON.stringify(fnd.term)}).click()})()`);
+    await sleep(400);
+    const lit = await b.evalJs(`[...${doc}.querySelectorAll(".hit.spot")].map(h=>h.dataset.key)`);
+    check("a keyword found shows where it is", lit.length > 0 && lit.every(k => fnd.where.some(w => key(w) === k)),
+      JSON.stringify(lit));
+  }
+
   b.close(); srv.close(); c.close();
   console.log();
   console.log(fails ? `${fails} failure(s)` : "every page view check passes");

@@ -458,6 +458,27 @@ whether it fits on one page or leaves a last page mostly empty. With several
 pages, the others sit beside it to click through. Full screen fits the page to
 the window and lists every block beside it, to select from there.
 
+**Letters too.** A cover letter's paragraphs are blocks like a CV's
+entries, and its header (to, date, subject) is one: click one to ask for a
+change, and keep or undo Claude's changes paragraph by paragraph.
+
+**Fix it yourself.** Double-click a block, or press *Edit* in its box, and
+its own text opens there: the fields of a job (company, title, dates,
+bullets one per line), a line of the summary, a paragraph of a letter. Save
+writes it through `edit_on_page`, a tool only views can call, as your edit
+rather than Claude's: it is not added to what you review, and a change
+Claude made stays reviewable with your words in it. A change that would
+stop the page rendering (a phone number that is not a real one) is not
+saved. Claude is told what you edited, so it keeps your wording.
+
+**Against the posting.** In a client that shows views, `ats_check` shows
+the page with the posting beside it: its requirements, each met, partly met
+or not shown in the CV, and its keywords, found or missing. A found one
+lights the blocks it is in. A missing one opens the box on the job that
+already says most of what the posting asks, with *Add evidence for …, only
+what I have really done* to finish and send; nothing is sent until you do.
+The keywords are a heuristic, and the view says so.
+
 **Download the PDF.** In a client that can hand a view's file to you
 (`ui/download-file`), the bar has a *PDF* button: the file you send with the
 application, without opening the app or the folder.

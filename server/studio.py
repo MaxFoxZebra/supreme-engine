@@ -2076,6 +2076,15 @@ def render_letter(path: Path) -> dict:
             "pngs": [f"/api/asset?path={rel(Path(f))}&v={stamp}" for f in r["png_pages"]]}
 
 
+
+def letter_map(path: Path) -> dict | None:
+    """Where each paragraph of a rendered letter is on its pages (letters.page_map)."""
+    meta, body = letters.parse(path.read_text(encoding="utf-8"))
+    meta = dated(meta, path)
+    cvp = letter_cv(meta)
+    return letters.page_map(meta, body, letter_head(meta), output_dir(path),
+                            [p for p in ([cvp.parent / "fonts"] if cvp else []) + [path.parent / "fonts"]])
+
 def _slug_name(*parts: str) -> str:
     """"Alex Moreau", "Mistral AI", "Senior Platform Engineer" ->
     Alex-Moreau-Mistral-AI-Senior-Platform-Engineer: what a recruiter's

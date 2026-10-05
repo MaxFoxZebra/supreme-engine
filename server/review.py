@@ -209,6 +209,11 @@ def _chunk_key(chunk: str) -> str:
     return " ".join(lines)
 
 
+# For the page view, which marks a letter's paragraphs the way this aligns them.
+chunk_key = _chunk_key
+align = _align
+
+
 def letter_units(letters, before: str | None, now: str) -> list[dict]:
     if before is None:
         return [{"id": "created", "kind": "created", "label": "New letter"}]

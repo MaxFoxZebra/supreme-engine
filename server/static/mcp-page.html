@@ -179,6 +179,19 @@
   .send:disabled{opacity:.3;cursor:default}
   .send svg{width:14px;height:14px}
   .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+  .pop .what .ed{border:0;background:none;color:var(--tx2);cursor:pointer;font-size:12px;
+    padding:2px 8px;border-radius:6px;display:inline-flex;align-items:center;gap:4px;flex:none;margin-left:auto}
+  .pop .what .ed+.x{margin-left:0}
+  .pop .what .ed:hover,.pop .what .ed[aria-pressed=true]{background:var(--bg2);color:var(--tx)}
+  .pop .what .ed svg{width:12px;height:12px}
+  .ef{display:block;margin:0 0 8px}
+  .ef span{display:block;font-size:11px;color:var(--tx3);margin:0 2px 3px}
+  .ef input,.ef textarea{width:100%;font:inherit;font-size:13px;line-height:1.4;color:var(--tx);
+    background:var(--bg);border:1px solid var(--rule2);border-radius:7px;padding:5px 8px;outline:0;resize:none}
+  .ef input:focus,.ef textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 16%,transparent)}
+  .erow{display:flex;align-items:center;gap:6px;margin-top:2px}
+  .erow .hint{margin:0;flex:1}
+  .eerr{color:var(--warn);font-size:12px;margin:0 2px 8px;white-space:pre-wrap}
   .chip{border:1px solid var(--rule);background:var(--bg);border-radius:99px;padding:3px 10px;
     cursor:pointer;font-size:12px;color:var(--tx2);transition:border-color .15s,color .15s,background .15s}
   .chip:hover{color:var(--tx);border-color:var(--acc);background:color-mix(in srgb,var(--acc) 6%,var(--bg))}
@@ -273,6 +286,45 @@
     background:color-mix(in srgb,var(--tx) 6%,transparent)}
   .fold:hover .more{background:color-mix(in srgb,var(--tx) 11%,transparent);color:var(--tx)}
   .delta.old .mark{background:var(--tx3)}
+
+  /* ---- against the posting (ats_check) ---- */
+  .match{margin:0 auto 14px;max-width:calc(var(--sheet) + 104px);padding:0 0 12px;
+    border-bottom:1px solid var(--rule);font-size:var(--fs-sm)}
+  .mh{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .mh b{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rate{width:72px;height:5px;border-radius:9px;background:color-mix(in srgb,var(--tx) 10%,transparent);flex:none;overflow:hidden}
+  .rate i{display:block;height:100%;background:var(--new);border-radius:9px}
+  .mh .n{color:var(--tx2);font-size:var(--fs-xs);white-space:nowrap}
+  .reqs{list-style:none;margin:0 0 8px;padding:0}
+  .req{display:flex;align-items:flex-start;gap:9px;width:100%;border:0;background:none;text-align:left;
+    padding:4px 6px;margin:0 -6px;border-radius:7px;cursor:pointer;color:var(--tx);font-size:var(--fs-sm)}
+  .req:hover{background:var(--bg2)}
+  .req span{flex:1;min-width:0;line-height:1.4}
+  .req em{font-style:normal;color:var(--tx3);font-size:11.5px;white-space:nowrap;padding-top:1px}
+  .st{width:14px;height:14px;border-radius:50%;flex:none;margin-top:2px;display:grid;place-items:center}
+  .st.met{background:var(--new)}
+  .st.met::after{content:"";width:6px;height:3px;border:solid light-dark(#fff,#10241a);border-width:0 0 1.6px 1.6px;
+    transform:translateY(-1px) rotate(-45deg)}
+  .st.part{background:linear-gradient(90deg,var(--new) 50%,color-mix(in srgb,var(--tx) 14%,transparent) 50%)}
+  .st.miss{box-shadow:inset 0 0 0 1.5px var(--warn)}
+  .st.unk{box-shadow:inset 0 0 0 1.5px var(--rule2)}
+  .more-reqs{border:0;background:none;color:var(--tx2);font-size:12px;cursor:pointer;padding:2px 0;margin-bottom:6px}
+  .more-reqs:hover{color:var(--tx);text-decoration:underline}
+  .kws{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:4px}
+  .kl{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--tx3);margin-right:2px}
+  .kl+.kw{margin-left:0}
+  .kws .sep{width:10px}
+  .kw{border:1px solid transparent;border-radius:99px;padding:2px 9px;font-size:12px;cursor:pointer;
+    background:color-mix(in srgb,var(--new) 12%,transparent);color:var(--tx)}
+  .kw:hover{border-color:var(--new)}
+  .kw[aria-pressed=true]{background:var(--new);color:light-dark(#fff,#10241a)}
+  .kw.miss{background:none;border:1px dashed var(--rule2);color:var(--tx2)}
+  .kw.miss:hover{border-color:var(--acc);border-style:solid;color:var(--tx)}
+  .mp{margin:0 0 8px;color:var(--warn);font-size:12.5px}
+  .match .hint{margin:8px 0 0}
+  .hit.spot{background:color-mix(in srgb,var(--new) 13%,transparent)}
+  .hit.spot::before{opacity:1;transform:none;background:var(--new)}
+  :root[data-mode=fullscreen] .side .match{margin:10px 12px 0;max-width:none;padding-bottom:10px}
   .skel{max-width:var(--sheet);margin:0 auto;aspect-ratio:1/1.414;border-radius:3px;background:
     linear-gradient(100deg,var(--bg2) 40%,var(--bg3) 50%,var(--bg2) 60%) 0 0/200% 100%;
     animation:shim 1.2s linear infinite}
@@ -295,6 +347,12 @@
   const cache = new Map(), loading = new Map(), fills = new Map();
   /* Set when a later render of this CV exists: {changed}. */
   let earlier = null, unfolded = false, lastCheck = 0;
+  /* Editing a block's own text: its fields as the server gave them, what
+     has been typed so far, and an error to show. */
+  let editing = false, form = null, draft = {}, editErr = "";
+  /* Against the posting: the keyword shown on the page, the box's text to
+     start from, and whether every requirement is listed. */
+  let spot = null, prefill = null, allReqs = false;
   const pending = new Map();
   const $app = document.getElementById("app");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
@@ -305,6 +363,7 @@
     send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>',
     down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>',
     ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 1.9 1.9 3.7-4"/></svg>',
+    pen: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 3 13 5.5 6 12.5H3.5V10z"/></svg>',
     x: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
   };
   let seen = false;
@@ -364,7 +423,7 @@
 
   /* ---- the result ---- */
   function onResult(r) {
-    const sc = r.structuredContent || r.structured_content;
+    let sc = r.structuredContent || r.structured_content;
     if (r.isError || !sc || !sc.shots || !sc.shots.length) {
       const text = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
       $app.innerHTML = r.isError
@@ -372,8 +431,13 @@
         : '<div class="state">' + esc(text || "Nothing to show.") + "</div>";
       return;
     }
+    /* Keep, undo or an edit redraws the page without the posting's check:
+       keep it, said to be from before. */
+    if (!sc.match && data && data.match && data.path === sc.path) sc = {...sc, match: {...data.match, stale: true}};
     data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.shots.length - 1));
+    spot = null; prefill = null;
     sel = null; sent = null; showBefore = false; busy = false; earlier = null; unfolded = false;
+    editing = false; form = null;
     if (sc.first && sc.first.src) { cache.set(sc.first.id, sc.first.src); measure(sc.first.id); }
     if (!review()) listOpen = false;
     /* After a change, open on the first page it touched. */
@@ -579,7 +643,8 @@
       (earlier ? '<div class="delta old" role="status"><i class="mark"></i><span>An earlier version: ' +
         esc(sinceText()) + '. The latest is further down.</span><button class="btn ghost" id="refold">Fold</button></div>'
         : deltaHtml()) +
-      '<aside class="side"><div class="outline" id="outline">' + outline() + "</div>" +
+      (d.match && !full() ? matchHtml() : "") +
+      '<aside class="side">' + (d.match && full() ? matchHtml() : "") + '<div class="outline" id="outline">' + outline() + "</div>" +
         (n > 1 ? '<div class="pages">' + thumbs() + "</div>" : "") + "</aside>" +
       '<div class="body"><div class="stage" id="stage"><div class="sheet" id="sheet">' + imgTag(imgs[page],
         'id="pg" alt="Page ' + (page + 1) + " of " + esc(d.pages) + (showBefore ? ", before the change" : "") + '"') +
@@ -623,6 +688,7 @@
       if (b) { showBefore = false; page = b.page - 1; select(b); }
     });
     wireFit();
+    wireMatch();
     const mode = document.getElementById("mode");
     if (mode) mode.onclick = async () => {
       try {
@@ -688,7 +754,8 @@
       if (bottom - top <= 0.4) return;
       const el = document.createElement("button");
       const isNew = ks.has(key(b));
-      el.className = "hit" + (same(b, sel) ? " sel" : "") + (same(b, sent) ? " sent" : "") + (isNew ? " new" : "");
+      el.className = "hit" + (same(b, sel) ? " sel" : "") + (same(b, sent) ? " sent" : "") + (isNew ? " new" : "") +
+        (spotted().has(key(b)) ? " spot" : "");
       el.style.cssText = "top:" + top + "%;height:" + (bottom - top) + "%;left:" + left + "%;right:" + right + "%";
       el.dataset.key = key(b);
       el.setAttribute("aria-label", "Change " + (b.label || "this block") + (isNew ? " (changed)" : ""));
@@ -701,6 +768,7 @@
       el.onmouseenter = show; el.onfocus = show;
       el.onmouseleave = el.onblur = () => { tag.style.display = "none"; };
       el.onclick = () => select(b);
+      el.ondblclick = () => { if (canEdit(b)) { select(b); startEdit(); } };
       sheet.appendChild(el);
     });
     if (sel && sel.k !== "doc") openPop(); else if (sent && sent.k !== "doc") openSent();
@@ -721,6 +789,8 @@
 
   function where(b) {
     if (b.k === "doc") return "the whole document";
+    if (b.k === "para") return "paragraph " + ((+b.i || 0) + 1) + " of the body (paragraphs are separated by blank lines)";
+    if (b.k === "header" && data.letter) return "the letter's front matter: to, date, place and subject";
     if (b.k === "header") return "cv.name, cv.headline and the contact details";
     if (b.k === "section") return "cv.sections." + yamlKey(b.name);
     return "cv.sections." + yamlKey(b.name) + "[" + (+b.i || 0) + "]";
@@ -731,8 +801,9 @@
   function tellModel(b, asked) {
     if (!host.caps.updateModelContext) return Promise.resolve(false);
     const path = clean(data.path, 200);
+    const doc = data.letter ? "letter" : "CV";
     const text = "CV Studio page view: the user " + (asked ? "asked for a change to" : "selected") +
-      (b.k === "doc" ? " the whole CV" : " the block \"" + name(b) + "\"") + " in " + path +
+      (b.k === "doc" ? " the whole " + doc : " the block \"" + name(b) + "\"") + " in " + path +
       (b.k === "doc" ? "" : ", at " + where(b)) + ". " +
       (asked ? "Their next message says what to change. " + (b.k === "doc" ? "" : "Edit only that block, then ") +
                "call render_cv on " + path + " so they see the new page."
@@ -744,6 +815,8 @@
      a summary, a list of skills. */
   function chipsFor(b) {
     const s = String(b.name || "").toLowerCase();
+    if (b.k === "para") return ["Make it shorter", "More specific to the company", "Warmer", "Remove it"];
+    if (b.k === "header" && data.letter) return ["Address it to the hiring manager", "Sharpen the subject line"];
     if (b.k === "header") return ["Sharpen the headline for this job", "Make it shorter"];
     if (b.k === "section") return ["Move it up", "Move it down", "Shorten this section", "Remove the section"];
     if (/summary|profile|about|objective/.test(s)) return ["Tailor it to the posting", "Lead with a number", "Make it shorter"];
@@ -755,13 +828,14 @@
   }
 
   function select(b) {
+    if (!same(b, sel)) { editing = false; form = null; editErr = ""; }
     sel = b; sent = null;
     if (!seen) { seen = true; try { localStorage.setItem("cvs-page-coached", "1"); } catch (e) {} }
     paint();
     tellModel(b, false);
   }
 
-  function close() { sel = null; sent = null; paint(); }
+  function close() { sel = null; sent = null; editing = false; form = null; paint(); }
 
   /* Next to the block: under it when there is room, over it otherwise,
      lined up with the text rather than spanning the sheet. */
@@ -776,6 +850,9 @@
     pop.style.left = left + "px";
     if (below + h <= sheetH + 24 || hit.offsetTop - h - 8 < 0) pop.style.top = below + "px";
     else pop.style.top = (hit.offsetTop - h - 8) + "px";
+    /* A box that runs past the page makes room for itself: the client sizes
+       the frame to what is in it. */
+    stage.style.paddingBottom = Math.max(0, pop.offsetTop + h - sheetH + 12) + "px";
   }
 
   function openPop() {
@@ -786,8 +863,18 @@
     pop.id = "ask"; pop.className = "pop"; pop.setAttribute("role", "dialog");
     pop.setAttribute("aria-label", "Change " + (b.label || "this block"));
     const u = unitFor(b);
-    pop.innerHTML = '<div class="what"><b title="' + esc(b.label) + '">' + esc(b.label || "This block") + "</b>" +
-      '<button class="x" id="clear" aria-label="Close">' + ICON.x + "</button></div>" +
+    const head = '<div class="what"><b title="' + esc(b.label) + '">' + esc(b.label || "This block") + "</b>" +
+      (canEdit(b) ? '<button class="ed" id="edit" aria-pressed="' + editing + '" title="Fix the text yourself, without Claude">' +
+        ICON.pen + (editing ? "Editing" : "Edit") + "</button>" : "") +
+      '<button class="x" id="clear" aria-label="Close">' + ICON.x + "</button></div>";
+    if (editing) {
+      pop.innerHTML = head + editHtml();
+      stage.appendChild(pop);
+      place(pop);
+      wireEdit(pop);
+      return;
+    }
+    pop.innerHTML = head +
       (u && canAct() ? '<div class="was"><div class="h"><b>' + esc(u.tag === "ins" ? "Added" : "Changed") + " by " +
         esc(review().agent || "Claude") + '</b><div class="acts"><button class="btn undo" data-act="undo" data-ids="' +
         esc(u.id) + '">Undo</button><button class="btn keep" data-act="keep" data-ids="' + esc(u.id) +
@@ -802,6 +889,8 @@
     place(pop);
     wireActs(pop);
     document.getElementById("clear").onclick = close;
+    const ed = document.getElementById("edit");
+    if (ed) ed.onclick = startEdit;
     const msg = document.getElementById("msg");
     if (!msg) return;
     const go = document.getElementById("go");
@@ -814,7 +903,166 @@
     };
     go.onclick = () => submit(msg.value);
     pop.querySelectorAll("[data-chip]").forEach(c => c.onclick = () => submit(c.dataset.chip));
+    if (prefill) { msg.value = prefill; prefill = null; grow(); }
     msg.focus({preventScroll: true});
+    if (msg.value) msg.setSelectionRange(msg.value.length, msg.value.length);
+  }
+
+  /* ---- against the posting ----
+     Every requirement and keyword is posting text, shown here as text and
+     sent nowhere until the user sends a message with it in their words. */
+  const bandFor = blk => blk && (data.map || []).find(x => key(x) === key(blk));
+  function spotted() {
+    const m = data && data.match;
+    if (!m || !spot) return new Set();
+    const keys = new Set();
+    (m.found || []).filter(f => spot.includes(f.key)).forEach(f => (f.where || []).forEach(w => keys.add(key(w))));
+    return keys;
+  }
+
+  function matchHtml() {
+    const m = data.match, found = m.found || [], missing = m.missing || [], reqs = m.requirements || [];
+    const job = [m.title, m.company].filter(Boolean).join(" at ");
+    if (!m.has_posting) return '<section class="match"><div class="mh"><b>' + esc(job ? "Against " + job : "Against the posting") +
+      '</b></div><p class="hint" style="margin:0">There is no posting saved' + (job ? " with this application" : "") +
+      ", so there is nothing to match against. Add the posting to the application, then ask Claude to check again.</p>" +
+      problemsHtml(m) + "</section>";
+    const state = q => !q.terms.length ? "unk" : q.found.length === q.terms.length ? "met" : q.found.length ? "part" : "miss";
+    const shown = allReqs ? reqs : reqs.slice(0, 5);
+    return '<section class="match" aria-label="Against the posting"><div class="mh"><b title="' + esc(job) + '">' +
+        esc(job ? "Against " + job : "Against the posting") + '</b><span class="rate" aria-hidden="true"><i style="width:' +
+        (+m.rate || 0) + '%"></i></span><span class="n">' + found.length + " of " + (+m.total || 0) + " keywords</span></div>" +
+      (m.stale ? '<p class="hint" style="margin:0 0 8px">Checked before your last change. Ask Claude to check again.</p>' : "") +
+      problemsHtml(m) +
+      (shown.length ? '<ul class="reqs">' + shown.map((q, i) => '<li><button class="req" data-req="' + i + '"><i class="st ' +
+        state(q) + '" title="' + {met: "In your CV", part: "Partly in your CV", miss: "Not in your CV", unk: "Yours to judge"}[state(q)] +
+        '"></i><span>' + esc(q.text) + "</span>" + (state(q) === "met" ? "<em>Show</em>" : "<em>Ask</em>") + "</button></li>").join("") + "</ul>" +
+        (reqs.length > 5 ? '<button class="more-reqs" id="allreqs">' + (allReqs ? "Fewer" : "All " + reqs.length + " requirements") + "</button>" : "") : "") +
+      '<div class="kws">' + (found.length ? '<span class="kl">In your CV</span>' + found.map((f, i) =>
+          '<button class="kw" data-kw="' + i + '" aria-pressed="' + !!(spot && spot.length === 1 && spot[0] === f.key) +
+          '" title="Show where">' + esc(f.term) + "</button>").join("") : "") +
+        (missing.length ? (found.length ? '<span class="sep"></span>' : "") + '<span class="kl">Missing</span>' +
+          missing.map((f, i) => '<button class="kw miss" data-miss="' + i + '" title="Ask Claude to add it, where it is true">' +
+            esc(f.term) + "</button>").join("") : "") + "</div>" +
+      '<p class="hint">Picked from the posting by a heuristic. Add a keyword only where it is true of you.</p></section>';
+  }
+  function problemsHtml(m) {
+    const p = m.problems || [];
+    return p.length ? '<p class="mp">' + (p.length === 1 ? "A parsing problem: " : p.length + " parsing problems: ") +
+      esc(p.join("; ")) + "</p>" : "";
+  }
+
+  /* Show where it is: the page it is on, its blocks lit. */
+  function showSpot(keys) {
+    const keysOn = spot && JSON.stringify(spot) === JSON.stringify(keys);
+    spot = keysOn ? null : keys; sel = null; sent = null; showBefore = false; editing = false;
+    const first = [...spotted()].map(k => (data.map || []).find(x => key(x) === k)).filter(Boolean)
+      .sort((a, b) => a.page - b.page || a.y0 - b.y0)[0];
+    if (first) page = first.page - 1;
+    paint();
+  }
+  /* Ask for it: the box on the block it belongs in, with a start the user
+     finishes and sends. */
+  function askFor(text) {
+    const m = data.match, b = bandFor(m.best) || {k: "doc", name: null, i: null, label: "The whole CV"};
+    spot = null; showBefore = false;
+    if (b.page) page = b.page - 1;
+    prefill = text;
+    if (b.k === "doc") { sel = b; paint(); return; }
+    select(b);
+  }
+  function wireMatch() {
+    const m = data.match;
+    if (!m) return;
+    document.querySelectorAll("[data-kw]").forEach(x => x.onclick = () => showSpot([m.found[+x.dataset.kw].key]));
+    document.querySelectorAll("[data-miss]").forEach(x => x.onclick = () =>
+      askFor("Add evidence for " + clean(m.missing[+x.dataset.miss].term, 40) + ", only what I have really done"));
+    document.querySelectorAll("[data-req]").forEach(x => x.onclick = () => {
+      const q = m.requirements[+x.dataset.req];
+      if (q.terms.length && q.found.length === q.terms.length) showSpot(q.found);
+      else askFor("Show that I meet this, only with what I have really done: " + clean(q.text, 140));
+    });
+    const all = document.getElementById("allreqs");
+    if (all) all.onclick = () => { allReqs = !allReqs; paint(); };
+  }
+
+  /* ---- the user's own small edit: a typo, a date, a word ---- */
+  const canEdit = b => !!(b && host.caps.serverTools && !earlier && !showBefore &&
+    (b.k === "entry" || b.k === "header" || b.k === "para"));
+
+  async function startEdit() {
+    const b = sel;
+    if (!canEdit(b)) return;
+    if (editing) { editing = false; form = null; editErr = ""; paint(); return; }
+    editing = true; form = null; editErr = ""; draft = {};
+    paint();
+    try {
+      const r = await request("tools/call", {name: "page_view_data",
+        arguments: {what: "fields", path: data.path, block: {k: b.k, name: b.name, i: b.i}}});
+      const f = r && !r.isError && (r.structuredContent || r.structured_content);
+      if (!f) throw new Error(((r && r.content || [])[0] || {}).text || "it could not be read");
+      if (!same(b, sel) || !editing) return;
+      form = f; f.fields.forEach(x => { draft[x.key] = x.value; });
+    } catch (e) {
+      editErr = clean(e.message, 300);
+    }
+    paint();
+  }
+
+  function editHtml() {
+    if (editErr && !form) return '<p class="eerr">' + esc(editErr) + "</p>";
+    if (!form) return '<p class="hint" style="margin:2px">Reading it…</p>';
+    return '<div class="edit">' + form.fields.map(f => '<label class="ef"><span>' + esc(f.label) + "</span>" +
+        (f.multi ? '<textarea data-k="' + esc(f.key) + '" rows="' + Math.min(8, String(draft[f.key]).split("\n").length + 1) + '">' +
+          esc(draft[f.key]) + "</textarea>" : '<input data-k="' + esc(f.key) + '" value="' + esc(draft[f.key]) + '">') +
+        "</label>").join("") +
+      (editErr ? '<p class="eerr">' + esc(editErr) + "</p>" : "") +
+      '<div class="erow"><p class="hint">Saved as your edit. Claude is told.</p>' +
+      '<button class="btn ghost" id="ecancel">Cancel</button><button class="btn keep" id="esave">Save</button></div></div>';
+  }
+
+  function wireEdit(pop) {
+    document.getElementById("clear").onclick = close;
+    document.getElementById("edit").onclick = startEdit;
+    const fields = [...pop.querySelectorAll("[data-k]")];
+    const grow = t => { if (t.tagName === "TEXTAREA") { t.style.height = "auto"; t.style.height = Math.min(220, t.scrollHeight + 2) + "px"; } };
+    fields.forEach(t => {
+      grow(t);
+      t.oninput = () => { draft[t.dataset.k] = t.value; grow(t); place(pop); };
+      t.onkeydown = e => {
+        if (e.key === "Escape") { e.preventDefault(); editing = false; form = null; paint(); }
+        else if (e.key === "Enter" && (t.tagName === "INPUT" || e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEdit(); }
+      };
+    });
+    const c = document.getElementById("ecancel"), s = document.getElementById("esave");
+    if (c) c.onclick = () => { editing = false; form = null; paint(); };
+    if (s) s.onclick = saveEdit;
+    if (fields[0]) { fields[0].focus({preventScroll: true}); }
+    place(pop);
+  }
+
+  async function saveEdit() {
+    const b = sel, s = document.getElementById("esave");
+    if (!form || !b || (s && s.getAttribute("aria-busy") === "true")) return;
+    const values = {};
+    form.fields.forEach(f => { if (draft[f.key] !== f.value) values[f.key] = draft[f.key]; });
+    if (!Object.keys(values).length) { editing = false; form = null; paint(); return; }
+    if (s) { s.setAttribute("aria-busy", "true"); s.textContent = "Saving…"; }
+    try {
+      const r = await request("tools/call", {name: "edit_on_page", arguments: {path: data.path,
+        block: {k: b.k, name: b.name, i: b.i}, values, src: form.src, page: page + 1}});
+      if (!r || r.isError) throw new Error(((r && r.content || [])[0] || {}).text || "it was refused");
+      if (host.caps.updateModelContext) request("ui/update-model-context", {content: [{type: "text", text:
+        "CV Studio page view: the user edited \"" + name(b) + "\" in " + clean(data.path, 200) + ", at " + where(b) +
+        ", themselves, and it is saved. Keep their wording, and read the file again before changing it."}]}).catch(() => {});
+      const keep = page;
+      onResult(r);
+      page = Math.min(keep, data.shots.length - 1); paint();
+      flash("Saved.");
+    } catch (e) {
+      editErr = clean(e.message, 400);
+      paint();
+    }
   }
 
   /* Only the lines that differ: what went, struck through, and what came,
@@ -912,7 +1160,7 @@
   }
 
   document.addEventListener("keydown", e => {
-    if (e.target.closest && e.target.closest("textarea")) return;
+    if (e.target.closest && e.target.closest("textarea,input")) return;
     if (e.key === "Escape" && (sel || sent)) close();
     const n = images().length;
     if (n > 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {

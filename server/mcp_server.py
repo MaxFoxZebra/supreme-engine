@@ -35,6 +35,7 @@ from mcp.server.mcpserver.prompts.base import Prompt
 from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource, Icon, ImageContent,
                        TextContent, ToolAnnotations)
 
+import ats
 import cjkfonts
 import review
 import studio
@@ -202,7 +203,7 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # Tools a view calls for the user, hidden from the model ("app" visibility):
 # what they change is the user's decision, so it is neither recorded as an AI
 # client's change to review nor logged as its activity.
-USER_ACTIONS = {"review_change", "page_view_data"}
+USER_ACTIONS = {"review_change", "page_view_data", "edit_on_page"}
 
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
@@ -233,9 +234,10 @@ TITLES = {
     "design_options": "Themes, fonts and page sizes", "workspace_info": "About the workspace",
     "review_change": "Keep or undo a change",
     "page_view_data": "Page view data",
+    "edit_on_page": "Edit on the page",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
-IDEMPOTENT = {"review_change", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
+IDEMPOTENT = {"review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
               "save_interview_prep", "write_letter", "mark_translation_current"}
 OPEN_WORLD = {"add_job", "read_posting", "set_company_logo"}
 
@@ -481,7 +483,20 @@ _LAST_RENDER: dict[str, dict] = {}
 
 def _changes(old: dict, new: dict) -> dict | None:
     """Which blocks differ between two versions of a CV, as the view names
-    them ({k, name, i}), how many entries went, and whether the design did."""
+    them ({k, name, i}), how many entries went, and whether the design did.
+    For a letter, which paragraphs (by where they are now) and whether the
+    header did."""
+    if "letter" in old or "letter" in new:
+        ol, nl = old.get("letter") or {}, new.get("letter") or {}
+        bk, ak = ol.get("chunks") or [], nl.get("chunks") or []
+        blocks = [{"k": "header", "name": None, "i": None}] if ol.get("meta") != nl.get("meta") else []
+        removed = 0
+        for tag, bi, ai in review.align(bk, ak, lambda i, j: bk[i] == ak[j]):
+            if tag in ("chg", "ins"):
+                blocks.append({"k": "para", "name": None, "i": ai})
+            elif tag == "del":
+                removed += 1
+        return {"blocks": blocks, "removed": removed, "design": False} if blocks or removed else None
     oc, nc = old.get("cv") or {}, new.get("cv") or {}
     blocks: list[dict] = []
     if {k: v for k, v in oc.items() if k != "sections"} != \
@@ -545,14 +560,21 @@ def _review_units(p: Path) -> dict | None:
     for u in payload["units"]:
         uid, kind = u.get("id", ""), u.get("kind")
         block = None
-        if uid.startswith("cv:"):
+        if uid.startswith("cv:") or uid.startswith("meta:"):
             block = {"k": "header", "name": None, "i": None}
+        elif kind == "para" and u.get("tag") != "del" and u.get("at") is not None:
+            block = {"k": "para", "name": None, "i": u.get("at")}
         elif kind == "section" and u.get("after") is not None:
             block = {"k": "section", "name": u.get("section"), "i": None}
         elif kind == "entry" and u.get("i") is not None:
             block = {"k": "entry", "name": u.get("section"), "i": u.get("i")}
         where = u.get("where")
         value = u.get("after") if u.get("after") is not None else u.get("before")
+        if kind == "para":
+            words = str(value or "").split()
+            where = f"Paragraph {(u.get('at') or 0) + 1} · " + " ".join(words[:6]) + ("…" if len(words) > 6 else "")
+        elif kind == "field" and uid.startswith("meta:"):
+            where = "Header · " + str(u.get("label") or "")
         if kind == "entry" and isinstance(value, str):
             # A line of text has no title of its own: its first words are its name.
             where = str(u.get("section") or "").replace("_", " ").capitalize() + " · " + \
@@ -695,15 +717,26 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
     changed since the last render of it."""
     labels = {}
     data: dict = {}
-    if not studio.is_letter(p):
+    letter = studio.is_letter(p)
+    if letter:
+        meta, body = studio.letters.parse(p.read_text(encoding="utf-8"))
+        data = {"letter": {"meta": {k: meta.get(k) for k in ("to", "place", "date", "subject")},
+                           "chunks": [review.chunk_key(c) for c in studio.letters.chunks(body)]}}
+    else:
         try:
             data = studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}
         except Exception:
             data = {}
     cv = data.get("cv") or {}
     sections = cv.get("sections") or {}
+    chunks = (data.get("letter") or {}).get("chunks") or []
     for b in bands or []:
-        if b["k"] == "header":
+        if b["k"] == "para":
+            first = (chunks[b["i"]] if b["i"] < len(chunks) else "").split()
+            label = f"Paragraph {b['i'] + 1} · " + " ".join(first[:6]) + ("…" if len(first) > 6 else "")
+        elif b["k"] == "header" and letter:
+            label = "Header · to, date and subject"
+        elif b["k"] == "header":
             label = "Header"
         else:
             label = str(b.get("name") or "").replace("_", " ").strip().capitalize()
@@ -720,22 +753,22 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
     # What is waiting for the user to keep or undo outranks what differs
     # from the last render: it is what they can act on, and it survives a
     # restart of the client.
-    review = _review_units(p)
-    if review:
-        units = review["units"]
+    pending = _review_units(p)
+    if pending:
+        units = pending["units"]
         changes = {"blocks": [u["block"] for u in units if u["block"]],
                    "removed": sum(1 for u in units if u.get("tag") == "del" or
                                   (u["kind"] == "section" and not u["after"])),
                    "design": any(u["id"].startswith("top:") for u in units),
-                   "review": review}
-    if not changes and last and studio.is_letter(p) and last.get("images") != images:
-        changes = {"blocks": [], "removed": 0, "design": False, "page": True}
+                   "review": pending}
+    if not changes and last and letter and last.get("data") and last.get("images") != images:
+        changes = _changes(last["data"], data) or {"blocks": [], "removed": 0, "design": False, "page": True}
     _LAST_RENDER[str(p)] = {"data": data, "images": images}
     rid = _record_render(p, data, shots)
     first = min(max(page, 1), len(shots)) - 1 if shots else 0
     return {
         "view": "cv-page", "rid": rid, "path": path, "page": page, "pages": pages,
-        "words": words, "pdf": pdf, "letter": studio.is_letter(p),
+        "words": words, "pdf": pdf, "letter": letter,
         # Whose CV and for what, which says more than a file name.
         "title": _one_line(cv.get("name"), 60) or None,
         "subtitle": _one_line(cv.get("headline") or cv.get("label"), 90) or None,
@@ -786,10 +819,17 @@ def _render(path: str, page: int, views: bool) -> CallToolResult:
         pngs = [studio.WORKSPACE / u.split("path=")[1].split("&")[0] for u in r["pngs"]]
         idx = max(1, min(page, r["pages"])) - 1
         summary = f"Rendered {path}\nPages: {r['pages']}\nWords: {r['words']}\nPDF: {r['pdf']}"
+        view = None
+        if views:
+            try:
+                mapped = studio.letter_map(p)
+            except Exception:
+                mapped = None
+            view = _page_view(path, p, pngs, idx + 1, r["pages"], r["words"], r["pdf"],
+                              (mapped or {}).get("bands"), (mapped or {}).get("box"))
         return CallToolResult(
             content=[TextContent(type="text", text=summary), image(pngs[idx])],
-            structured_content=_page_view(path, p, pngs, idx + 1, r["pages"], r["words"], r["pdf"])
-            if views else None)
+            structured_content=view)
 
     result = render_file(p, studio.output_dir(p))
     if not result.get("ok"):
@@ -1409,8 +1449,8 @@ def read_posting(url: str) -> dict:
     return studio.posting.read(url)
 
 
-@tool
-def ats_check(path: str, job_id: str | None = None) -> dict:
+@tool(view=PAGE_VIEW)
+def ats_check(path: str, job_id: str | None = None) -> CallToolResult:
     """Read a CV's rendered PDF the way an applicant tracking system does.
 
     Renders first if the PDF is older than the YAML. Returns the parsing
@@ -1425,12 +1465,20 @@ def ats_check(path: str, job_id: str | None = None) -> dict:
     prompt, not a checklist. `design.header.connections.show_icons: false` and
     `display_urls_instead_of_usernames: true` fix the two commonest parsing
     problems.
+
+    In a client that shows views, the user sees the page with the posting's
+    requirements and keywords beside it, each found (and where) or missing;
+    picking a missing one asks you, in their words, to add evidence for it.
     """
-    r = studio.ats_report(studio.safe_path(path), job_id)
+    p = studio.safe_path(path)
+    views = _shows_views()
+    # The page first: a render brings the PDF up to date for the check too.
+    page = _render(path, 1, True) if views and studio.is_cv_yaml(p) else None
+    r = studio.ats_report(p, job_id)
     if not r.get("ok"):
         raise ValueError(r.get("error") or "The check could not run.")
     kw = r.get("keywords")
-    return {
+    report = {
         "pages": r["pages"], "words": r["words"],
         "problems": [{"title": c["title"], "detail": c["detail"]}
                      for c in r["checks"] if c["level"] != "ok"],
@@ -1440,6 +1488,64 @@ def ats_check(path: str, job_id: str | None = None) -> dict:
             "found": [t["term"] for t in kw["found"]],
             "missing": [t["term"] for t in kw["missing"]]},
     }
+    text = TextContent(type="text", text=json.dumps(report, indent=2, ensure_ascii=False))
+    if page is None or page.is_error or not page.structured_content:
+        return CallToolResult(content=[text])
+    view = dict(page.structured_content)
+    view["view"] = "cv-match"
+    view["match"] = _match_view(p, r, job_id)
+    return CallToolResult(content=[text], structured_content=view)
+
+
+def _match_view(p: Path, r: dict, job_id: str | None) -> dict:
+    """What the match view lists: each keyword with the blocks it is in, or
+    the job that should carry it; the posting's requirements; the parsing
+    problems. Posting text is shown to the user, so it is cut to one short
+    line each: it reaches the model only if they send it."""
+    data = studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}
+    cv = data.get("cv") or {}
+    blocks: list[tuple[dict, str]] = []
+    head = " ".join(str(cv.get(k) or "") for k in ("name", "headline", "location", "label"))
+    blocks.append(({"k": "header", "name": None, "i": None}, ats._norm(head)))
+    for name, entries in (cv.get("sections") or {}).items():
+        for i, e in enumerate(entries or []):
+            blocks.append(({"k": "entry", "name": name, "i": i}, ats._norm(_flat(e, 20000))))
+    kw = r.get("keywords") or {}
+    found, missing = [], []
+    for t in kw.get("found") or []:
+        where = [b for b, txt in blocks if ats._has(t["key"], txt)]
+        found.append({"term": _one_line(t["term"], 40), "key": t["key"], "where": where})
+    hits: dict[tuple, int] = {}
+    for f in found:
+        for b in f["where"]:
+            hits[(b["k"], b["name"], b["i"])] = hits.get((b["k"], b["name"], b["i"]), 0) + 1
+    # Where a missing keyword would go: the job that already says most of
+    # what the posting asks, else the most recent one, else the summary.
+    jobs = [b for b, _ in blocks if b["k"] == "entry" and
+            re.search(r"experi|work|employ|career|project|emploi|trabajo|trabalho|erfahrung|beruf",
+                      str(b["name"]), re.I)]
+    best = max(jobs, key=lambda b: (hits.get((b["k"], b["name"], b["i"]), 0), -b["i"]), default=None) \
+        or next((b for b, _ in blocks if b["k"] == "entry" and
+                 re.search(r"summary|profil|about|resum|perfil|sobre|zusammen", str(b["name"]), re.I)), None) \
+        or {"k": "header", "name": None, "i": None}
+    for t in kw.get("missing") or []:
+        missing.append({"term": _one_line(t["term"], 40), "key": t["key"], "best": best})
+    posting = None
+    job = studio.job_for(p, job_id)
+    if job and job.get("description"):
+        posting = job["description"]
+    terms = (kw.get("found") or []) + (kw.get("missing") or [])
+    found_keys = {t["key"] for t in kw.get("found") or []}
+    reqs = []
+    for q in ats.requirements(posting or "", terms):
+        reqs.append({"text": _one_line(q["text"], 160), "terms": q["terms"],
+                     "found": [k for k in q["terms"] if k in found_keys]})
+    against = r.get("against") or {}
+    return {"company": _one_line(against.get("company"), 60) or None,
+            "title": _one_line(against.get("title"), 80) or None,
+            "has_posting": bool(kw), "total": kw.get("total") or 0, "rate": kw.get("rate"),
+            "found": found, "missing": missing, "requirements": reqs, "best": best,
+            "problems": [_one_line(c["title"], 90) for c in r["checks"] if c["level"] != "ok"]}
 
 
 @tool
@@ -1598,10 +1704,15 @@ def review_change(path: str, ids: list[str], action: str, sig: str | None = None
 
 
 @tool(view=PAGE_VIEW, app_only=True)
-def page_view_data(what: str, path: str = "", page: str = "", rid: str = "") -> CallToolResult:
+def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
+                   block: dict | None = None) -> CallToolResult:
     """For the page view only, hidden from the model. what="page": a page's
     image by its id. what="pdf": the PDF at `path`, to download. what="status":
-    whether render `rid` of `path` is still its latest."""
+    whether render `rid` of `path` is still its latest. what="fields": the
+    text of `block` of `path`, to edit on the page."""
+    if what == "fields":
+        f = _block_fields(_doc_path(path), block or {})
+        return CallToolResult(content=[TextContent(type="text", text="fields")], structured_content=f)
     if what == "page":
         if not _PAGE_ID.fullmatch(page):
             raise ValueError("not a page id")
@@ -1616,6 +1727,218 @@ def page_view_data(what: str, path: str = "", page: str = "", rid: str = "") -> 
         st = _view_status(path, rid)
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(st))], structured_content=st)
     raise ValueError("what is page, pdf or status")
+
+
+
+# --- Small edits on the page -------------------------------------------------
+#
+# A typo, a date, a word: the user fixes it in the page view, in a form over
+# the block, and it is saved as their edit, not an AI client's. Only text
+# fields; anything structural is still asked of the model.
+
+HEADER_KEYS = ("name", "headline", "location", "email", "phone", "website")
+LETTER_HEAD = ("to", "place", "date", "subject")
+_LONG = {"summary", "details", "description", "text"}
+
+
+def _src_sig(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _label(key: str) -> str:
+    return {"highlights": "Bullets, one per line", "to": "Addressed to"}.get(
+        key, key.replace("_", " ").capitalize())
+
+
+def _block_fields(p: Path, block: dict) -> dict:
+    text = p.read_text(encoding="utf-8")
+    k, i = block.get("k"), block.get("i")
+    fields: list[dict] = []
+    if studio.is_letter(p):
+        meta, body = studio.letters.parse(text)
+        if k == "para":
+            ch = studio.letters.chunks(body)
+            if not isinstance(i, int) or not 0 <= i < len(ch):
+                raise ValueError("That paragraph is no longer there. Render the letter again.")
+            fields = [{"key": "text", "label": "Paragraph", "value": ch[i], "multi": True}]
+        elif k == "header":
+            for key in LETTER_HEAD:
+                v = meta.get(key)
+                v = "\n".join(map(str, v)) if isinstance(v, list) else ("" if v is None else str(v))
+                fields.append({"key": key, "label": _label(key), "value": v, "multi": key == "to"})
+    else:
+        cv = (studio.to_plain(studio.yaml_rt.load(text)) or {}).get("cv") or {}
+        if k == "header":
+            for key in HEADER_KEYS:
+                if key in cv or key in ("name", "headline"):
+                    if not isinstance(cv.get(key), (str, int, float, type(None))):
+                        continue
+                    fields.append({"key": key, "label": _label(key),
+                                   "value": "" if cv.get(key) is None else str(cv[key])})
+        elif k == "entry":
+            entries = (cv.get("sections") or {}).get(block.get("name")) or []
+            if not isinstance(i, int) or not 0 <= i < len(entries):
+                raise ValueError("That entry is no longer there. Render the CV again.")
+            e = entries[i]
+            if isinstance(e, str):
+                fields = [{"key": "text", "label": "Text", "value": e, "multi": True}]
+            elif isinstance(e, dict):
+                for key, v in e.items():
+                    if isinstance(v, bool):
+                        continue
+                    if isinstance(v, (str, int, float)):
+                        fields.append({"key": key, "label": _label(key), "value": str(v),
+                                       "multi": key in _LONG or len(str(v)) > 70})
+                    elif key == "highlights" and isinstance(v, list) and all(isinstance(x, str) for x in v):
+                        fields.append({"key": key, "label": _label(key), "value": "\n".join(v),
+                                       "multi": True, "list": True})
+    if not fields:
+        raise ValueError("That part of the page has nothing to edit here: ask Claude instead.")
+    return {"fields": fields, "src": _src_sig(text)}
+
+
+def _typed(old, new: str):
+    """A date written as a number stays a number."""
+    if isinstance(old, int) and not isinstance(old, bool) and new.strip().lstrip("-").isdigit():
+        return int(new)
+    return new
+
+
+def _apply_block(text: str, letter: bool, block: dict, values: dict, like: str | None = None) -> str | None:
+    """`text` with `values` written into `block`. With `like` (the document
+    the block was read from), the block is found in `text` by what it said in
+    `like` rather than by position, and only fields that read the same in
+    both are written: this is how an edit reaches the review's kept copy
+    without touching what an AI client changed. None if it is not there."""
+    k, i = block.get("k"), block.get("i")
+    if letter:
+        meta, body = studio.letters.parse(text)
+        meta = dict(meta)
+        if k == "para":
+            ch = studio.letters.chunks(body)
+            j = i
+            if like is not None:
+                _, lb = studio.letters.parse(like)
+                lch = studio.letters.chunks(lb)
+                key = review.chunk_key(lch[i]) if 0 <= i < len(lch) else None
+                j = next((n for n, c in enumerate(ch) if review.chunk_key(c) == key), None)
+            if j is None or not 0 <= j < len(ch):
+                return None
+            new = str(values.get("text") or "").strip("\n")
+            ch = ch[:j] + ([new] if new.strip() else []) + ch[j + 1:]
+            return studio.letters.dump(meta, "\n\n".join(ch))
+        lmeta = studio.letters.parse(like)[0] if like is not None else meta
+        for key in LETTER_HEAD:
+            if key not in values or lmeta.get(key) != meta.get(key):
+                continue
+            v = str(values[key])
+            if key == "to" and ("\n" in v or isinstance(meta.get("to"), list)):
+                meta[key] = [l.strip() for l in v.split("\n") if l.strip()]
+            else:
+                meta[key] = v.strip() or None
+        return studio.letters.dump(meta, body)
+
+    import io
+    data = studio.yaml_rt.load(text)
+    cv = data.get("cv") if data else None
+    if cv is None:
+        return None
+    lcv = ((studio.to_plain(studio.yaml_rt.load(like)) or {}).get("cv") or {}) if like is not None else None
+    if k == "header":
+        for key in HEADER_KEYS:
+            if key not in values:
+                continue
+            if lcv is not None and lcv.get(key) != studio.to_plain(cv.get(key)):
+                continue
+            v = str(values[key]).strip()
+            if v:
+                cv[key] = _typed(cv.get(key), v)
+            elif key in cv and key != "name":
+                del cv[key]
+    elif k == "entry":
+        entries = (cv.get("sections") or {}).get(block.get("name"))
+        if entries is None:
+            return None
+        j = i
+        if lcv is not None:
+            was = ((lcv.get("sections") or {}).get(block.get("name")) or [])
+            if not 0 <= i < len(was):
+                return None
+            j = next((n for n, e in enumerate(entries) if studio.to_plain(e) == was[i]), None)
+        if j is None or not 0 <= j < len(entries):
+            return None
+        e = entries[j]
+        if isinstance(e, str):
+            new = str(values.get("text") or "").strip()
+            if not new:
+                raise ValueError("To remove it, ask Claude: an empty line would not print.")
+            entries[j] = new
+        else:
+            for key, v in values.items():
+                if key not in e:
+                    continue
+                if key == "highlights":
+                    lines = [l.strip() for l in str(v).split("\n") if l.strip()]
+                    lines = [l[2:].strip() if l[:2] in ("- ", "• ", "* ") else l for l in lines]
+                    e[key] = lines
+                elif str(v).strip():
+                    e[key] = _typed(e.get(key), str(v).strip())
+                else:
+                    del e[key]
+    else:
+        return None
+    buf = io.StringIO()
+    studio.yaml_rt.dump(data, buf)
+    return buf.getvalue()
+
+
+@tool(view=PAGE_VIEW, app_only=True)
+def edit_on_page(path: str, block: dict, values: dict, src: str, page: int = 1) -> CallToolResult:
+    """Save the user's own small edit of one block of a document, from the
+    page view: `values` by field, as page_view_data(what="fields") gave them,
+    `src` its signature then, so a document that changed since is refused.
+    Saved as the user's edit, not an AI client's. Returns the page as it is
+    afterwards. For the user's hand only: hidden from the model."""
+    p = _doc_path(path)
+    letter = studio.is_letter(p)
+    text = p.read_text(encoding="utf-8")
+    if _src_sig(text) != src:
+        raise ValueError("The document changed since this page was drawn. Edit it on the latest page.")
+    new = _apply_block(text, letter, block, values or {})
+    if new is None:
+        raise ValueError("That part is no longer there. Render it again.")
+    if new == text:
+        return _render(path, page, True)
+    rp = studio.rel(p)
+    kept = review.entry(studio.WORKSPACE, rp)
+    kept_before = (kept or {}).get("before")
+    if kept_before is not None:
+        # What the AI client changed stays reviewable; the user's own words
+        # never become part of it.
+        try:
+            mirrored = _apply_block(kept_before, letter, block, values or {}, like=text)
+        except ValueError:
+            mirrored = None
+        if mirrored is not None and mirrored != kept_before:
+            review.set_before(studio.WORKSPACE, rp, mirrored)
+    p.write_text(new, encoding="utf-8")
+    if not letter:
+        try:
+            studio.record_edits(p, studio.to_plain(studio.yaml_rt.load(text)),
+                                studio.to_plain(studio.yaml_rt.load(new)), "page", by="you")
+        except Exception:
+            pass
+    result = _render(path, page, True)
+    if result.is_error:
+        # Nothing half-saved: the file goes back, and the page with it.
+        p.write_text(text, encoding="utf-8")
+        if kept_before is not None:
+            review.set_before(studio.WORKSPACE, rp, kept_before)
+        _render(path, page, True)
+        why = next((c.text for c in result.content if c.type == "text"), "it did not render")
+        why = why.replace("RENDER FAILED", "").strip()
+        raise ValueError("Not saved: with that change the page does not render. " + why[:600])
+    return result
 
 
 # The skills, offered as prompts too. A client that reads skills has them

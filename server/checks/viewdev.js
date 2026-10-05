@@ -4,6 +4,7 @@
      node checks/viewdev.js                       # sample data, http://127.0.0.1:5180
      node checks/viewdev.js --workspace ~/Documents/CV\ Studio
      node checks/viewdev.js --shots out/          # screenshots of every variant, then exit
+     node checks/viewdev.js --shots out/ --only light-inline --cv "<a CV in the list>"
 
    It starts the connector, renders the CVs once (a few of them, the longest
    first), and serves a page with the view side by side as Claude would frame
@@ -54,7 +55,8 @@ async function main() {
   const listed = (await c.send("tools/call", {name: "list_cvs", arguments: {}})).result.content
     .map(b => { try { return JSON.parse(b.text); } catch (e) { return null; } }).filter(Boolean);
   const cvs = listed.filter(d => d.group === "My CVs").map(d => d.path)
-    .sort((a, b) => (b.includes("preview-two-pages") ? 1 : 0) - (a.includes("preview-two-pages") ? 1 : 0))
+    .sort((a, b) => (b.includes("preview-two-pages") ? 1 : 0) - (a.includes("preview-two-pages") ? 1 : 0) ||
+                    (a.includes("cv-monzo") ? 1 : 0) - (b.includes("cv-monzo") ? 1 : 0))
     .slice(0, +(opt("--max") || 6))
     .concat(listed.filter(d => d.group === "Cover letters").map(d => d.path).slice(0, 1));
   const results = {};
@@ -82,6 +84,17 @@ async function main() {
     await render(p);
     results[p + CHANGED] = results[p]; results[p] = before;
     ok = [p + CHANGED, ...ok];
+  }
+  /* The posting match (ats_check), on a sample CV whose application has a
+     posting. */
+  const MATCH = " (against the posting)";
+  const withPosting = listed.map(d => d.path).find(p => /cv-monzo/.test(p));
+  if (!opt("--workspace") && withPosting) {
+    const r = (await c.send("tools/call", {name: "ats_check", arguments: {path: withPosting}})).result;
+    if (r && r.structuredContent) {
+      results[withPosting + MATCH] = r; ok.push(withPosting + MATCH);
+      console.log(`checked    ${withPosting}  ${r.structuredContent.match.found.length} keywords found`);
+    }
   }
   if (!ok.length) { console.error("Nothing rendered."); process.exit(1); }
 
@@ -130,11 +143,11 @@ load();
     if (u.pathname === "/") return html(index());
     if (u.pathname === "/mcp") return proxyCall(c, q, r);
     if (u.pathname === "/version") { r.end(String(fs.statSync(VIEW).mtimeMs)); return; }
-    if (u.pathname === "/rerender") { await render(u.searchParams.get("cv").replace(CHANGED, "")); r.end("ok"); return; }
+    if (u.pathname === "/rerender") { await render(u.searchParams.get("cv").replace(CHANGED, "").replace(MATCH, "")); r.end("ok"); return; }
     if (u.pathname === "/host") {
       const v = VARIANTS.find(x => x.id === u.searchParams.get("v")) || VARIANTS[0];
       const p = u.searchParams.get("cv") || ok[0];
-      return html(hostPage(fs.readFileSync(VIEW, "utf-8"), {path: p.replace(CHANGED, "")}, results[p], v));
+      return html(hostPage(fs.readFileSync(VIEW, "utf-8"), {path: p.replace(CHANGED, "").replace(MATCH, "")}, results[p], v));
     }
     r.writeHead(404); r.end();
   }).listen(PORT, "127.0.0.1");
@@ -147,8 +160,9 @@ load();
   fs.mkdirSync(shots, {recursive: true});
   const b = await browser();
   const cvPath = opt("--cv") || ok[0];
-  for (const v of VARIANTS) {
-    for (const state of ["", "selected", "sent", "before", "review"]) {
+  const only = opt("--only");
+  for (const v of VARIANTS.filter(x => !only || only.split(",").includes(x.id))) {
+    for (const state of (opt("--states") || ",selected,sent,before,review,edit").split(",")) {
       await b.send("Emulation.setDeviceMetricsOverride", {width: v.width + 40,
         height: v.mode === "fullscreen" ? v.height + 40 : 1400, deviceScaleFactor: 1, mobile: false});
       await b.send("Page.navigate", {url: `http://127.0.0.1:${PORT}/host?v=${v.id}&cv=${encodeURIComponent(cvPath)}`});
@@ -159,6 +173,11 @@ load();
       } else if (state === "before") {
         await b.evalJs(`(()=>{const x=document.getElementById("v").contentDocument.querySelector('[data-cmp="before"]'); if(x) x.click()})()`);
         await sleep(300);
+      } else if (state === "edit") {
+        await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument;
+          const hits=[...d.querySelectorAll(".hit")]; const h=hits.find(x=>/Experience ·|Paragraph 2/.test(x.getAttribute("aria-label")||""))||hits[0];
+          if (h) h.dispatchEvent(new MouseEvent("dblclick",{bubbles:true})) })()`);
+        await sleep(1200);
       } else if (state) {
         await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument;
           const hits=[...d.querySelectorAll(".hit")]; const h=hits.find(x=>x.classList.contains("new")&&/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/·/.test(x.getAttribute("aria-label")||""))||hits[0];
