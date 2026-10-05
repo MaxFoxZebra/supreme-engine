@@ -436,6 +436,13 @@ block and:
   it*, and it goes to the chat as your message, naming the file and the block.
   Claude edits it and renders again, and the new page shows under the old one.
 
+A render that follows a change to the same CV in the same conversation says
+what changed since the last one (which blocks, how many entries went, whether
+the design did), marks those blocks in the margin and in the outline, and
+keeps the page before it: *Before* and *After* switch between the two. The
+connector remembers the last render of each document for as long as the
+client keeps it running, which is the conversation's lifetime in practice.
+
 The bar over the page says how it lays out: the page count, the words, and
 whether it fits on one page or leaves a last page mostly empty. With several
 pages, the others sit beside it to click through. Full screen fits the page to

@@ -442,17 +442,62 @@ def create_cv(name: str, copy_from: str | None = None, kind: str = "cv") -> str:
     return f"Created {folder}/{safe}.yaml"
 
 
+def _one_line(text, n: int = 80) -> str:
+    """CV text as the view may put it in front of the model: one short line
+    of plain text. A label is CV text, which can come from an imported PDF or
+    a posting."""
+    text = " ".join("".join(ch if ch.isprintable() else " " for ch in str(text or "")).split())
+    return text[:n - 1] + "…" if len(text) > n else text
+
+
+# The last render of each document in this connector's lifetime, which is
+# the client's session: what the next render of it is compared with, so the
+# view can mark what a change actually changed and show the page before it.
+_LAST_RENDER: dict[str, dict] = {}
+
+
+def _changes(old: dict, new: dict) -> dict | None:
+    """Which blocks differ between two versions of a CV, as the view names
+    them ({k, name, i}), how many entries went, and whether the design did."""
+    oc, nc = old.get("cv") or {}, new.get("cv") or {}
+    blocks: list[dict] = []
+    if {k: v for k, v in oc.items() if k != "sections"} != \
+            {k: v for k, v in nc.items() if k != "sections"}:
+        blocks.append({"k": "header", "name": None, "i": None})
+    olds, news = oc.get("sections") or {}, nc.get("sections") or {}
+    removed = 0
+    for name, entries in news.items():
+        entries = entries or []
+        before = olds.get(name)
+        if before is None:
+            blocks.append({"k": "section", "name": name, "i": None})
+            blocks += [{"k": "entry", "name": name, "i": i} for i in range(len(entries))]
+            continue
+        blocks += [{"k": "entry", "name": name, "i": i} for i, e in enumerate(entries)
+                   if i >= len(before) or before[i] != e]
+        removed += max(0, len(before) - len(entries))
+    removed += sum(len(v or []) for k, v in olds.items() if k not in news)
+    design = old.get("design") != new.get("design") or old.get("locale") != new.get("locale")
+    if not (blocks or removed or design):
+        return None
+    return {"blocks": blocks, "removed": removed, "design": design}
+
+
 def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                words, pdf, bands=None, box=None) -> dict:
-    """What the page view shows: every page (up to six) as an image, and
-    where each block of the CV landed on them, named the way the outline
-    names it, so a click can say "Experience · Acme" rather than a position."""
+    """What the page view shows: every page (up to six) as an image, where
+    each block of the CV landed on them, named the way the outline names it
+    so a click can say "Experience · Acme" rather than a position, and what
+    changed since the last render of it."""
     labels = {}
-    try:
-        data = studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}
-        sections = ((data.get("cv") or {}).get("sections") or {})
-    except Exception:
-        sections = {}
+    data: dict = {}
+    if not studio.is_letter(p):
+        try:
+            data = studio.to_plain(studio.yaml_rt.load(p.read_text(encoding="utf-8"))) or {}
+        except Exception:
+            data = {}
+    cv = data.get("cv") or {}
+    sections = cv.get("sections") or {}
     for b in bands or []:
         if b["k"] == "header":
             label = "Header"
@@ -463,19 +508,26 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                 i = b.get("i") or 0
                 label += " · " + (studio.entry_title(entries[i], i) if i < len(entries)
                                   else f"entry {i + 1}")
-        # One short line of plain text: a label is CV text, which can come
-        # from an imported PDF or a posting, and the view puts it in front of
-        # the model.
-        label = " ".join("".join(ch if ch.isprintable() else " " for ch in label).split())
-        labels[f"{b['k']}|{b.get('name')}|{b.get('i')}"] = label[:79] + "…" if len(label) > 80 else label
+        labels[f"{b['k']}|{b.get('name')}|{b.get('i')}"] = _one_line(label)
+    images = ["data:image/png;base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+              for f in pngs[:6]]
+    last = _LAST_RENDER.get(str(p))
+    changes = _changes(last["data"], data) if last and data and last.get("data") else None
+    if not changes and last and studio.is_letter(p) and last.get("images") != images:
+        changes = {"blocks": [], "removed": 0, "design": False, "page": True}
+    _LAST_RENDER[str(p)] = {"data": data, "images": images}
     return {
         "view": "cv-page", "path": path, "page": page, "pages": pages,
         "words": words, "pdf": pdf, "letter": studio.is_letter(p),
-        "images": ["data:image/png;base64," + base64.b64encode(f.read_bytes()).decode("ascii")
-                   for f in pngs[:6]],
+        # Whose CV and for what, which says more than a file name.
+        "title": _one_line(cv.get("name"), 60) or None,
+        "subtitle": _one_line(cv.get("headline") or cv.get("label"), 90) or None,
+        "images": images,
         "map": [{**b, "label": labels.get(f"{b['k']}|{b.get('name')}|{b.get('i')}")}
                 for b in bands or []],
         "box": box,
+        "changes": changes,
+        "before": last["images"] if changes and last else None,
     }
 
 

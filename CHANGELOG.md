@@ -10,6 +10,21 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **See what a change changed.** When Claude renders a CV again after a
+  change, the page says what changed since the last render ("2 parts
+  changed", anything removed, a new design), marks those parts in the margin
+  and in the outline, and opens on the first page they touch. *Before* and
+  *After* switch between the page as it was and as it is.
+- **Your name at the top**, with the headline, instead of a file name.
+- **Suggestions that fit what you clicked**: *Quantify the impact* and
+  *Keep the 3 best bullets* on a job, *Match the posting's keywords* on
+  skills, *Tailor it to the posting* on the summary, *Move it up* on a whole
+  section.
+- **Fit on 1 page, in one click**, right where the page says the last page
+  is mostly empty.
+- **A quieter page**: a mark in the margin shows what you point at instead
+  of a box over the text, the change box lines up with the block, and pages
+  change with a short fade.
 - **The page in the chat, redesigned.** The bar over the page says how it
   lays out: pages, words, and whether it fits on one page, or warns when the
   last page is mostly empty. Several pages sit side by side as thumbnails.

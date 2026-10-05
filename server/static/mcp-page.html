@@ -11,10 +11,15 @@
   postMessage (JSON-RPC 2.0): ui/initialize, then it is handed the tool's
   input and result.
 
-  What it is for: seeing the page, and pointing at a part of it. A click on a
-  block selects it, tells the model what the user is pointing at
-  (ui/update-model-context), and opens a box beside the block whose text goes
-  to the chat as the user's next message (ui/message).
+  What it is for: seeing the page, pointing at a part of it, and seeing what
+  a change changed. A click on a block selects it and opens a box beside it;
+  what is typed there goes to the chat as the user's message (ui/message),
+  while the file, the place in the YAML and "render it again" go to the model
+  out of sight (ui/update-model-context). A render that follows a change marks
+  the blocks it changed and keeps the page before it, to compare.
+
+  CV text (labels) reaches the model only as one short plain line: a CV can
+  carry text from an imported PDF or a posting.
 
   Preview it without Claude: node checks/viewdev.js
 -->
@@ -29,6 +34,7 @@
     --rule:var(--color-border-secondary,#e2e0d9);
     --rule2:var(--color-border-primary,#c9c7bf);
     --acc:var(--color-ring-primary,#c96442);
+    --new:#2f8f5b;
     --warn:var(--color-text-warning,#9a5b13);
     --warnbg:var(--color-background-warning,#fbf1e2);
     --ok:var(--color-text-success,#2f6b3b);
@@ -36,6 +42,7 @@
     --mono:var(--font-mono,ui-monospace,"SFMono-Regular",Menlo,monospace);
     --r:var(--border-radius-md,8px);
     --sheet:560px;
+    --ease:cubic-bezier(.2,.7,.2,1);
   }
   :root[data-theme=dark]{
     --bg:var(--color-background-primary,#262624);
@@ -47,124 +54,168 @@
     --rule:var(--color-border-secondary,#3a3936);
     --rule2:var(--color-border-primary,#4a4945);
     --acc:var(--color-ring-primary,#d97757);
+    --new:#5cc58a;
     --warn:var(--color-text-warning,#e6b26a);
     --warnbg:var(--color-background-warning,#3a2f20);
     --ok:var(--color-text-success,#8cc79a);
   }
   *{box-sizing:border-box}
-  html,body{margin:0;background:transparent;color:var(--tx);font:14px/1.45 var(--font)}
+  html,body{margin:0;background:transparent;color:var(--tx);font:14px/1.45 var(--font);
+    -webkit-font-smoothing:antialiased}
   button{font:inherit;color:inherit}
-  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 
-  /* The bar: what this is, how it lays out, and the one action. */
-  .bar{display:flex;align-items:center;gap:10px;margin:0 auto 10px;max-width:calc(var(--sheet) + 104px);
-    min-height:32px}
-  .doc{min-width:0;display:flex;flex-direction:column;line-height:1.25}
-  .doc b{font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .doc span{color:var(--tx3);font:11.5px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .sp{flex:1}
-  .stats{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-  .stat{font-size:12px;color:var(--tx2);background:var(--bg2);border-radius:99px;padding:2px 9px;
+  /* ---- the bar: whose CV, how it lays out, what changed ---- */
+  .bar{display:flex;align-items:center;gap:12px;margin:0 auto 12px;
+    max-width:calc(var(--sheet) + 104px);min-height:40px}
+  .who{min-width:0;flex:1}
+  .who b{display:block;font-weight:600;font-size:15px;letter-spacing:-.005em;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .who span{display:block;color:var(--tx3);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;
     white-space:nowrap}
-  .stat.warn{color:var(--warn);background:var(--warnbg)}
-  .stat.ok::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
-    background:var(--ok);margin-right:6px;vertical-align:1px}
-  .icon{width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--rule);
-    background:var(--bg);border-radius:var(--r);cursor:pointer;color:var(--tx2);flex:none}
+  .who span code{font:11.5px var(--mono)}
+  .facts{display:flex;align-items:center;gap:6px;flex:none}
+  .fact{font-size:12px;color:var(--tx2);white-space:nowrap}
+  .dot{width:3px;height:3px;border-radius:50%;background:var(--tx3);opacity:.6}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;
+    border-radius:99px;padding:3px 10px;white-space:nowrap;border:0}
+  .badge.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+  .badge.warn{color:var(--warn);background:var(--warnbg)}
+  .badge.warn button{border:0;background:none;padding:0;margin-left:2px;font-weight:600;
+    color:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  .icon{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--rule);
+    background:var(--bg);border-radius:var(--r);cursor:pointer;color:var(--tx2);flex:none;
+    transition:background .15s,color .15s}
   .icon:hover{background:var(--bg2);color:var(--tx)}
   .icon svg{width:15px;height:15px}
 
-  /* The page and, when there are several, the others beside it. */
+  /* What a change changed: a strip under the bar, and the before/after switch. */
+  .delta{display:flex;align-items:center;gap:10px;margin:-2px auto 12px;
+    max-width:calc(var(--sheet) + 104px);padding:7px 8px 7px 12px;border-radius:var(--r);
+    background:color-mix(in srgb,var(--new) 9%,var(--bg));
+    border:1px solid color-mix(in srgb,var(--new) 28%,transparent);font-size:13px;
+    animation:in .3s var(--ease) both}
+  .delta .mark{width:8px;height:8px;border-radius:50%;background:var(--new);flex:none;
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--new) 22%,transparent)}
+  .delta span{flex:1;min-width:0;color:var(--tx2)}
+  .delta span b{color:var(--tx);font-weight:600}
+  .seg{display:inline-flex;background:var(--bg2);border-radius:7px;padding:2px;flex:none}
+  .seg button{border:0;background:none;padding:3px 10px;border-radius:5px;font-size:12px;
+    color:var(--tx2);cursor:pointer}
+  .seg button[aria-pressed=true]{background:var(--bg);color:var(--tx);font-weight:500;
+    box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+  /* ---- the page, and the others beside it ---- */
   .body{display:flex;gap:14px;justify-content:center;align-items:flex-start}
   .stage{position:relative;flex:0 1 var(--sheet);min-width:0}
   .sheet{position:relative;background:#fff;border-radius:3px;overflow:hidden;
-    box-shadow:0 0 0 1px var(--rule),0 2px 10px rgba(0,0,0,.06)}
-  :root[data-theme=dark] .sheet{box-shadow:0 0 0 1px var(--rule),0 2px 14px rgba(0,0,0,.35)}
-  .sheet img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
-  .rail{display:flex;flex-direction:column;gap:10px;flex:none;width:90px}
-  .thumb{border:0;padding:0;background:none;cursor:pointer;text-align:center;color:var(--tx3);font-size:11px}
-  .thumb img{display:block;width:100%;border-radius:2px;background:#fff;
-    box-shadow:0 0 0 1px var(--rule);margin-bottom:3px;transition:box-shadow .12s}
-  .thumb:hover img{box-shadow:0 0 0 1px var(--rule2)}
+    box-shadow:0 0 0 1px var(--rule),0 1px 2px rgba(0,0,0,.04),0 6px 22px rgba(0,0,0,.07)}
+  :root[data-theme=dark] .sheet{box-shadow:0 0 0 1px var(--rule),0 8px 28px rgba(0,0,0,.4)}
+  .sheet img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;
+    animation:fade .22s ease-out}
+  @keyframes fade{from{opacity:.25}to{opacity:1}}
+  @keyframes in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+  .ribbon{position:absolute;top:10px;right:10px;z-index:3;font-size:11px;font-weight:600;
+    letter-spacing:.04em;text-transform:uppercase;color:#fff;background:rgba(31,30,29,.78);
+    padding:3px 9px;border-radius:99px}
+  .rail{display:flex;flex-direction:column;gap:12px;flex:none;width:84px}
+  .thumb{border:0;padding:0;background:none;cursor:pointer;text-align:center;color:var(--tx3);
+    font-size:11px;font-variant-numeric:tabular-nums}
+  .thumb img{display:block;width:100%;border-radius:2px;background:#fff;margin-bottom:4px;
+    box-shadow:0 0 0 1px var(--rule);transition:box-shadow .15s,transform .15s var(--ease)}
+  .thumb:hover img{transform:translateY(-1px);box-shadow:0 0 0 1px var(--rule2),0 3px 10px rgba(0,0,0,.08)}
   .thumb[aria-current=page] img{box-shadow:0 0 0 2px var(--acc)}
-  .thumb[aria-current=page]{color:var(--tx)}
+  .thumb[aria-current=page]{color:var(--tx);font-weight:500}
 
-  /* Click targets: invisible until pointed at. */
-  .hit{position:absolute;border:0;background:transparent;padding:0;cursor:pointer;
-    border-radius:4px;outline:none;transition:background .1s,box-shadow .1s}
-  .hit:hover,.hit:focus-visible{background:color-mix(in srgb,var(--acc) 7%,transparent);
-    box-shadow:0 0 0 1.5px color-mix(in srgb,var(--acc) 55%,transparent)}
-  .hit.sel{background:color-mix(in srgb,var(--acc) 6%,transparent);box-shadow:0 0 0 2px var(--acc)}
-  .hit.sent{box-shadow:0 0 0 1.5px var(--acc);background:none;
-    background-image:repeating-linear-gradient(135deg,transparent 0 6px,
-      color-mix(in srgb,var(--acc) 10%,transparent) 6px 7px)}
+  /* ---- blocks: quiet until pointed at; a mark in the margin, not a box on the text ---- */
+  .hit{position:absolute;border:0;background:transparent;padding:0;cursor:pointer;outline:none;
+    border-radius:3px;transition:background .15s}
+  .hit::before{content:"";position:absolute;left:-9px;top:3px;bottom:3px;width:3px;border-radius:2px;
+    background:var(--acc);opacity:0;transform:scaleY(.6);transition:opacity .15s,transform .2s var(--ease)}
+  .hit:hover,.hit:focus-visible{background:color-mix(in srgb,var(--acc) 5%,transparent)}
+  .hit:hover::before,.hit:focus-visible::before{opacity:.55;transform:none}
+  .hit.sel{background:color-mix(in srgb,var(--acc) 7%,transparent)}
+  .hit.sel::before{opacity:1;transform:none}
+  .hit.new::after{content:"";position:absolute;left:-9px;top:3px;bottom:3px;width:3px;border-radius:2px;
+    background:var(--new);animation:glow 1.6s ease-out 1}
+  .hit.new.sel::after,.hit.new:hover::after{opacity:0}
+  @keyframes glow{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--new) 60%,transparent)}
+    100%{box-shadow:0 0 0 8px transparent}}
+  .hit.sent{background:repeating-linear-gradient(135deg,transparent 0 6px,
+      color-mix(in srgb,var(--acc) 9%,transparent) 6px 7px)}
+  .hit.sent::before{opacity:1;transform:none}
   .tag{position:absolute;z-index:3;pointer-events:none;font-size:11.5px;font-weight:500;
-    color:#fff;background:var(--acc);padding:1px 8px;border-radius:99px;white-space:nowrap;
-    transform:translateY(-100%);margin-top:-3px;display:none;max-width:70%;overflow:hidden;
-    text-overflow:ellipsis}
+    color:var(--tx);background:var(--bg);border:1px solid var(--rule);padding:1px 8px;
+    border-radius:6px;white-space:nowrap;transform:translateY(calc(-100% - 4px));display:none;
+    max-width:80%;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+  .tag i{font-style:normal;color:var(--new);font-weight:600;margin-left:6px}
 
-  /* The first time: one line saying what the page is for. */
-  .coach{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:2;
-    background:rgba(31,30,29,.88);color:#fff;font-size:12.5px;padding:6px 12px;border-radius:99px;
-    white-space:nowrap;pointer-events:none;animation:rise .35s ease-out both .4s}
-  @keyframes rise{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+  .coach{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:2;
+    background:rgba(31,30,29,.9);color:#fff;font-size:12.5px;padding:7px 13px;border-radius:99px;
+    white-space:nowrap;pointer-events:none;animation:rise .4s var(--ease) both .5s;
+    box-shadow:0 4px 14px rgba(0,0,0,.2)}
+  @keyframes rise{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 
-  /* The box beside the block. */
-  .pop{position:absolute;z-index:4;left:6%;right:6%;background:var(--bg);color:var(--tx);
-    border:1px solid var(--rule2);border-radius:calc(var(--r) + 2px);padding:10px 10px 9px;
-    box-shadow:0 8px 28px rgba(0,0,0,.16),0 1px 3px rgba(0,0,0,.08);animation:pop .14s ease-out}
-  :root[data-theme=dark] .pop{box-shadow:0 10px 32px rgba(0,0,0,.5)}
-  @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-  .pop::before{content:"";position:absolute;left:28px;width:10px;height:10px;background:inherit;
-    border:inherit;border-width:1px 0 0 1px;transform:rotate(45deg)}
-  .pop.below::before{top:-6px}
-  .pop.above::before{bottom:-6px;transform:rotate(225deg)}
-  .pop .what{display:flex;align-items:baseline;gap:6px;margin:0 2px 7px;min-width:0}
-  .pop .what b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pop .what code{color:var(--tx3);font:11px var(--mono);white-space:nowrap;overflow:hidden;
-    text-overflow:ellipsis}
+  /* ---- the box beside a block ---- */
+  .pop{position:absolute;z-index:4;width:min(400px,calc(100% - 16px));background:var(--bg);
+    color:var(--tx);border:1px solid var(--rule2);border-radius:12px;padding:10px;
+    box-shadow:0 12px 32px rgba(0,0,0,.16),0 2px 6px rgba(0,0,0,.06);
+    animation:pop .16s var(--ease)}
+  :root[data-theme=dark] .pop{box-shadow:0 14px 36px rgba(0,0,0,.55)}
+  @keyframes pop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+  .pop .what{display:flex;align-items:center;gap:8px;margin:0 2px 8px;min-width:0}
+  .pop .what b{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pop .what .x{margin-left:auto;border:0;background:none;color:var(--tx3);cursor:pointer;
-    padding:0 2px;font-size:16px;line-height:1}
-  .field{display:flex;gap:6px;align-items:flex-end;border:1px solid var(--rule2);border-radius:var(--r);
-    padding:5px 5px 5px 9px;background:var(--bg)}
-  .field:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
+    width:22px;height:22px;border-radius:6px;display:grid;place-items:center;flex:none}
+  .pop .what .x:hover{background:var(--bg2);color:var(--tx)}
+  .field{display:flex;gap:6px;align-items:flex-end;border:1px solid var(--rule2);border-radius:9px;
+    padding:5px 5px 5px 10px;background:var(--bg);transition:border-color .15s,box-shadow .15s}
+  .field:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 16%,transparent)}
   .field textarea{flex:1;border:0;outline:0;resize:none;background:transparent;color:var(--tx);
-    font:inherit;min-height:22px;max-height:120px;padding:2px 0;line-height:1.4}
+    font:inherit;font-size:13.5px;min-height:22px;max-height:120px;padding:3px 0;line-height:1.4}
+  .field textarea::placeholder{color:var(--tx3)}
   .send{flex:none;width:28px;height:28px;border-radius:7px;border:0;background:var(--acc);color:#fff;
-    display:grid;place-items:center;cursor:pointer}
-  .send:disabled{opacity:.35;cursor:default}
+    display:grid;place-items:center;cursor:pointer;transition:opacity .15s,transform .15s}
+  .send:not(:disabled):hover{transform:translateY(-1px)}
+  .send:disabled{opacity:.3;cursor:default}
   .send svg{width:14px;height:14px}
   .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
-  .chip{border:1px solid var(--rule);background:var(--bg2);border-radius:99px;padding:2px 10px;
-    cursor:pointer;font-size:12.5px;color:var(--tx2)}
-  .chip:hover{color:var(--tx);border-color:var(--rule2)}
+  .chip{border:1px solid var(--rule);background:var(--bg);border-radius:99px;padding:3px 10px;
+    cursor:pointer;font-size:12px;color:var(--tx2);transition:border-color .15s,color .15s,background .15s}
+  .chip:hover{color:var(--tx);border-color:var(--acc);background:color-mix(in srgb,var(--acc) 6%,var(--bg))}
   .hint{color:var(--tx3);font-size:11.5px;margin:7px 2px 0}
-  .done{display:flex;align-items:center;gap:8px;color:var(--tx2);font-size:13px;padding:2px 2px}
-  .done svg{width:16px;height:16px;color:var(--ok);flex:none}
+  .done{display:flex;align-items:center;gap:9px;color:var(--tx2);font-size:13px;padding:1px 2px}
+  .done svg{width:18px;height:18px;color:var(--ok);flex:none}
 
-  /* Full screen: the page fits the height; the outline beside it. */
+  /* ---- full screen: the page fits the height, the outline beside it ---- */
   :root[data-mode=fullscreen]{--sheet:auto}
   :root[data-mode=fullscreen] body{height:100vh;overflow:hidden}
-  :root[data-mode=fullscreen] #app{display:grid;grid-template-columns:250px 1fr;height:100vh}
+  :root[data-mode=fullscreen] #app{display:grid;grid-template-columns:260px 1fr;
+    grid-template-rows:auto auto 1fr;height:100vh}
   :root[data-mode=fullscreen] .bar{grid-column:1/3;max-width:none;margin:0;padding:10px 16px;
     border-bottom:1px solid var(--rule)}
+  :root[data-mode=fullscreen] .delta{grid-column:1/3;max-width:none;margin:8px 16px 0}
   :root[data-mode=fullscreen] .side{display:flex}
-  :root[data-mode=fullscreen] .body{min-height:0;overflow:auto;padding:18px;background:var(--bg3)}
+  :root[data-mode=fullscreen] .body{min-height:0;overflow:auto;padding:20px;background:var(--bg3)}
   :root[data-mode=fullscreen] .stage{flex:none}
-  :root[data-mode=fullscreen] .sheet img{width:auto;height:calc(100vh - 92px)}
+  :root[data-mode=fullscreen] .sheet img{width:auto;height:calc(100vh - var(--chrome,96px))}
   :root[data-mode=fullscreen] .rail{display:none}
-  .side{display:none;flex-direction:column;min-height:0;border-right:1px solid var(--rule);background:var(--bg)}
+  .side{display:none;flex-direction:column;min-height:0;border-right:1px solid var(--rule);
+    background:var(--bg);grid-row:3}
+  :root[data-mode=fullscreen] .body{grid-row:3}
   .outline{overflow:auto;padding:10px 8px;flex:1}
-  .outline h4{margin:10px 8px 4px;font-size:11px;font-weight:600;letter-spacing:.04em;
+  .outline h4{margin:12px 8px 4px;font-size:11px;font-weight:600;letter-spacing:.05em;
     text-transform:uppercase;color:var(--tx3)}
-  .ol{display:block;width:100%;text-align:left;border:0;background:none;padding:5px 8px;border-radius:6px;
-    cursor:pointer;color:var(--tx2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ol{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:none;
+    padding:5px 8px;border-radius:7px;cursor:pointer;color:var(--tx2);font-size:13px}
+  .ol span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
   .ol.sec{color:var(--tx);font-weight:500}
-  .ol.ent{padding-left:18px}
+  .ol.ent{padding-left:16px}
   .ol:hover{background:var(--bg2);color:var(--tx)}
-  .ol[aria-current=true]{background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--tx)}
+  .ol[aria-current=true]{background:color-mix(in srgb,var(--acc) 11%,transparent);color:var(--tx)}
+  .ol i{width:6px;height:6px;border-radius:50%;background:var(--new);flex:none}
   .side .pages{display:flex;gap:8px;padding:10px;border-top:1px solid var(--rule);overflow:auto}
-  .side .pages .thumb{width:58px;flex:none}
+  .side .pages .thumb{width:56px;flex:none}
 
   .state{color:var(--tx2);padding:28px 8px;text-align:center}
   .skel{max-width:var(--sheet);margin:0 auto;aspect-ratio:1/1.414;border-radius:3px;background:
@@ -184,6 +235,7 @@
   "use strict";
   const PROTOCOL = "2026-01-26";
   let nextId = 1, host = {caps: {}, ctx: {}}, data = null, page = 0, sel = null, sent = null;
+  let showBefore = false;
   const fills = [];
   const pending = new Map();
   const $app = document.getElementById("app");
@@ -193,7 +245,8 @@
     full: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/></svg>',
     exit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13 7H9V3M3 9h4v4M9 7l4.5-4.5M7 9l-4.5 4.5"/></svg>',
     send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>',
-    ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 1.9 1.9 3.7-4"/></svg>',
+    ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 1.9 1.9 3.7-4"/></svg>',
+    x: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
   };
   let seen = false;
   try { seen = localStorage.getItem("cvs-page-coached") === "1"; } catch (e) { /* sandboxed */ }
@@ -219,7 +272,8 @@
     switch (m.method) {
       case "ui/notifications/tool-input": {
         const p = m.params && m.params.arguments && m.params.arguments.path;
-        if (!data && p) $app.querySelector(".bar").innerHTML = docLabel(p);
+        if (!data && p) $app.querySelector(".bar").innerHTML =
+          '<div class="who"><b>Rendering…</b><span><code>' + esc(p) + "</code></span></div>";
         break;
       }
       case "ui/notifications/tool-result": onResult(m.params || {}); break;
@@ -260,7 +314,10 @@
       return;
     }
     data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.images.length - 1));
-    sel = null; sent = null;
+    sel = null; sent = null; showBefore = false;
+    /* After a change, open on the first page it touched. */
+    const first = changedBands()[0];
+    if (first) page = first.page - 1;
     paint();
     measure();
   }
@@ -282,82 +339,130 @@
         let last = 0, first = -1;
         for (let y = 0; y < limit; y++) if (ink(y)) { if (first < 0) first = y; last = y; }
         fills[i] = first < 0 ? 0 : Math.min(1, (last - first) / (limit - first || 1));
-        if (fills.filter(x => x != null).length === data.images.length) paintStats();
+        if (fills.filter(x => x != null).length === data.images.length) paintFacts();
       };
       im.src = src;
     });
   }
 
-  const docLabel = p => {
-    const file = String(p || "").split("/").pop(), stem = file.replace(/\.(ya?ml|md)$/, "");
-    const pretty = stem.replace(/^cv-/, "").replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-    return '<div class="doc"><b>' + esc(pretty || file) + '</b><span title="' + esc(p) + '">' + esc(p) + "</span></div>";
-  };
+  /* ---- what is changed, and where it shows ---- */
+  const key = b => b.k + "|" + b.name + "|" + b.i;
+  const same = (a, b) => !!a && !!b && key(a) === key(b);
+  const changedKeys = () => new Set(((data.changes && data.changes.blocks) || []).map(key));
+  const changedBands = () => { const ks = changedKeys(); return (data.map || []).filter(b => ks.has(key(b))); };
+  const bandsOn = p => (data.map || []).filter(b => b.page === p + 1);
 
-  function statsHtml() {
+  function deltaHtml() {
+    const c = data.changes;
+    if (!c) return "";
+    const n = new Set(changedBands().map(key)).size, bits = [];
+    if (n) bits.push("<b>" + n + "</b> " + (n === 1 ? "part changed" : "parts changed"));
+    if (c.removed) bits.push("<b>" + esc(c.removed) + "</b> removed");
+    if (c.design) bits.push("the design changed");
+    if (c.page && !bits.length) bits.push("the letter changed");
+    if (!bits.length) bits.push("small changes");
+    const canCompare = data.before && data.before.length;
+    return '<div class="delta" role="status"><i class="mark"></i><span>Since the last render: ' +
+      bits.join(", ") + "</span>" +
+      (canCompare ? '<div class="seg" role="group" aria-label="Compare"><button data-cmp="before" aria-pressed="' +
+        showBefore + '">Before</button><button data-cmp="after" aria-pressed="' + !showBefore +
+        '">After</button></div>' : "") + "</div>";
+  }
+
+  /* ---- the bar ---- */
+  function whoHtml() {
+    const d = data, file = String(d.path || "").split("/").pop();
+    const title = d.title || file.replace(/\.(ya?ml|md)$/, "").replace(/[-_]+/g, " ");
+    const sub = d.subtitle ? esc(d.subtitle) + " · " : "";
+    return '<div class="who"><b title="' + esc(title) + '">' + esc(title) + '</b><span title="' + esc(d.path) +
+      '">' + sub + "<code>" + esc(file) + "</code></span></div>";
+  }
+  function factsHtml() {
     const d = data, out = [];
-    out.push('<span class="stat">' + (d.pages === 1 ? "1 page" : d.pages + " pages") + "</span>");
-    if (d.words) out.push('<span class="stat">' + esc(d.words) + " words</span>");
+    out.push('<span class="fact">' + (d.pages === 1 ? "1 page" : esc(d.pages) + " pages") + "</span>");
+    if (d.words) out.push('<i class="dot"></i><span class="fact">' + esc(d.words) + " words</span>");
     const lastFill = fills[d.images.length - 1];
-    if (lastFill != null && d.pages === d.images.length) {
+    if (lastFill != null && d.pages === d.images.length && !d.letter) {
       if (d.pages > 1 && lastFill < 0.3)
-        out.push('<span class="stat warn" title="The last page is mostly empty: trim a little to fit on ' +
-          (d.pages - 1) + ' page' + (d.pages > 2 ? "s" : "") + ', or add to fill it">Last page ' +
-          Math.max(1, Math.round(lastFill * 100)) + "% full</span>");
-      else if (d.pages === 1 && !d.letter) out.push('<span class="stat ok">Fits on one page</span>');
+        out.push('<span class="badge warn" title="The last page is mostly empty">Last page ' +
+          Math.max(1, Math.round(lastFill * 100)) + '% full · <button id="fit">Fit on ' +
+          (d.pages - 1) + (d.pages > 2 ? " pages" : " page") + "</button></span>");
+      else if (d.pages === 1) out.push('<span class="badge ok">Fits on one page</span>');
     }
     return out.join("");
   }
-  function paintStats() { const s = document.getElementById("stats"); if (s) s.innerHTML = statsHtml(); }
+  function paintFacts() {
+    const s = document.getElementById("stats");
+    if (s) { s.innerHTML = factsHtml(); wireFit(); }
+  }
+  function wireFit() {
+    const fit = document.getElementById("fit");
+    if (fit) fit.onclick = () => ask({k: "doc", name: null, i: null, label: "The whole CV"},
+      "Fit it on " + (data.pages - 1) + (data.pages > 2 ? " pages" : " page") +
+      " without losing anything that matters for this job");
+  }
 
   const modes = () => host.ctx.availableDisplayModes || [];
   const full = () => host.ctx.displayMode === "fullscreen";
-  const key = b => b.k + "|" + b.name + "|" + b.i;
-  const same = (a, b) => !!a && !!b && key(a) === key(b);
-  const bandsOn = p => (data.map || []).filter(b => b.page === p + 1);
+  const images = () => (showBefore && data.before ? data.before : data.images);
 
-  function thumbs(cls) {
-    if (data.images.length < 2) return "";
-    return data.images.map((src, i) => '<button class="thumb" data-page="' + i + '"' +
+  function thumbs() {
+    const imgs = images();
+    if (imgs.length < 2) return "";
+    return imgs.map((src, i) => '<button class="thumb" data-page="' + i + '"' +
       (i === page ? ' aria-current="page"' : "") + ' aria-label="Page ' + (i + 1) + '"><img alt="" src="' +
       esc(src) + '">' + (i + 1) + "</button>").join("");
   }
 
   function outline() {
-    const seenK = new Set(), rows = [];
+    const seenK = new Set(), rows = [], ks = changedKeys();
     (data.map || []).forEach(b => { if (!seenK.has(key(b))) { seenK.add(key(b)); rows.push(b); } });
-    if (!rows.length) return '<p class="state" style="padding:16px 8px;text-align:left">This page has no blocks to point at.</p>';
-    return rows.map(b => b.k === "section" ? '<h4>' + esc((b.label || "").split(" · ")[0]) + "</h4>"
+    if (!rows.length) return '<p class="state" style="padding:16px 8px;text-align:left">Nothing on this page to point at.</p>';
+    return rows.map(b => b.k === "section" ? "<h4>" + esc((b.label || "").split(" · ")[0]) + "</h4>"
       : '<button class="ol ' + (b.k === "header" ? "sec" : "ent") + '" data-key="' + esc(key(b)) + '"' +
-        (same(b, sel) ? ' aria-current="true"' : "") + ">" +
-        esc(b.k === "header" ? "Header" : (b.label || "").split(" · ").slice(1).join(" · ") || b.label) + "</button>").join("");
+        (same(b, sel) ? ' aria-current="true"' : "") + "><span>" +
+        esc(b.k === "header" ? "Header" : (b.label || "").split(" · ").slice(1).join(" · ") || b.label) +
+        "</span>" + (ks.has(key(b)) ? '<i title="Changed"></i>' : "") + "</button>").join("");
   }
 
   function paint() {
-    const d = data, n = d.images.length;
+    const d = data, imgs = images(), n = imgs.length;
+    if (page >= n) page = n - 1;
     const canFull = modes().includes("fullscreen");
     $app.innerHTML =
-      '<div class="bar">' + docLabel(d.path) + '<span class="sp"></span><div class="stats" id="stats">' +
-        statsHtml() + "</div>" +
+      '<div class="bar">' + whoHtml() + '<div class="facts" id="stats">' + factsHtml() + "</div>" +
         (canFull ? '<button class="icon" id="mode" title="' + (full() ? "Back to the chat" : "Full screen") +
           '" aria-label="' + (full() ? "Back to the chat" : "Full screen") + '">' + (full() ? ICON.exit : ICON.full) +
           "</button>" : "") + "</div>" +
+      deltaHtml() +
       '<aside class="side"><div class="outline" id="outline">' + outline() + "</div>" +
         (n > 1 ? '<div class="pages">' + thumbs() + "</div>" : "") + "</aside>" +
       '<div class="body"><div class="stage" id="stage"><div class="sheet" id="sheet"><img id="pg" alt="Page ' +
-        (page + 1) + ' of ' + esc(d.pages) + '" src="' + esc(d.images[page]) + '"></div>' +
+        (page + 1) + " of " + esc(d.pages) + (showBefore ? ", before the change" : "") + '" src="' +
+        esc(imgs[page]) + '">' + (showBefore ? '<span class="ribbon">Before</span>' : "") + "</div>" +
         '<div class="tag" id="tag"></div>' +
-        (!seen && (d.map || []).length ? '<div class="coach" id="coach">Click any part of the page to change it</div>' : "") +
+        (!seen && !showBefore && (d.map || []).length
+          ? '<div class="coach" id="coach">Click any part of the page to change it</div>' : "") +
       "</div>" + (n > 1 ? '<div class="rail">' + thumbs() + "</div>" : "") + "</div>" +
-      (d.pages > n ? '<p class="state" style="padding:8px">Showing the first ' + n + " of " + d.pages + " pages.</p>" : "");
+      (d.pages > d.images.length ? '<p class="state" style="padding:8px">Showing the first ' +
+        d.images.length + " of " + esc(d.pages) + " pages.</p>" : "");
+    if (full()) {
+      const top = document.querySelector(".bar").offsetHeight +
+        ((document.querySelector(".delta") || {}).offsetHeight || 0);
+      document.documentElement.style.setProperty("--chrome", (top + 52) + "px");
+    }
 
     const img = document.getElementById("pg");
     if (img.complete && img.naturalHeight) hits(); else img.onload = hits;
     document.querySelectorAll("[data-page]").forEach(t => t.onclick = () => { page = +t.dataset.page; paint(); });
-    document.querySelectorAll("[data-key]").forEach(o => o.onclick = () => {
+    document.querySelectorAll(".ol[data-key]").forEach(o => o.onclick = () => {
       const b = (data.map || []).find(x => key(x) === o.dataset.key);
-      if (b) { page = b.page - 1; select(b); }
+      if (b) { showBefore = false; page = b.page - 1; select(b); }
     });
+    document.querySelectorAll("[data-cmp]").forEach(x => x.onclick = () => {
+      showBefore = x.dataset.cmp === "before"; sel = null; paint();
+    });
+    wireFit();
     const mode = document.getElementById("mode");
     if (mode) mode.onclick = async () => {
       try {
@@ -369,29 +474,32 @@
 
   /* One target per block: the strip of the page it owns, hugging the text
      column when the map knows where it is. Same geometry as the editor's
-     page in the app. */
+     page in the app. None on the page before a change: that one is to look at. */
   function hits() {
+    if (showBefore) return;
     const sheet = document.getElementById("sheet"), img = document.getElementById("pg");
     if (!sheet || !img.naturalHeight) return;
     const box = data.box || null;
     const H = (box && box.page_height) || img.naturalHeight / 2;
     const W = (box && box.page_width) || img.naturalWidth / 2;
-    const pad = 6;
+    const pad = 4;
     const left = box ? Math.max(0, (box.x0 - pad) / W * 100) : 0;
     const right = box ? Math.max(0, (W - box.x1 - pad) / W * 100) : 0;
     const pct = y => Math.max(0, Math.min(H, y)) / H * 100;
-    const tag = document.getElementById("tag");
+    const tag = document.getElementById("tag"), ks = changedKeys();
     bandsOn(page).forEach(b => {
       const top = pct(b.y0), bottom = b.y1 == null ? 100 : pct(b.y1);
       if (bottom - top <= 0.4) return;
       const el = document.createElement("button");
-      el.className = "hit" + (same(b, sel) ? " sel" : "") + (same(b, sent) ? " sent" : "");
+      const isNew = ks.has(key(b));
+      el.className = "hit" + (same(b, sel) ? " sel" : "") + (same(b, sent) ? " sent" : "") + (isNew ? " new" : "");
       el.style.cssText = "top:" + top + "%;height:" + (bottom - top) + "%;left:" + left + "%;right:" + right + "%";
       el.dataset.key = key(b);
-      el.setAttribute("aria-label", "Change " + (b.label || "this block"));
+      el.setAttribute("aria-label", "Change " + (b.label || "this block") + (isNew ? " (changed)" : ""));
       const show = () => {
         if (same(b, sel)) { tag.style.display = "none"; return; }
-        tag.textContent = b.label || ""; tag.style.display = b.label ? "block" : "none";
+        tag.innerHTML = esc(b.label || "") + (isNew ? "<i>Changed</i>" : "");
+        tag.style.display = b.label ? "block" : "none";
         tag.style.top = el.offsetTop + "px"; tag.style.left = el.offsetLeft + "px";
       };
       el.onmouseenter = show; el.onfocus = show;
@@ -399,10 +507,11 @@
       el.onclick = () => select(b);
       sheet.appendChild(el);
     });
-    if (sel) openPop(); else if (sent) openSent();
+    if (sel && sel.k !== "doc") openPop(); else if (sent && sent.k !== "doc") openSent();
   }
 
-  /* Text from the CV goes into what Claude reads, and a CV can carry text
+  /* ---- what reaches the model ----
+     Text from the CV goes into what Claude reads, and a CV can carry text
      from an imported PDF or a posting. So it goes in as one short line of
      plain words: no line breaks or control characters to start a new
      "instruction", nothing long enough to carry one. */
@@ -412,25 +521,41 @@
     return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
   };
   const name = b => clean(b.label) || "this part of the CV";
-  const key_ = s => String(s ?? "").replace(/[^\w.-]/g, "");   /* a YAML key, nothing else */
+  const yamlKey = s => String(s ?? "").replace(/[^\w.-]/g, "");   /* a YAML key, nothing else */
 
-  /* Where in the YAML the block is, so the model edits the right thing. */
   function where(b) {
+    if (b.k === "doc") return "the whole document";
     if (b.k === "header") return "cv.name, cv.headline and the contact details";
-    if (b.k === "section") return "cv.sections." + key_(b.name);
-    return "cv.sections." + key_(b.name) + "[" + (+b.i || 0) + "]";
+    if (b.k === "section") return "cv.sections." + yamlKey(b.name);
+    return "cv.sections." + yamlKey(b.name) + "[" + (+b.i || 0) + "]";
   }
 
   /* What Claude is told, out of sight of the chat: the file, the exact place,
      and what to do after. Each update replaces the one before. */
   function tellModel(b, asked) {
     if (!host.caps.updateModelContext) return Promise.resolve(false);
+    const path = clean(data.path, 200);
     const text = "CV Studio page view: the user " + (asked ? "asked for a change to" : "selected") +
-      " the block \"" + name(b) + "\" in " + clean(data.path, 200) + ", at " + where(b) + ". " +
-      (asked ? "Their next message says what to change. Edit only that block, then call render_cv on " +
-               clean(data.path, 200) + " so they see the new page."
+      (b.k === "doc" ? " the whole CV" : " the block \"" + name(b) + "\"") + " in " + path +
+      (b.k === "doc" ? "" : ", at " + where(b)) + ". " +
+      (asked ? "Their next message says what to change. " + (b.k === "doc" ? "" : "Edit only that block, then ") +
+               "call render_cv on " + path + " so they see the new page."
              : "If their next message says \"this\", it means that block.");
     return request("ui/update-model-context", {content: [{type: "text", text}]}).then(() => true, () => false);
+  }
+
+  /* Suggestions that fit the block: what you would actually ask of a job,
+     a summary, a list of skills. */
+  function chipsFor(b) {
+    const s = String(b.name || "").toLowerCase();
+    if (b.k === "header") return ["Sharpen the headline for this job", "Make it shorter"];
+    if (b.k === "section") return ["Move it up", "Move it down", "Shorten this section", "Remove the section"];
+    if (/summary|profile|about|objective/.test(s)) return ["Tailor it to the posting", "Lead with a number", "Make it shorter"];
+    if (/experience|work|employment|project|volunteer/.test(s))
+      return ["Quantify the impact", "Stronger verbs", "Keep the 3 best bullets", "Match the posting"];
+    if (/skill|technolog|tool|stack/.test(s)) return ["Match the posting's keywords", "Group them better", "Cut the weakest"];
+    if (/education|certif|course/.test(s)) return ["Make it one line", "Remove it"];
+    return ["Make it shorter", "Make it stronger", "Remove it"];
   }
 
   function select(b) {
@@ -442,19 +567,19 @@
 
   function close() { sel = null; sent = null; paint(); }
 
-  /* Below the block when there is room on the page, above it otherwise. */
+  /* Next to the block: under it when there is room, over it otherwise,
+     lined up with the text rather than spanning the sheet. */
   function place(pop) {
     const stage = document.getElementById("stage");
     const hit = stage.querySelector('.hit[data-key="' + CSS.escape(key(sel || sent)) + '"]');
     if (!hit) return;
     const sheetH = stage.querySelector(".sheet").offsetHeight;
-    const below = hit.offsetTop + hit.offsetHeight + 10;
+    const below = hit.offsetTop + hit.offsetHeight + 8;
     const h = pop.offsetHeight;
-    if (below + h <= sheetH + 40 || hit.offsetTop - h - 10 < 0) {
-      pop.style.top = below + "px"; pop.className = "pop below";
-    } else {
-      pop.style.top = (hit.offsetTop - h - 10) + "px"; pop.className = "pop above";
-    }
+    const left = Math.max(8, Math.min(hit.offsetLeft - 6, stage.offsetWidth - pop.offsetWidth - 8));
+    pop.style.left = left + "px";
+    if (below + h <= sheetH + 24 || hit.offsetTop - h - 8 < 0) pop.style.top = below + "px";
+    else pop.style.top = (hit.offsetTop - h - 8) + "px";
   }
 
   function openPop() {
@@ -462,15 +587,15 @@
     const coach = document.getElementById("coach"); if (coach) coach.remove();
     const canSend = !!host.caps.message;
     const pop = document.createElement("div");
-    pop.id = "ask"; pop.className = "pop below"; pop.setAttribute("role", "dialog");
+    pop.id = "ask"; pop.className = "pop"; pop.setAttribute("role", "dialog");
     pop.setAttribute("aria-label", "Change " + (b.label || "this block"));
-    pop.innerHTML = '<div class="what"><b>' + esc(b.label || "This block") + "</b><code>" + esc(where(b)) +
-      '</code><button class="x" id="clear" aria-label="Close">×</button></div>' +
+    pop.innerHTML = '<div class="what"><b title="' + esc(b.label) + '">' + esc(b.label || "This block") + "</b>" +
+      '<button class="x" id="clear" aria-label="Close">' + ICON.x + "</button></div>" +
       (canSend
         ? '<div class="field"><textarea id="msg" rows="1" placeholder="What should change here?"></textarea>' +
           '<button class="send" id="go" aria-label="Send to Claude" disabled>' + ICON.send + "</button></div>" +
-          '<div class="chips">' + ["Make it shorter", "Make it stronger", "Match the posting", "Remove it"]
-            .map(c => '<button class="chip" data-chip="' + esc(c) + '">' + esc(c) + "</button>").join("") + "</div>"
+          '<div class="chips">' + chipsFor(b).map(c => '<button class="chip" data-chip="' + esc(c) + '">' +
+            esc(c) + "</button>").join("") + "</div>"
         : '<p class="hint" style="margin:0 2px">Say in the chat what should change here: Claude knows which part you mean.</p>');
     stage.appendChild(pop);
     place(pop);
@@ -490,6 +615,9 @@
     msg.focus({preventScroll: true});
   }
 
+  /* A change asked of the whole CV, from the bar. */
+  function ask(b, text) { sel = b; submit(text); }
+
   async function submit(text) {
     text = (text || "").trim();
     const b = sel;
@@ -499,23 +627,32 @@
        YAML path go to Claude through the context instead; a client without
        that gets them in the message. */
     const told = await tellModel(b, true);
-    const out = told ? name(b) + " — " + clean(text, 500)
-      : name(b) + " — " + clean(text, 500) + " (" + clean(data.path, 200) + ", " + where(b) +
-        "; render it again after)";
+    const head = b.k === "doc" ? "" : name(b) + " — ";
+    const out = told ? head + clean(text, 500)
+      : head + clean(text, 500) + " (" + clean(data.path, 200) + ", " + where(b) + "; render it again after)";
     try {
       await request("ui/message", {role: "user", content: [{type: "text", text: out}]});
       sel = null; sent = b; paint();
+      if (b.k === "doc") flash("Passed to the chat. Once it is sent, Claude fits the CV and the new pages appear below.");
     } catch (e) {
       const pop = document.getElementById("ask");
-      if (pop) pop.insertAdjacentHTML("beforeend", '<p class="hint">It could not be sent (' + esc(e.message) +
-        "). Type it in the chat instead.</p>");
+      const note = '<p class="hint">It could not be sent (' + esc(e.message) + "). Type it in the chat instead.</p>";
+      if (pop) pop.insertAdjacentHTML("beforeend", note); else flash("It could not be sent. Type it in the chat instead.");
     }
+  }
+
+  function flash(text) {
+    const d = document.createElement("div");
+    d.className = "delta"; d.setAttribute("role", "status");
+    d.innerHTML = '<i class="mark" style="background:var(--acc)"></i><span>' + esc(text) + "</span>";
+    const bar = document.querySelector(".bar"); bar.after(d);
+    setTimeout(() => d.remove(), 5000);
   }
 
   function openSent() {
     const stage = document.getElementById("stage");
     const pop = document.createElement("div");
-    pop.id = "ask"; pop.className = "pop below"; pop.setAttribute("role", "status");
+    pop.id = "ask"; pop.className = "pop"; pop.setAttribute("role", "status");
     pop.innerHTML = '<div class="done">' + ICON.ok + "<span>Passed to the chat. Once it is sent, Claude " +
       "makes the change and the new page appears below.</span></div>";
     stage.appendChild(pop);
@@ -526,9 +663,10 @@
   document.addEventListener("keydown", e => {
     if (e.target.closest && e.target.closest("textarea")) return;
     if (e.key === "Escape" && (sel || sent)) close();
-    if (data && data.images.length > 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+    const n = images().length;
+    if (n > 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
       const p = page + (e.key === "ArrowRight" ? 1 : -1);
-      if (p >= 0 && p < data.images.length) { page = p; paint(); }
+      if (p >= 0 && p < n) { page = p; paint(); }
     }
   });
 
@@ -540,7 +678,7 @@
   }).observe(document.documentElement);
 
   request("ui/initialize", {
-    appInfo: {name: "CV Studio page", version: "2"},
+    appInfo: {name: "CV Studio page", version: "3"},
     appCapabilities: {availableDisplayModes: ["inline", "fullscreen"]},
     protocolVersion: PROTOCOL,
   }).then(r => {

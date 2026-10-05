@@ -65,8 +65,24 @@ async function main() {
     console.log(`rendered   ${p}  ${sc ? sc.pages + " page(s), " + (sc.map || []).length + " blocks" : "FAILED"}`);
   }
   for (const p of cvs) await render(p);
-  const ok = Object.keys(results).filter(p => results[p].structuredContent);
+  let ok = Object.keys(results).filter(p => results[p].structuredContent);
   ok.sort((a, b) => results[b].structuredContent.pages - results[a].structuredContent.pages);
+  /* The state after a change, which is what the view is mostly looked at in:
+     the longest CV with its summary and a bullet rewritten, rendered again.
+     Only in the sample, which is made fresh each time. */
+  const CHANGED = " (after a change)";
+  if (!opt("--workspace") && ok.length) {
+    const p = ok[0];
+    await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: p, edits: [
+      {path: ["cv", "sections", "summary", 0], value: "Platform engineer who cut cloud spend by 31% and " +
+        "deploy time from 3 hours to 11 minutes. I build the infrastructure product teams ship on."},
+      {path: ["cv", "sections", "experience", 1, "highlights", 0], value: "Owned the ledger service: " +
+        "2 million transactions a day, 99.99% available over three years"}]}});
+    const before = results[p];
+    await render(p);
+    results[p + CHANGED] = results[p]; results[p] = before;
+    ok = [p + CHANGED, ...ok];
+  }
   if (!ok.length) { console.error("Nothing rendered."); process.exit(1); }
 
   const VARIANTS = [
@@ -113,11 +129,11 @@ load();
     const html = s => { r.writeHead(200, {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}); r.end(s); };
     if (u.pathname === "/") return html(index());
     if (u.pathname === "/version") { r.end(String(fs.statSync(VIEW).mtimeMs)); return; }
-    if (u.pathname === "/rerender") { await render(u.searchParams.get("cv")); r.end("ok"); return; }
+    if (u.pathname === "/rerender") { await render(u.searchParams.get("cv").replace(CHANGED, "")); r.end("ok"); return; }
     if (u.pathname === "/host") {
       const v = VARIANTS.find(x => x.id === u.searchParams.get("v")) || VARIANTS[0];
       const p = u.searchParams.get("cv") || ok[0];
-      return html(hostPage(fs.readFileSync(VIEW, "utf-8"), {path: p}, results[p], v));
+      return html(hostPage(fs.readFileSync(VIEW, "utf-8"), {path: p.replace(CHANGED, "")}, results[p], v));
     }
     r.writeHead(404); r.end();
   }).listen(PORT, "127.0.0.1");
@@ -131,14 +147,17 @@ load();
   const b = await browser();
   const cvPath = opt("--cv") || ok[0];
   for (const v of VARIANTS) {
-    for (const state of ["", "selected", "sent"]) {
+    for (const state of ["", "selected", "sent", "before"]) {
       await b.send("Emulation.setDeviceMetricsOverride", {width: v.width + 40,
         height: v.mode === "fullscreen" ? v.height + 40 : 1400, deviceScaleFactor: 1, mobile: false});
       await b.send("Page.navigate", {url: `http://127.0.0.1:${PORT}/host?v=${v.id}&cv=${encodeURIComponent(cvPath)}`});
       await sleep(1800);
-      if (state) {
+      if (state === "before") {
+        await b.evalJs(`(()=>{const x=document.getElementById("v").contentDocument.querySelector('[data-cmp="before"]'); if(x) x.click()})()`);
+        await sleep(300);
+      } else if (state) {
         await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument;
-          const hits=[...d.querySelectorAll(".hit")]; const h=hits.find(x=>/·/.test(x.getAttribute("aria-label")||""))||hits[0];
+          const hits=[...d.querySelectorAll(".hit")]; const h=hits.find(x=>/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/·/.test(x.getAttribute("aria-label")||""))||hits[0];
           h.click(); })()`);
         await sleep(300);
         await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument; const m=d.getElementById("msg");

@@ -34,8 +34,14 @@ async function main() {
     /<html/.test(item.text || ""), item && item.mimeType);
   const cvPath = "profile/my-cv.yaml";
   const call = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  /* The same CV again after a change, in the same session: the view should
+     know what changed and have the page before it. */
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
+    {path: ["cv", "sections", "summary", 0], value: "Platform engineer who cut deploy time from 3 hours to 11 minutes."}]}});
+  const call2 = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
   c.close();
   const sc = call.structuredContent;
+  const sc2 = call2.structuredContent || {};
   check("the render succeeds", !call.isError, call.isError ? JSON.stringify(call.content).slice(0, 300) : "");
   check("the model still gets the summary and the page image",
     call.content.some(b => b.type === "text") && call.content.some(b => b.type === "image"));
@@ -52,6 +58,13 @@ async function main() {
   check("gets no view data, so none of it can land in a model's context",
     !plain.structuredContent && plain.content.some(b => b.type === "image"));
 
+  check("a first render has nothing to compare with", sc && !sc.changes && !sc.before);
+  check("the next one names exactly the block that changed",
+    sc2.changes && JSON.stringify(sc2.changes.blocks) === JSON.stringify([{k: "entry", name: "summary", i: 0}]),
+    JSON.stringify(sc2.changes));
+  check("and carries the page before it", sc2.before && sc2.before.length === sc.images.length &&
+    sc2.before[0] === sc.images[0] && sc2.images[0] !== sc.images[0]);
+  check("the bar gets the name and the headline, not a file name", sc && sc.title === "Your Name", sc && sc.title);
   if (!sc) { console.log(`\n${fails} failure(s)`); process.exit(1); }
 
   console.log("The view, in a client");
@@ -132,6 +145,31 @@ async function main() {
   await sleep(300);
   check("a suggestion chip sends in one click",
     (await b.evalJs(`LOG.filter(m=>m.method==="ui/message").length`)) === 3);
+
+  console.log("After a change");
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, call2, {width: 720}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(2000);
+  const ch = await b.evalJs(`(()=>{const d=${doc}; return {delta: (d.querySelector(".delta")||{}).textContent||"",
+    marked: [...d.querySelectorAll(".hit.new")].map(h=>h.dataset.key), src: d.getElementById("pg").src.slice(-40)}})()`);
+  check("the view says what changed", /1 part changed/.test(ch.delta), ch.delta);
+  check("and marks that block on the page", JSON.stringify(ch.marked) === JSON.stringify(["entry|summary|0"]),
+    JSON.stringify(ch.marked));
+  await b.evalJs(`${doc}.querySelector('[data-cmp="before"]').click()`);
+  await sleep(300);
+  const bf = await b.evalJs(`(()=>{const d=${doc}; return {ribbon: !!d.querySelector(".ribbon"),
+    src: d.getElementById("pg").src.slice(-40), hits: d.querySelectorAll(".hit").length}})()`);
+  check("Before shows the page as it was, to look at, not to click",
+    bf.ribbon && bf.src !== ch.src && bf.hits === 0, JSON.stringify(bf));
+  await b.evalJs(`${doc}.querySelector('[data-cmp="after"]').click()`);
+  await sleep(300);
+  const job = sc2.map.find(m => m.k === "entry" && m.name === "experience");
+  if (job) {
+    await b.evalJs(`(()=>{const d=${doc}; [...d.querySelectorAll(".hit")].find(h=>h.dataset.key===${JSON.stringify(key(job))}).click()})()`);
+    await sleep(300);
+    const chips = await b.evalJs(`[...${doc}.querySelectorAll("[data-chip]")].map(c=>c.textContent)`);
+    check("a job gets suggestions for a job", chips.includes("Quantify the impact"), chips.join(", "));
+  }
 
   /* A label is CV text, and CV text can come from an imported PDF or a
      posting. Whatever it holds, it reaches the model as one short plain line. */
