@@ -6,10 +6,16 @@
 <title>CV page</title>
 <!--
   The page view an AI client shows with render_cv (MCP Apps). It runs in the
-  client's sandboxed frame with no network, so everything is in this file and
-  the pages arrive as images in the tool result. It speaks to the client over
-  postMessage (JSON-RPC 2.0): ui/initialize, then it is handed the tool's
-  input and result.
+  client's sandboxed frame with no network, so everything is in this file.
+  The page it opens on arrives in the tool result; the others it fetches by
+  id through the server (page_view_data) when they are shown, so a long CV
+  does not make a heavy result. It speaks to the client over postMessage
+  (JSON-RPC 2.0): ui/initialize, then it is handed the tool's input and
+  result.
+
+  A CV rendered again leaves its earlier views in the conversation; each
+  asks the server whether it is still the latest, and folds to one line if
+  not. The latest one can hand over the PDF (ui/download-file).
 
   What it is for: seeing the page, pointing at a part of it, and seeing what
   a change changed. A click on a block selects it and opens a box beside it;
@@ -246,6 +252,25 @@
   .rev .w:not(:disabled):hover{text-decoration:underline;text-underline-offset:2px}
   :root[data-mode=fullscreen] .revs{grid-column:1/3;max-width:none;margin:8px 16px 0}
   .state{color:var(--tx2);padding:28px 8px;text-align:center}
+  /* A page still on its way: the sheet's shape, shimmering. */
+  .sheet img:not([src]),.thumb img:not([src]){aspect-ratio:1/1.414;background:
+    linear-gradient(100deg,#f3f2ee 40%,#e9e7e1 50%,#f3f2ee 60%) 0 0/200% 100%;
+    animation:shim 1.2s linear infinite}
+  :root[data-mode=fullscreen] .sheet img:not([src]){width:calc((100vh - var(--chrome,96px)) / 1.414)}
+  .btn.dl{display:inline-flex;align-items:center;gap:5px;flex:none}
+  .btn.dl svg{width:13px;height:13px}
+
+  /* ---- an earlier render of the same CV: one line, open on demand ---- */
+  .fold{display:flex;align-items:center;gap:12px;width:100%;margin:0 auto;
+    max-width:calc(var(--sheet) + 104px);border:0;background:none;padding:6px 0;text-align:left;
+    cursor:pointer;color:var(--tx);border-radius:var(--r)}
+  .fold img{width:34px;border-radius:2px;background:#fff;flex:none;
+    box-shadow:0 0 0 1px var(--rule)}
+  .fold .who span{white-space:normal}
+  .fold .more{font-size:var(--fs-xs);color:var(--tx2);flex:none;padding:3px 10px;border-radius:7px;
+    background:color-mix(in srgb,var(--tx) 6%,transparent)}
+  .fold:hover .more{background:color-mix(in srgb,var(--tx) 11%,transparent);color:var(--tx)}
+  .delta.old .mark{background:var(--tx3)}
   .skel{max-width:var(--sheet);margin:0 auto;aspect-ratio:1/1.414;border-radius:3px;background:
     linear-gradient(100deg,var(--bg2) 40%,var(--bg3) 50%,var(--bg2) 60%) 0 0/200% 100%;
     animation:shim 1.2s linear infinite}
@@ -264,7 +289,10 @@
   const PROTOCOL = "2026-01-26";
   let nextId = 1, host = {caps: {}, ctx: {}}, data = null, page = 0, sel = null, sent = null;
   let showBefore = false, listOpen = false, busy = false;
-  const fills = [];
+  /* Page images by id, as they arrive; and how full each is. */
+  const cache = new Map(), loading = new Map(), fills = new Map();
+  /* Set when a later render of this CV exists: {changed}. */
+  let earlier = null, unfolded = false, lastCheck = 0;
   const pending = new Map();
   const $app = document.getElementById("app");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
@@ -273,6 +301,7 @@
     full: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/></svg>',
     exit: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13 7H9V3M3 9h4v4M9 7l4.5-4.5M7 9l-4.5 4.5"/></svg>',
     send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>',
+    down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>',
     ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 1.9 1.9 3.7-4"/></svg>',
     x: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
   };
@@ -334,44 +363,97 @@
   /* ---- the result ---- */
   function onResult(r) {
     const sc = r.structuredContent || r.structured_content;
-    if (r.isError || !sc || !sc.images) {
+    if (r.isError || !sc || !sc.shots || !sc.shots.length) {
       const text = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
       $app.innerHTML = r.isError
         ? '<div class="err"><b>The CV did not render.</b>' + esc(text.replace(/^RENDER FAILED\s*/, "")) + "</div>"
         : '<div class="state">' + esc(text || "Nothing to show.") + "</div>";
       return;
     }
-    data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.images.length - 1));
-    sel = null; sent = null; showBefore = false; busy = false;
+    data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.shots.length - 1));
+    sel = null; sent = null; showBefore = false; busy = false; earlier = null; unfolded = false;
+    if (sc.first) { cache.set(sc.first.id, sc.first.src); measure(sc.first.id); }
     if (!review()) listOpen = false;
     /* After a change, open on the first page it touched. */
     const first = changedBands()[0];
     if (first) page = first.page - 1;
     paint();
-    measure();
+    /* This is the latest render of the file, as far as this view knows: the
+       earlier views of it in the conversation hear so and fold away. */
+    try { if (sc.rid) localStorage.setItem("cvs-render:" + sc.path, sc.rid); } catch (e) { /* sandboxed */ }
+    check(true).then(() => { if (!earlier) prefetch(); });
   }
+
+  /* ---- pages: the one shown first, the rest when asked for ---- */
+  function fetchPage(id) {
+    if (cache.has(id)) return Promise.resolve(cache.get(id));
+    if (loading.has(id)) return loading.get(id);
+    if (!host.caps.serverTools) return Promise.resolve(null);
+    const p = request("tools/call", {name: "page_view_data", arguments: {what: "page", page: id}}).then(r => {
+      const im = !r || r.isError ? null : (r.content || []).find(c => c.type === "image");
+      if (!im) return null;
+      const src = "data:" + (im.mimeType || "image/png") + ";base64," + im.data;
+      cache.set(id, src);
+      document.querySelectorAll('img[data-h="' + id + '"]').forEach(el => { el.src = src; });
+      measure(id);
+      return src;
+    }, () => null).finally(() => loading.delete(id));
+    loading.set(id, p);
+    return p;
+  }
+  /* The others, one at a time once the first is up: flipping is then
+     instant, and the last page can be measured. */
+  async function prefetch() {
+    for (const id of data.shots) { if (earlier) return; await fetchPage(id); }
+  }
+  const imgTag = (id, attrs) => '<img data-h="' + esc(id) + '"' + (cache.has(id) ? ' src="' + esc(cache.get(id)) + '"' : "") +
+    " " + attrs + ">";
+
+  /* ---- an earlier render: is there a later one? ---- */
+  async function check(force) {
+    if (!data || !data.rid || !host.caps.serverTools) return;
+    const now = Date.now();
+    if (!force && now - lastCheck < 15000) return;
+    lastCheck = now;
+    try {
+      const r = await request("tools/call", {name: "page_view_data",
+        arguments: {what: "status", path: data.path, rid: data.rid}});
+      const st = r && !r.isError && (r.structuredContent || r.structured_content);
+      if (st && st.current === false && JSON.stringify(st) !== JSON.stringify(earlier)) {
+        earlier = st; sel = null; sent = null; listOpen = false; showBefore = false; paint();
+      }
+    } catch (e) { /* the client could not ask: stay as it is */ }
+  }
+  window.addEventListener("storage", e => {
+    if (data && e.key === "cvs-render:" + data.path && e.newValue && e.newValue !== data.rid) check(true);
+  });
+  window.addEventListener("focus", () => check(false));
+  /* Scrolled back to: the CV may have been rendered again below since. */
+  try {
+    new IntersectionObserver(es => { if (es.some(x => x.isIntersecting)) check(false); })
+      .observe(document.body);
+  } catch (e) { /* no observer: the other signals still fold it */ }
 
   /* How full each page is, read off the image: the lowest line of ink above
      the footer zone. A last page with a few lines on it is the commonest way
      a CV goes wrong, and it is invisible in the YAML. */
-  function measure() {
-    data.images.forEach((src, i) => {
-      const im = new Image();
-      im.onload = () => {
-        const w = 120, h = Math.round(im.naturalHeight / im.naturalWidth * w);
-        const c = document.createElement("canvas"); c.width = w; c.height = h;
-        const g = c.getContext("2d", {willReadFrequently: true}); g.drawImage(im, 0, 0, w, h);
-        const px = g.getImageData(0, 0, w, h).data;
-        const ink = y => { for (let x = 0; x < w; x++) { const k = (y * w + x) * 4;
-          if (px[k] + px[k + 1] + px[k + 2] < 600) return true; } return false; };
-        const limit = Math.floor(h * 0.93);       /* below this is page numbers and footers */
-        let last = 0, first = -1;
-        for (let y = 0; y < limit; y++) if (ink(y)) { if (first < 0) first = y; last = y; }
-        fills[i] = first < 0 ? 0 : Math.min(1, (last - first) / (limit - first || 1));
-        if (fills.filter(x => x != null).length === data.images.length) paintFacts();
-      };
-      im.src = src;
-    });
+  function measure(id) {
+    if (fills.has(id) || !cache.has(id)) return;
+    const im = new Image();
+    im.onload = () => {
+      const w = 120, h = Math.round(im.naturalHeight / im.naturalWidth * w);
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const g = c.getContext("2d", {willReadFrequently: true}); g.drawImage(im, 0, 0, w, h);
+      const px = g.getImageData(0, 0, w, h).data;
+      const ink = y => { for (let x = 0; x < w; x++) { const k = (y * w + x) * 4;
+        if (px[k] + px[k + 1] + px[k + 2] < 600) return true; } return false; };
+      const limit = Math.floor(h * 0.93);       /* below this is page numbers and footers */
+      let last = 0, first = -1;
+      for (let y = 0; y < limit; y++) if (ink(y)) { if (first < 0) first = y; last = y; }
+      fills.set(id, first < 0 ? 0 : Math.min(1, (last - first) / (limit - first || 1)));
+      if (data && id === data.shots[data.shots.length - 1]) paintFacts();
+    };
+    im.src = cache.get(id);
   }
 
   /* ---- what is changed, and where it shows ---- */
@@ -384,7 +466,7 @@
   /* The changes an AI client made that nobody has kept or undone, as the
      app's review holds them; each has the block it is on the page, if any. */
   const review = () => (data && data.changes && data.changes.review) || null;
-  const canAct = () => !!(review() && host.caps.serverTools);
+  const canAct = () => !!(review() && host.caps.serverTools && !earlier);
   const unitFor = b => { const r = review(); return r ? r.units.find(u => u.block && key(u.block) === key(b)) : null; };
 
   function deltaHtml() {
@@ -435,8 +517,8 @@
     const d = data, out = [];
     out.push('<span class="fact">' + (d.pages === 1 ? "1 page" : esc(d.pages) + " pages") + "</span>");
     if (d.words) out.push('<i class="dot"></i><span class="fact">' + esc(d.words) + " words</span>");
-    const lastFill = fills[d.images.length - 1];
-    if (lastFill != null && d.pages === d.images.length && !d.letter) {
+    const lastFill = fills.get(d.shots[d.shots.length - 1]);
+    if (lastFill != null && d.pages === d.shots.length && !d.letter) {
       if (d.pages > 1 && lastFill < 0.3)
         out.push('<span class="badge warn" title="The last page is mostly empty">Last page ' +
           Math.max(1, Math.round(lastFill * 100)) + '% full · <button id="fit">Fit on ' +
@@ -458,14 +540,15 @@
 
   const modes = () => host.ctx.availableDisplayModes || [];
   const full = () => host.ctx.displayMode === "fullscreen";
-  const images = () => (showBefore && data.before ? data.before : data.images);
+  const images = () => (showBefore && data.before ? data.before : data.shots);
+  const canDownload = () => !!(host.caps.downloadFile && host.caps.serverTools && data.pdf && !earlier);
 
   function thumbs() {
     const imgs = images();
     if (imgs.length < 2) return "";
-    return imgs.map((src, i) => '<button class="thumb" data-page="' + i + '"' +
-      (i === page ? ' aria-current="page"' : "") + ' aria-label="Page ' + (i + 1) + '"><img alt="" src="' +
-      esc(src) + '">' + (i + 1) + "</button>").join("");
+    return imgs.map((id, i) => '<button class="thumb" data-page="' + i + '"' +
+      (i === page ? ' aria-current="page"' : "") + ' aria-label="Page ' + (i + 1) + '">' +
+      imgTag(id, 'alt=""') + (i + 1) + "</button>").join("");
   }
 
   function outline() {
@@ -482,24 +565,29 @@
   function paint() {
     const d = data, imgs = images(), n = imgs.length;
     if (page >= n) page = n - 1;
+    if (earlier && !unfolded) return paintFolded();
     const canFull = modes().includes("fullscreen");
     $app.innerHTML =
       '<div class="bar">' + whoHtml() + '<div class="facts" id="stats">' + factsHtml() + "</div>" +
+        (canDownload() ? '<button class="btn dl" id="dl" title="Download the PDF of this CV" aria-label="Download the PDF">' +
+          ICON.down + "PDF</button>" : "") +
         (canFull ? '<button class="icon" id="mode" title="' + (full() ? "Back to the chat" : "Full screen") +
           '" aria-label="' + (full() ? "Back to the chat" : "Full screen") + '">' + (full() ? ICON.exit : ICON.full) +
           "</button>" : "") + "</div>" +
-      deltaHtml() +
+      (earlier ? '<div class="delta old" role="status"><i class="mark"></i><span>An earlier version: ' +
+        esc(sinceText()) + '. The latest is further down.</span><button class="btn ghost" id="refold">Fold</button></div>'
+        : deltaHtml()) +
       '<aside class="side"><div class="outline" id="outline">' + outline() + "</div>" +
         (n > 1 ? '<div class="pages">' + thumbs() + "</div>" : "") + "</aside>" +
-      '<div class="body"><div class="stage" id="stage"><div class="sheet" id="sheet"><img id="pg" alt="Page ' +
-        (page + 1) + " of " + esc(d.pages) + (showBefore ? ", before the change" : "") + '" src="' +
-        esc(imgs[page]) + '">' + (showBefore ? '<span class="ribbon">Before</span>' : "") + "</div>" +
+      '<div class="body"><div class="stage" id="stage"><div class="sheet" id="sheet">' + imgTag(imgs[page],
+        'id="pg" alt="Page ' + (page + 1) + " of " + esc(d.pages) + (showBefore ? ", before the change" : "") + '"') +
+        (showBefore ? '<span class="ribbon">Before</span>' : "") + "</div>" +
         '<div class="tag" id="tag"></div>' +
         (!seen && !showBefore && (d.map || []).length
           ? '<div class="coach" id="coach">Click any part of the page to change it</div>' : "") +
       "</div>" + (n > 1 ? '<div class="rail">' + thumbs() + "</div>" : "") + "</div>" +
-      (d.pages > d.images.length ? '<p class="state" style="padding:8px">Showing the first ' +
-        d.images.length + " of " + esc(d.pages) + " pages.</p>" : "");
+      (d.pages > d.shots.length ? '<p class="state" style="padding:8px">Showing the first ' +
+        d.shots.length + " of " + esc(d.pages) + " pages.</p>" : "");
     if (full()) {
       const top = document.querySelector(".bar").offsetHeight +
         ((document.querySelector(".delta") || {}).offsetHeight || 0);
@@ -508,6 +596,15 @@
 
     const img = document.getElementById("pg");
     if (img.complete && img.naturalHeight) hits(); else img.onload = hits;
+    if (!cache.has(imgs[page])) fetchPage(imgs[page]).then(src => {
+      if (!src && document.getElementById("pg") === img) img.alt = "This page could not be loaded. Render the CV again.";
+    });
+    /* The pages before a change are fetched only when asked to compare. */
+    if (showBefore) imgs.forEach(fetchPage);
+    const dl = document.getElementById("dl");
+    if (dl) dl.onclick = () => download(dl);
+    const rf = document.getElementById("refold");
+    if (rf) rf.onclick = () => { unfolded = false; sel = null; sent = null; paint(); };
     document.querySelectorAll("[data-page]").forEach(t => t.onclick = () => { page = +t.dataset.page; paint(); });
     document.querySelectorAll(".ol[data-key]").forEach(o => o.onclick = () => {
       const b = (data.map || []).find(x => key(x) === o.dataset.key);
@@ -531,6 +628,41 @@
         applyContext({displayMode: (r && r.mode) || host.ctx.displayMode});
       } catch (e) { /* the client said no */ }
     };
+  }
+
+  function sinceText() {
+    const c = earlier && earlier.changed;
+    return c == null ? "rendered again since" : c === 0 ? "rendered again since, with the same content"
+      : c + (c === 1 ? " change since" : " changes since");
+  }
+
+  /* An earlier render, folded: the page as a stamp, what has happened
+     since, and a way to look at it again. */
+  function paintFolded() {
+    const d = data, file = String(d.path || "").split("/").pop();
+    const title = d.title || file.replace(/\.(ya?ml|md)$/, "").replace(/[-_]+/g, " ");
+    $app.innerHTML = '<button class="fold" id="unfold" aria-label="Show this earlier version">' +
+      (d.first ? '<img alt="" src="' + esc(d.first.src) + '">' : "") +
+      '<span class="who"><b>' + esc(title) + "</b><span>Earlier version · " + esc(sinceText()) + "</span></span>" +
+      '<span class="more">Show</span></button>';
+    document.getElementById("unfold").onclick = () => { unfolded = true; paint(); };
+  }
+
+  /* The PDF, handed over by the client as a file: the last step of an
+     application, without opening the app or the folder. */
+  async function download(btn) {
+    if (btn.getAttribute("aria-busy") === "true") return;
+    btn.setAttribute("aria-busy", "true");
+    try {
+      const r = await request("tools/call", {name: "page_view_data", arguments: {what: "pdf", path: data.pdf}});
+      const item = r && !r.isError && (r.content || []).find(c => c.type === "resource");
+      if (!item) throw new Error(((r && r.content || [])[0] || {}).text || "no PDF");
+      await request("ui/download-file", {contents: [item]});
+    } catch (e) {
+      flash("The PDF could not be downloaded: " + clean(e.message, 160) + ".");
+    } finally {
+      btn.removeAttribute("aria-busy");
+    }
   }
 
   /* One target per block: the strip of the page it owns, hugging the text
@@ -794,7 +926,7 @@
   }).observe(document.documentElement);
 
   request("ui/initialize", {
-    appInfo: {name: "CV Studio page", version: "3"},
+    appInfo: {name: "CV Studio page", version: "4"},
     appCapabilities: {availableDisplayModes: ["inline", "fullscreen"]},
     protocolVersion: PROTOCOL,
   }).then(r => {

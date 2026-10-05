@@ -425,7 +425,7 @@ and wherever else a client lists a server's prompts.
 ## The page, in the conversation
 
 In a client that shows views (MCP Apps: Claude, and VS Code's chat), `render_cv`
-also shows the rendered CV inside the conversation: every page, with each
+also shows the rendered CV inside the conversation: every page (up to twelve), with each
 block on it clickable, the same way the page is in the app's editor. Click a
 block and:
 
@@ -457,6 +457,23 @@ The bar over the page says how it lays out: the page count, the words, and
 whether it fits on one page or leaves a last page mostly empty. With several
 pages, the others sit beside it to click through. Full screen fits the page to
 the window and lists every block beside it, to select from there.
+
+**Download the PDF.** In a client that can hand a view's file to you
+(`ui/download-file`), the bar has a *PDF* button: the file you send with the
+application, without opening the app or the folder.
+
+**Earlier renders fold away.** Each render of a CV leaves a page in the
+conversation. When the CV has been rendered again since, the earlier view
+shrinks to one line, *Earlier version · 2 changes since*, which opens again on
+a click. A view finds out by asking the connector, when it loads and when it
+is scrolled back into sight; the connector keeps a small record of each render
+for that, outside the workspace, for two months.
+
+**Light results.** A render's result carries only the page the view opens on.
+The others are stored once by content, outside the workspace, and the view
+fetches them through `page_view_data` (another tool only views can call)
+while you look at the first, so a long CV does not make a heavy result and a
+conversation opened again later still has its pages.
 
 To work on the view, `node checks/viewdev.js` in `server/` shows it the way
 Claude frames it, inline in light and dark and full screen, and reloads when

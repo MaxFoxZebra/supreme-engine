@@ -18,7 +18,12 @@ from __future__ import annotations
 import base64
 import contextvars
 import functools
+import hashlib
 import inspect
+import json
+import os
+import re
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -27,8 +32,10 @@ from pydantic import Field
 from mcp.server.apps import Apps, client_supports_apps
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.prompts.base import Prompt
-from mcp.types import CallToolResult, Icon, ImageContent, TextContent, ToolAnnotations
+from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource, Icon, ImageContent,
+                       TextContent, ToolAnnotations)
 
+import cjkfonts
 import review
 import studio
 from cv_render import render_file
@@ -195,11 +202,12 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # Tools a view calls for the user, hidden from the model ("app" visibility):
 # what they change is the user's decision, so it is neither recorded as an AI
 # client's change to review nor logged as its activity.
-USER_ACTIONS = {"review_change"}
+USER_ACTIONS = {"review_change", "page_view_data"}
 
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
-             "ats_check", "translation_status", "design_options", "workspace_info"}
+             "ats_check", "translation_status", "design_options", "workspace_info",
+             "page_view_data"}
 
 # What a client shows for each tool, and what it may assume of it. Claude
 # Desktop and others use the hints to decide what to ask permission for:
@@ -224,6 +232,7 @@ TITLES = {
     "mark_translation_current": "Mark a translation up to date",
     "design_options": "Themes, fonts and page sizes", "workspace_info": "About the workspace",
     "review_change": "Keep or undo a change",
+    "page_view_data": "Page view data",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
 IDEMPOTENT = {"review_change", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
@@ -554,9 +563,133 @@ def _review_units(p: Path) -> dict | None:
     return {"units": out, "sig": payload.get("sig"), "agent": _one_line(payload.get("agent"), 40)}
 
 
+# --- What the page view fetches ----------------------------------------------
+#
+# A render's pages are kept by content, outside the workspace, so a view can
+# fetch the one it is about to show (page_view_data) instead of every page
+# arriving inline, and so a conversation opened again next week still has
+# them. Beside them, one small record per render: which file and pages it
+# was, and what the CV said, so an earlier view of a CV can tell it has been
+# rendered again since and fold itself away.
+
+MAX_VIEW_PAGES = 12
+_PAGE_ID = re.compile(r"[0-9a-f]{32}")
+_RID = re.compile(r"[0-9a-f]{8,24}")
+_KEEP_DAYS = 60
+_pruned = False
+
+
+def _views_dir() -> Path:
+    return cjkfonts.cache_dir().parent / "views"
+
+
+def _write(target: Path, data: bytes) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.part")
+    tmp.write_bytes(data)
+    os.replace(tmp, target)
+
+
+def _keep_page(f: Path) -> str:
+    """Store a page image by what it is; its id is what the view asks for."""
+    data = f.read_bytes()
+    pid = hashlib.sha256(data).hexdigest()[:32]
+    target = _views_dir() / "pages" / f"{pid}.png"
+    try:
+        if target.is_file():
+            os.utime(target)   # in use again: not old enough to clear away
+        else:
+            _write(target, data)
+    except OSError:
+        pass
+    return pid
+
+
+def _prune_views() -> None:
+    """Pages and records nothing has shown for two months, once per run."""
+    global _pruned
+    if _pruned:
+        return
+    _pruned = True
+    cutoff = time.time() - _KEEP_DAYS * 86400
+    for sub in ("pages", "renders"):
+        try:
+            for f in (_views_dir() / sub).iterdir():
+                if f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _latest_file() -> Path:
+    return _views_dir() / "latest.json"
+
+
+def _latest() -> dict:
+    try:
+        return json.loads(_latest_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _record_render(p: Path, data: dict, shots: list[str]) -> str | None:
+    """Note this render as the latest of its file; returns its id."""
+    _prune_views()
+    rid = f"{time.time_ns():x}"
+    try:
+        _write(_views_dir() / "renders" / f"{rid}.json",
+               json.dumps({"path": str(p), "data": data, "shots": shots}).encode("utf-8"))
+        latest = _latest()
+        latest[str(p)] = rid
+        # A file per CV ever rendered stays small; renamed and deleted ones
+        # fall out after their records do.
+        latest = {k: v for k, v in latest.items()
+                  if (_views_dir() / "renders" / f"{v}.json").is_file()}
+        _write(_latest_file(), json.dumps(latest).encode("utf-8"))
+    except (OSError, TypeError, ValueError):
+        return None
+    return rid
+
+
+def _render_record(rid: str) -> dict | None:
+    if not _RID.fullmatch(rid or ""):
+        return None
+    try:
+        return json.loads((_views_dir() / "renders" / f"{rid}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _view_status(path: str, rid: str) -> dict:
+    """Whether a view's render is still the latest of its file, and if not,
+    how much of the CV has changed since."""
+    p = studio.safe_path(path)
+    latest = _latest().get(str(p))
+    if not latest or latest == rid or not _RID.fullmatch(rid or "") or int(latest, 16) < int(rid, 16):
+        return {"current": True}
+    old, new = _render_record(rid), _render_record(latest)
+    changed = None
+    if old and new and old.get("data") and new.get("data"):
+        c = _changes(old["data"], new["data"])
+        changed = (len({(b["k"], b["name"], b["i"]) for b in c["blocks"]}) + c["removed"]
+                   + (1 if c["design"] else 0)) if c else 0
+    return {"current": False, "changed": changed}
+
+
+def _pdf_resource(path: str) -> EmbeddedResource:
+    p = studio.safe_path(path)
+    if p.suffix.lower() != ".pdf" or not p.is_file():
+        raise ValueError("No PDF there. Render the CV again.")
+    if p.stat().st_size > 25 * 1024 * 1024:
+        raise ValueError("That PDF is too large to hand over here.")
+    return EmbeddedResource(type="resource", resource=BlobResourceContents(
+        uri="file:///" + p.name, mime_type="application/pdf",
+        blob=base64.b64encode(p.read_bytes()).decode("ascii")))
+
+
 def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                words, pdf, bands=None, box=None) -> dict:
-    """What the page view shows: every page (up to six) as an image, where
+    """What the page view shows: every page (up to twelve) by id, where
     each block of the CV landed on them, named the way the outline names it
     so a click can say "Experience · Acme" rather than a position, and what
     changed since the last render of it."""
@@ -580,8 +713,8 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                 label += " · " + (studio.entry_title(entries[i], i) if i < len(entries)
                                   else f"entry {i + 1}")
         labels[f"{b['k']}|{b.get('name')}|{b.get('i')}"] = _one_line(label)
-    images = ["data:image/png;base64," + base64.b64encode(f.read_bytes()).decode("ascii")
-              for f in pngs[:6]]
+    shots = [_keep_page(f) for f in pngs[:MAX_VIEW_PAGES]]
+    images = shots
     last = _LAST_RENDER.get(str(p))
     changes = _changes(last["data"], data) if last and data and last.get("data") else None
     # What is waiting for the user to keep or undo outranks what differs
@@ -598,13 +731,20 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
     if not changes and last and studio.is_letter(p) and last.get("images") != images:
         changes = {"blocks": [], "removed": 0, "design": False, "page": True}
     _LAST_RENDER[str(p)] = {"data": data, "images": images}
+    rid = _record_render(p, data, shots)
+    first = min(max(page, 1), len(shots)) - 1 if shots else 0
     return {
-        "view": "cv-page", "path": path, "page": page, "pages": pages,
+        "view": "cv-page", "rid": rid, "path": path, "page": page, "pages": pages,
         "words": words, "pdf": pdf, "letter": studio.is_letter(p),
         # Whose CV and for what, which says more than a file name.
         "title": _one_line(cv.get("name"), 60) or None,
         "subtitle": _one_line(cv.get("headline") or cv.get("label"), 90) or None,
-        "images": images,
+        # Each page by its id, fetched by the view when it is shown; only
+        # the page it opens on comes inline, so the result stays small
+        # however long the CV is and the page appears without a round trip.
+        "shots": shots,
+        "first": {"id": shots[first], "src": "data:image/png;base64," +
+                  base64.b64encode(pngs[first].read_bytes()).decode("ascii")} if shots else None,
         "map": [{**b, "label": labels.get(f"{b['k']}|{b.get('name')}|{b.get('i')}")}
                 for b in bands or []],
         "box": box,
@@ -1456,6 +1596,27 @@ def review_change(path: str, ids: list[str], action: str, sig: str | None = None
     # own; what is left to review is the only comparison that means anything.
     _LAST_RENDER.pop(str(p), None)
     return _render(path, page, True)
+
+
+@tool(view=PAGE_VIEW, app_only=True)
+def page_view_data(what: str, path: str = "", page: str = "", rid: str = "") -> CallToolResult:
+    """For the page view only, hidden from the model. what="page": a page's
+    image by its id. what="pdf": the PDF at `path`, to download. what="status":
+    whether render `rid` of `path` is still its latest."""
+    if what == "page":
+        if not _PAGE_ID.fullmatch(page):
+            raise ValueError("not a page id")
+        f = _views_dir() / "pages" / f"{page}.png"
+        if not f.is_file():
+            raise ValueError("That page is gone. Render the CV again.")
+        return CallToolResult(content=[ImageContent(
+            type="image", data=base64.b64encode(f.read_bytes()).decode("ascii"), mime_type="image/png")])
+    if what == "pdf":
+        return CallToolResult(content=[_pdf_resource(path)])
+    if what == "status":
+        st = _view_status(path, rid)
+        return CallToolResult(content=[TextContent(type="text", text=json.dumps(st))], structured_content=st)
+    raise ValueError("what is page, pdf or status")
 
 
 # The skills, offered as prompts too. A client that reads skills has them

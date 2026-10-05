@@ -162,7 +162,7 @@ load();
       } else if (state) {
         await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument;
           const hits=[...d.querySelectorAll(".hit")]; const h=hits.find(x=>x.classList.contains("new")&&/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/·/.test(x.getAttribute("aria-label")||""))||hits[0];
-          h.click(); })()`);
+          if (h) h.click(); })()`);
         await sleep(300);
         await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument; const m=d.getElementById("msg");
           if(m){ m.value="Lead with the platform migration, and cut the last bullet"; m.dispatchEvent(new Event("input",{bubbles:true})) } })()`);

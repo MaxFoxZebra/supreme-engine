@@ -101,8 +101,10 @@ if __name__ == "__main__":
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
                     "get_interview_prep", "save_interview_prep",
                     "set_company_logo", "read_posting"}
-    check("every tool is advertised", set(tools) == documents | applications,
-          ",".join(sorted(set(tools) ^ (documents | applications))) or "exact match")
+    # The page view's own, which a client that shows views keeps from the model.
+    view_only = {"review_change", "page_view_data"}
+    check("every tool is advertised", set(tools) == documents | applications | view_only,
+          ",".join(sorted(set(tools) ^ (documents | applications | view_only))) or "exact match")
     check("no delete tool reaches the applications",
           not any("delete" in t or "remove" in t for t in tools),
           ",".join(sorted(tools)))

@@ -85,7 +85,7 @@ const THEMES = {
 function hostPage(view, args, result, opts = {}) {
   const theme = opts.theme || "light", mode = opts.mode || "inline";
   const width = opts.width || 720, height = opts.height || 820;
-  const caps = opts.caps || {message: {text: {}}, updateModelContext: {text: {}}, serverTools: {}};
+  const caps = opts.caps || {message: {text: {}}, updateModelContext: {text: {}}, serverTools: {}, downloadFile: {}};
   const ctx = {theme, displayMode: mode, availableDisplayModes: ["inline", "fullscreen"],
     containerDimensions: mode === "fullscreen" ? {width, height} : {width, maxHeight: 2400},
     styles: opts.styled === false ? undefined : {variables: THEMES[theme]}, platform: "desktop"};

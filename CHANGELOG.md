@@ -8,6 +8,20 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **Download the PDF from the page in the chat.** A *PDF* button in the bar
+  hands you the file Claude just rendered, ready to send with the
+  application, where Claude supports it.
+- **Earlier renders fold away.** Rendering a CV again shrinks the earlier
+  page in the conversation to one line, *Earlier version · 2 changes since*,
+  so the chat no longer turns into a long scroll of pages. Click it to look
+  at it again.
+- **Pages load lighter.** Only the page you see first comes with the result;
+  the others load while you look at it. The page shows sooner, long CVs no
+  longer risk the client's size limit, and up to twelve pages show instead
+  of six.
+
 ## 0.37.2
 
 - **The page sits in the conversation like part of it.** No frame or
