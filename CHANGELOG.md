@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.39.0
 
 - **Check a CV against the posting, on the page.** When Claude checks a CV
   against an application's posting, the page shows the posting's
