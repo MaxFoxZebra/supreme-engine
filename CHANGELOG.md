@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.41.0
 
 - **CV Studio in Claude Desktop without the app.** Each release now has a
   Claude Desktop extension (a `.mcpb` file for Mac or Windows): double-click
