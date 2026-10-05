@@ -16,7 +16,7 @@
    here; check those in Claude with the connector pointed at this checkout. */
 const fs = require("fs"), os = require("os"), path = require("path"), http = require("http");
 const {execFileSync} = require("child_process");
-const {session, hostPage, browser, SERVER} = require("./viewhost");
+const {session, hostPage, browser, proxyCall, SERVER} = require("./viewhost");
 
 const argv = process.argv.slice(2);
 const opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -128,6 +128,7 @@ load();
     const u = new URL(q.url, "http://x");
     const html = s => { r.writeHead(200, {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}); r.end(s); };
     if (u.pathname === "/") return html(index());
+    if (u.pathname === "/mcp") return proxyCall(c, q, r);
     if (u.pathname === "/version") { r.end(String(fs.statSync(VIEW).mtimeMs)); return; }
     if (u.pathname === "/rerender") { await render(u.searchParams.get("cv").replace(CHANGED, "")); r.end("ok"); return; }
     if (u.pathname === "/host") {
@@ -147,17 +148,20 @@ load();
   const b = await browser();
   const cvPath = opt("--cv") || ok[0];
   for (const v of VARIANTS) {
-    for (const state of ["", "selected", "sent", "before"]) {
+    for (const state of ["", "selected", "sent", "before", "review"]) {
       await b.send("Emulation.setDeviceMetricsOverride", {width: v.width + 40,
         height: v.mode === "fullscreen" ? v.height + 40 : 1400, deviceScaleFactor: 1, mobile: false});
       await b.send("Page.navigate", {url: `http://127.0.0.1:${PORT}/host?v=${v.id}&cv=${encodeURIComponent(cvPath)}`});
       await sleep(1800);
-      if (state === "before") {
+      if (state === "review") {
+        await b.evalJs(`(()=>{const x=document.getElementById("v").contentDocument.getElementById("revlist"); if(x) x.click()})()`);
+        await sleep(300);
+      } else if (state === "before") {
         await b.evalJs(`(()=>{const x=document.getElementById("v").contentDocument.querySelector('[data-cmp="before"]'); if(x) x.click()})()`);
         await sleep(300);
       } else if (state) {
         await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument;
-          const hits=[...d.querySelectorAll(".hit")]; const h=hits.find(x=>/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/·/.test(x.getAttribute("aria-label")||""))||hits[0];
+          const hits=[...d.querySelectorAll(".hit")]; const h=hits.find(x=>x.classList.contains("new")&&/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/Experience ·/.test(x.getAttribute("aria-label")||""))||hits.find(x=>/·/.test(x.getAttribute("aria-label")||""))||hits[0];
           h.click(); })()`);
         await sleep(300);
         await b.evalJs(`(()=>{const d=document.getElementById("v").contentDocument; const m=d.getElementById("msg");

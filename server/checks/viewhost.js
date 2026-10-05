@@ -81,7 +81,7 @@ const THEMES = {
 
 /* opts: theme ("light" | "dark"), mode ("inline" | "fullscreen"), width,
    height (fullscreen), caps (host capabilities), styled (send the theme's
-   variables). */
+   variables), proxy (where the page's server takes the view's tool calls). */
 function hostPage(view, args, result, opts = {}) {
   const theme = opts.theme || "light", mode = opts.mode || "inline";
   const width = opts.width || 720, height = opts.height || 820;
@@ -111,6 +111,12 @@ window.addEventListener("message", e => {
     if (result) post({method: "ui/notifications/tool-result", params: result});
   } else if (m.method === "ui/notifications/size-changed") {
     if (ctx.displayMode !== "fullscreen") f.style.height = m.params.height + "px";
+  } else if (m.method === "tools/call") {
+    /* As Claude does: the view's tool calls go to the server, through the
+       page that serves this (opts.proxy), and come back as the view's answer. */
+    fetch(${js(opts.proxy || "/mcp")}, {method: "POST", body: JSON.stringify(m.params)})
+      .then(r => r.json()).then(res => post({id: m.id, result: res}))
+      .catch(e => post({id: m.id, error: {code: -32000, message: String(e)}}));
   } else if (m.method === "ui/request-display-mode") {
     ctx = {...ctx, displayMode: m.params.mode};
     post({id: m.id, result: {mode: m.params.mode}});
@@ -154,4 +160,14 @@ async function browser(PORT = 9333, size = "1500,1300") {
   return {send, evalJs, close: () => ws.close()};
 }
 
-module.exports = {mcp, session, hostPage, browser, js, THEMES, APPS, SERVER};
+/* The server side of the proxy: a POST of tools/call params, answered with
+   the connector's result. */
+async function proxyCall(c, q, r) {
+  let body = "";
+  for await (const chunk of q) body += chunk;
+  const res = await c.send("tools/call", JSON.parse(body || "{}"));
+  r.writeHead(200, {"Content-Type": "application/json"});
+  r.end(JSON.stringify(res.result || {isError: true, content: [{type: "text", text: (res.error || {}).message || "error"}]}));
+}
+
+module.exports = {mcp, session, hostPage, browser, proxyCall, js, THEMES, APPS, SERVER};

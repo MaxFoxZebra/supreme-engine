@@ -10,6 +10,15 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- **Keep or undo Claude's changes right on the page.** Every change Claude
+  made to a CV and you have not looked at yet is marked on the page. Click
+  one and its box shows what went and what came (the old line struck
+  through, the new one in green) with **Undo** and **Keep**; **Review**
+  lists them all, removed entries included, and **Keep all** and **Undo
+  all** settle the lot. It happens at once, with no message and nothing for
+  Claude to do: the page is drawn again as it now is, and Claude is told
+  what you undid so it does not put it back. These are the same changes the
+  app's review shows, so they wait there too, across restarts.
 - **See what a change changed.** When Claude renders a CV again after a
   change, the page says what changed since the last render ("2 parts
   changed", anything removed, a new design), marks those parts in the margin

@@ -10,7 +10,7 @@
    chat. Needs Chrome on port 9333 (CI starts one) or CHROME=, and python
    (PYTHON= to choose which). */
 const fs = require("fs"), os = require("os"), path = require("path");
-const {session, hostPage, browser} = require("./viewhost");
+const {session, hostPage, browser, proxyCall} = require("./viewhost");
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let fails = 0;
@@ -39,7 +39,7 @@ async function main() {
   await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
     {path: ["cv", "sections", "summary", 0], value: "Platform engineer who cut deploy time from 3 hours to 11 minutes."}]}});
   const call2 = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
-  c.close();
+  /* The session stays open: the view's Keep and Undo go to it. */
   const sc = call.structuredContent;
   const sc2 = call2.structuredContent || {};
   check("the render succeeds", !call.isError, call.isError ? JSON.stringify(call.content).slice(0, 300) : "");
@@ -65,6 +65,13 @@ async function main() {
   check("and carries the page before it", sc2.before && sc2.before.length === sc.images.length &&
     sc2.before[0] === sc.images[0] && sc2.images[0] !== sc.images[0]);
   check("the bar gets the name and the headline, not a file name", sc && sc.title === "Your Name", sc && sc.title);
+  const rv = (sc2.changes || {}).review;
+  check("a change Claude made is there to keep or undo, with what the block said before",
+    rv && rv.units.length === 1 && rv.units[0].block && rv.units[0].block.name === "summary" &&
+    /One or two sentences/.test(rv.units[0].before) && rv.sig, JSON.stringify(rv && rv.units));
+  const rc2 = tools.find(t => t.name === "review_change");
+  check("keeping and undoing is the page's, hidden from the model",
+    rc2 && JSON.stringify(rc2._meta.ui.visibility) === JSON.stringify(["app"]), rc2 && JSON.stringify(rc2._meta));
   if (!sc) { console.log(`\n${fails} failure(s)`); process.exit(1); }
 
   console.log("The view, in a client");
@@ -74,7 +81,9 @@ async function main() {
   /* Served rather than opened as a file: a file:// page is its own opaque
      origin, and the view would not count as the same one. */
   const http = require("http");
-  const srv = http.createServer((q, r) => { r.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+  const srv = http.createServer((q, r) => {
+    if (q.url === "/mcp") return proxyCall(c, q, r);
+    r.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
     r.end(fs.readFileSync(hostFile)); }).listen(0, "127.0.0.1");
   await new Promise(r => srv.once("listening", r));
   await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
@@ -152,7 +161,7 @@ async function main() {
   await sleep(2000);
   const ch = await b.evalJs(`(()=>{const d=${doc}; return {delta: (d.querySelector(".delta")||{}).textContent||"",
     marked: [...d.querySelectorAll(".hit.new")].map(h=>h.dataset.key), src: d.getElementById("pg").src.slice(-40)}})()`);
-  check("the view says what changed", /1 part changed/.test(ch.delta), ch.delta);
+  check("the view says what changed, and who", /changed 1 thing/.test(ch.delta), ch.delta);
   check("and marks that block on the page", JSON.stringify(ch.marked) === JSON.stringify(["entry|summary|0"]),
     JSON.stringify(ch.marked));
   await b.evalJs(`${doc}.querySelector('[data-cmp="before"]').click()`);
@@ -170,6 +179,42 @@ async function main() {
     const chips = await b.evalJs(`[...${doc}.querySelectorAll("[data-chip]")].map(c=>c.textContent)`);
     check("a job gets suggestions for a job", chips.includes("Quantify the impact"), chips.join(", "));
   }
+
+  console.log("Keep and undo");
+  const summary = sc2.map.find(m => m.k === "entry" && m.name === "summary");
+  await b.evalJs(`(()=>{const d=${doc}; [...d.querySelectorAll(".hit")].find(h=>h.dataset.key===${JSON.stringify(key(summary))}).click()})()`);
+  await sleep(300);
+  const was = await b.evalJs(`(()=>{const w=${doc}.querySelector("#ask .was"); return w ? w.textContent : ""})()`);
+  check("a changed block's box shows what went and what came, with Undo and Keep",
+    /Changed by/.test(was) && /One or two sentences/.test(was) && /cut deploy time/.test(was) &&
+    /Undo/.test(was) && /Keep/.test(was), was.slice(0, 120));
+  const msgsBefore = await b.evalJs(`LOG.filter(m=>m.method==="ui/message").length`);
+  await b.evalJs(`${doc}.querySelector('#ask [data-act="undo"]').click()`);
+  for (let i = 0; i < 40 && !(await b.evalJs(`!${doc}.querySelector(".delta .mark:not([style])")`)); i++) await sleep(250);
+  await sleep(300);
+  const disk = (await c.send("tools/call", {name: "read_cv", arguments: {path: cvPath}})).result.content[0].text;
+  check("Undo puts the file back, at once", /One or two sentences/.test(disk) && !/cut deploy time/.test(disk));
+  const afterUndo = await b.evalJs(`(()=>{const d=${doc}; return {strip: [...d.querySelectorAll(".delta")].map(x=>x.textContent).join(" | "),
+    marked: d.querySelectorAll(".hit.new").length}})()`);
+  check("and the page is drawn again with nothing left to review",
+    afterUndo.marked === 0 && !/changed 1 thing/.test(afterUndo.strip) && /Undone/.test(afterUndo.strip), afterUndo.strip);
+  const toldUndo = await b.evalJs(`LOG.filter(m=>m.method==="ui/update-model-context").map(m=>m.params.content[0].text).pop()`);
+  check("and Claude is told not to make that change again", /undid/.test(toldUndo) && /Do not make that change again/.test(toldUndo),
+    toldUndo);
+  check("with no message in the chat for it",
+    (await b.evalJs(`LOG.filter(m=>m.method==="ui/message").length`)) === msgsBefore);
+
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
+    {path: ["cv", "sections", "summary", 0], value: "Platform engineer, kept this time."}]}});
+  const call3 = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, call3, {width: 720}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(2000);
+  await b.evalJs(`${doc}.querySelector('.delta [data-act="keep"][data-ids="*"]').click()`);
+  for (let i = 0; i < 40 && (await b.evalJs(`!!${doc}.querySelector('.delta [data-ids="*"]')`)); i++) await sleep(250);
+  const disk2 = (await c.send("tools/call", {name: "read_cv", arguments: {path: cvPath}})).result.content[0].text;
+  check("Keep all leaves the file as Claude wrote it, and nothing to review",
+    /kept this time/.test(disk2) && !(await b.evalJs(`!!${doc}.querySelector('.delta [data-ids="*"]')`)));
 
   /* A label is CV text, and CV text can come from an imported PDF or a
      posting. Whatever it holds, it reaches the model as one short plain line. */
@@ -189,7 +234,7 @@ async function main() {
     sentOut.length >= 2 && sentOut.every(t => !/[\n\r\u2028\u2029]/.test(t) && t.length < 700),
     JSON.stringify(sentOut.map(t => t.slice(0, 90))));
 
-  b.close(); srv.close();
+  b.close(); srv.close(); c.close();
   console.log();
   console.log(fails ? `${fails} failure(s)` : "every page view check passes");
   process.exit(fails ? 1 : 0);

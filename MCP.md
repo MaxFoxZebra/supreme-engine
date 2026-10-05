@@ -436,6 +436,16 @@ block and:
   it*, and it goes to the chat as your message, naming the file and the block.
   Claude edits it and renders again, and the new page shows under the old one.
 
+**Keep or undo, from the page.** The changes an AI client made that nobody
+has kept or undone yet (the same ones the app's review shows, kept in
+`.cvstudio-review.json`) are marked on the page and listed under *Review*.
+A changed block's box shows the lines that went and the lines that came,
+with *Undo* and *Keep*; *Keep all* and *Undo all* settle everything. The page
+does it through `review_change`, a tool only views can call: clients hide it
+from the model, and it is not recorded as an AI change or as the model's
+activity. It returns the page as it is afterwards, and the view tells the
+model what was undone so it does not redo it.
+
 A render that follows a change to the same CV in the same conversation says
 what changed since the last one (which blocks, how many entries went, whether
 the design did), marks those blocks in the margin and in the outline, and

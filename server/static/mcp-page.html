@@ -217,6 +217,44 @@
   .side .pages{display:flex;gap:8px;padding:10px;border-top:1px solid var(--rule);overflow:auto}
   .side .pages .thumb{width:56px;flex:none}
 
+  /* ---- keep or undo what Claude changed ---- */
+  .btn{border:1px solid var(--rule2);background:var(--bg);border-radius:7px;padding:3px 10px;
+    font-size:12px;font-weight:500;cursor:pointer;color:var(--tx);white-space:nowrap;
+    transition:background .15s,border-color .15s}
+  .btn:hover{background:var(--bg2)}
+  .btn.undo{color:var(--tx)}
+  .btn.keep{background:var(--new);border-color:var(--new);color:#fff}
+  .btn.keep:hover{filter:brightness(1.05)}
+  .btn.ghost{border-color:transparent;background:none;color:var(--tx2)}
+  .btn.ghost:hover{background:var(--bg2);color:var(--tx)}
+  .btn[aria-busy=true]{opacity:.55;pointer-events:none}
+  .delta .acts{display:flex;gap:6px;flex:none;align-items:center}
+  .was{margin:0 0 10px;border-radius:9px;background:color-mix(in srgb,var(--new) 7%,var(--bg2));
+    border:1px solid color-mix(in srgb,var(--new) 22%,transparent);padding:8px 10px}
+  .was .h{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--tx2)}
+  .was .h b{color:var(--new);font-weight:600}
+  .was .h .acts{margin-left:auto;display:flex;gap:6px}
+  .diff{max-height:9.5em;overflow:auto;font-size:12px;line-height:1.45}
+  .diff p{margin:0 0 3px;padding-left:14px;position:relative;white-space:pre-wrap}
+  .diff p::before{position:absolute;left:0;font-weight:700}
+  .diff .was-l{color:var(--tx3);text-decoration:line-through;
+    text-decoration-color:color-mix(in srgb,var(--tx3) 70%,transparent)}
+  .diff .was-l::before{content:"−";color:var(--tx3)}
+  .diff .now-l{color:var(--tx)}
+  .diff .now-l::before{content:"+";color:var(--new)}
+  .diff .none{padding:0;font-style:italic;color:var(--tx3)}
+  .revs{margin:-6px auto 12px;max-width:calc(var(--sheet) + 104px);border:1px solid var(--rule);
+    border-radius:var(--r);background:var(--bg);overflow:hidden;animation:in .2s var(--ease) both}
+  .rev{display:flex;align-items:center;gap:10px;padding:7px 10px;font-size:13px}
+  .rev+.rev{border-top:1px solid var(--rule)}
+  .rev .t{font-size:11px;font-weight:600;border-radius:5px;padding:1px 6px;flex:none;
+    color:var(--new);background:color-mix(in srgb,var(--new) 12%,transparent)}
+  .rev .t.del{color:var(--warn);background:var(--warnbg)}
+  .rev .w{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    border:0;background:none;padding:0;text-align:left;cursor:pointer;color:var(--tx)}
+  .rev .w:disabled{cursor:default}
+  .rev .w:not(:disabled):hover{text-decoration:underline;text-underline-offset:2px}
+  :root[data-mode=fullscreen] .revs{grid-column:1/3;max-width:none;margin:8px 16px 0}
   .state{color:var(--tx2);padding:28px 8px;text-align:center}
   .skel{max-width:var(--sheet);margin:0 auto;aspect-ratio:1/1.414;border-radius:3px;background:
     linear-gradient(100deg,var(--bg2) 40%,var(--bg3) 50%,var(--bg2) 60%) 0 0/200% 100%;
@@ -235,7 +273,7 @@
   "use strict";
   const PROTOCOL = "2026-01-26";
   let nextId = 1, host = {caps: {}, ctx: {}}, data = null, page = 0, sel = null, sent = null;
-  let showBefore = false;
+  let showBefore = false, listOpen = false, busy = false;
   const fills = [];
   const pending = new Map();
   const $app = document.getElementById("app");
@@ -314,7 +352,8 @@
       return;
     }
     data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.images.length - 1));
-    sel = null; sent = null; showBefore = false;
+    sel = null; sent = null; showBefore = false; busy = false;
+    if (!review()) listOpen = false;
     /* After a change, open on the first page it touched. */
     const first = changedBands()[0];
     if (first) page = first.page - 1;
@@ -352,21 +391,46 @@
   const changedBands = () => { const ks = changedKeys(); return (data.map || []).filter(b => ks.has(key(b))); };
   const bandsOn = p => (data.map || []).filter(b => b.page === p + 1);
 
+  /* The changes an AI client made that nobody has kept or undone, as the
+     app's review holds them; each has the block it is on the page, if any. */
+  const review = () => (data && data.changes && data.changes.review) || null;
+  const canAct = () => !!(review() && host.caps.serverTools);
+  const unitFor = b => { const r = review(); return r ? r.units.find(u => u.block && key(u.block) === key(b)) : null; };
+
   function deltaHtml() {
     const c = data.changes;
     if (!c) return "";
-    const n = new Set(changedBands().map(key)).size, bits = [];
-    if (n) bits.push("<b>" + n + "</b> " + (n === 1 ? "part changed" : "parts changed"));
-    if (c.removed) bits.push("<b>" + esc(c.removed) + "</b> removed");
-    if (c.design) bits.push("the design changed");
-    if (c.page && !bits.length) bits.push("the letter changed");
-    if (!bits.length) bits.push("small changes");
+    const r = review(), n = new Set(changedBands().map(key)).size, bits = [];
+    if (r) {
+      const total = r.units.length;
+      bits.push("<b>" + esc(r.agent || "Claude") + "</b> changed " + total + (total === 1 ? " thing" : " things"));
+      if (n && n < total) bits.push(n + " on the page");
+    } else {
+      if (n) bits.push("<b>" + n + "</b> " + (n === 1 ? "part changed" : "parts changed"));
+      if (c.removed) bits.push("<b>" + esc(c.removed) + "</b> removed");
+      if (c.design) bits.push("the design changed");
+      if (c.page && !bits.length) bits.push("the letter changed");
+      if (!bits.length) bits.push("small changes");
+    }
     const canCompare = data.before && data.before.length;
-    return '<div class="delta" role="status"><i class="mark"></i><span>Since the last render: ' +
-      bits.join(", ") + "</span>" +
+    return '<div class="delta" role="status"><i class="mark"></i><span>' +
+      (r ? "" : "Since the last render: ") + bits.join(", ") + "</span>" +
       (canCompare ? '<div class="seg" role="group" aria-label="Compare"><button data-cmp="before" aria-pressed="' +
         showBefore + '">Before</button><button data-cmp="after" aria-pressed="' + !showBefore +
-        '">After</button></div>' : "") + "</div>";
+        '">After</button></div>' : "") +
+      (r && canAct() ? '<div class="acts"><button class="btn ghost" id="revlist" aria-expanded="' + listOpen +
+        '">' + (listOpen ? "Hide list" : "Review") + '</button><button class="btn undo" data-act="undo" data-ids="*">Undo all</button>' +
+        '<button class="btn keep" data-act="keep" data-ids="*">Keep all</button></div>' : "") + "</div>" +
+      (r && canAct() && listOpen ? revsHtml(r) : "");
+  }
+
+  function revsHtml(r) {
+    return '<div class="revs" id="revs">' + r.units.map(u =>
+      '<div class="rev"><span class="t' + (u.tag === "del" || (u.kind === "section" && !u.after) ? " del" : "") + '">' +
+        esc(u.label) + '</span><button class="w" data-goto="' + esc(u.block ? key(u.block) : "") + '"' +
+        (u.block ? "" : " disabled") + ' title="' + esc(u.where) + '">' + esc(u.where) + "</button>" +
+        '<button class="btn undo" data-act="undo" data-ids="' + esc(u.id) + '">Undo</button>' +
+        '<button class="btn keep" data-act="keep" data-ids="' + esc(u.id) + '">Keep</button></div>').join("") + "</div>";
   }
 
   /* ---- the bar ---- */
@@ -461,6 +525,13 @@
     });
     document.querySelectorAll("[data-cmp]").forEach(x => x.onclick = () => {
       showBefore = x.dataset.cmp === "before"; sel = null; paint();
+    });
+    wireActs(document);
+    const rl = document.getElementById("revlist");
+    if (rl) rl.onclick = () => { listOpen = !listOpen; paint(); };
+    document.querySelectorAll("[data-goto]").forEach(g => g.onclick = () => {
+      const b = (data.map || []).find(x => key(x) === g.dataset.goto);
+      if (b) { showBefore = false; page = b.page - 1; select(b); }
     });
     wireFit();
     const mode = document.getElementById("mode");
@@ -589,8 +660,13 @@
     const pop = document.createElement("div");
     pop.id = "ask"; pop.className = "pop"; pop.setAttribute("role", "dialog");
     pop.setAttribute("aria-label", "Change " + (b.label || "this block"));
+    const u = unitFor(b);
     pop.innerHTML = '<div class="what"><b title="' + esc(b.label) + '">' + esc(b.label || "This block") + "</b>" +
       '<button class="x" id="clear" aria-label="Close">' + ICON.x + "</button></div>" +
+      (u && canAct() ? '<div class="was"><div class="h"><b>' + esc(u.tag === "ins" ? "Added" : "Changed") + " by " +
+        esc(review().agent || "Claude") + '</b><div class="acts"><button class="btn undo" data-act="undo" data-ids="' +
+        esc(u.id) + '">Undo</button><button class="btn keep" data-act="keep" data-ids="' + esc(u.id) +
+        '">Keep</button></div></div>' + diffHtml(u.before, u.after) + "</div>" : "") +
       (canSend
         ? '<div class="field"><textarea id="msg" rows="1" placeholder="What should change here?"></textarea>' +
           '<button class="send" id="go" aria-label="Send to Claude" disabled>' + ICON.send + "</button></div>" +
@@ -599,6 +675,7 @@
         : '<p class="hint" style="margin:0 2px">Say in the chat what should change here: Claude knows which part you mean.</p>');
     stage.appendChild(pop);
     place(pop);
+    wireActs(pop);
     document.getElementById("clear").onclick = close;
     const msg = document.getElementById("msg");
     if (!msg) return;
@@ -613,6 +690,55 @@
     go.onclick = () => submit(msg.value);
     pop.querySelectorAll("[data-chip]").forEach(c => c.onclick = () => submit(c.dataset.chip));
     msg.focus({preventScroll: true});
+  }
+
+  /* Only the lines that differ: what went, struck through, and what came,
+     in green. The lines both share are what the page already shows. */
+  function diffHtml(before, after) {
+    const b = String(before || "").split("\n").filter(Boolean), a = String(after || "").split("\n").filter(Boolean);
+    if (!b.length) return '<div class="diff"><p class="none">Not there before: Claude added it.</p></div>';
+    if (!a.length) return '<div class="diff">' + b.map(l => '<p class="was-l">' + esc(l) + "</p>").join("") + "</div>";
+    const inA = new Set(a), inB = new Set(b);
+    const gone = b.filter(l => !inA.has(l)), came = a.filter(l => !inB.has(l));
+    if (!gone.length && !came.length) return '<div class="diff"><p class="none">Only the order changed.</p></div>';
+    return '<div class="diff">' + gone.map(l => '<p class="was-l">' + esc(l) + "</p>").join("") +
+      came.map(l => '<p class="now-l">' + esc(l) + "</p>").join("") + "</div>";
+  }
+
+  /* Keep or undo, here and now: no message, no model, the page drawn again
+     as it is after. Claude is told, so it does not put an undone change back. */
+  function wireActs(root) {
+    root.querySelectorAll("[data-act]").forEach(btn => btn.onclick = () =>
+      act(btn.dataset.ids === "*" ? ["*"] : [btn.dataset.ids], btn.dataset.act, btn));
+  }
+
+  async function act(ids, action, btn) {
+    const r = review();
+    if (!r || busy) return;
+    busy = true;
+    document.querySelectorAll("[data-act]").forEach(b => b.setAttribute("aria-busy", "true"));
+    if (btn) btn.textContent = action === "undo" ? "Undoing…" : "Keeping…";
+    const all = ids[0] === "*";
+    const units = all ? r.units : r.units.filter(u => ids.includes(u.id));
+    try {
+      const res = await request("tools/call", {name: "review_change",
+        arguments: {path: data.path, ids, action, sig: r.sig, page: page + 1}});
+      if (res && res.isError) throw new Error(((res.content || [])[0] || {}).text || "it was refused");
+      if (host.caps.updateModelContext && units.length) {
+        const what = all ? "all of the changes" : units.map(u => "\"" + clean(u.where, 90) + "\"").join(", ");
+        request("ui/update-model-context", {content: [{type: "text", text: "CV Studio page view: the user " +
+          (action === "undo" ? "undid" : "kept") + " " + what + " in " + clean(data.path, 200) + "." +
+          (action === "undo" ? " The file is back as it was there. Do not make that change again unless they ask." : "")}]})
+          .catch(() => {});
+      }
+      onResult(res);
+      flash(action === "undo" ? (all ? "Undone. The CV is back as it was." : "Undone.")
+                              : (all ? "Kept. Nothing left to review." : "Kept."));
+    } catch (e) {
+      busy = false;
+      paint();
+      flash("That did not work: " + clean(e.message, 160) + ". Try again from the page Claude renders next.");
+    }
   }
 
   /* A change asked of the whole CV, from the bar. */

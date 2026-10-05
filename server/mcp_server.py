@@ -189,6 +189,11 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # changes, so what it wrote can be shown back to the user as changes to keep
 # or undo (review.py). Watching is a stat of each document and a read of its
 # text, which is nothing next to the model's own turn.
+# Tools a view calls for the user, hidden from the model ("app" visibility):
+# what they change is the user's decision, so it is neither recorded as an AI
+# client's change to review nor logged as its activity.
+USER_ACTIONS = {"review_change"}
+
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info"}
@@ -215,9 +220,10 @@ TITLES = {
     "translation_status": "What a translation is missing",
     "mark_translation_current": "Mark a translation up to date",
     "design_options": "Themes, fonts and page sizes", "workspace_info": "About the workspace",
+    "review_change": "Keep or undo a change",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
-IDEMPOTENT = {"write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
+IDEMPOTENT = {"review_change", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
               "save_interview_prep", "write_letter", "mark_translation_current"}
 OPEN_WORLD = {"add_job", "read_posting", "set_company_logo"}
 
@@ -276,7 +282,7 @@ def _shows_views() -> bool:
         return False
 
 
-def tool(fn=None, *, view: str | None = None):
+def tool(fn=None, *, view: str | None = None, app_only: bool = False):
     """Register a tool, and leave a note in the workspace that it ran.
 
     `view` binds it to a ui:// view a client that supports MCP Apps shows
@@ -294,7 +300,7 @@ def tool(fn=None, *, view: str | None = None):
     rather than inherit the wrapped function's through functools.wraps.
     """
     if fn is None:
-        return lambda f: tool(f, view=view)
+        return lambda f: tool(f, view=view, app_only=app_only)
     # Resolved, not the strings `from __future__ import annotations` leaves:
     # the SDK reads the return type to decide whether a tool has an output
     # schema, and a CallToolResult it cannot recognise gets one it then fails.
@@ -314,6 +320,10 @@ def tool(fn=None, *, view: str | None = None):
         # Record what happened, not merely that it was attempted: a refused
         # call logged like a successful one tells the user the model read a
         # file it was actually blocked from reading.
+        if fn.__name__ in USER_ACTIONS:
+            # The user's own decision, made in a view: not an AI client's
+            # change to review, nor its activity to show.
+            return fn(*args, **kwargs)
         watch = None
         if fn.__name__ not in READ_ONLY:
             try:
@@ -344,7 +354,8 @@ def tool(fn=None, *, view: str | None = None):
                                "cvs_ctx": Context}
     return mcp.tool(title=TITLES.get(fn.__name__),
                     annotations=_annotations(fn.__name__),
-                    meta={"ui": {"resourceUri": view}} if view else None)(wrapper)
+                    meta={"ui": {"resourceUri": view, **({"visibility": ["app"]} if app_only else {})}}
+                    if view else None)(wrapper)
 
 
 @tool
@@ -483,6 +494,63 @@ def _changes(old: dict, new: dict) -> dict | None:
     return {"blocks": blocks, "removed": removed, "design": design}
 
 
+def _flat(value, n: int = 700) -> str:
+    """A CV value as the text it prints, for the page view to show what a
+    block said before a change: the title line, then the bullets."""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        head = [str(value[k]) for k in ("company", "institution", "name", "position", "title",
+                                         "degree", "area", "label", "location", "date",
+                                         "start_date", "end_date") if value.get(k)]
+        lines = [" · ".join(head)] if head else []
+        for k in ("summary", "details", "bullet"):
+            if value.get(k):
+                lines.append(str(value[k]))
+        lines += ["• " + str(h) for h in value.get("highlights") or []]
+        if not lines:
+            lines = [f"{k}: {v}" for k, v in value.items() if isinstance(v, (str, int, float))]
+        text = "\n".join(lines)
+    elif isinstance(value, list):
+        text = "\n".join(_flat(v, n) for v in value)
+    else:
+        text = str(value)
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def _review_units(p: Path) -> dict | None:
+    """The changes an AI client made to this document and nobody has kept or
+    undone yet, the way the app's review holds them, with the block of the
+    page each one is (or None: a removed entry, the design, a letter's
+    paragraph) and what it said before."""
+    try:
+        payload = studio.review_payload(p)
+    except Exception:
+        return None
+    if not payload or not payload.get("units"):
+        return None
+    out = []
+    for u in payload["units"]:
+        uid, kind = u.get("id", ""), u.get("kind")
+        block = None
+        if uid.startswith("cv:"):
+            block = {"k": "header", "name": None, "i": None}
+        elif kind == "section" and u.get("after") is not None:
+            block = {"k": "section", "name": u.get("section"), "i": None}
+        elif kind == "entry" and u.get("i") is not None:
+            block = {"k": "entry", "name": u.get("section"), "i": u.get("i")}
+        where = u.get("where")
+        value = u.get("after") if u.get("after") is not None else u.get("before")
+        if kind == "entry" and isinstance(value, str):
+            # A line of text has no title of its own: its first words are its name.
+            where = str(u.get("section") or "").replace("_", " ").capitalize() + " · " + \
+                " ".join(value.split()[:6]) + ("…" if len(value.split()) > 6 else "")
+        out.append({"id": uid, "kind": kind, "tag": u.get("tag"), "label": _one_line(u.get("label"), 40),
+                    "where": _one_line(where, 90), "block": block,
+                    "before": _flat(u.get("before")), "after": _flat(u.get("after"))})
+    return {"units": out, "sig": payload.get("sig"), "agent": _one_line(payload.get("agent"), 40)}
+
+
 def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                words, pdf, bands=None, box=None) -> dict:
     """What the page view shows: every page (up to six) as an image, where
@@ -513,6 +581,17 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
               for f in pngs[:6]]
     last = _LAST_RENDER.get(str(p))
     changes = _changes(last["data"], data) if last and data and last.get("data") else None
+    # What is waiting for the user to keep or undo outranks what differs
+    # from the last render: it is what they can act on, and it survives a
+    # restart of the client.
+    review = _review_units(p)
+    if review:
+        units = review["units"]
+        changes = {"blocks": [u["block"] for u in units if u["block"]],
+                   "removed": sum(1 for u in units if u.get("tag") == "del" or
+                                  (u["kind"] == "section" and not u["after"])),
+                   "design": any(u["id"].startswith("top:") for u in units),
+                   "review": review}
     if not changes and last and studio.is_letter(p) and last.get("images") != images:
         changes = {"blocks": [], "removed": 0, "design": False, "page": True}
     _LAST_RENDER[str(p)] = {"data": data, "images": images}
@@ -527,7 +606,7 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                 for b in bands or []],
         "box": box,
         "changes": changes,
-        "before": last["images"] if changes and last else None,
+        "before": last["images"] if changes and last and last.get("images") != images else None,
     }
 
 
@@ -541,8 +620,14 @@ def render_cv(path: str, page: int = 1) -> CallToolResult:
 
     In a client that shows views, the user also sees every page in the
     conversation and can click a block to tell you what to change there:
-    their message names the block and its place in the YAML.
+    their message names the block and its place in the YAML. They can also
+    keep or undo each change you made, from the page; you are told when
+    they undo one, and should not make that change again unless asked.
     """
+    return _render(path, page, _shows_views())
+
+
+def _render(path: str, page: int, views: bool) -> CallToolResult:
     p = studio.safe_path(path)
 
     def failed(text: str) -> CallToolResult:
@@ -562,7 +647,7 @@ def render_cv(path: str, page: int = 1) -> CallToolResult:
         return CallToolResult(
             content=[TextContent(type="text", text=summary), image(pngs[idx])],
             structured_content=_page_view(path, p, pngs, idx + 1, r["pages"], r["words"], r["pdf"])
-            if _shows_views() else None)
+            if views else None)
 
     result = render_file(p, studio.output_dir(p))
     if not result.get("ok"):
@@ -583,7 +668,7 @@ def render_cv(path: str, page: int = 1) -> CallToolResult:
     if pngs:
         content.append(image(pngs[idx]))
     view = None
-    if _shows_views() and pngs:
+    if views and pngs:
         mapped, _ = studio.block_map(result, p)
         view = _page_view(path, p, pngs, idx + 1, pages, result["ats_word_count"],
                           studio.rel(Path(result["pdf"])) if result.get("pdf") else None,
@@ -1351,6 +1436,23 @@ def workspace_info() -> dict:
                    "tools, which keep the status history and the app in step. "
                    "They also export to JSON and CSV.",
     }
+
+
+@tool(view=PAGE_VIEW, app_only=True)
+def review_change(path: str, ids: list[str], action: str, sig: str | None = None,
+                  page: int = 1) -> CallToolResult:
+    """Keep or undo changes an AI client made to a document, from the page
+    view: `ids` are the review's units ("*" for all of them), `action` is
+    "keep" or "undo", `sig` the review's signature when the page was drawn,
+    so a document that changed since is refused rather than half-undone.
+    Returns the page as it is afterwards. For the user's hand only: hidden
+    from the model."""
+    p = _doc_path(path)
+    studio.review_resolve(p, [str(i) for i in ids][:200], action, sig)
+    # Compared with the render before, an undo would show as a change of its
+    # own; what is left to review is the only comparison that means anything.
+    _LAST_RENDER.pop(str(p), None)
+    return _render(path, page, True)
 
 
 # The skills, offered as prompts too. A client that reads skills has them
