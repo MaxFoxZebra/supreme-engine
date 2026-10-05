@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.38.0
 
 - **Download the PDF from the page in the chat.** A *PDF* button in the bar
   hands you the file Claude just rendered, ready to send with the
