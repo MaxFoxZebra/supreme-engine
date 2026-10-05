@@ -65,7 +65,7 @@ const js = v => JSON.stringify(v).replace(/</g, "\\u003c");
    to see that the view takes the client's colours and type rather than its
    fallbacks. */
 const THEMES = {
-  light: {"--color-background-primary": "#ffffff", "--color-background-secondary": "#f5f4ef",
+  light: {"--color-background-primary": "#faf9f5", "--color-background-secondary": "#f0eee6",
     "--color-background-tertiary": "#eeece5", "--color-text-primary": "#1f1e1d",
     "--color-text-secondary": "#5e5d59", "--color-text-tertiary": "#87867f",
     "--color-border-primary": "#c9c7bf", "--color-border-secondary": "#e2e0d9",
@@ -89,9 +89,11 @@ function hostPage(view, args, result, opts = {}) {
   const ctx = {theme, displayMode: mode, availableDisplayModes: ["inline", "fullscreen"],
     containerDimensions: mode === "fullscreen" ? {width, height} : {width, maxHeight: 2400},
     styles: opts.styled === false ? undefined : {variables: THEMES[theme]}, platform: "desktop"};
-  const bg = theme === "dark" ? "#1f1e1d" : "#faf9f5";
+  /* The chat's own background, which is the colour the view is told is
+     primary: a view that blends in is one that cannot be told from it. */
+  const bg = THEMES[theme]["--color-background-primary"];
   return `<!doctype html><html><head><meta charset="utf-8"></head>
-<body style="margin:0;background:${bg};font:13px system-ui;color:${theme === "dark" ? "#eee" : "#222"}">
+<body style="margin:0;color-scheme:${theme};background:${bg};font:13px system-ui;color:${theme === "dark" ? "#eee" : "#222"}">
 <iframe id="v" sandbox="allow-scripts allow-same-origin"
   style="display:block;width:${width}px;height:${mode === "fullscreen" ? height + "px" : "300px"};border:0;background:transparent"></iframe>
 <script>

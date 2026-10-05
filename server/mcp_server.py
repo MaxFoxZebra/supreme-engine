@@ -55,6 +55,9 @@ apps.add_html_resource(
     PAGE_VIEW,
     (Path(__file__).resolve().parent / "static" / "mcp-page.html").read_text(encoding="utf-8"),
     name="cv-page", title="CV page",
+    # No frame around it: the view sits on the conversation like the rest
+    # of it. Said explicitly, since hosts' defaults differ.
+    prefers_border=False,
     description="The rendered page, every page of it; click a block to tell "
                 "Claude what to change there.")
 

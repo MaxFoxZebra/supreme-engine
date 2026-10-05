@@ -24,43 +24,38 @@
   Preview it without Claude: node checks/viewdev.js
 -->
 <style>
+  /* Claude's own colours, type and sizes when it sends them; these
+     fallbacks follow light and dark by themselves (color-scheme + light-dark),
+     so the view reads as part of the conversation either way. It paints no
+     background of its own: the chat shows through. */
   :root{
-    --bg:var(--color-background-primary,#fff);
-    --bg2:var(--color-background-secondary,#f5f4ef);
-    --bg3:var(--color-background-tertiary,#eeece5);
-    --tx:var(--color-text-primary,#1f1e1d);
-    --tx2:var(--color-text-secondary,#5e5d59);
-    --tx3:var(--color-text-tertiary,#87867f);
-    --rule:var(--color-border-secondary,#e2e0d9);
-    --rule2:var(--color-border-primary,#c9c7bf);
-    --acc:var(--color-ring-primary,#c96442);
-    --new:#2f8f5b;
-    --warn:var(--color-text-warning,#9a5b13);
-    --warnbg:var(--color-background-warning,#fbf1e2);
-    --ok:var(--color-text-success,#2f6b3b);
+    color-scheme:light dark;
+    --bg:var(--color-background-primary,light-dark(#fff,#262624));
+    --bg2:var(--color-background-secondary,light-dark(#f5f4ef,#30302e));
+    --bg3:var(--color-background-tertiary,light-dark(#eeece5,#1f1e1d));
+    --tx:var(--color-text-primary,light-dark(#1f1e1d,#faf9f5));
+    --tx2:var(--color-text-secondary,light-dark(#5e5d59,#c2c0b6));
+    --tx3:var(--color-text-tertiary,light-dark(#87867f,#9a9890));
+    --rule:var(--color-border-secondary,light-dark(#e2e0d9,#3a3936));
+    --rule2:var(--color-border-primary,light-dark(#c9c7bf,#4a4945));
+    --acc:var(--color-ring-primary,light-dark(#c96442,#d97757));
+    --new:var(--color-text-success,light-dark(#2f8f5b,#5cc58a));
+    --warn:var(--color-text-warning,light-dark(#9a5b13,#e6b26a));
+    --warnbg:var(--color-background-warning,light-dark(#fbf1e2,#3a2f20));
+    --ok:var(--color-text-success,light-dark(#2f6b3b,#8cc79a));
     --font:var(--font-sans,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif);
     --mono:var(--font-mono,ui-monospace,"SFMono-Regular",Menlo,monospace);
+    --fs:var(--font-text-md-size,14px);
+    --fs-sm:var(--font-text-sm-size,13px);
+    --fs-xs:var(--font-text-xs-size,12px);
     --r:var(--border-radius-md,8px);
     --sheet:560px;
     --ease:cubic-bezier(.2,.7,.2,1);
   }
-  :root[data-theme=dark]{
-    --bg:var(--color-background-primary,#262624);
-    --bg2:var(--color-background-secondary,#30302e);
-    --bg3:var(--color-background-tertiary,#1f1e1d);
-    --tx:var(--color-text-primary,#faf9f5);
-    --tx2:var(--color-text-secondary,#c2c0b6);
-    --tx3:var(--color-text-tertiary,#9a9890);
-    --rule:var(--color-border-secondary,#3a3936);
-    --rule2:var(--color-border-primary,#4a4945);
-    --acc:var(--color-ring-primary,#d97757);
-    --new:#5cc58a;
-    --warn:var(--color-text-warning,#e6b26a);
-    --warnbg:var(--color-background-warning,#3a2f20);
-    --ok:var(--color-text-success,#8cc79a);
-  }
+  :root[data-theme=light]{color-scheme:light}
+  :root[data-theme=dark]{color-scheme:dark}
   *{box-sizing:border-box}
-  html,body{margin:0;background:transparent;color:var(--tx);font:14px/1.45 var(--font);
+  html,body{margin:0;background:transparent;color:var(--tx);font:var(--fs)/1.5 var(--font);
     -webkit-font-smoothing:antialiased}
   button{font:inherit;color:inherit}
   :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
@@ -69,37 +64,35 @@
   .bar{display:flex;align-items:center;gap:12px;margin:0 auto 12px;
     max-width:calc(var(--sheet) + 104px);min-height:40px}
   .who{min-width:0;flex:1}
-  .who b{display:block;font-weight:600;font-size:15px;letter-spacing:-.005em;
+  .who b{display:block;font-weight:600;font-size:var(--fs);letter-spacing:-.005em;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .who span{display:block;color:var(--tx3);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;
+  .who span{display:block;color:var(--tx3);font-size:var(--fs-xs);overflow:hidden;text-overflow:ellipsis;
     white-space:nowrap}
   .who span code{font:11.5px var(--mono)}
   .facts{display:flex;align-items:center;gap:6px;flex:none}
-  .fact{font-size:12px;color:var(--tx2);white-space:nowrap}
+  .fact{font-size:var(--fs-xs);color:var(--tx3);white-space:nowrap}
   .dot{width:3px;height:3px;border-radius:50%;background:var(--tx3);opacity:.6}
   .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;
     border-radius:99px;padding:3px 10px;white-space:nowrap;border:0}
-  .badge.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+  .badge.ok{color:var(--ok);background:none;padding:0 0 0 4px}
+  .badge.ok::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
   .badge.warn{color:var(--warn);background:var(--warnbg)}
   .badge.warn button{border:0;background:none;padding:0;margin-left:2px;font-weight:600;
     color:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-  .icon{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--rule);
-    background:var(--bg);border-radius:var(--r);cursor:pointer;color:var(--tx2);flex:none;
+  .icon{width:30px;height:30px;display:grid;place-items:center;border:0;
+    background:none;border-radius:var(--r);cursor:pointer;color:var(--tx3);flex:none;
     transition:background .15s,color .15s}
   .icon:hover{background:var(--bg2);color:var(--tx)}
   .icon svg{width:15px;height:15px}
 
   /* What a change changed: a strip under the bar, and the before/after switch. */
-  .delta{display:flex;align-items:center;gap:10px;margin:-2px auto 12px;
-    max-width:calc(var(--sheet) + 104px);padding:7px 8px 7px 12px;border-radius:var(--r);
-    background:color-mix(in srgb,var(--new) 9%,var(--bg));
-    border:1px solid color-mix(in srgb,var(--new) 28%,transparent);font-size:13px;
-    animation:in .3s var(--ease) both}
-  .delta .mark{width:8px;height:8px;border-radius:50%;background:var(--new);flex:none;
-    box-shadow:0 0 0 3px color-mix(in srgb,var(--new) 22%,transparent)}
+  .delta{display:flex;align-items:center;gap:10px;margin:-4px auto 12px;
+    max-width:calc(var(--sheet) + 104px);padding:0 0 10px;font-size:var(--fs-sm);
+    border-bottom:1px solid var(--rule);animation:in .3s var(--ease) both}
+  .delta .mark{width:7px;height:7px;border-radius:50%;background:var(--new);flex:none}
   .delta span{flex:1;min-width:0;color:var(--tx2)}
   .delta span b{color:var(--tx);font-weight:600}
-  .seg{display:inline-flex;background:var(--bg2);border-radius:7px;padding:2px;flex:none}
+  .seg{display:inline-flex;background:color-mix(in srgb,var(--tx) 6%,transparent);border-radius:7px;padding:2px;flex:none}
   .seg button{border:0;background:none;padding:3px 10px;border-radius:5px;font-size:12px;
     color:var(--tx2);cursor:pointer}
   .seg button[aria-pressed=true]{background:var(--bg);color:var(--tx);font-weight:500;
@@ -108,9 +101,8 @@
   /* ---- the page, and the others beside it ---- */
   .body{display:flex;gap:14px;justify-content:center;align-items:flex-start}
   .stage{position:relative;flex:0 1 var(--sheet);min-width:0}
-  .sheet{position:relative;background:#fff;border-radius:3px;overflow:hidden;
-    box-shadow:0 0 0 1px var(--rule),0 1px 2px rgba(0,0,0,.04),0 6px 22px rgba(0,0,0,.07)}
-  :root[data-theme=dark] .sheet{box-shadow:0 0 0 1px var(--rule),0 8px 28px rgba(0,0,0,.4)}
+  .sheet{position:relative;background:#fff;border-radius:4px;overflow:hidden;
+    box-shadow:0 0 0 1px color-mix(in srgb,var(--tx) 10%,transparent),0 1px 3px rgba(0,0,0,.05)}
   .sheet img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;
     animation:fade .22s ease-out}
   @keyframes fade{from{opacity:.25}to{opacity:1}}
@@ -158,10 +150,10 @@
 
   /* ---- the box beside a block ---- */
   .pop{position:absolute;z-index:4;width:min(400px,calc(100% - 16px));background:var(--bg);
-    color:var(--tx);border:1px solid var(--rule2);border-radius:12px;padding:10px;
+    color:var(--tx);border:1px solid var(--rule);border-radius:12px;padding:10px;
     box-shadow:0 12px 32px rgba(0,0,0,.16),0 2px 6px rgba(0,0,0,.06);
     animation:pop .16s var(--ease)}
-  :root[data-theme=dark] .pop{box-shadow:0 14px 36px rgba(0,0,0,.55)}
+  :root[data-theme=dark] .pop{box-shadow:0 14px 36px rgba(0,0,0,.5)}
   @keyframes pop{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
   .pop .what{display:flex;align-items:center;gap:8px;margin:0 2px 8px;min-width:0}
   .pop .what b{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -192,16 +184,14 @@
   :root[data-mode=fullscreen] body{height:100vh;overflow:hidden}
   :root[data-mode=fullscreen] #app{display:grid;grid-template-columns:260px 1fr;
     grid-template-rows:auto auto 1fr;height:100vh}
-  :root[data-mode=fullscreen] .bar{grid-column:1/3;max-width:none;margin:0;padding:10px 16px;
-    border-bottom:1px solid var(--rule)}
+  :root[data-mode=fullscreen] .bar{grid-column:1/3;max-width:none;margin:0;padding:10px 16px}
   :root[data-mode=fullscreen] .delta{grid-column:1/3;max-width:none;margin:8px 16px 0}
   :root[data-mode=fullscreen] .side{display:flex}
-  :root[data-mode=fullscreen] .body{min-height:0;overflow:auto;padding:20px;background:var(--bg3)}
+  :root[data-mode=fullscreen] .body{min-height:0;overflow:auto;padding:20px}
   :root[data-mode=fullscreen] .stage{flex:none}
   :root[data-mode=fullscreen] .sheet img{width:auto;height:calc(100vh - var(--chrome,96px))}
   :root[data-mode=fullscreen] .rail{display:none}
-  .side{display:none;flex-direction:column;min-height:0;border-right:1px solid var(--rule);
-    background:var(--bg);grid-row:3}
+  .side{display:none;flex-direction:column;min-height:0;grid-row:3}
   :root[data-mode=fullscreen] .body{grid-row:3}
   .outline{overflow:auto;padding:10px 8px;flex:1}
   .outline h4{margin:12px 8px 4px;font-size:11px;font-weight:600;letter-spacing:.05em;
@@ -218,14 +208,14 @@
   .side .pages .thumb{width:56px;flex:none}
 
   /* ---- keep or undo what Claude changed ---- */
-  .btn{border:1px solid var(--rule2);background:var(--bg);border-radius:7px;padding:3px 10px;
-    font-size:12px;font-weight:500;cursor:pointer;color:var(--tx);white-space:nowrap;
-    transition:background .15s,border-color .15s}
-  .btn:hover{background:var(--bg2)}
+  .btn{border:0;background:color-mix(in srgb,var(--tx) 7%,transparent);border-radius:7px;
+    padding:3px 10px;font-size:var(--fs-xs);font-weight:500;cursor:pointer;color:var(--tx);
+    white-space:nowrap;transition:background .15s}
+  .btn:hover{background:color-mix(in srgb,var(--tx) 12%,transparent)}
   .btn.undo{color:var(--tx)}
-  .btn.keep{background:var(--new);border-color:var(--new);color:#fff}
+  .btn.keep{background:var(--new);color:light-dark(#fff,#10241a)}
   .btn.keep:hover{filter:brightness(1.05)}
-  .btn.ghost{border-color:transparent;background:none;color:var(--tx2)}
+  .btn.ghost{background:none;color:var(--tx2)}
   .btn.ghost:hover{background:var(--bg2);color:var(--tx)}
   .btn[aria-busy=true]{opacity:.55;pointer-events:none}
   .delta .acts{display:flex;gap:6px;flex:none;align-items:center}
@@ -243,9 +233,9 @@
   .diff .now-l{color:var(--tx)}
   .diff .now-l::before{content:"+";color:var(--new)}
   .diff .none{padding:0;font-style:italic;color:var(--tx3)}
-  .revs{margin:-6px auto 12px;max-width:calc(var(--sheet) + 104px);border:1px solid var(--rule);
-    border-radius:var(--r);background:var(--bg);overflow:hidden;animation:in .2s var(--ease) both}
-  .rev{display:flex;align-items:center;gap:10px;padding:7px 10px;font-size:13px}
+  .revs{margin:-6px auto 12px;max-width:calc(var(--sheet) + 104px);
+    border-bottom:1px solid var(--rule);animation:in .2s var(--ease) both}
+  .rev{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:var(--fs-sm)}
   .rev+.rev{border-top:1px solid var(--rule)}
   .rev .t{font-size:11px;font-weight:600;border-radius:5px;padding:1px 6px;flex:none;
     color:var(--new);background:color-mix(in srgb,var(--new) 12%,transparent)}
