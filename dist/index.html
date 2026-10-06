@@ -8,10 +8,15 @@ body{margin:0;height:100vh;display:grid;place-items:center;background:#131311;co
 .s{width:22px;height:22px;margin:0 auto 14px;border:2px solid #3a3a34;border-top-color:#7fd0a6;
  border-radius:50%;animation:r .7s linear infinite}
 @keyframes r{to{transform:rotate(360deg)}}
-.m{opacity:.6;font-size:12px;margin-top:6px}
+.m{opacity:.6;font-size:12px;margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto}
+.u{margin-top:22px;font-size:13px;display:none}
+.u button{margin-top:10px;border:0;border-radius:8px;padding:8px 16px;font:inherit;font-weight:600;cursor:pointer;
+ background:#7fd0a6;color:#10241a}
+.u button:disabled{opacity:.6;cursor:default}
 </style>
 <div class="w"><div class="s"></div><div>Starting CV Studio</div>
-<div class="m" id="m">preparing the renderer…</div></div>
+<div class="m" id="m">preparing the renderer…</div>
+<div class="u" id="u"><div id="ut"></div><button id="ub">Install and restart</button></div></div>
 <script>
 /* A first start after an update is slow because of the system, not CV
    Studio: macOS checks, and Windows scans, every file of the new version
@@ -21,12 +26,42 @@ setTimeout(function () {
   if (m.textContent.indexOf("preparing") === 0)
     m.textContent = "Still starting. The first start after an update takes longer while your computer checks the new files; the next ones are quick.";
 }, 8000);
+/* The update, offered here too. The app's own check runs in the page this
+   screen hands over to, so a version that cannot get that far could never
+   be updated out of: this asks the updater directly, server or not. */
+var offered = false;
+function offerUpdate() {
+  var T = window.__TAURI__;
+  if (offered || !T || !T.updater) return;
+  offered = true;
+  T.updater.check().then(function (up) {
+    if (!up) return;
+    var u = document.getElementById("u"), t = document.getElementById("ut"), b = document.getElementById("ub");
+    t.textContent = "CV Studio " + up.version + " is available.";
+    u.style.display = "block";
+    b.onclick = function () {
+      b.disabled = true;
+      var total = 0, got = 0;
+      up.downloadAndInstall(function (e) {
+        if (e.event === "Started") total = (e.data && e.data.contentLength) || 0;
+        if (e.event === "Progress") { got += (e.data && e.data.chunkLength) || 0;
+          b.textContent = total ? "Downloading " + Math.round(got / total * 100) + "%" : "Downloading…"; }
+        if (e.event === "Finished") b.textContent = "Installing…";
+      }).then(function () {
+        b.textContent = "Restarting…";
+        if (T.process && T.process.relaunch) return T.process.relaunch();
+      }).catch(function (err) { b.disabled = false; b.textContent = "Install and restart"; t.textContent = "The update failed: " + err; });
+    };
+  }).catch(function () { offered = false; });
+}
+setTimeout(offerUpdate, 15000);
 window.studioSlow = function () {
   m.textContent = "Still starting, nearly a minute now. This is your computer checking the new version's files, once. It will open by itself.";
 };
 /* Called by the app when the renderer could not start: stop the spinner and
    say what happened, and where the log is. */
 window.studioError = function (msg) {
+  offerUpdate();
   var s = document.querySelector(".s");
   if (s) s.style.display = "none";
   document.querySelector(".w > div:nth-child(2)").textContent = "CV Studio could not start";

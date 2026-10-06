@@ -17,6 +17,11 @@ tag, so a release is never published with nothing said about it.
   ready; it now keeps waiting, says what is happening, and opens by itself.
   If CV Studio really cannot start, the window now says so, with where the
   log is, instead of spinning.
+- **An update can always be installed, even when CV Studio will not start.**
+  The update check ran inside the app's window, so a version that could not
+  get that far could only be fixed by downloading the installer again. The
+  start screen now looks for an update itself when a start is slow or fails,
+  and installs it with one click.
 - On Windows, the copy of the connector made after an update waits until the
   app is open, so it never slows the start.
 - The log now records how long each start took, and where the time went.
