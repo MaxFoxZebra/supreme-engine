@@ -186,34 +186,6 @@ async function main() {
     rv && rv.units.length === 1 && rv.units[0].block && rv.units[0].block.name === "summary" &&
     /One or two sentences/.test(rv.units[0].before) && rv.sig, JSON.stringify(rv && rv.units));
 
-  console.log("While Claude writes");
-  const said = edits2[0].value, cut = [12, 30, 48];
-  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath, edits: edits2}, call2, {width: 720, delay: 2200, every: 400,
-    partials: cut.map(n => ({path: cvPath, edits: [{path: edits2[0].path, value: said.slice(0, n)}]}))}));
-  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
-  for (let i = 0; i < 60 && !(await b.evalJs(`!!${doc} && !!${doc}.querySelector(".draft")`)); i++) await sleep(50);
-  const mid = await b.evalJs(`(()=>{const d=${doc}; return {draft: (d.querySelector(".draft p")||{}).textContent||"",
-    caret: !!d.querySelector(".draft .caret"), who: (d.querySelector(".who b")||{}).textContent||"",
-    label: (d.querySelector(".draft small")||{}).textContent||""}})()`);
-  check("the words show as they stream in, on paper, with where they go",
-    mid.draft.startsWith(said.slice(0, 12)) && mid.caret && /Writing your CV/.test(mid.who) && mid.label === "Summary 1",
-    JSON.stringify(mid));
-  await sleep(1500);
-  const whole = await b.evalJs(`(()=>{const d=${doc}; return {draft: (d.querySelector(".draft")||{}).textContent||"",
-    who: (d.querySelector(".who b")||{}).textContent||""}})()`);
-  check("then all of it, while the page is laid out", whole.draft.includes(said) && /Rendering the page/.test(whole.who),
-    JSON.stringify(whole));
-  await sleep(2500);
-  check("and the page replaces it once rendered", await b.evalJs(`(()=>{const d=${doc}, i=d.getElementById("pg");
-    return !d.querySelector(".draft") && !!i && i.naturalWidth>0})()`));
-  /* A client that sends the input whole: typed out quickly instead. */
-  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath, edits: edits2}, call2, {width: 720, delay: 3000}));
-  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
-  await sleep(500);
-  const typed = await b.evalJs(`(${doc}.querySelector(".draft p")||{}).textContent||""`);
-  check("input sent whole is typed out, not dropped in at once", typed.length > 0 && typed.length < said.length, typed);
-  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, call, {width: 720}));
-
   console.log("An earlier render");
   await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
   await sleep(2500);

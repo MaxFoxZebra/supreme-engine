@@ -490,14 +490,11 @@ already says most of what the posting asks, with *Add evidence for …, only
 what I have really done* to finish and send; nothing is sent until you do.
 The keywords are a heuristic, and the view says so.
 
-**Claude writing, as it writes.** `write_cv`, `edit_cv_fields` and
-`write_letter` show the page view too. While Claude is still writing, the view
-shows the words as they come (from the client's streamed tool input, or typed
-out quickly from the whole of it when the client sends it at once), on paper,
-with where each goes (*Experience 1 · Highlights 2*). Then the document is
-rendered and the page replaces them, with the change marked and offered to keep
-or undo. The model gets the render's summary, not the page image, and is told
-it need not call `render_cv` just to show the page.
+**A change shows its page.** `write_cv`, `edit_cv_fields` and `write_letter`
+show the page view too: once the change is written, the document is rendered
+and the page appears with the change marked and offered to keep or undo. The
+model gets the render's summary, not the page image, and is told it need not
+call `render_cv` just to show the page.
 
 **Pinned beside the chat.** In a client that offers it (MCP Apps' `pip`
 display mode), a pin button keeps the page in a small window while you go on

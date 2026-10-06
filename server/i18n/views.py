@@ -192,14 +192,8 @@ VC = {
         "Comprobado antes de tu último cambio. Pide a Claude que lo vuelva a comprobar.",
         "Verificado antes da sua última alteração. Peça ao Claude para verificar de novo."),
 
-    # --- while Claude writes, and pages that do not come ---------------------------
-    "Writing your CV…": ("Rédaction de votre CV…", "Escribiendo tu CV…", "Escrevendo seu currículo…"),
-    "Writing your letter…": ("Rédaction de votre lettre…", "Escribiendo tu carta…", "Escrevendo sua carta…"),
-    "Rendering the page…": ("Mise en page…", "Maquetando la página…", "Montando a página…"),
+    # --- pages that do not come ------------------------------------------------------
     "Rendering…": ("Rendu…", "Renderizando…", "Renderizando…"),
-    "Laying it out on the page": ("Mise en page en cours", "Colocándolo en la página", "Colocando na página"),
-    "the whole CV": ("tout le CV", "todo el CV", "o currículo inteiro"),
-    "the whole letter": ("toute la lettre", "toda la carta", "a carta inteira"),
     "Loading the page…": ("Chargement de la page…", "Cargando la página…", "Carregando a página…"),
     "CV Studio is not answering.": ("CV Studio ne répond pas.", "CV Studio no responde.", "O CV Studio não está respondendo."),
     "It may still be starting, or the connector is off. This view tries again on its own.": (
@@ -391,8 +385,6 @@ VRX = [
     (r"^All (\d+) requirements$", "Les $1 exigences", "Los $1 requisitos", "Os $1 requisitos"),
     (r"^Paragraph (\d+)$", "Paragraphe $1", "Párrafo $1", "Parágrafo $1"),
     (r"^(\d+) changes?$", "$1 modification(s)", "$1 cambio(s)", "$1 alteração(ões)"),
-    (r"^(\d+) changes? so far$", "$1 modification(s) pour l'instant", "$1 cambio(s) por ahora", "$1 alteração(ões) até agora"),
-    (r"^(\d+) words so far$", "$1 mots pour l'instant", "$1 palabras por ahora", "$1 palavras até agora"),
     (r"^Changed by (.+)$", "Modifié par $1", "Cambiado por $1", "Alterado por $1"),
     (r"^Added by (.+)$", "Ajouté par $1", "Añadido por $1", "Adicionado por $1"),
 

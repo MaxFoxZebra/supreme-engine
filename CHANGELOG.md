@@ -10,6 +10,9 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- The words no longer appear on a sheet while Claude writes: the chat shows
+  Claude's own reply, and the page appears once the change is made, marked,
+  ready to keep or undo.
 - Rendering a CV or letter costs Claude about half the tokens it did: the
   page image Claude looks at is made at screen resolution instead of print
   resolution. Still sharp enough to read and to spot a stranded heading or a
