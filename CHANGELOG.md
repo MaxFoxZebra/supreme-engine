@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.44.1
 
 - A CV page in a conversation you come back to no longer stays blank with
   "This page could not be loaded". When Claude has not started CV Studio again
