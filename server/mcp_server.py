@@ -424,12 +424,25 @@ def _doc_path(path: str):
     return p
 
 
+# Files a page view is showing full screen or pinned right now: each such
+# view checks in every few seconds while it is, and follows the file's latest
+# render. Its path, and when it last checked in.
+_WATCHED: dict[str, float] = {}
+
+
+def _watched(path: str) -> bool:
+    try:
+        return time.time() - _WATCHED.get(str(studio.safe_path(path)), 0) < 15
+    except Exception:
+        return False
+
+
 class _Written:
     """What a writing tool answers, finished by tool() once the change is
-    recorded. A client that shows views shows the page view with it: what is
-    being written, as it is written, then the page with the change marked.
-    So the document is rendered here, and the model is told it need not
-    render it again just to show it."""
+    recorded. The writing tools show no view: each view is a new frame in the
+    conversation. When the user has this file open full screen or pinned,
+    it is rendered here instead, so that view shows the new page in place,
+    and the model is told not to render it again, which would open another."""
 
     def __init__(self, path: str, said: str):
         self.path, self.said = path, said
@@ -439,7 +452,7 @@ class _Written:
 
 
 def _written(path: str, said: str):
-    if not _shows_views():
+    if not (_shows_views() and _watched(path)):
         return CallToolResult(content=[TextContent(type="text", text=said)])
     return _Written(path, said)
 
@@ -453,13 +466,13 @@ def _finish_written(path: str, said: str) -> CallToolResult:
     if r.is_error:
         return CallToolResult(content=[TextContent(type="text", text=f"{said}\nThe page did not render, so "
                                                     f"fix this before going on:\n{text}")])
-    return CallToolResult(
-        content=[TextContent(type="text", text=f"{said}\n{text}\nThe user sees the page with your change "
-                                               "marked; render_cv only if you need to look at it yourself.")],
-        structured_content=r.structured_content)
+    return CallToolResult(content=[TextContent(type="text", text=(
+        f"{said}\n{text}\nThe user has this document open full screen and already sees the new page "
+        "there, with your change marked. Do not call render_cv to show it: that would open another "
+        "view in the conversation. Call it only if you need to look at the page yourself."))])
 
 
-@tool(view=PAGE_VIEW)
+@tool
 def write_cv(path: str, content: str) -> CallToolResult:
     """Overwrite a CV's YAML source with `content`.
 
@@ -472,7 +485,7 @@ def write_cv(path: str, content: str) -> CallToolResult:
                           f"{len(changed)} field(s) changed.")
 
 
-@tool(view=PAGE_VIEW)
+@tool
 def edit_cv_fields(path: str, edits: list[dict]) -> CallToolResult:
     """Change individual fields, preserving the rest of the file and its comments.
 
@@ -1788,7 +1801,7 @@ def create_letter(job_id: str) -> dict:
                     "Keep it under about 350 words and on one page."}
 
 
-@tool(view=PAGE_VIEW)
+@tool
 def write_letter(path: str, body: str, subject: str | None = None) -> CallToolResult:
     """Replace a cover letter's body, and its subject line if given.
 
@@ -1808,7 +1821,7 @@ def write_letter(path: str, body: str, subject: str | None = None) -> CallToolRe
         payload["meta"] = {"subject": subject}
     r = studio.save_letter(p, payload)
     return _written(path, f"Wrote {path}: {r['words']} words."
-                    + ("" if _shows_views() else " render_cv it to see the page."))
+                    + ("" if _shows_views() and _watched(path) else " render_cv it to see the page."))
 
 
 @tool
@@ -1930,10 +1943,11 @@ def review_change(path: str, ids: list[str], action: str, sig: str | None = None
 
 @tool(view=PAGE_VIEW, app_only=True)
 def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
-                   block: dict | None = None) -> CallToolResult:
+                   block: dict | None = None, watching: bool = False) -> CallToolResult:
     """For the page view only, hidden from the model. what="page": a page's
     image by its id. what="pdf": the PDF at `path`, to download. what="status":
-    whether render `rid` of `path` is still its latest. what="latest": the
+    whether render `rid` of `path` is still its latest (`watching`: the view
+    is full screen or pinned, so changes to it are rendered at once). what="latest": the
     view of the latest render of `path`. what="fields": the text of `block`
     of `path`, to edit on the page."""
     if what == "fields":
@@ -1958,6 +1972,10 @@ def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
             return CallToolResult(content=[TextContent(type="text", text="No later render to show.")], is_error=True)
         return CallToolResult(content=[TextContent(type="text", text="latest")], structured_content=rec["view"])
     if what == "status":
+        if watching:
+            # Shown full screen or pinned: a change written to it is
+            # rendered at once, for this view to follow.
+            _WATCHED[str(studio.safe_path(path))] = time.time()
         st = _view_status(path, rid)
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(st))], structured_content=st)
     raise ValueError("what is page, pdf, status, latest or fields")

@@ -172,10 +172,10 @@ async function main() {
   const edits2 = [{path: ["cv", "sections", "summary", 0], value: "Platform engineer who cut deploy time from 3 hours to 11 minutes."}];
   /* A writing tool shows the page itself, rendered with the change. */
   const call2 = (await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: edits2}})).result;
-  const sc2 = call2.structuredContent || {};
-  check("a change Claude writes comes back as the page, without a render_cv",
-    sc2.view === "cv-page" && sc2.shots && /The user sees the page/.test(textOf(call2)) &&
-    !call2.content.some(x => x.type === "image"), textOf(call2));
+  const call2r = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  const sc2 = call2r.structuredContent || {};
+  check("a change Claude writes opens no view of its own", !call2.structuredContent && !call2.content.some(x => x.type === "image"),
+    textOf(call2));
   check("the next one names exactly the block that changed",
     sc2.changes && JSON.stringify(sc2.changes.blocks) === JSON.stringify([{k: "entry", name: "summary", i: 0}]),
     JSON.stringify(sc2.changes));
@@ -202,7 +202,7 @@ async function main() {
     /An earlier version/.test(opened.strip) && opened.img && !opened.dl, JSON.stringify(opened));
 
   console.log("After a change");
-  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, call2, {width: 720}));
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, call2r, {width: 720}));
   await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
   await sleep(2000);
   const ch = await b.evalJs(`(()=>{const d=${doc}; return {delta: (d.querySelector(".delta")||{}).textContent||"",
@@ -413,8 +413,11 @@ async function main() {
   await sleep(600);
   const busy = await b.evalJs(`(${doc}.getElementById("busy")||{}).textContent||""`);
   check("the full-screen view says Claude is changing the CV", /Claude is changing it/.test(busy), busy);
-  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
-    {path: ["cv", "name"], value: "Full Screen Person"}]}});
+  const fsEdit = (await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
+    {path: ["cv", "name"], value: "Full Screen Person"}]}})).result;
+  check("an edit to a CV open full screen opens no view, and Claude is told not to render it",
+    !fsEdit.structuredContent && /already sees the new page/.test(textOf(fsEdit)) && /Do not call render_cv/.test(textOf(fsEdit)),
+    textOf(fsEdit));
   await sleep(6000);
   const fsAfter = await b.evalJs(`(()=>{const d=${doc}; return {name: (d.querySelector(".who b")||{}).textContent||"",
     busy: !!d.getElementById("busy"), mode: d.documentElement.dataset.mode}})()`);

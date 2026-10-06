@@ -10,13 +10,14 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
-- Full screen while you ask for changes: the full-screen page says "Claude is
-  changing it…" as soon as Claude starts on that CV, then shows the new page
-  in place, still full screen. Claude still adds the new page to the chat
-  behind it, which a view cannot prevent.
-- The words no longer appear on a sheet while Claude writes: the chat shows
-  Claude's own reply, and the page appears once the change is made, marked,
-  ready to keep or undo.
+- Full screen stays full screen while you ask for changes. With the CV open
+  full screen (or pinned), ask Claude for a change and the page updates right
+  there, with the change marked: no new copy of the CV opens in the chat
+  behind it. If Claude renders it anyway, the full-screen page says "Claude is
+  changing it…" and then shows the new page.
+- Claude's changes no longer open a page in the chat by themselves, and the
+  words no longer appear on a sheet while Claude writes: outside full screen,
+  Claude renders the CV as before and the page appears in the chat.
 - Rendering a CV or letter costs Claude about half the tokens it did: the
   page image Claude looks at is made at screen resolution instead of print
   resolution. Still sharp enough to read and to spot a stranded heading or a

@@ -490,11 +490,14 @@ already says most of what the posting asks, with *Add evidence for …, only
 what I have really done* to finish and send; nothing is sent until you do.
 The keywords are a heuristic, and the view says so.
 
-**A change shows its page.** `write_cv`, `edit_cv_fields` and `write_letter`
-show the page view too: once the change is written, the document is rendered
-and the page appears with the change marked and offered to keep or undo. The
-model gets the render's summary, not the page image, and is told it need not
-call `render_cv` just to show the page.
+**Changes while you watch, without new frames.** Every tool bound to a view
+opens a new frame in the conversation, so the writing tools (`write_cv`,
+`edit_cv_fields`, `write_letter`) are bound to none. A view shown full screen
+or pinned checks in with the connector every few seconds; when Claude writes
+to a document one of them is showing, the connector renders it at once, the
+view shows the new page in place, and Claude is told the user already sees it
+and not to call `render_cv`, which would open another frame. Otherwise Claude
+renders as usual and the page appears in the chat.
 
 **Pinned beside the chat.** In a client that offers it (MCP Apps' `pip`
 display mode), a pin button keeps the page in a small window while you go on

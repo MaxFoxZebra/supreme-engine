@@ -731,7 +731,7 @@ window.cvsI18n = (function () {
     lastCheck = now;
     try {
       const r = await request("tools/call", {name: "page_view_data",
-        arguments: {what: "status", path: data.path, rid: data.rid}}, 20000);
+        arguments: {what: "status", path: data.path, rid: data.rid, watching: docked()}}, 20000);
       const st = r && !r.isError && (r.structuredContent || r.structured_content);
       if (st && st.current === false && docked() && await follow()) return;
       if (st && st.current === false && JSON.stringify(st) !== JSON.stringify(earlier)) {
