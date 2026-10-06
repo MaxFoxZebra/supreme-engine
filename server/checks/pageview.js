@@ -80,7 +80,11 @@ async function main() {
   /* Served rather than opened as a file: a file:// page is its own opaque
      origin, and the view would not count as the same one. */
   const http = require("http");
+  let down = false;
   const srv = http.createServer((q, r) => {
+    /* CV Studio not running yet, as in a conversation opened again. */
+    if (q.url === "/mcp" && down) { q.resume(); r.writeHead(200, {"Content-Type": "application/json"});
+      return r.end(JSON.stringify({isError: true, content: [{type: "text", text: "Error executing tool page_view_data"}]})); }
     if (q.url === "/mcp") return proxyCall(c, q, r);
     r.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
     r.end(fs.readFileSync(hostFile)); }).listen(0, "127.0.0.1");
@@ -367,6 +371,35 @@ async function main() {
     check("a keyword found shows where it is", lit.length > 0 && lit.every(k => fnd.where.some(w => key(w) === k)),
       JSON.stringify(lit));
   }
+
+  console.log("A conversation opened again");
+  const again = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, again, {width: 720}));
+  down = true;
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(3500);
+  const waiting = await b.evalJs(`(()=>{const d=${doc}, i=d.getElementById("pg");
+    return {miss: (d.getElementById("miss")||{}).textContent||"", img: !!i && i.naturalWidth>0}})()`);
+  check("a page CV Studio cannot give yet is said so, not shown broken",
+    /not answering/.test(waiting.miss) && !waiting.img, JSON.stringify(waiting));
+  down = false;
+  await b.evalJs(`${doc}.querySelector("[data-miss=retry]").click()`);
+  await sleep(1500);
+  const back = await b.evalJs(`(()=>{const d=${doc}, i=d.getElementById("pg");
+    return {miss: !!d.getElementById("miss"), img: !!i && i.naturalWidth>0}})()`);
+  check("and comes once it answers again", back.img && !back.miss, JSON.stringify(back));
+  const gone = JSON.parse(JSON.stringify(again));
+  gone.structuredContent.shots = gone.structuredContent.shots.map(() => "0".repeat(32));
+  gone.structuredContent.rid = ""; gone.structuredContent.marked = null; gone.structuredContent.changes = null;
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, gone, {width: 720}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(2000);
+  const lost = await b.evalJs(`(${doc}.getElementById("miss")||{}).textContent||""`);
+  check("a page no longer kept asks for a render instead of waiting", /no longer kept/.test(lost), lost);
+  await b.evalJs(`${doc}.querySelector("[data-miss=render]").click()`);
+  await sleep(300);
+  const asked = await b.evalJs(`LOG.filter(m=>m.method==="ui/message").map(m=>m.params.content[0].text).pop()||""`);
+  check("which Claude is asked for in the chat", asked.includes(cvPath) && /again/.test(asked), asked);
 
   b.close(); srv.close(); c.close();
   console.log();

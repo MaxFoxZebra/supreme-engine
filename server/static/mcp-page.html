@@ -321,6 +321,12 @@
     animation:shim 1.2s linear infinite}
   :root[data-mode=fullscreen] .sheet img:not([src]){width:calc((100vh - var(--chrome,96px)) / 1.414)}
   .btn.dl{display:inline-flex;align-items:center;gap:5px;flex:none}
+  .miss{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:6px;padding:24px;text-align:center;color:#3d3c39;font-size:13px;
+    background:color-mix(in srgb,#f3f2ee 70%,transparent);animation:in .2s ease-out}
+  .miss b{font-weight:600;color:#1f1e1d}
+  .miss span{max-width:34ch;line-height:1.45}
+  .miss .btn{margin-top:6px;background:#1f1e1d;color:#fff}
   .btn.dl svg{width:13px;height:13px}
 
   /* ---- an earlier render of the same CV: one line, open on demand ---- */
@@ -401,6 +407,11 @@
   let fresh = false, settle = 0;
   /* Page images by id, as they arrive; and how full each is. */
   const cache = new Map(), loading = new Map(), fills = new Map();
+  /* Pages that did not come: id -> {gone, tries, timer}. A conversation
+     opened again can show its views before the client has CV Studio running
+     again, so a page that could not be fetched is asked for again, not
+     given up on. */
+  const missing = new Map();
   /* Set when a later render of this CV exists: {changed}. */
   let earlier = null, unfolded = false, lastCheck = 0;
   /* Editing a block's own text: its fields as the server gave them, what
@@ -427,10 +438,14 @@
 
   /* ---- JSON-RPC over postMessage, to the client that framed this page ---- */
   const send = msg => window.parent.postMessage({jsonrpc: "2.0", ...msg}, "*");
-  function request(method, params) {
+  function request(method, params, ms) {
     const id = nextId++;
     send({id, method, params});
-    return new Promise((resolve, reject) => pending.set(id, {resolve, reject}));
+    return new Promise((resolve, reject) => {
+      pending.set(id, {resolve, reject});
+      /* A client that lost CV Studio may never answer: give up, to try again. */
+      if (ms) setTimeout(() => { if (pending.delete(id)) reject(new Error("timeout")); }, ms);
+    });
   }
   const notify = (method, params) => send({method, params});
 
@@ -512,17 +527,61 @@
     if (cache.has(id)) return Promise.resolve(cache.get(id));
     if (loading.has(id)) return loading.get(id);
     if (!host.caps.serverTools) return Promise.resolve(null);
-    const p = request("tools/call", {name: "page_view_data", arguments: {what: "page", page: id}}).then(r => {
+    const p = request("tools/call", {name: "page_view_data", arguments: {what: "page", page: id}}, 20000).then(r => {
       const im = !r || r.isError ? null : (r.content || []).find(c => c.type === "image");
-      if (!im) return null;
+      if (!im) {
+        const text = ((r && r.content) || []).filter(c => c.type === "text").map(c => c.text).join(" ");
+        failed(id, /\bgone\b/i.test(text));
+        return null;
+      }
       const src = "data:" + (im.mimeType || "image/png") + ";base64," + im.data;
       cache.set(id, src);
+      const m = missing.get(id);
+      if (m) { clearTimeout(m.timer); missing.delete(id); }
       document.querySelectorAll('img[data-h="' + id + '"]').forEach(el => { el.src = src; });
       measure(id);
+      showMissing();
       return src;
-    }, () => null).finally(() => loading.delete(id));
+    }, () => { failed(id, false); return null; }).finally(() => loading.delete(id));
     loading.set(id, p);
     return p;
+  }
+  /* Asked for again after 2, 4, 8… seconds, then every minute, and at once
+     when the conversation is looked at again. A page CV Studio no longer
+     keeps is not asked for again: the CV has to be rendered again. */
+  function failed(id, gone) {
+    const m = missing.get(id) || {tries: 0};
+    clearTimeout(m.timer);
+    m.gone = gone; m.tries++;
+    if (!gone) m.timer = setTimeout(() => fetchPage(id), Math.min(60, 2 ** m.tries) * 1000);
+    missing.set(id, m);
+    showMissing();
+  }
+  function retryPages() {
+    for (const [id, m] of missing) if (!m.gone) { clearTimeout(m.timer); fetchPage(id); }
+  }
+  /* Over the page shown, when it did not come: why, and what to do. */
+  function showMissing() {
+    const sheet = document.getElementById("sheet"), img = document.getElementById("pg");
+    if (!sheet || !img) return;
+    const m = missing.get(img.dataset.h), box = document.getElementById("miss");
+    if (!m || cache.has(img.dataset.h)) { if (box) box.remove(); return; }
+    const html = m.gone
+      ? "<b>This page is no longer kept.</b><span>Render the CV again to see it.</span>" +
+        '<button class="btn" data-miss="render">Render again</button>'
+      : m.tries < 2 ? "<b>Loading the page…</b>"
+      : "<b>CV Studio is not answering.</b><span>It may still be starting, or the connector is off. " +
+        "This view tries again on its own.</span>" + '<button class="btn" data-miss="retry">Try again</button>';
+    const el = box || Object.assign(document.createElement("div"), {id: "miss", className: "miss"});
+    if (el.innerHTML !== html) el.innerHTML = html;
+    if (!box) sheet.appendChild(el);
+    const b = el.querySelector("[data-miss]");
+    if (b) b.onclick = () => {
+      if (b.dataset.miss === "retry") { missing.forEach(x => { x.tries = 1; }); showMissing(); retryPages(); return; }
+      b.disabled = true;
+      request("ui/message", {role: "user", content: [{type: "text",
+        text: "Render " + data.path + " again: its pages are no longer shown."}]}).catch(() => { b.disabled = false; });
+    };
   }
   /* The others, one at a time once the first is up: flipping is then
      instant, and the last page can be measured. */
@@ -550,10 +609,13 @@
   window.addEventListener("storage", e => {
     if (data && e.key === "cvs-render:" + data.path && e.newValue && e.newValue !== data.rid) check(true);
   });
-  window.addEventListener("focus", () => check(false));
+  window.addEventListener("focus", () => { retryPages(); check(false); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { retryPages(); check(false); }
+  });
   /* Scrolled back to: the CV may have been rendered again below since. */
   try {
-    new IntersectionObserver(es => { if (es.some(x => x.isIntersecting)) check(false); })
+    new IntersectionObserver(es => { if (es.some(x => x.isIntersecting)) { retryPages(); check(false); } })
       .observe(document.body);
   } catch (e) { /* no observer: the other signals still fold it */ }
 
@@ -774,9 +836,11 @@
 
     const img = document.getElementById("pg");
     if (img.complete && img.naturalHeight) hits(); else img.onload = hits;
-    if (!cache.has(imgs[page])) fetchPage(imgs[page]).then(src => {
-      if (!src && document.getElementById("pg") === img) img.alt = "This page could not be loaded. Render the CV again.";
-    });
+    if (!cache.has(imgs[page])) {
+      if (!host.caps.serverTools) img.alt = "This client cannot load the pages. Open the PDF instead.";
+      else fetchPage(imgs[page]);
+    }
+    showMissing();
     /* The pages before a change are fetched only when asked to compare. */
     imgs.forEach(id => fetchPage(id));
     const dl = document.getElementById("dl");

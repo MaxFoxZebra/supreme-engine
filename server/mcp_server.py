@@ -215,6 +215,8 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # what they change is the user's decision, so it is neither recorded as an AI
 # client's change to review nor logged as its activity.
 USER_ACTIONS = {"review_change", "page_view_data", "edit_on_page", "job_view_data"}
+# Of those, the ones that change something, as if the user had clicked.
+ACTS_AS_USER = {"review_change", "edit_on_page"}   # and job_view_data's "status"
 
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
@@ -349,9 +351,12 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
         # Record what happened, not merely that it was attempted: a refused
         # call logged like a successful one tells the user the model read a
         # file it was actually blocked from reading.
-        if app_only and not _shows_views():
-            # A view's own tool, called by a client that shows no views: only
-            # a model could have called it, and these act as the user.
+        if app_only and fn.__name__ in ACTS_AS_USER and not _shows_views():
+            # A view's own tool that acts as the user, called by a client that
+            # shows no views: only a model could have called it. Reading a
+            # page back is not refused: a conversation opened again can reach
+            # a new connection before that client has said what it shows, and
+            # its views would be left without their pages.
             raise ValueError(f"{fn.__name__} is for CV Studio's views in the conversation, "
                              "and this client does not show them.")
         if fn.__name__ in USER_ACTIONS:
@@ -1854,7 +1859,10 @@ def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
             raise ValueError("not a page id")
         f = _views_dir() / "pages" / f"{page}.png"
         if not f.is_file():
-            raise ValueError("That page is gone. Render the CV again.")
+            # Said, not raised: the view tells "gone" from "not answering",
+            # and a raised error reaches it only as "Error executing tool".
+            return CallToolResult(content=[TextContent(type="text", text="That page is gone. Render the CV again.")],
+                                  is_error=True)
         return CallToolResult(content=[ImageContent(
             type="image", data=base64.b64encode(f.read_bytes()).decode("ascii"), mime_type="image/png")])
     if what == "pdf":
@@ -2526,6 +2534,9 @@ def job_view_data(what: str, job_id: str = "", status: str = "", days: int = 0) 
         c = _card(_job(job_id))
         return CallToolResult(content=[TextContent(type="text", text=_card_text(c))], structured_content=c)
     if what == "status":
+        if not _shows_views():
+            raise ValueError("job_view_data is for CV Studio's views in the conversation, "
+                             "and this client does not show them.")
         job = _job(job_id)
         if status not in NEXT.get(job.get("status"), []):
             raise ValueError("That is not a next step for this application.")
@@ -2541,7 +2552,7 @@ def job_view_data(what: str, job_id: str = "", status: str = "", days: int = 0) 
 # shows views. A client that does not would list them to its model like any
 # other, and they act as the user: an edit saved as theirs, a status moved as
 # if they had clicked it. So such a client is not told about them at all, and
-# a call to one from it is refused (in tool()).
+# a call from it to one that changes something is refused (in tool()).
 async def _list_tools_for(ctx, params):
     tools = await mcp.list_tools()
     try:

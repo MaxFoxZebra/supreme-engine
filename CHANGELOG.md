@@ -8,6 +8,20 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- A CV page in a conversation you come back to no longer stays blank with
+  "This page could not be loaded". When Claude has not started CV Studio again
+  yet, the page says so, keeps trying on its own (and at once when you look at
+  the conversation again), and has a Try again button. A page CV Studio no
+  longer keeps offers to ask Claude to render the CV again.
+- The page view can read its pages back on any connection, so a reconnect
+  that has not yet said it shows views no longer leaves it without them.
+  Keeping, undoing, editing and moving an application are still refused to a
+  client without views.
+- A view whose request to CV Studio gets no answer stops waiting after 20
+  seconds instead of hanging.
+
 ## 0.44.0
 
 - **What needs you today.** Ask Claude what to do today and it shows the

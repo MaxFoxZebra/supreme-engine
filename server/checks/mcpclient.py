@@ -102,13 +102,13 @@ if __name__ == "__main__":
                     "get_interview_prep", "save_interview_prep",
                     "set_company_logo", "read_posting", "job_stats", "show_application", "today"}
     # The views' own tools act as the user. This client shows no views, so it
-    # is not told about them, and cannot call them by name either.
+    # is not told about them, and cannot call the ones that act by name either.
     view_only = {"review_change", "page_view_data", "edit_on_page", "job_view_data"}
     check("every tool is advertised", set(tools) == documents | applications,
           ",".join(sorted(set(tools) ^ (documents | applications))) or "exact match")
-    # A call that would otherwise succeed: a status lookup reads nothing private.
-    r = c.send("tools/call", {"name": "page_view_data", "arguments": {
-        "what": "status", "path": "profile/my-cv.yaml", "rid": "00000000"}})
+    # One that acts: moving an application, as if clicked on its card.
+    r = c.send("tools/call", {"name": "job_view_data", "arguments": {
+        "what": "status", "job_id": "x", "status": "applied"}})
     refused = r.get("result", {}).get("isError") is True or "error" in r
     check("the views' own tools are neither listed nor callable without views",
           not (set(tools) & view_only) and refused, json.dumps(r)[:120])
