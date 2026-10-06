@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.45.0
 
 - Watch Claude write. When Claude changes a CV or writes a letter, the chat
   shows the words as they come, on paper, with where each one goes; then the
