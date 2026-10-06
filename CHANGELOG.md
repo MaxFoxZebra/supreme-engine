@@ -8,6 +8,22 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- Made for the chat. After Claude changes your CV, the page opens on the
+  change: each changed part is a card cut from the page, large enough to read
+  in the conversation, with the new words marked and its own Keep and Undo.
+  The whole page is one click away under the cards, and clicking a card opens
+  it on that part.
+- Bigger and sharper in the chat: the page's side margins are cut so the text
+  fills the conversation's width, and the pages are rendered at a higher
+  resolution, crisp on a high-density screen.
+- Claude makes all the edits a request needs, then shows the page once,
+  instead of a new page after each step.
+- Full screen no longer switches back on by itself after a change: it is for
+  looking at the finished page, and it still follows each new render while
+  it is open.
+
 ## 0.45.2
 
 - The CV is readable in the chat: the page now uses the conversation's whole

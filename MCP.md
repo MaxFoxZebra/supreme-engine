@@ -490,20 +490,19 @@ already says most of what the posting asks, with *Add evidence for …, only
 what I have really done* to finish and send; nothing is sent until you do.
 The keywords are a heuristic, and the view says so.
 
-**Changes while you watch, without new frames.** Every tool bound to a view
-opens a new frame in the conversation, so the writing tools (`write_cv`,
-`edit_cv_fields`, `write_letter`) are bound to none. A view shown full screen
-or pinned checks in with the connector every few seconds; when Claude writes
-to a document one of them is showing, the connector renders it at once, the
-view shows the new page in place, and Claude is told the user already sees it
-and not to call `render_cv`, which would open another frame. Otherwise Claude
-renders as usual and the page appears in the chat.
+**Made for the chat.** In the conversation the page is as wide as the chat
+allows, with most of its side margins cut and the pages sharper (200 ppi), so
+it reads there. After a change, the view opens on the change: each changed
+block is a card cut from the page as it prints, with the new words marked and
+its own *Keep* and *Undo*, and the whole page is folded under them until
+asked for. A click on a card opens the page on that block. Earlier renders
+fold to one line. The writing tools show no view of their own, since each view
+is a new frame in the conversation; `render_cv` asks Claude to make every edit
+a request needs first and render once.
 
-**Full screen, kept across renders.** The client leaves full screen when a
-message is sent and shows each new render as a new view. A view in full screen
-notes it for its file (in the views' shared storage); the next view of that
-file goes full screen by itself if the last one was there in the last three
-minutes, unless the user left with the view's own button.
+**Full screen** is for looking at the finished page. Each new render opens a
+new view in the chat, so a full-screen view follows the file's latest render
+by itself, and says *Claude is changing it…* when a render of it starts.
 
 **Pinned beside the chat.** In a client that offers it (MCP Apps' `pip`
 display mode), a pin button keeps the page in a small window while you go on
