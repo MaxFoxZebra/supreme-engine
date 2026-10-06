@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.46.0
 
 - Made for the chat. After Claude changes your CV, the page opens on the
   change: each changed part is a card cut from the page, large enough to read
