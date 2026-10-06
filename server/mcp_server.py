@@ -382,6 +382,10 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
             _checkpoint(watch, fn.__name__)
         studio.note_mcp_activity(fn.__name__,
                                  str(target) if target else None)
+        if isinstance(result, _Written):
+            # Rendered once the change is recorded, so the page offers it
+            # to keep or undo.
+            result = result.finish()
         return result
 
     wrapper.__signature__ = signature.replace(parameters=[
@@ -420,8 +424,43 @@ def _doc_path(path: str):
     return p
 
 
-@tool
-def write_cv(path: str, content: str) -> str:
+class _Written:
+    """What a writing tool answers, finished by tool() once the change is
+    recorded. A client that shows views shows the page view with it: what is
+    being written, as it is written, then the page with the change marked.
+    So the document is rendered here, and the model is told it need not
+    render it again just to show it."""
+
+    def __init__(self, path: str, said: str):
+        self.path, self.said = path, said
+
+    def finish(self) -> CallToolResult:
+        return _finish_written(self.path, self.said)
+
+
+def _written(path: str, said: str):
+    if not _shows_views():
+        return CallToolResult(content=[TextContent(type="text", text=said)])
+    return _Written(path, said)
+
+
+def _finish_written(path: str, said: str) -> CallToolResult:
+    try:
+        r = _render(path, 1, True)
+    except Exception as e:
+        r = CallToolResult(content=[TextContent(type="text", text=f"RENDER FAILED\n\n{e}")], is_error=True)
+    text = next((c.text for c in r.content if isinstance(c, TextContent)), "")
+    if r.is_error:
+        return CallToolResult(content=[TextContent(type="text", text=f"{said}\nThe page did not render, so "
+                                                    f"fix this before going on:\n{text}")])
+    return CallToolResult(
+        content=[TextContent(type="text", text=f"{said}\n{text}\nThe user sees the page with your change "
+                                               "marked; render_cv only if you need to look at it yourself.")],
+        structured_content=r.structured_content)
+
+
+@tool(view=PAGE_VIEW)
+def write_cv(path: str, content: str) -> CallToolResult:
     """Overwrite a CV's YAML source with `content`.
 
     Prefer edit_cv_fields for small changes: this replaces the whole file and
@@ -429,12 +468,12 @@ def write_cv(path: str, content: str) -> str:
     """
     p = _doc_path(path)
     changed = studio.write_doc(p, content, "write_cv")["changed"]
-    return (f"Wrote {len(content)} characters to {path}. "
-            f"{len(changed)} field(s) changed.")
+    return _written(path, f"Wrote {len(content)} characters to {path}. "
+                          f"{len(changed)} field(s) changed.")
 
 
-@tool
-def edit_cv_fields(path: str, edits: list[dict]) -> str:
+@tool(view=PAGE_VIEW)
+def edit_cv_fields(path: str, edits: list[dict]) -> CallToolResult:
     """Change individual fields, preserving the rest of the file and its comments.
 
     Each edit is {"path": ["cv", "headline"], "value": "Solutions Engineer"}.
@@ -450,7 +489,9 @@ def edit_cv_fields(path: str, edits: list[dict]) -> str:
                      f"-- {miss['why']}")
     if result["missed"]:
         lines.append("Read the file before retrying: those paths do not exist.")
-    return "\n".join(lines)
+    if not result["applied"]:
+        return CallToolResult(content=[TextContent(type="text", text="\n".join(lines))])
+    return _written(path, "\n".join(lines))
 
 
 @tool
@@ -701,6 +742,18 @@ def _record_render(p: Path, data: dict, shots: list[str]) -> str | None:
     return rid
 
 
+def _store_view(rid: str | None, view: dict) -> None:
+    """Keep what the view showed with its render: a pinned or full-screen
+    view follows the latest render of its file by asking for it."""
+    rec = _render_record(rid or "")
+    if rec is None:
+        return
+    try:
+        _write(_views_dir() / "renders" / f"{rid}.json", json.dumps({**rec, "view": view}).encode("utf-8"))
+    except (OSError, TypeError, ValueError):
+        pass
+
+
 def _render_record(rid: str) -> dict | None:
     if not _RID.fullmatch(rid or ""):
         return None
@@ -900,7 +953,7 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
     _LAST_RENDER[str(p)] = {"data": data, "images": images}
     rid = _record_render(p, data, shots)
     first = min(max(page, 1), len(shots)) - 1 if shots else 0
-    return {
+    view = {
         "view": "cv-page", "rid": rid, "path": path, "page": page, "pages": pages,
         "words": words, "pdf": pdf, "letter": letter,
         # Whose CV and for what, which says more than a file name.
@@ -921,6 +974,8 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
         "changes": changes,
         "before": last["images"] if changes and last and last.get("images") != images else None,
     }
+    _store_view(rid, view)
+    return view
 
 
 @tool(view=PAGE_VIEW)
@@ -1705,8 +1760,8 @@ def create_letter(job_id: str) -> dict:
                     "Keep it under about 350 words and on one page."}
 
 
-@tool
-def write_letter(path: str, body: str, subject: str | None = None) -> str:
+@tool(view=PAGE_VIEW)
+def write_letter(path: str, body: str, subject: str | None = None) -> CallToolResult:
     """Replace a cover letter's body, and its subject line if given.
 
     `body` is the whole letter from greeting to closing, as Markdown, all of
@@ -1724,7 +1779,8 @@ def write_letter(path: str, body: str, subject: str | None = None) -> str:
     if subject is not None:
         payload["meta"] = {"subject": subject}
     r = studio.save_letter(p, payload)
-    return f"Wrote {path}: {r['words']} words. render_cv it to see the page."
+    return _written(path, f"Wrote {path}: {r['words']} words."
+                    + ("" if _shows_views() else " render_cv it to see the page."))
 
 
 @tool
@@ -1849,8 +1905,9 @@ def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
                    block: dict | None = None) -> CallToolResult:
     """For the page view only, hidden from the model. what="page": a page's
     image by its id. what="pdf": the PDF at `path`, to download. what="status":
-    whether render `rid` of `path` is still its latest. what="fields": the
-    text of `block` of `path`, to edit on the page."""
+    whether render `rid` of `path` is still its latest. what="latest": the
+    view of the latest render of `path`. what="fields": the text of `block`
+    of `path`, to edit on the page."""
     if what == "fields":
         f = _block_fields(_doc_path(path), block or {})
         return CallToolResult(content=[TextContent(type="text", text="fields")], structured_content=f)
@@ -1867,10 +1924,15 @@ def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
             type="image", data=base64.b64encode(f.read_bytes()).decode("ascii"), mime_type="image/png")])
     if what == "pdf":
         return CallToolResult(content=[_pdf_resource(path)])
+    if what == "latest":
+        rec = _render_record(_latest().get(str(studio.safe_path(path))) or "")
+        if not rec or not rec.get("view"):
+            return CallToolResult(content=[TextContent(type="text", text="No later render to show.")], is_error=True)
+        return CallToolResult(content=[TextContent(type="text", text="latest")], structured_content=rec["view"])
     if what == "status":
         st = _view_status(path, rid)
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(st))], structured_content=st)
-    raise ValueError("what is page, pdf or status")
+    raise ValueError("what is page, pdf, status, latest or fields")
 
 
 

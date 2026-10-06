@@ -129,7 +129,8 @@
   .delta{display:flex;align-items:center;gap:10px;margin:-4px auto 12px;
     max-width:calc(var(--sheet) + 104px);padding:0 0 10px;font-size:var(--fs-sm);
     border-bottom:1px solid var(--rule);animation:in .3s var(--ease) both}
-  .delta .mark{width:7px;height:7px;border-radius:50%;background:var(--new);flex:none}
+  .delta .mark,.pipacts .mark{width:7px;height:7px;border-radius:50%;background:var(--new);flex:none}
+  .pipacts .mark{display:inline-block;margin-right:7px;vertical-align:1px}
   .delta{flex-wrap:wrap;row-gap:8px}
   .delta span{flex:1 1 auto;min-width:0;color:var(--tx2);white-space:nowrap}
   .delta .seg+.acts,.delta .seg{margin-left:auto}
@@ -247,6 +248,20 @@
   :root[data-mode=fullscreen] .sheet img{width:auto;height:calc(100vh - var(--chrome,96px))}
   :root[data-mode=fullscreen] .rail{display:none}
   .side{display:none;flex-direction:column;min-height:0;grid-row:3}
+
+  /* ---- pinned beside the chat: the page fits, little else ---- */
+  :root[data-mode=pip] body{height:100vh;overflow:hidden}
+  :root[data-mode=pip] #app{padding:0}
+  .pipbar{padding:6px 8px 6px 12px!important;margin:0!important;gap:6px}
+  :root[data-mode=pip] .pipbar .who b{font-size:13.5px;letter-spacing:0}
+  .pager{display:flex;align-items:center;gap:2px;font-size:12px;color:var(--tx2);font-variant-numeric:tabular-nums}
+  .pager .icon:disabled{opacity:.35;cursor:default}
+  .pipacts{display:flex;align-items:center;gap:6px;padding:0 8px 6px 12px;font-size:12px;color:var(--tx2)}
+  .pipacts span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  :root[data-mode=pip] .body{padding:0 8px 8px;justify-content:center}
+  :root[data-mode=pip] .stage{flex:none}
+  :root[data-mode=pip] .sheet img{width:auto;max-width:100%;height:calc(100vh - var(--chrome,60px))}
+  :root[data-mode=pip] .sheet img:not([src]){width:calc((100vh - var(--chrome,60px)) / 1.414)}
   :root[data-mode=fullscreen] .body{grid-row:3}
   .outline{overflow:auto;padding:10px 8px;flex:1}
   .outline h4{margin:12px 8px 4px;font-size:11px;font-weight:600;letter-spacing:.05em;
@@ -389,6 +404,26 @@
   .err{white-space:pre-wrap;font:12px/1.45 var(--mono);background:var(--bg2);border-radius:var(--r);
     padding:10px 12px;max-height:300px;overflow:auto;color:var(--tx2)}
   .err b{display:block;font:600 13px var(--font);color:var(--tx);margin-bottom:6px}
+  /* ---- while Claude writes: the words as they come, on paper ---- */
+  .draft{max-width:var(--sheet);margin:0 auto;background:#fff;color:#2b2a28;border-radius:4px;
+    padding:26px 30px 22px;font-size:13px;line-height:1.55;min-height:180px;position:relative;
+    box-shadow:0 0 0 1px color-mix(in srgb,var(--tx) 10%,transparent),0 1px 3px rgba(0,0,0,.05);
+    animation:arrive .4s var(--ease) both}
+  .draft .dl{margin:0 0 12px}
+  .draft .dl small{display:block;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#8a877f;margin-bottom:2px}
+  .draft p{margin:0 0 9px;white-space:pre-wrap;overflow-wrap:anywhere}
+  .draft .new{background:#c4efd1;border-radius:2px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+  .draft .tail{mask-image:linear-gradient(to bottom,transparent,#000 70px);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 70px)}
+  .caret{display:inline-block;width:2px;height:1.05em;margin-left:1px;vertical-align:-2px;background:#2a78d6;
+    animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .draft .rendering{display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid #ecebe6;
+    color:#6d6a63;font-size:12px}
+  .draft .rendering i{width:90px;height:6px;border-radius:3px;background:linear-gradient(100deg,#ecebe6 40%,#dcdad3 50%,#ecebe6 60%) 0 0/200% 100%;
+    animation:shim 1.2s linear infinite}
+  .avatar.pen{background:color-mix(in srgb,#2a78d6 14%,transparent);color:#2a78d6}
+  .avatar.pen svg{width:16px;height:16px;animation:nib 1.1s ease-in-out infinite}
+  @keyframes nib{50%{transform:translate(1px,-1px) rotate(-6deg)}}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -431,6 +466,9 @@
     down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>',
     ok: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="m5.2 8.2 1.9 1.9 3.7-4"/></svg>',
     pen: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 3 13 5.5 6 12.5H3.5V10z"/></svg>',
+    pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><rect x="8" y="8" width="4.5" height="3.5" rx=".6" fill="currentColor" stroke="none"/></svg>',
+    prev: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>',
+    next: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>',
     x: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
   };
   let seen = false;
@@ -459,10 +497,15 @@
       return;
     }
     switch (m.method) {
+      case "ui/notifications/tool-input-partial":
+        if (!data) writing((m.params || {}).arguments, false);
+        break;
       case "ui/notifications/tool-input": {
-        const p = m.params && m.params.arguments && m.params.arguments.path;
-        if (!data && p) $app.querySelector(".bar").innerHTML =
-          '<div class="who"><b>Rendering…</b><span><code>' + esc(p) + "</code></span></div>";
+        const a = (m.params && m.params.arguments) || {};
+        if (data) break;
+        if (writes(a)) { writing(a, true); break; }
+        if (a.path) $app.querySelector(".bar").innerHTML =
+          '<div class="who"><b>Rendering…</b><span><code>' + esc(a.path) + "</code></span></div>";
         break;
       }
       case "ui/notifications/tool-result": onResult(m.params || {}); break;
@@ -492,8 +535,85 @@
     if (data && host.ctx.displayMode !== was) paint();
   }
 
+  /* ---- while Claude writes ----
+     A writing tool's input, shown as it streams in (tool-input-partial) or,
+     from a client that sends it whole, typed out quickly: the new words on
+     paper, then the page once it is rendered. */
+  const writes = a => !!a && (a.content != null || a.edits != null || a.body != null);
+  let pen = null;
+  const DRAFT_SECTIONS = {cv: "", sections: ""};
+  const textOf = v => v == null ? "" : typeof v === "string" ? v : Array.isArray(v) ? v.map(textOf).filter(Boolean).join("\n")
+    : typeof v === "object" ? Object.values(v).map(textOf).filter(Boolean).join("\n") : String(v);
+  const plainMd = t => String(t).replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/(\*\*|__|`)/g, "");
+  function placeOf(path) {
+    const bits = [];
+    for (const k of path || []) {
+      if (typeof k === "number" || /^\d+$/.test(String(k))) { if (bits.length) bits[bits.length - 1] += " " + (+k + 1); continue; }
+      if (k in DRAFT_SECTIONS) continue;
+      bits.push(String(k).replace(/_/g, " ").replace(/^./, c => c.toUpperCase()));
+    }
+    return bits.join(" · ") || "The CV";
+  }
+  /* What is being written, as {label, text} pieces in the order they print. */
+  function pieces(a) {
+    if (a.edits != null) return (Array.isArray(a.edits) ? a.edits : []).filter(e => e && typeof e === "object")
+      .map(e => ({label: placeOf(e.path), text: plainMd(textOf(e.value))}));
+    if (a.body != null) return [].concat(a.subject ? [{label: "Subject", text: String(a.subject)}] : [],
+      String(a.body).split(/\n\s*\n/).map(t => ({label: "", text: plainMd(t.replace(/^#+\s*|^\s*[-*]\s+/gm, ""))})));
+    /* A whole CV as YAML: its words, without the keys. */
+    const lines = String(a.content || "").split("\n").map(l => {
+      const m = l.replace(/^\s*(-\s+)?/, "").match(/^([\w-]+):\s*(.*)$/);
+      const v = (m ? m[2] : l.replace(/^\s*-\s+/, "")).trim().replace(/^["']|["']$/g, "");
+      return v === "|" || v === ">" || v === "|-" || v === ">-" ? "" : v;
+    }).filter(Boolean);
+    return lines.slice(-14).map(t => ({label: "", text: plainMd(t)}));
+  }
+  function writing(a, final) {
+    if (!a || !writes(a)) return;
+    const fresh_ = !pen;
+    if (fresh_) pen = {streamed: false, shown: 0, timer: 0};
+    if (!final) pen.streamed = true;
+    pen.args = a; pen.final = final;
+    const total = pieces(a).reduce((n, x) => n + x.text.length, 0);
+    clearInterval(pen.timer);
+    if (final && !pen.streamed) {
+      /* Whole at once: type it out, quickly, so it reads as being written. */
+      const t0 = Date.now(), ms = Math.min(1600, 300 + total * 4);
+      pen.timer = setInterval(() => {
+        const k = Math.min(1, (Date.now() - t0) / ms);
+        pen.shown = Math.round(total * k); paintPen();
+        if (k >= 1) clearInterval(pen.timer);
+      }, 30);
+    } else pen.shown = total;
+    paintPen();
+  }
+  function paintPen() {
+    if (!pen || data) return;
+    const a = pen.args, ps = pieces(a), file = String(a.path || "").split("/").pop();
+    let left = pen.shown, html = "";
+    const typing = left < ps.reduce((n, x) => n + x.text.length, 0) || !pen.final;
+    ps.forEach((x, i) => {
+      if (left <= 0 && i) return;
+      const t = x.text.slice(0, Math.max(0, left)); left -= x.text.length;
+      const last = left <= 0 || i === ps.length - 1;
+      html += (x.label ? '<div class="dl"><small>' + esc(x.label) + "</small>" : "") +
+        "<p>" + (a.edits != null ? '<span class="new">' + esc(t) + "</span>" : esc(t)) +
+        (last && typing ? '<span class="caret"></span>' : "") + "</p>" + (x.label ? "</div>" : "");
+    });
+    const n = ps.length, what = a.body != null ? "letter" : "CV";
+    const sub = a.edits != null ? n + (n === 1 ? " change" : " changes") + (pen.final ? "" : " so far")
+      : a.body != null ? String(a.body).split(/\s+/).filter(Boolean).length + " words" + (pen.final ? "" : " so far")
+      : "the whole " + what;
+    $app.innerHTML = '<div class="bar"><span class="avatar pen">' + ICON.pen + '</span><div class="who"><b>' +
+        (pen.final && !typing ? "Rendering the page…" : "Writing your " + what + "…") + "</b><span>" + esc(sub) +
+        (file ? " · <code>" + esc(file) + "</code>" : "") + "</span></div></div>" +
+      '<div class="draft" data-noi18n><div' + (a.content != null ? ' class="tail"' : "") + ">" + (html || '<p><span class="caret"></span></p>') + "</div>" +
+        (pen.final && !typing ? '<div class="rendering"><i></i>Laying it out on the page</div>' : "") + "</div>";
+  }
+
   /* ---- the result ---- */
   function onResult(r) {
+    if (pen) { clearInterval(pen.timer); pen = null; }
     let sc = r.structuredContent || r.structured_content;
     if (r.isError || !sc || !sc.shots || !sc.shots.length) {
       const text = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
@@ -595,17 +715,32 @@
   async function check(force) {
     if (!data || !data.rid || !host.caps.serverTools) return;
     const now = Date.now();
-    if (!force && now - lastCheck < 15000) return;
+    if (!force && now - lastCheck < (docked() ? 4000 : 15000)) return;
     lastCheck = now;
     try {
       const r = await request("tools/call", {name: "page_view_data",
-        arguments: {what: "status", path: data.path, rid: data.rid}});
+        arguments: {what: "status", path: data.path, rid: data.rid}}, 20000);
       const st = r && !r.isError && (r.structuredContent || r.structured_content);
+      if (st && st.current === false && docked() && await follow()) return;
       if (st && st.current === false && JSON.stringify(st) !== JSON.stringify(earlier)) {
         earlier = st; sel = null; sent = null; listOpen = false; showBefore = false; paint();
       }
     } catch (e) { /* the client could not ask: stay as it is */ }
   }
+  /* Pinned or full screen, the view is the CV as it is now: a later render
+     of the file replaces what it shows. */
+  async function follow() {
+    try {
+      const r = await request("tools/call", {name: "page_view_data",
+        arguments: {what: "latest", path: data.path}}, 20000);
+      const sc = r && !r.isError && (r.structuredContent || r.structured_content);
+      if (!sc || !sc.shots || sc.rid === data.rid) return false;
+      onResult({structuredContent: sc});
+      fresh = false;
+      return true;
+    } catch (e) { return false; }
+  }
+  setInterval(() => { if (docked() && document.visibilityState === "visible") check(false); }, 4000);
   window.addEventListener("storage", e => {
     if (data && e.key === "cvs-render:" + data.path && e.newValue && e.newValue !== data.rid) check(true);
   });
@@ -771,6 +906,10 @@
 
   const modes = () => host.ctx.availableDisplayModes || [];
   const full = () => host.ctx.displayMode === "fullscreen";
+  /* Pinned beside the chat (picture in picture): the page only, and it
+     follows the latest render of the file, as full screen does. */
+  const pip = () => host.ctx.displayMode === "pip";
+  const docked = () => full() || pip();
   const marked = () => !!(data.marked && data.marked.length === data.shots.length);
   const images = () => (showBefore && data.before ? data.before : marked() && !plain ? data.marked : data.shots);
   const canDownload = () => !!(host.caps.downloadFile && host.caps.serverTools && data.pdf && !earlier);
@@ -805,10 +944,14 @@
       settle = setTimeout(() => $app.classList.remove("anim"), 1400);
     }
     const canFull = modes().includes("fullscreen");
+    if (pip()) return paintPip();
+    const canPip = modes().includes("pip");
     $app.innerHTML =
       '<div class="bar">' + whoHtml() + (full() ? '<div class="facts" id="stats">' + factsHtml() + "</div>" : "") +
         (canDownload() ? '<button class="btn dl" id="dl" title="Download the PDF of this CV" aria-label="Download the PDF">' +
           ICON.down + "PDF</button>" : "") +
+        (canPip && !full() ? '<button class="icon" id="pin" title="Pin it beside the chat: it follows every new render" ' +
+          'aria-label="Pin beside the chat">' + ICON.pin + "</button>" : "") +
         (canFull ? '<button class="icon" id="mode" title="' + (full() ? "Back to the chat" : "Full screen") +
           '" aria-label="' + (full() ? "Back to the chat" : "Full screen") + '">' + (full() ? ICON.exit : ICON.full) +
           "</button>" : "") + "</div>" +
@@ -864,13 +1007,47 @@
     });
     wireFit();
     wireMatch();
+    wireModes();
+  }
+
+  async function setMode(mode) {
+    try {
+      const r = await request("ui/request-display-mode", {mode});
+      applyContext({displayMode: (r && r.mode) || host.ctx.displayMode});
+    } catch (e) { /* the client said no */ }
+    if (docked()) check(true);
+  }
+  function wireModes() {
     const mode = document.getElementById("mode");
-    if (mode) mode.onclick = async () => {
-      try {
-        const r = await request("ui/request-display-mode", {mode: full() ? "inline" : "fullscreen"});
-        applyContext({displayMode: (r && r.mode) || host.ctx.displayMode});
-      } catch (e) { /* the client said no */ }
-    };
+    if (mode) mode.onclick = () => setMode(docked() ? "inline" : "fullscreen");
+    const pin = document.getElementById("pin");
+    if (pin) pin.onclick = () => setMode("pip");
+  }
+
+  /* Pinned: the name, the page and a way through the pages; keep and undo
+     stay, the rest is in the chat. */
+  function paintPip() {
+    const d = data, imgs = images(), n = imgs.length, r = review();
+    $app.innerHTML = '<div class="bar pipbar"><div class="who"><b title="' + esc(d.title || d.path) + '">' +
+        esc(d.title || String(d.path).split("/").pop()) + "</b></div>" +
+        (n > 1 ? '<div class="pager"><button class="icon" data-step="-1" aria-label="Previous page"' + (page ? "" : " disabled") + ">" +
+          ICON.prev + "</button><span>" + (page + 1) + " / " + n + '</span><button class="icon" data-step="1" aria-label="Next page"' +
+          (page < n - 1 ? "" : " disabled") + ">" + ICON.next + "</button></div>" : "") +
+        '<button class="icon" id="mode" title="Back to the chat" aria-label="Back to the chat">' + ICON.exit + "</button></div>" +
+      (r && canAct() ? '<div class="pipacts"><span title="' + esc(r.agent || "Claude") + '"><i class="mark"></i>' + r.units.length +
+        (r.units.length === 1 ? " change" : " changes") + ' to check</span><button class="btn undo" data-act="undo" data-ids="*">Undo all</button>' +
+        '<button class="btn keep" data-act="keep" data-ids="*">Keep all</button></div>' : "") +
+      '<div class="body"><div class="stage" id="stage"><div class="sheet" id="sheet">' +
+        imgTag(imgs[page], 'id="pg" alt="Page ' + (page + 1) + " of " + esc(d.pages) + '"') + "</div></div></div>";
+    const top = document.querySelector(".bar").offsetHeight + ((document.querySelector(".pipacts") || {}).offsetHeight || 0);
+    document.documentElement.style.setProperty("--chrome", (top + 16) + "px");
+    imgs.forEach(id => fetchPage(id));
+    showMissing();
+    document.querySelectorAll("[data-step]").forEach(b => b.onclick = () => {
+      page = Math.max(0, Math.min(n - 1, page + +b.dataset.step)); paint();
+    });
+    wireActs(document);
+    wireModes();
   }
 
   function sinceText() {
@@ -1421,14 +1598,14 @@
 
   /* The client sizes the frame to what is in it. */
   new ResizeObserver(() => {
-    if (full()) return;
+    if (docked()) return;
     const r = document.documentElement.getBoundingClientRect();
     notify("ui/notifications/size-changed", {width: Math.ceil(r.width), height: Math.ceil(r.height)});
   }).observe(document.documentElement);
 
   request("ui/initialize", {
     appInfo: {name: "CV Studio page", version: "4"},
-    appCapabilities: {availableDisplayModes: ["inline", "fullscreen"]},
+    appCapabilities: {availableDisplayModes: ["inline", "fullscreen", "pip"]},
     protocolVersion: PROTOCOL,
   }).then(r => {
     host.caps = (r && r.hostCapabilities) || {};

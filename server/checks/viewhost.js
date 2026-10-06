@@ -79,15 +79,22 @@ const THEMES = {
     "--border-radius-md": "8px"},
 };
 
-/* opts: theme ("light" | "dark"), mode ("inline" | "fullscreen"), width,
+/* opts: theme ("light" | "dark"), mode ("inline" | "fullscreen" | "pip"), width,
    height (fullscreen), caps (host capabilities), styled (send the theme's
-   variables), proxy (where the page's server takes the view's tool calls). */
+   variables), proxy (where the page's server takes the view's tool calls),
+   modes (the display modes the host offers), locale and timeZone, partials
+   (the tool's input as it streams in, sent before the whole of it) and delay
+   (ms before the result, as a render takes). */
+/* A pinned view's frame: a small window beside the chat. */
+const PIP = {width: 360, height: 520};
+
 function hostPage(view, args, result, opts = {}) {
   const theme = opts.theme || "light", mode = opts.mode || "inline";
   const width = opts.width || 720, height = opts.height || 820;
   const caps = opts.caps || {message: {text: {}}, updateModelContext: {text: {}}, serverTools: {}, downloadFile: {}};
-  const ctx = {theme, displayMode: mode, availableDisplayModes: ["inline", "fullscreen"],
-    containerDimensions: mode === "fullscreen" ? {width, height} : {width, maxHeight: 2400},
+  const ctx = {theme, displayMode: mode, availableDisplayModes: opts.modes || ["inline", "fullscreen"],
+    containerDimensions: mode === "fullscreen" ? {width, height} : mode === "pip" ? PIP : {width, maxHeight: 2400},
+    ...(opts.locale ? {locale: opts.locale} : {}), ...(opts.timeZone ? {timeZone: opts.timeZone} : {}),
     styles: opts.styled === false ? undefined : {variables: THEMES[theme]}, platform: "desktop"};
   /* The chat's own background, which is the colour the view is told is
      primary: a view that blends in is one that cannot be told from it. */
@@ -95,10 +102,10 @@ function hostPage(view, args, result, opts = {}) {
   return `<!doctype html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;color-scheme:${theme};background:${bg};font:13px system-ui;color:${theme === "dark" ? "#eee" : "#222"}">
 <iframe id="v" sandbox="allow-scripts allow-same-origin"
-  style="display:block;width:${width}px;height:${mode === "fullscreen" ? height + "px" : "300px"};border:0;background:transparent"></iframe>
+  style="display:block;width:${mode === "pip" ? PIP.width : width}px;height:${mode === "fullscreen" ? height + "px" : mode === "pip" ? PIP.height + "px" : "300px"};border:0;background:transparent"></iframe>
 <script>
 window.LOG = [];
-const view = ${js(view)}, args = ${js(args)}, result = ${js(result)};
+const view = ${js(view)}, args = ${js(args)}, result = ${js(result)}, partials = ${js(opts.partials || [])};
 let ctx = ${js(ctx)};
 const f = document.getElementById("v");
 const post = m => f.contentWindow.postMessage({jsonrpc: "2.0", ...m}, "*");
@@ -109,10 +116,14 @@ window.addEventListener("message", e => {
   if (m.method === "ui/initialize") post({id: m.id, result: {protocolVersion: "2026-01-26",
     hostInfo: {name: "cv-studio-preview", version: "1"}, hostCapabilities: ${js(caps)}, hostContext: ctx}});
   else if (m.method === "ui/notifications/initialized") {
-    post({method: "ui/notifications/tool-input", params: {arguments: args}});
-    if (result) post({method: "ui/notifications/tool-result", params: result});
+    const later = (ms, fn) => new Promise(r => setTimeout(() => { fn(); r(); }, ms));
+    (async () => {
+      for (const p of partials) await later(${js(opts.every || 120)}, () => post({method: "ui/notifications/tool-input-partial", params: {arguments: p}}));
+      post({method: "ui/notifications/tool-input", params: {arguments: args}});
+      if (result) await later(${js(opts.delay || 0)}, () => post({method: "ui/notifications/tool-result", params: result}));
+    })();
   } else if (m.method === "ui/notifications/size-changed") {
-    if (ctx.displayMode !== "fullscreen") f.style.height = m.params.height + "px";
+    if (ctx.displayMode === "inline") f.style.height = m.params.height + "px";
   } else if (m.method === "tools/call") {
     /* As Claude does: the view's tool calls go to the server, through the
        page that serves this (opts.proxy), and come back as the view's answer. */
@@ -121,6 +132,9 @@ window.addEventListener("message", e => {
       .catch(e => post({id: m.id, error: {code: -32000, message: String(e)}}));
   } else if (m.method === "ui/request-display-mode") {
     ctx = {...ctx, displayMode: m.params.mode};
+    const fs = m.params.mode === "fullscreen", pp = m.params.mode === "pip";
+    f.style.width = (pp ? ${js(PIP.width)} : ${js(width)}) + "px";
+    if (fs || pp) f.style.height = (pp ? ${js(PIP.height)} : ${js(height)}) + "px";
     post({id: m.id, result: {mode: m.params.mode}});
   } else if (m.id != null) post({id: m.id, result: {}});
 });

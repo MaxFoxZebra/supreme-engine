@@ -132,6 +132,8 @@ async function main() {
     {id: "light-inline", theme: "light", mode: "inline", width: 720, label: "Inline, light"},
     {id: "dark-inline", theme: "dark", mode: "inline", width: 720, label: "Inline, dark"},
     {id: "light-full", theme: "light", mode: "fullscreen", width: 1280, height: 860, label: "Full screen"},
+    {id: "dark-pip", theme: "dark", mode: "pip", width: 360, height: 520, label: "Pinned, dark",
+     modes: ["inline", "fullscreen", "pip"]},
   ];
 
   const index = () => `<!doctype html><html><head><meta charset="utf-8"><title>CV page view</title>
@@ -145,7 +147,7 @@ iframe{border:0;display:block;box-shadow:0 1px 4px rgba(0,0,0,.15)}
 <select id="cv">${ok.map(p => `<option>${p}</option>`).join("")}</select>
 <button id="again">Render again</button><span id="st" style="color:#777"></span></header>
 <main>${VARIANTS.map(v => `<figure><figcaption>${v.label}</figcaption>
-<iframe data-v="${v.id}" style="width:${v.width}px;height:${v.mode === "fullscreen" ? v.height : 900}px"></iframe>
+<iframe data-v="${v.id}" style="width:${v.width}px;height:${v.mode !== "inline" ? v.height : 900}px"></iframe>
 <div class="log" data-log="${v.id}"></div></figure>`).join("")}</main>
 <script>
 const frames = [...document.querySelectorAll("iframe")];
@@ -161,7 +163,7 @@ setInterval(async () => {
     const log = (f.contentWindow.LOG || []).filter(m => m.method === "ui/message" || m.method === "ui/update-model-context");
     document.querySelector('[data-log="' + f.dataset.v + '"]').textContent = log.slice(-3).map(m =>
       (m.method === "ui/message" ? "to the chat: " : "to the model: ") + m.params.content[0].text).join("\\n");
-    if (f.dataset.v.indexOf("full") < 0) { const h = f.contentDocument.getElementById("v"); if (h) f.style.height = (h.offsetHeight + 8) + "px"; }
+    if (f.dataset.v.indexOf("full") < 0 && f.dataset.v.indexOf("pip") < 0) { const h = f.contentDocument.getElementById("v"); if (h) f.style.height = (h.offsetHeight + 8) + "px"; }
   } catch (e) {} });
 }, 700);
 load();
@@ -194,7 +196,7 @@ load();
   for (const v of VARIANTS.filter(x => !only || only.split(",").includes(x.id))) {
     for (const state of (opt("--states") || ",selected,sent,before,review,edit").split(",")) {
       await b.send("Emulation.setDeviceMetricsOverride", {width: v.width + 40,
-        height: v.mode === "fullscreen" ? v.height + 40 : 1400, deviceScaleFactor: 1, mobile: false});
+        height: v.mode !== "inline" ? v.height + 40 : 1400, deviceScaleFactor: 1, mobile: false});
       await b.send("Page.navigate", {url: `http://127.0.0.1:${PORT}/host?v=${v.id}&cv=${encodeURIComponent(cvPath)}`});
       await sleep(1800);
       if (state === "review") {

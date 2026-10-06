@@ -21,6 +21,7 @@ const check = (name, ok, detail = "") => {
 };
 
 async function main() {
+  const textOf = r => (r.content || []).map(x => x.text || "").join("");
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "pv-ws-"));
   console.log("The connector, to a client that shows views");
   const c = await session(ws, true);
@@ -168,10 +169,13 @@ async function main() {
 
   /* The same CV again after a change, in the same session: the view should
      know what changed and have the page before it. */
-  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
-    {path: ["cv", "sections", "summary", 0], value: "Platform engineer who cut deploy time from 3 hours to 11 minutes."}]}});
-  const call2 = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  const edits2 = [{path: ["cv", "sections", "summary", 0], value: "Platform engineer who cut deploy time from 3 hours to 11 minutes."}];
+  /* A writing tool shows the page itself, rendered with the change. */
+  const call2 = (await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: edits2}})).result;
   const sc2 = call2.structuredContent || {};
+  check("a change Claude writes comes back as the page, without a render_cv",
+    sc2.view === "cv-page" && sc2.shots && /The user sees the page/.test(textOf(call2)) &&
+    !call2.content.some(x => x.type === "image"), textOf(call2));
   check("the next one names exactly the block that changed",
     sc2.changes && JSON.stringify(sc2.changes.blocks) === JSON.stringify([{k: "entry", name: "summary", i: 0}]),
     JSON.stringify(sc2.changes));
@@ -181,6 +185,34 @@ async function main() {
   check("a change Claude made is there to keep or undo, with what the block said before",
     rv && rv.units.length === 1 && rv.units[0].block && rv.units[0].block.name === "summary" &&
     /One or two sentences/.test(rv.units[0].before) && rv.sig, JSON.stringify(rv && rv.units));
+
+  console.log("While Claude writes");
+  const said = edits2[0].value, cut = [12, 30, 48];
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath, edits: edits2}, call2, {width: 720, delay: 2200, every: 400,
+    partials: cut.map(n => ({path: cvPath, edits: [{path: edits2[0].path, value: said.slice(0, n)}]}))}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  for (let i = 0; i < 60 && !(await b.evalJs(`!!${doc} && !!${doc}.querySelector(".draft")`)); i++) await sleep(50);
+  const mid = await b.evalJs(`(()=>{const d=${doc}; return {draft: (d.querySelector(".draft p")||{}).textContent||"",
+    caret: !!d.querySelector(".draft .caret"), who: (d.querySelector(".who b")||{}).textContent||"",
+    label: (d.querySelector(".draft small")||{}).textContent||""}})()`);
+  check("the words show as they stream in, on paper, with where they go",
+    mid.draft.startsWith(said.slice(0, 12)) && mid.caret && /Writing your CV/.test(mid.who) && mid.label === "Summary 1",
+    JSON.stringify(mid));
+  await sleep(1500);
+  const whole = await b.evalJs(`(()=>{const d=${doc}; return {draft: (d.querySelector(".draft")||{}).textContent||"",
+    who: (d.querySelector(".who b")||{}).textContent||""}})()`);
+  check("then all of it, while the page is laid out", whole.draft.includes(said) && /Rendering the page/.test(whole.who),
+    JSON.stringify(whole));
+  await sleep(2500);
+  check("and the page replaces it once rendered", await b.evalJs(`(()=>{const d=${doc}, i=d.getElementById("pg");
+    return !d.querySelector(".draft") && !!i && i.naturalWidth>0})()`));
+  /* A client that sends the input whole: typed out quickly instead. */
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath, edits: edits2}, call2, {width: 720, delay: 3000}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(500);
+  const typed = await b.evalJs(`(${doc}.querySelector(".draft p")||{}).textContent||""`);
+  check("input sent whole is typed out, not dropped in at once", typed.length > 0 && typed.length < said.length, typed);
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, call, {width: 720}));
 
   console.log("An earlier render");
   await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
@@ -290,7 +322,6 @@ async function main() {
     await sleep(2200);
   };
   const lastOf = method => b.evalJs(`(LOG.filter(m=>m.method===${JSON.stringify(method)}).pop()||{}).params`);
-  const textOf = r => (r.content || []).map(x => x.text || "").join("");
 
   console.log("Small edits, without Claude");
   const call5 = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
@@ -371,6 +402,32 @@ async function main() {
     check("a keyword found shows where it is", lit.length > 0 && lit.every(k => fnd.where.some(w => key(w) === k)),
       JSON.stringify(lit));
   }
+
+  console.log("Pinned beside the chat");
+  const pinRes = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, pinRes,
+    {width: 720, modes: ["inline", "fullscreen", "pip"]}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(2000);
+  check("a host that can pin gets a Pin button", await b.evalJs(`!!${doc}.getElementById("pin")`));
+  await b.evalJs(`${doc}.getElementById("pin").click()`);
+  await sleep(1200);
+  const pinned = await b.evalJs(`(()=>{const d=${doc}, i=d.getElementById("pg"), r=i&&i.getBoundingClientRect();
+    return {bar: !!d.querySelector(".pipbar"), mode: d.documentElement.dataset.mode, img: !!i && i.naturalWidth>0,
+      fits: !!r && r.bottom <= d.documentElement.clientHeight + 1, summary: !!d.getElementById("summary"),
+      pager: (d.querySelector(".pager")||{}).textContent||""}})()`);
+  check("pinned, it shows the page and little else, fitting the window",
+    pinned.bar && pinned.mode === "pip" && pinned.img && pinned.fits && !pinned.summary, JSON.stringify(pinned));
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
+    {path: ["cv", "name"], value: "Pinned Person"}]}});
+  await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}});
+  await sleep(6000);
+  const followed = await b.evalJs(`(${doc}.querySelector(".pipbar .who b")||{}).textContent||""`);
+  check("and follows the next render of the CV on its own", followed === "Pinned Person", followed);
+  await b.evalJs(`${doc}.getElementById("mode").click()`);
+  await sleep(800);
+  check("and goes back into the chat", await b.evalJs(`${doc}.documentElement.dataset.mode === "inline" && !!${doc}.getElementById("summary")`));
+  await c.send("tools/call", {name: "review_change", arguments: {path: cvPath, ids: ["*"], action: "undo"}});
 
   console.log("A conversation opened again");
   const again = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
