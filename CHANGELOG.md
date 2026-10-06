@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.43.0
 
 - **The CV page, in the same style as the job numbers.** Your name and the
   application the CV is for, with the company's logo; one line on what the
