@@ -522,6 +522,35 @@ sends to a client that said it can show views. The view is
 `server/static/mcp-page.html`, one file with no network access, which follows
 the client's light or dark theme.
 
+## The job search, in the conversation
+
+Two more tools show a view (`static/mcp-jobs.html`):
+
+- **`job_stats`** shows how the search is going: applications sent, the share
+  that got a reply and an interview, the median days to a reply, the funnel
+  (applied, replied, interviewed, offer, accepted, each as a share of the
+  stage before), where each application stands now, applications per week
+  or month, and which sources got replies. 30 days, 90 days, a year or
+  everything, switched on the view. Every number opens the applications
+  behind it, and each of those opens its card, in the same view. The model
+  gets the same numbers as a few lines of text, and is asked to say what they
+  mean; *What do these numbers say?* asks it from the view.
+- **`show_application`** shows one application as a card: its status and the
+  one thing to do next (a follow-up due, an interview coming, an outcome to
+  record, an offer to decide on), when it was applied to and how fast they
+  replied compared with your other replies, its history, interview rounds,
+  people and documents, and questions that fit where it is (*Draft a
+  follow-up email*, *Prepare me for the interview*).
+
+From a card the user can move an application to its next status. The view
+asks first, because the history is permanent and the funnel is drawn from it,
+then writes it through `job_view_data` (a tool only views can call) as the
+user's own change, with a dated line in the notes, and tells the model so it
+does not change it back. Only the statuses that can come next are offered.
+
+The app keeps its own funnel screen: the chat is for the numbers with a
+reading of them, and for acting on one application where the conversation is.
+
 ## What a client is told about each tool
 
 Every tool has a title and the standard hints: whether it only reads, whether

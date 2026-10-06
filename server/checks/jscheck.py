@@ -28,6 +28,9 @@ def main() -> int:
     # Save to CV Studio's window, and the bookmark itself.
     clip = studio.CLIP_HTML.replace("__PREFS__", "null").replace("__API_TOKEN__", '"t"')
     scripts += re.findall(r"<script>(.*?)</script>", clip, re.S)
+    # The views an AI client shows (MCP Apps): one file each, script inline.
+    for view in sorted((HERE / "static").glob("mcp-*.html")):
+        scripts += re.findall(r"<script>(.*?)</script>", view.read_text(encoding="utf-8"), re.S)
     scripts.append(urllib.parse.unquote(studio.bookmarklet()[len("javascript:"):]))
     bad = 0
     with tempfile.TemporaryDirectory() as tmp:

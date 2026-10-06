@@ -23,6 +23,10 @@ const argv = process.argv.slice(2);
 const opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const PORT = +(opt("--port") || 5180);
 const VIEW = path.join(SERVER, "static", "mcp-page.html");
+const JOBS_VIEW = path.join(SERVER, "static", "mcp-jobs.html");
+/* The job views are previewed beside the pages: the numbers, and a card. */
+const STATS = "Job search (job_stats)", CARD = "An application (show_application)";
+const viewFor = p => fs.readFileSync(p === STATS || p === CARD ? JOBS_VIEW : VIEW, "utf-8");
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function sampleWorkspace() {
@@ -96,6 +100,20 @@ async function main() {
       console.log(`checked    ${withPosting}  ${r.structuredContent.match.found.length} keywords found`);
     }
   }
+  {
+    const r = (await c.send("tools/call", {name: "job_stats", arguments: {days: 365}})).result;
+    if (r && r.structuredContent) { results[STATS] = r; ok.push(STATS); console.log("stats      " + r.content[0].text.split("\n")[0]); }
+    /* The card of the application furthest along: the one with most to show. */
+    const jobs = (await c.send("tools/call", {name: "list_jobs", arguments: {}})).result.content
+      .flatMap(b => { try { const v = JSON.parse(b.text); return Array.isArray(v) ? v : [v]; } catch (e) { return []; } });
+    const rank = ["offer", "interviewing", "rejected_interviewing", "applied"];
+    const pick = (Array.isArray(jobs) ? jobs : jobs.jobs || []).sort((a, b) =>
+      (rank.indexOf(a.status) + 1 || 9) - (rank.indexOf(b.status) + 1 || 9))[0];
+    if (pick) {
+      const cr = (await c.send("tools/call", {name: "show_application", arguments: {job_id: pick.id}})).result;
+      if (cr && cr.structuredContent) { results[CARD] = cr; ok.push(CARD); console.log("card       " + cr.content[0].text); }
+    }
+  }
   if (!ok.length) { console.error("Nothing rendered."); process.exit(1); }
 
   const VARIANTS = [
@@ -142,12 +160,12 @@ load();
     const html = s => { r.writeHead(200, {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}); r.end(s); };
     if (u.pathname === "/") return html(index());
     if (u.pathname === "/mcp") return proxyCall(c, q, r);
-    if (u.pathname === "/version") { r.end(String(fs.statSync(VIEW).mtimeMs)); return; }
+    if (u.pathname === "/version") { r.end(String(fs.statSync(VIEW).mtimeMs + fs.statSync(JOBS_VIEW).mtimeMs)); return; }
     if (u.pathname === "/rerender") { await render(u.searchParams.get("cv").replace(CHANGED, "").replace(MATCH, "")); r.end("ok"); return; }
     if (u.pathname === "/host") {
       const v = VARIANTS.find(x => x.id === u.searchParams.get("v")) || VARIANTS[0];
       const p = u.searchParams.get("cv") || ok[0];
-      return html(hostPage(fs.readFileSync(VIEW, "utf-8"), {path: p.replace(CHANGED, "").replace(MATCH, "")}, results[p], v));
+      return html(hostPage(viewFor(p), {path: p.replace(CHANGED, "").replace(MATCH, "")}, results[p], v));
     }
     r.writeHead(404); r.end();
   }).listen(PORT, "127.0.0.1");

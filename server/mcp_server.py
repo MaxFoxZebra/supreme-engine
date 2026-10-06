@@ -70,6 +70,16 @@ apps.add_html_resource(
     description="The rendered page, every page of it; click a block to tell "
                 "Claude what to change there.")
 
+# The job search: the numbers (job_stats) and one application (show_application).
+JOBS_VIEW = "ui://cv-studio/jobs.html"
+apps.add_html_resource(
+    JOBS_VIEW,
+    (Path(__file__).resolve().parent / "static" / "mcp-jobs.html").read_text(encoding="utf-8"),
+    name="cv-jobs", title="Job search",
+    prefers_border=False,
+    description="How the job search is going, and one application as a card: "
+                "click through from a number to the applications behind it.")
+
 mcp = MCPServer(
     name="cv-studio",
     extensions=[apps],
@@ -204,12 +214,12 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # Tools a view calls for the user, hidden from the model ("app" visibility):
 # what they change is the user's decision, so it is neither recorded as an AI
 # client's change to review nor logged as its activity.
-USER_ACTIONS = {"review_change", "page_view_data", "edit_on_page"}
+USER_ACTIONS = {"review_change", "page_view_data", "edit_on_page", "job_view_data"}
 
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info",
-             "page_view_data"}
+             "page_view_data", "job_stats", "show_application"}
 
 # What a client shows for each tool, and what it may assume of it. Claude
 # Desktop and others use the hints to decide what to ask permission for:
@@ -236,6 +246,9 @@ TITLES = {
     "review_change": "Keep or undo a change",
     "page_view_data": "Page view data",
     "edit_on_page": "Edit on the page",
+    "job_stats": "How the job search is going",
+    "show_application": "Show an application",
+    "job_view_data": "Job view data",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
 IDEMPOTENT = {"review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
@@ -2043,6 +2056,279 @@ def edit_on_page(path: str, block: dict, values: dict, src: str, page: int = 1) 
         why = why.replace("RENDER FAILED", "").strip()
         raise ValueError("Not saved: with that change the page does not render. " + why[:600])
     return result
+
+
+# --- The job search, as views (static/mcp-jobs.html) --------------------------
+#
+# The same numbers the app's funnel screen draws, for the chat: job_stats for
+# how it is going, show_application for one application. Both return a short
+# text for the model, which is what it reasons about, and the view's data in
+# the structured content. The view switches period, opens an application and
+# changes a status through job_view_data, hidden from the model; a status
+# change made there is the user's own, confirmed on the card first.
+
+STAGES = [
+    ("applied", "Applied", set(studio.jobstore.NODE_STATUSES["applied_s"])),
+    ("replied", "Replied", set(studio.jobstore.NODE_STATUSES["applied_s"]) - {"applied", "ghosted"}),
+    ("interviewed", "Interviewed", set(studio.jobstore.NODE_STATUSES["interview_s"])),
+    ("offer", "Offer", set(studio.jobstore.NODE_STATUSES["offer_s"])),
+    ("accepted", "Accepted", {"accepted"}),
+]
+OUTCOMES = [
+    ("applied", "Waiting for a reply"), ("rejected", "Rejected before an interview"),
+    ("ghosted", "No reply, gave up"), ("interviewing", "Interviewing now"),
+    ("rejected_interviewing", "Rejected after interviews"),
+    ("ghosted_interviewing", "No reply after interviews"), ("offer", "Offer to decide on"),
+    ("accepted", "Accepted"), ("refused", "Offer declined"),
+]
+# What can come next from each status: the moves a card offers.
+NEXT = {
+    "pending": ["applied"],
+    "applied": ["interviewing", "rejected", "ghosted"],
+    "interviewing": ["offer", "rejected_interviewing", "ghosted_interviewing"],
+    "offer": ["accepted", "refused"],
+    "ghosted": ["interviewing", "rejected"],
+    "ghosted_interviewing": ["offer", "rejected_interviewing"],
+}
+STATUS_LABEL = {"pending": "Not sent yet", "applied": "Applied", "interviewing": "Interviewing",
+                "offer": "Offer", "accepted": "Accepted", "refused": "Declined",
+                "rejected": "Rejected", "ghosted": "No reply",
+                "rejected_interviewing": "Rejected after interviews",
+                "ghosted_interviewing": "No reply after interviews"}
+
+
+def _applied_on(job: dict) -> str | None:
+    at = studio.jobstore._applied_at(job.get("status_history") or [])
+    if at:
+        return str(at)[:10]
+    return str(job.get("created_at") or "")[:10] or None if job.get("status") != "pending" else None
+
+
+def _job_row(job: dict) -> dict:
+    return {"id": job["id"], "company": _one_line(job.get("company"), 60),
+            "title": _one_line(job.get("title"), 80), "status": job.get("status"),
+            "applied": _applied_on(job)}
+
+
+def _stats(days: int | None) -> dict:
+    import datetime as dt
+    jobs = studio.jobstore.list_jobs(_ws())
+    since = (dt.date.today() - dt.timedelta(days=days)).isoformat() if days else None
+    sent = [j for j in jobs if j.get("status") != "pending" and _applied_on(j)
+            and (not since or _applied_on(j) >= since)]
+    stages = []
+    prev = None
+    for key, label, statuses in STAGES:
+        members = [j for j in sent if j.get("status") in statuses]
+        stages.append({"key": key, "label": label, "count": len(members),
+                       "of_previous": round(100 * len(members) / prev) if prev else None,
+                       "jobs": [_job_row(j) for j in members][:80]})
+        prev = len(members)
+    outcomes = []
+    for status, label in OUTCOMES:
+        members = [j for j in sent if j.get("status") == status]
+        if members:
+            outcomes.append({"key": status, "label": label, "count": len(members),
+                             "jobs": [_job_row(j) for j in members][:80]})
+    replies = [d for d in (studio.jobstore._reply_days(j.get("status_history") or []) for j in sent)
+               if d is not None]
+    # Applications per week, Monday to Sunday, or per month over a year.
+    by_month = not days or days > 180
+    buckets: dict[str, int] = {}
+    for j in sent:
+        d = dt.date.fromisoformat(_applied_on(j))
+        key = d.strftime("%Y-%m") if by_month else (d - dt.timedelta(days=d.weekday())).isoformat()
+        buckets[key] = buckets.get(key, 0) + 1
+    series = []
+    if sent:
+        # From the first application, not the start of the period: a year
+        # of empty months before the search began says nothing.
+        start = min(dt.date.fromisoformat(_applied_on(j)) for j in sent)
+        end = dt.date.today()
+        if by_month:
+            y, m = start.year, start.month
+            while (y, m) <= (end.year, end.month):
+                k = f"{y:04d}-{m:02d}"
+                series.append({"key": k, "count": buckets.get(k, 0)})
+                y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+        else:
+            d = start - dt.timedelta(days=start.weekday())
+            while d <= end:
+                series.append({"key": d.isoformat(), "count": buckets.get(d.isoformat(), 0)})
+                d += dt.timedelta(days=7)
+    sources: dict[str, list] = {}
+    for j in sent:
+        sources.setdefault(_one_line(j.get("source"), 40) or "Not recorded", []).append(j)
+    replied = STAGES[1][2]
+    source_rows = sorted(({"source": k, "count": len(v),
+                           "replied": sum(1 for j in v if j.get("status") in replied)}
+                          for k, v in sources.items()), key=lambda r: -r["count"])[:8]
+    n = len(sent)
+    rate = lambda a: round(100 * a / n) if n else None  # noqa: E731
+    return {
+        "view": "job-stats", "days": days, "since": since,
+        "totals": {"applications": n, "replied": stages[1]["count"], "reply_rate": rate(stages[1]["count"]),
+                   "interviewed": stages[2]["count"], "interview_rate": rate(stages[2]["count"]),
+                   "offers": stages[3]["count"], "median_reply_days": studio.jobstore._median(replies),
+                   "drafts": sum(1 for j in jobs if j.get("status") == "pending")},
+        "stages": stages, "outcomes": outcomes,
+        "series": {"by": "month" if by_month else "week", "points": series},
+        "sources": source_rows,
+    }
+
+
+def _stats_text(st: dict) -> str:
+    """The numbers for the model, without the lists: what it reasons about."""
+    t = st["totals"]
+    lines = [f"Job search, {('last ' + str(st['days']) + ' days') if st['days'] else 'all time'}: "
+             f"{t['applications']} applications sent, {t['drafts']} drafts not sent.",
+             "Funnel: " + " → ".join(f"{s['label']} {s['count']}" + (f" ({s['of_previous']}%)" if s["of_previous"] is not None else "")
+                                    for s in st["stages"]) + ".",
+             f"Median days to a reply: {t['median_reply_days'] if t['median_reply_days'] is not None else 'no replies yet'}.",
+             "Where they stand: " + ", ".join(f"{o['label'].lower()} {o['count']}" for o in st["outcomes"]) + ".",
+             "By source (sent, replied): " + ", ".join(f"{r['source']} {r['count']}/{r['replied']}" for r in st["sources"]) + "."]
+    return "\n".join(lines)
+
+
+def _next_step(job: dict) -> dict | None:
+    """The one thing to do about this application now, if any."""
+    import datetime as dt
+    today = dt.date.today().isoformat()
+    st = job.get("status")
+    if job.get("followup_date") and job["followup_date"] <= today and st not in studio.jobstore.TERMINAL:
+        return {"kind": "followup", "text": f"Follow-up due since {job['followup_date']}"}
+    at = studio.jobstore.interview_local(job.get("interview_at"), job.get("interview_tz"))
+    age = studio.jobstore._days_since(at)
+    if age is not None and -studio.jobstore.INTERVIEW_SOON_DAYS <= age <= 0:
+        rnd = next((r for r in job.get("rounds") or [] if not r.get("outcome") and r.get("at")), {})
+        try:
+            when = dt.datetime.fromisoformat(str(job["interview_at"])[:16])
+            said = f"{when.strftime('%a')} {when.day} {when.strftime('%b')} at {when.strftime('%H:%M')}"
+        except ValueError:
+            said = str(job["interview_at"])[:16].replace("T", " at ")
+        what = _one_line(rnd.get("kind"), 40) or "Interview"
+        who = _one_line(rnd.get("with"), 60)
+        return {"kind": "interview", "text": f"{what} on {said}" + (f", with {who}" if who else "")}
+    if age is not None and age > 0 and st == "interviewing":
+        return {"kind": "outcome", "text": "The interview has passed: how did it go?"}
+    if st == "applied":
+        last = max(filter(None, [job.get("last_contact_at"), _applied_on(job)]), default=None)
+        quiet = studio.jobstore._days_since(last)
+        if quiet is not None and quiet > studio.jobstore.SILENT_DAYS:
+            return {"kind": "silent", "text": f"No reply in {quiet} days: worth a follow-up"}
+        return {"kind": "wait", "text": "Waiting for a reply" + (f" ({quiet} days so far)" if quiet else "")}
+    if st == "offer":
+        return {"kind": "decide", "text": "An offer to decide on"}
+    if st == "pending":
+        return {"kind": "send", "text": "Not sent yet"}
+    return None
+
+
+def _card(job: dict) -> dict:
+    jobs = studio.jobstore.list_jobs(_ws())
+    days = studio.jobstore._reply_days(job.get("status_history") or [])
+    others = [d for d in (studio.jobstore._reply_days(j.get("status_history") or []) for j in jobs)
+              if d is not None]
+    faster = None
+    if days is not None and len(others) >= 4:
+        faster = round(100 * sum(1 for d in others if d > days) / len(others))
+    logo = None
+    if job.get("logo"):
+        f = studio.logo_dir() / Path(str(job["logo"])).name
+        if f.is_file() and f.stat().st_size < 80_000 and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"):
+            mime = {".svg": "image/svg+xml", ".jpg": "image/jpeg"}.get(f.suffix.lower(), "image/" + f.suffix.lower()[1:])
+            logo = f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+    return {
+        "view": "job-card", "id": job["id"],
+        "company": _one_line(job.get("company"), 80), "title": _one_line(job.get("title"), 120),
+        "status": job.get("status"), "status_label": STATUS_LABEL.get(job.get("status"), job.get("status")),
+        "location": _one_line(job.get("location"), 80) or None, "url": job.get("url") or None,
+        "source": _one_line(job.get("source"), 40) or None, "logo": logo,
+        "applied": _applied_on(job), "last_contact": str(job.get("last_contact_at") or "")[:10] or None,
+        "followup": job.get("followup_date") or None,
+        "reply_days": days, "faster_than": faster,
+        "next": _next_step(job),
+        "moves": [{"status": s, "label": STATUS_LABEL[s]} for s in NEXT.get(job.get("status"), [])],
+        "history": [{"status": h.get("status"), "label": STATUS_LABEL.get(h.get("status"), h.get("status")),
+                     "at": str(h.get("at") or "")[:10]} for h in job.get("status_history") or []][-12:],
+        "people": [{"name": _one_line(p.get("name"), 60), "role": _one_line(p.get("role"), 60),
+                    "email": _one_line(p.get("email"), 120)} for p in job.get("people") or []][:6],
+        "rounds": [{"kind": _one_line(r.get("kind"), 40), "at": r.get("at") or "", "with": _one_line(r.get("with"), 80),
+                    "outcome": r.get("outcome") or ""} for r in job.get("rounds") or []][:8],
+        "cv": job.get("cv_path") or None, "letter": job.get("letter_path") or None,
+        "has_posting": bool(job.get("description")),
+    }
+
+
+def _card_text(c: dict) -> str:
+    bits = [f"{c['company']}, {c['title']} ({c['id']}): {c['status_label']}"]
+    if c["applied"]:
+        bits.append(f"applied {c['applied']}")
+    if c["reply_days"] is not None:
+        bits.append(f"replied in {c['reply_days']} days")
+    if c["next"]:
+        bits.append("next: " + c["next"]["text"])
+    return "; ".join(bits) + "."
+
+
+def _job(job_id: str) -> dict:
+    for job in studio.jobstore.list_jobs(_ws()):
+        if job["id"] == job_id:
+            return job
+    raise ValueError("No such job.")
+
+
+@tool(view=JOBS_VIEW)
+def job_stats(days: int | None = 90) -> CallToolResult:
+    """How the job search is going: applications sent, the funnel (applied,
+    replied, interviewed, offer, accepted), median days to a reply, where
+    each application stands, applications per week and by source.
+
+    `days` is the period, by when each was applied to; None for all time.
+    Use it when the user asks how their search is going, then say what the
+    numbers mean: where applications stop, what gets replies. In a client
+    that shows views the user sees it as a chart and can open the
+    applications behind any number.
+    """
+    st = _stats(days if days and days > 0 else None)
+    return CallToolResult(content=[TextContent(type="text", text=_stats_text(st))],
+                          structured_content=st if _shows_views() else None)
+
+
+@tool(view=JOBS_VIEW)
+def show_application(job_id: str) -> CallToolResult:
+    """Show one application to the user as a card: its status and next step,
+    history, contacts, interview rounds and documents. Use it when the user
+    wants to see an application; read_job is for reading one yourself.
+
+    From the card the user can move it to its next status themselves, after
+    confirming there; you are told when they do.
+    """
+    c = _card(_job(job_id))
+    return CallToolResult(content=[TextContent(type="text", text=_card_text(c))],
+                          structured_content=c if _shows_views() else None)
+
+
+@tool(view=JOBS_VIEW, app_only=True)
+def job_view_data(what: str, job_id: str = "", status: str = "", days: int = 0) -> CallToolResult:
+    """For the job views only, hidden from the model. what="stats": the
+    numbers for `days` (0 for all time). what="card": one application.
+    what="status": the user moves `job_id` to `status`, confirmed on the card."""
+    if what == "stats":
+        st = _stats(days or None)
+        return CallToolResult(content=[TextContent(type="text", text=_stats_text(st))], structured_content=st)
+    if what == "card":
+        c = _card(_job(job_id))
+        return CallToolResult(content=[TextContent(type="text", text=_card_text(c))], structured_content=c)
+    if what == "status":
+        job = _job(job_id)
+        if status not in NEXT.get(job.get("status"), []):
+            raise ValueError("That is not a next step for this application.")
+        studio.jobstore.update_job(_ws(), job_id, {
+            "status": status, "append_note": f"Moved to {STATUS_LABEL[status].lower()} on the card in the chat."})
+        c = _card(_job(job_id))
+        return CallToolResult(content=[TextContent(type="text", text=_card_text(c))], structured_content=c)
+    raise ValueError("what is stats, card or status")
 
 
 # The skills, offered as prompts too. A client that reads skills has them

@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job search</title>
+<!--
+  The job search in the conversation (MCP Apps), for job_stats and
+  show_application. Two faces of one view: the numbers, and one application
+  as a card. A number opens the applications behind it, and one of those
+  opens its card, all here; the period, the card and a status change come
+  from the server through job_view_data, a tool hidden from the model.
+
+  Company names, titles and sources are the user's data and a posting's, so
+  they are only ever set as text, and what reaches the model about them is
+  one short plain line.
+
+  Preview it without Claude: node checks/viewdev.js --jobs
+-->
+<style>
+  :root{
+    color-scheme:light dark;
+    --bg:var(--color-background-primary,light-dark(#fff,#262624));
+    --bg2:var(--color-background-secondary,light-dark(#f5f4ef,#30302e));
+    --tx:var(--color-text-primary,light-dark(#1f1e1d,#faf9f5));
+    --tx2:var(--color-text-secondary,light-dark(#5e5d59,#c2c0b6));
+    --tx3:var(--color-text-tertiary,light-dark(#87867f,#9a9890));
+    --rule:var(--color-border-secondary,light-dark(#e2e0d9,#3a3936));
+    --rule2:var(--color-border-primary,light-dark(#c9c7bf,#4a4945));
+    --acc:var(--color-ring-primary,light-dark(#c96442,#d97757));
+    --ok:var(--color-text-success,light-dark(#2f6b3b,#8cc79a));
+    --warn:var(--color-text-warning,light-dark(#9a5b13,#e6b26a));
+    --warnbg:var(--color-background-warning,light-dark(#fbf1e2,#3a2f20));
+    /* The one data hue: validated against both chat surfaces. */
+    --data:light-dark(#2a78d6,#3987e5);
+    --grid:color-mix(in srgb,var(--tx) 9%,transparent);
+    --font:var(--font-sans,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif);
+    --fs:var(--font-text-md-size,14px);
+    --fs-sm:var(--font-text-sm-size,13px);
+    --fs-xs:var(--font-text-xs-size,12px);
+    --r:var(--border-radius-md,8px);
+    --ease:cubic-bezier(.2,.7,.2,1);
+  }
+  :root[data-theme=light]{color-scheme:light}
+  :root[data-theme=dark]{color-scheme:dark}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:transparent;color:var(--tx);font:var(--fs)/1.5 var(--font);-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit}
+  :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  #app{max-width:680px;margin:0 auto}
+  .state{color:var(--tx2);padding:24px 4px;text-align:center}
+  .muted{color:var(--tx3)}
+
+  /* ---- the top: a title, the period, a way back ---- */
+  .head{display:flex;align-items:center;gap:10px;margin:0 0 14px;min-height:30px;flex-wrap:wrap;row-gap:8px}
+  .head h1{font-size:var(--fs);font-weight:600;margin:0;flex:1;min-width:0;letter-spacing:-.005em}
+  .head h1 span{display:block;font-weight:400;font-size:var(--fs-xs);color:var(--tx3)}
+  .seg{display:inline-flex;background:color-mix(in srgb,var(--tx) 6%,transparent);border-radius:7px;padding:2px;flex:none}
+  .seg button{border:0;background:none;padding:3px 10px;border-radius:5px;font-size:12px;color:var(--tx2);cursor:pointer}
+  .seg button[aria-pressed=true]{background:var(--bg);color:var(--tx);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .back{border:0;background:none;color:var(--tx2);cursor:pointer;padding:3px 8px 3px 4px;border-radius:6px;font-size:var(--fs-sm)}
+  .back:hover{background:var(--bg2);color:var(--tx)}
+  .busy{opacity:.55;transition:opacity .15s}
+
+  /* ---- stat tiles ---- */
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:22px}
+  @media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .kpi{border:0;background:var(--bg2);border-radius:var(--r);padding:10px 12px;text-align:left;cursor:pointer;
+    transition:background .15s}
+  .kpi:hover{background:color-mix(in srgb,var(--tx) 8%,var(--bg2))}
+  .kpi:disabled{cursor:default}
+  .kpi .l{display:block;font-size:var(--fs-xs);color:var(--tx2)}
+  .kpi .v{display:block;font-size:24px;font-weight:600;letter-spacing:-.01em;line-height:1.25;margin-top:2px}
+  .kpi .s{display:block;font-size:var(--fs-xs);color:var(--tx3)}
+
+  /* ---- sections ---- */
+  h2{font-size:var(--fs-sm);font-weight:600;margin:0 0 10px;color:var(--tx)}
+  h2 span{font-weight:400;color:var(--tx3);margin-left:6px}
+  section{margin-bottom:24px}
+
+  /* The funnel: one bar per stage, its share of what was sent. */
+  .fun{display:grid;grid-template-columns:96px 1fr;gap:6px 12px;align-items:center}
+  .fun .lab{font-size:var(--fs-sm);color:var(--tx2);text-align:right;white-space:nowrap}
+  .bar{position:relative;display:flex;align-items:center;gap:8px;height:28px;border:0;background:none;padding:0;
+    cursor:pointer;width:100%;text-align:left;border-radius:4px}
+  .bar:disabled{cursor:default}
+  .bar i{display:block;height:20px;background:var(--data);border-radius:0 4px 4px 0;min-width:2px;transition:filter .15s}
+  .bar:hover i,.bar:focus-visible i{filter:brightness(1.12)}
+  .bar b{font-weight:600;font-size:var(--fs-sm);white-space:nowrap}
+  .bar em{font-style:normal;font-size:var(--fs-xs);color:var(--tx3);white-space:nowrap}
+
+  /* Where each one stands: a row each, the count, a thin bar. */
+  .rows{display:flex;flex-direction:column}
+  .row{display:grid;grid-template-columns:1fr 90px 34px;align-items:center;gap:10px;border:0;background:none;
+    padding:6px 6px;margin:0 -6px;border-radius:7px;cursor:pointer;text-align:left;font-size:var(--fs-sm)}
+  .row:hover{background:var(--bg2)}
+  .row .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .m{height:6px;background:var(--grid);border-radius:3px;overflow:hidden}
+  .row .m i{display:block;height:100%;background:var(--data);border-radius:0 3px 3px 0}
+  .row .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--tx2)}
+
+  /* Over time: columns from one baseline. */
+  .cols{position:relative;height:120px;display:flex;align-items:flex-end;gap:2px;border-bottom:1px solid var(--grid);
+    padding-top:16px}
+  .col{flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%;border:0;background:none;padding:0;cursor:default;min-width:3px}
+  .col i{display:block;width:100%;max-width:24px;background:var(--data);border-radius:4px 4px 0 0;min-height:0}
+  .col:hover i,.col:focus-visible i{filter:brightness(1.12)}
+  .col .zero{display:block;width:100%;max-width:24px;height:1px;background:var(--rule2)}
+  .axis{display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);margin-top:4px;font-variant-numeric:tabular-nums}
+  .ymax{position:absolute;left:0;top:0;font-size:11px;color:var(--tx3)}
+  .ygrid{position:absolute;left:0;right:0;top:16px;border-top:1px solid var(--grid)}
+  .tip{position:fixed;z-index:9;pointer-events:none;background:var(--bg);border:1px solid var(--rule);border-radius:7px;
+    padding:5px 9px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;white-space:nowrap}
+  .tip b{font-size:13px}
+
+  table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+  th{font-weight:500;color:var(--tx3);font-size:var(--fs-xs);text-align:left;padding:0 6px 6px}
+  td{padding:6px;border-top:1px solid var(--rule)}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+
+  .ask{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{border:1px solid var(--rule);background:var(--bg);border-radius:99px;padding:4px 11px;cursor:pointer;
+    font-size:12.5px;color:var(--tx2);transition:border-color .15s,color .15s}
+  .chip:hover{color:var(--tx);border-color:var(--acc)}
+
+  /* ---- a list of applications ---- */
+  .list{display:flex;flex-direction:column}
+  .job{display:flex;align-items:center;gap:10px;border:0;background:none;padding:8px 6px;margin:0 -6px;border-radius:8px;
+    cursor:pointer;text-align:left;width:calc(100% + 12px)}
+  .job:hover{background:var(--bg2)}
+  .job+.job{border-top:1px solid var(--rule)}
+  .ini{width:28px;height:28px;border-radius:7px;background:color-mix(in srgb,var(--tx) 8%,transparent);display:grid;place-items:center;
+    font-size:11px;font-weight:600;color:var(--tx2);flex:none;overflow:hidden}
+  .ini img{width:100%;height:100%;object-fit:contain;background:#fff}
+  .job .w{flex:1;min-width:0}
+  .job .w b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .job .w span{display:block;font-size:var(--fs-xs);color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill{font-size:11.5px;font-weight:500;border-radius:99px;padding:2px 9px;white-space:nowrap;flex:none;
+    background:color-mix(in srgb,var(--tx) 7%,transparent);color:var(--tx2)}
+  .pill.live{background:color-mix(in srgb,var(--data) 14%,transparent);color:var(--tx)}
+  .pill.good{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--tx)}
+
+  /* ---- the card ---- */
+  .card-h{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .card-h .ini{width:42px;height:42px;border-radius:10px;font-size:14px}
+  .card-h .w{flex:1;min-width:0}
+  .card-h b{display:block;font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .card-h span{display:block;color:var(--tx2);font-size:var(--fs-sm)}
+  .next{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:var(--r);background:var(--bg2);
+    margin-bottom:12px;font-size:var(--fs-sm)}
+  .next i{width:7px;height:7px;border-radius:50%;background:var(--data);flex:none}
+  .next.warn{background:var(--warnbg)}
+  .next.warn i{background:var(--warn)}
+  .moves{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .moves .l{font-size:var(--fs-xs);color:var(--tx3);margin-right:2px}
+  .mv{border:1px solid var(--rule2);background:var(--bg);border-radius:7px;padding:4px 11px;font-size:12.5px;cursor:pointer}
+  .mv:hover{border-color:var(--acc)}
+  .confirm{border:1px solid var(--rule2);border-radius:var(--r);padding:10px 12px;margin:-6px 0 16px;font-size:var(--fs-sm);
+    animation:in .18s var(--ease)}
+  .confirm p{margin:0 0 8px}
+  .confirm .acts{display:flex;gap:6px;justify-content:flex-end}
+  .btn{border:0;background:color-mix(in srgb,var(--tx) 7%,transparent);border-radius:7px;padding:4px 12px;font-size:12.5px;
+    font-weight:500;cursor:pointer}
+  .btn.go{background:var(--acc);color:#fff}
+  .btn[aria-busy=true]{opacity:.55;pointer-events:none}
+  @keyframes in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:2px 16px;margin-bottom:16px;font-size:var(--fs-sm)}
+  .facts div{padding:5px 0;border-top:1px solid var(--rule)}
+  .facts span{display:block;font-size:var(--fs-xs);color:var(--tx3)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media (max-width:560px){.grid2{grid-template-columns:1fr}}
+  .tl{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--rule);font-size:var(--fs-sm)}
+  .tl li{position:relative;padding:0 0 9px 4px}
+  .tl li::before{content:"";position:absolute;left:-20px;top:6px;width:8px;height:8px;border-radius:50%;
+    background:var(--bg);box-shadow:inset 0 0 0 2px var(--rule2)}
+  .tl li:last-child::before{background:var(--data);box-shadow:0 0 0 2px var(--bg)}
+  .tl span{color:var(--tx3);font-size:var(--fs-xs);margin-left:6px}
+  .ppl{list-style:none;margin:0;padding:0;font-size:var(--fs-sm)}
+  .ppl li{padding:4px 0}
+  .ppl span{display:block;font-size:var(--fs-xs);color:var(--tx3);overflow:hidden;text-overflow:ellipsis}
+  .flash{font-size:var(--fs-sm);color:var(--tx2);padding:8px 0;animation:in .2s var(--ease)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"><div class="state">Loading…</div></div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script>
+(() => {
+  "use strict";
+  const PROTOCOL = "2026-01-26";
+  let nextId = 1, host = {caps: {}, ctx: {}};
+  /* What is on screen: the numbers, a list from them, or one card; and the
+     way back from each. */
+  let stats = null, list = null, card = null, confirming = null, busy = false, note = "";
+  const pending = new Map();
+  const $app = document.getElementById("app"), $tip = document.getElementById("tip");
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+    ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  /* What reaches the model or the chat: one short plain line. */
+  const clean = (s, n = 80) => {
+    s = String(s ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+    return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
+  };
+  const num = n => (n == null ? "–" : Number(n).toLocaleString());
+  const day = iso => {
+    if (!iso) return "";
+    const d = new Date(iso + "T12:00:00");
+    return isNaN(d) ? iso : d.toLocaleDateString(undefined, {day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric"});
+  };
+  const initials = s => String(s || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+
+  /* ---- JSON-RPC over postMessage ---- */
+  const send = msg => window.parent.postMessage({jsonrpc: "2.0", ...msg}, "*");
+  function request(method, params) {
+    const id = nextId++;
+    send({id, method, params});
+    return new Promise((resolve, reject) => pending.set(id, {resolve, reject}));
+  }
+  const notify = (method, params) => send({method, params});
+  window.addEventListener("message", ev => {
+    if (ev.source !== window.parent) return;
+    const m = ev.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id != null && !m.method && pending.has(m.id)) {
+      const p = pending.get(m.id); pending.delete(m.id);
+      m.error ? p.reject(new Error(m.error.message || "error")) : p.resolve(m.result);
+      return;
+    }
+    switch (m.method) {
+      case "ui/notifications/tool-result": onResult(m.params || {}); break;
+      case "ui/notifications/tool-cancelled": if (!stats && !card) $app.innerHTML = '<div class="state">Cancelled.</div>'; break;
+      case "ui/notifications/host-context-changed": applyContext(m.params || {}); break;
+      case "ui/resource-teardown": send({id: m.id, result: {}}); break;
+      case "ping": send({id: m.id, result: {}}); break;
+      default: if (m.id != null && m.method) send({id: m.id, error: {code: -32601, message: "Method not found"}});
+    }
+  });
+  function applyContext(ctx) {
+    host.ctx = {...host.ctx, ...ctx};
+    const root = document.documentElement;
+    if (ctx.theme) root.dataset.theme = ctx.theme;
+    const vars = ctx.styles && ctx.styles.variables;
+    if (vars) for (const [k, v] of Object.entries(vars)) if (v) root.style.setProperty(k, v);
+  }
+  const call = async (args) => {
+    const r = await request("tools/call", {name: "job_view_data", arguments: args});
+    const sc = r && !r.isError && (r.structuredContent || r.structured_content);
+    if (!sc) throw new Error(((r && r.content || [])[0] || {}).text || "it did not answer");
+    return sc;
+  };
+
+  function onResult(r) {
+    const sc = r.structuredContent || r.structured_content;
+    if (r.isError || !sc) {
+      const text = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+      $app.innerHTML = '<div class="state">' + esc(text || "Nothing to show.") + "</div>";
+      return;
+    }
+    if (sc.view === "job-card") { card = sc; stats = null; } else { stats = sc; card = null; }
+    list = null; paint();
+  }
+
+  /* ---- the numbers ---- */
+  const PERIODS = [[30, "30 days"], [90, "90 days"], [365, "1 year"], [0, "All"]];
+  function statsHtml() {
+    const s = stats, t = s.totals, max = Math.max(1, s.stages[0].count);
+    const period = '<div class="seg" role="group" aria-label="Period">' + PERIODS.map(([d, l]) =>
+      '<button data-days="' + d + '" aria-pressed="' + ((s.days || 0) === d) + '">' + l + "</button>").join("") + "</div>";
+    if (!t.applications) return '<div class="head"><h1>Your job search</h1>' + period + "</div>" +
+      '<p class="state">No applications sent ' + (s.days ? "in the last " + s.days + " days" : "yet") + "." +
+      (t.drafts ? " " + t.drafts + " " + (t.drafts === 1 ? "draft is" : "drafts are") + " waiting to be sent." : "") + "</p>";
+    const kpi = (label, value, sub, stage) => '<button class="kpi"' + (stage ? ' data-stage="' + stage + '"' : " disabled") +
+      '><span class="l">' + label + '</span><span class="v">' + value + '</span><span class="s">' + sub + "</span></button>";
+    const pts = s.series.points, top = Math.max(1, ...pts.map(p => p.count));
+    return '<div class="head"><h1>Your job search<span>' + (s.days ? "Applied to in the last " + s.days + " days" : "Everything you applied to") +
+        "</span></h1>" + period + "</div>" +
+      '<div class="kpis">' +
+        kpi("Applications sent", num(t.applications), t.drafts ? num(t.drafts) + " drafts not sent" : "&nbsp;", "applied") +
+        kpi("Replied", t.reply_rate + "%", num(t.replied) + " of " + num(t.applications), "replied") +
+        kpi("Interviewed", t.interview_rate + "%", num(t.interviewed) + " of " + num(t.applications), "interviewed") +
+        kpi("Days to a reply", t.median_reply_days == null ? "–" : num(t.median_reply_days), "median", null) +
+      "</div>" +
+      '<section><h2>How far they got<span>share of the stage before</span></h2><div class="fun">' +
+        s.stages.map(g => '<span class="lab">' + esc(g.label) + "</span>" +
+          '<button class="bar" data-stage="' + g.key + '"' + (g.count ? "" : " disabled") + ' aria-label="' +
+            esc(g.label + ": " + g.count + (g.of_previous != null ? ", " + g.of_previous + "% of the stage before" : "")) + '">' +
+            '<i style="width:' + (g.count / max * 78) + '%"></i><b>' + num(g.count) + "</b>" +
+            (g.of_previous != null ? "<em>" + g.of_previous + "%</em>" : "") + "</button>").join("") +
+      "</div></section>" +
+      '<section><h2>Where they stand now</h2><div class="rows">' +
+        s.outcomes.map(o => '<button class="row" data-outcome="' + o.key + '"><span class="t">' + esc(o.label) +
+          '</span><span class="m"><i style="width:' + (o.count / max * 100) + '%"></i></span><span class="n">' +
+          num(o.count) + "</span></button>").join("") +
+      "</div></section>" +
+      (pts.length > 1 ? '<section><h2>Applications per ' + s.series.by + "</h2>" +
+        '<div class="cols" id="cols"><span class="ymax">' + top + '</span><span class="ygrid"></span>' +
+          pts.map((p, i) => '<button class="col" data-pt="' + i + '" aria-label="' + esc(when(p, s.series.by) + ": " + p.count) + '">' +
+            (p.count ? '<i style="height:' + (p.count / top * 100) + '%"></i>' : '<span class="zero"></span>') + "</button>").join("") +
+        '</div><div class="axis"><span>' + esc(when(pts[0], s.series.by)) + "</span><span>" +
+          esc(when(pts[pts.length - 1], s.series.by)) + "</span></div></section>" : "") +
+      (s.sources.length > 1 ? '<section><h2>Where you found them</h2><table><thead><tr><th>Source</th><th class="n">Sent</th>' +
+        '<th class="n">Replied</th><th class="n">Rate</th></tr></thead><tbody>' + s.sources.map(r => "<tr><td>" + esc(r.source) +
+          '</td><td class="n">' + num(r.count) + '</td><td class="n">' + num(r.replied) + '</td><td class="n">' +
+          Math.round(100 * r.replied / r.count) + "%</td></tr>").join("") + "</tbody></table></section>" : "") +
+      (host.caps.message ? '<div class="ask">' + ["What do these numbers say?", "Where am I losing applications?",
+        "What should I follow up on?"].map(q => '<button class="chip" data-ask="' + esc(q) + '">' + esc(q) + "</button>").join("") + "</div>" : "");
+  }
+  function when(p, by) {
+    if (by === "month") { const d = new Date(p.key + "-15T12:00:00"); return d.toLocaleDateString(undefined, {month: "short", year: "numeric"}); }
+    return "Week of " + day(p.key);
+  }
+
+  /* ---- a list behind a number ---- */
+  function listHtml() {
+    return '<div class="head"><button class="back" id="back">← The numbers</button><h1>' + esc(list.label) +
+      "<span>" + list.jobs.length + (list.jobs.length === 1 ? " application" : " applications") + "</span></h1></div>" +
+      '<div class="list">' + list.jobs.map(j => '<button class="job" data-job="' + esc(j.id) + '"><span class="ini">' +
+        esc(initials(j.company)) + '</span><span class="w"><b>' + esc(j.company || "Unnamed") + "</b><span>" +
+        esc(j.title || "") + (j.applied ? " · applied " + esc(day(j.applied)) : "") + '</span></span><span class="pill' +
+        pillClass(j.status) + '">' + esc(LABEL[j.status] || j.status) + "</span></button>").join("") + "</div>";
+  }
+  const LABEL = {pending: "Not sent yet", applied: "Applied", interviewing: "Interviewing", offer: "Offer",
+    accepted: "Accepted", refused: "Declined", rejected: "Rejected", ghosted: "No reply",
+    rejected_interviewing: "Rejected after interviews", ghosted_interviewing: "No reply after interviews"};
+  const pillClass = st => st === "interviewing" || st === "offer" ? " live" : st === "accepted" ? " good" : "";
+
+  /* ---- one application ---- */
+  function cardHtml() {
+    const c = card;
+    const facts = [];
+    if (c.applied) facts.push(["Applied", day(c.applied)]);
+    if (c.reply_days != null) facts.push(["First reply", "after " + c.reply_days + (c.reply_days === 1 ? " day" : " days") +
+      (c.faster_than == null ? "" : c.faster_than >= 50 ? ", faster than " + c.faster_than + "% of your replies"
+        : ", slower than " + (100 - c.faster_than) + "% of your replies")]);
+    if (c.last_contact) facts.push(["Last contact", day(c.last_contact)]);
+    if (c.followup) facts.push(["Follow up", day(c.followup)]);
+    if (c.source) facts.push(["Found on", c.source]);
+    if (c.location) facts.push(["Where", c.location]);
+    const docs = [c.cv ? ["cv", "The CV you sent"] : null, c.letter ? ["letter", "The cover letter"] : null].filter(Boolean);
+    const asks = [];
+    if (c.status === "applied" || (c.next && c.next.kind === "silent")) asks.push("Draft a follow-up email");
+    if (c.status === "interviewing" || (c.next && c.next.kind === "interview")) asks.push("Prepare me for the interview");
+    if (c.status === "pending" && c.has_posting) asks.push("Tailor my CV to this posting");
+    if (c.status === "offer") asks.push("Help me weigh this offer");
+    if (c.status === "rejected" || c.status === "rejected_interviewing") asks.push("What could I learn from this one?");
+    return (stats || list ? '<div class="head"><button class="back" id="back">← ' + (list ? esc(list.label) : "The numbers") + "</button></div>" : "") +
+      '<div class="card-h"><span class="ini">' + (c.logo ? '<img alt="" src="' + esc(c.logo) + '">' : esc(initials(c.company))) +
+        '</span><span class="w"><b>' + esc(c.company || "Unnamed") + "</b><span>" + esc(c.title || "") + "</span></span>" +
+        '<span class="pill' + pillClass(c.status) + '">' + esc(c.status_label) + "</span></div>" +
+      (c.next ? '<div class="next' + (["followup", "silent", "outcome", "decide"].includes(c.next.kind) ? " warn" : "") +
+        '"><i></i><span>' + esc(c.next.text) + "</span></div>" : "") +
+      (note ? '<div class="flash" role="status">' + esc(note) + "</div>" : "") +
+      (c.moves.length && host.caps.serverTools ? '<div class="moves"><span class="l">Move to</span>' + c.moves.map(m =>
+        '<button class="mv" data-move="' + esc(m.status) + '">' + esc(m.label) + "</button>").join("") + "</div>" : "") +
+      (confirming ? '<div class="confirm" role="dialog" aria-label="Confirm"><p>Move ' + esc(c.company) + " to <b>" +
+        esc(LABEL[confirming] || confirming) + "</b>? It is added to its history, which the funnel is drawn from.</p>" +
+        '<div class="acts"><button class="btn" id="no">Cancel</button><button class="btn go" id="yes">Move it</button></div></div>' : "") +
+      (facts.length ? '<div class="facts">' + facts.map(([k, v]) => "<div><span>" + esc(k) + "</span>" + esc(v) + "</div>").join("") + "</div>" : "") +
+      '<div class="grid2">' +
+        "<section><h2>History</h2>" + (c.history.length ? '<ol class="tl">' + c.history.map(h => "<li>" + esc(h.label) +
+          "<span>" + esc(day(h.at)) + "</span></li>").join("") + "</ol>" : '<p class="muted">Nothing yet.</p>') + "</section>" +
+        "<section>" +
+          (c.rounds.length ? "<h2>Interviews</h2><ul class=\"ppl\">" + c.rounds.map(r => "<li>" + esc(r.kind || "Interview") +
+            (r.outcome ? " · " + esc(r.outcome) : "") + "<span>" + esc([r.at ? r.at.replace("T", " ") : "not scheduled", r.with].filter(Boolean).join(" · ")) +
+            "</span></li>").join("") + "</ul>" : "") +
+          (c.people.length ? '<h2 style="margin-top:' + (c.rounds.length ? 14 : 0) + 'px">People</h2><ul class="ppl">' + c.people.map(p =>
+            "<li>" + esc(p.name || p.email || "Someone") + "<span>" + esc([p.role, p.name ? p.email : ""].filter(Boolean).join(" · ")) +
+            "</span></li>").join("") + "</ul>" : "") +
+          (docs.length ? '<h2 style="margin-top:' + (c.rounds.length || c.people.length ? 14 : 0) + 'px">Documents</h2><div class="ask">' +
+            docs.map(([k, l]) => '<button class="chip" data-doc="' + k + '">' + esc(l) + "</button>").join("") + "</div>" : "") +
+        "</section>" +
+      "</div>" +
+      (asks.length && host.caps.message ? '<div class="ask" style="margin-top:14px">' + asks.map(q =>
+        '<button class="chip" data-ask="' + esc(q) + '">' + esc(q) + "</button>").join("") + "</div>" : "");
+  }
+
+  function paint() {
+    $app.innerHTML = card ? cardHtml() : list ? listHtml() : stats ? statsHtml() : '<div class="state">Loading…</div>';
+    if (busy) $app.classList.add("busy"); else $app.classList.remove("busy");
+    wire();
+  }
+
+  function wire() {
+    $app.querySelectorAll("[data-days]").forEach(b => b.onclick = () => period(+b.dataset.days));
+    $app.querySelectorAll("[data-stage]").forEach(b => b.onclick = () => {
+      const g = stats.stages.find(x => x.key === b.dataset.stage);
+      if (g && g.count) { list = {label: g.label, jobs: g.jobs}; paint(); }
+    });
+    $app.querySelectorAll("[data-outcome]").forEach(b => b.onclick = () => {
+      const o = stats.outcomes.find(x => x.key === b.dataset.outcome);
+      if (o) { list = {label: o.label, jobs: o.jobs}; paint(); }
+    });
+    $app.querySelectorAll("[data-job]").forEach(b => b.onclick = () => open(b.dataset.job));
+    const back = document.getElementById("back");
+    if (back) back.onclick = () => { if (card) { card = null; confirming = null; note = ""; } else list = null; paint(); };
+    $app.querySelectorAll("[data-move]").forEach(b => b.onclick = () => { confirming = b.dataset.move; paint(); });
+    const no = document.getElementById("no"), yes = document.getElementById("yes");
+    if (no) no.onclick = () => { confirming = null; paint(); };
+    if (yes) yes.onclick = () => move(yes);
+    $app.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => ask(b.dataset.ask));
+    $app.querySelectorAll("[data-doc]").forEach(b => b.onclick = () => showDoc(b.dataset.doc));
+    $app.querySelectorAll("[data-pt]").forEach(b => {
+      const p = stats.series.points[+b.dataset.pt];
+      const show = e => {
+        $tip.innerHTML = "<b>" + num(p.count) + "</b> " + (p.count === 1 ? "application" : "applications") +
+          '<br><span class="muted">' + esc(when(p, stats.series.by)) + "</span>";
+        $tip.style.display = "block";
+        const r = b.getBoundingClientRect();
+        $tip.style.left = Math.min(window.innerWidth - $tip.offsetWidth - 4, Math.max(4, r.left + r.width / 2 - $tip.offsetWidth / 2)) + "px";
+        $tip.style.top = Math.max(4, r.top - $tip.offsetHeight - 6) + "px";
+      };
+      b.onmouseenter = show; b.onfocus = show;
+      b.onmouseleave = b.onblur = () => { $tip.style.display = "none"; };
+    });
+  }
+
+  async function period(days) {
+    if (!host.caps.serverTools || busy) return;
+    busy = true; paint();
+    try { stats = await call({what: "stats", days}); list = null; } catch (e) { /* keep what is shown */ }
+    busy = false; paint();
+  }
+  async function open(id) {
+    if (!host.caps.serverTools) return;
+    busy = true; paint();
+    try { card = await call({what: "card", job_id: id}); confirming = null; note = ""; }
+    catch (e) { note = ""; }
+    busy = false; paint();
+  }
+  /* The user's own decision, confirmed: written as theirs, and Claude is told. */
+  async function move(btn) {
+    const to = confirming, c = card;
+    btn.setAttribute("aria-busy", "true"); btn.textContent = "Moving…";
+    try {
+      card = await call({what: "status", job_id: c.id, status: to});
+      confirming = null; note = "Moved to " + (LABEL[to] || to).toLowerCase() + ".";
+      if (stats) try { stats = await call({what: "stats", days: stats.days || 0}); } catch (e) { /* stale numbers are still numbers */ }
+      if (host.caps.updateModelContext) request("ui/update-model-context", {content: [{type: "text", text:
+        "CV Studio job card: the user moved the application " + clean(c.company, 60) + ", " + clean(c.title, 80) +
+        " (" + clean(c.id, 40) + ") from " + (LABEL[c.status] || c.status) + " to " + (LABEL[to] || to) +
+        " themselves. It is saved and in its history: do not change it again unless they ask."}]}).catch(() => {});
+    } catch (e) {
+      confirming = null; note = "That did not work: " + clean(e.message, 140);
+    }
+    paint();
+  }
+  /* A question about what is on screen, in the user's words, with what it is
+     about passed to Claude out of the chat. */
+  async function ask(q) {
+    const c = card;
+    if (host.caps.updateModelContext) {
+      const about = c ? "the application " + clean(c.company, 60) + ", " + clean(c.title, 80) + " (job_id " + clean(c.id, 40) + ")"
+        : "their job search numbers" + (stats && stats.days ? " for the last " + stats.days + " days" : "");
+      await request("ui/update-model-context", {content: [{type: "text", text:
+        "CV Studio job view: the user is looking at " + about + ". Their next message is about it."}]}).catch(() => {});
+    }
+    const text = (c ? clean(c.company, 60) + " — " : "") + q;
+    try { await request("ui/message", {role: "user", content: [{type: "text", text}]}); }
+    catch (e) { /* the client said no: nothing to undo */ }
+  }
+  async function showDoc(kind) {
+    const c = card, path = kind === "cv" ? c.cv : c.letter;
+    if (!path) return;
+    if (host.caps.updateModelContext) await request("ui/update-model-context", {content: [{type: "text", text:
+      "CV Studio job card: the user wants to see " + clean(path, 200) + ", attached to " + clean(c.company, 60) +
+      ". Call render_cv on it."}]}).catch(() => {});
+    try {
+      await request("ui/message", {role: "user", content: [{type: "text", text:
+        "Show me " + (kind === "cv" ? "the CV" : "the cover letter") + " for " + clean(c.company, 60)}]});
+    } catch (e) { /* the client said no */ }
+  }
+
+  new ResizeObserver(() => {
+    const r = document.documentElement.getBoundingClientRect();
+    notify("ui/notifications/size-changed", {width: Math.ceil(r.width), height: Math.ceil(r.height)});
+  }).observe(document.documentElement);
+
+  request("ui/initialize", {
+    appInfo: {name: "CV Studio job search", version: "1"},
+    appCapabilities: {availableDisplayModes: ["inline"]},
+    protocolVersion: PROTOCOL,
+  }).then(r => {
+    host.caps = (r && r.hostCapabilities) || {};
+    applyContext((r && r.hostContext) || {});
+    notify("ui/notifications/initialized", {});
+  }).catch(() => notify("ui/notifications/initialized", {}));
+})();
+</script>
+</body>
+</html>

@@ -173,6 +173,9 @@ jobs:
       - name: The CV page in the chat
         run: node checks/pageview.js
 
+      - name: The job search in the chat
+        run: node checks/jobview.js
+
       - name: Server log, when something failed
         if: failure()
         run: cat "$RUNNER_TEMP/server.log" || true

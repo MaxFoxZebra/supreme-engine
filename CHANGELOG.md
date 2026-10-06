@@ -8,6 +8,18 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **How your job search is going, in the chat.** Ask Claude and it shows your
+  numbers: applications sent, reply and interview rates, days to a reply,
+  how far applications get, where each one stands, and which sources work.
+  Click any number to see the applications behind it, then open one. Claude
+  explains what the numbers mean.
+- **An application as a card.** Its status and the next thing to do, how
+  fast they replied, the history, interviews, people and documents. Move it
+  to its next status from the card (it asks you first), or ask Claude to
+  draft the follow-up or prepare the interview from there.
+
 ## 0.41.0
 
 - **CV Studio in Claude Desktop without the app.** Each release now has a
