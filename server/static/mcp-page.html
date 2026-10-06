@@ -70,7 +70,13 @@
   /* ---- the bar: whose CV, how it lays out, what changed ---- */
   .bar{display:flex;align-items:center;gap:12px;margin:0 auto 12px;
     max-width:calc(var(--sheet) + 104px);min-height:40px}
+  .avatar{width:40px;height:40px;border-radius:11px;flex:none;display:grid;place-items:center;overflow:hidden;
+    font-size:14px;font-weight:600;color:var(--tx2);background:color-mix(in srgb,var(--tx) 7%,transparent);
+    box-shadow:0 0 0 1px var(--rule)}
+  .avatar img{width:100%;height:100%;object-fit:contain;background:#fff}
   .who{min-width:0;flex:1}
+  :root:not([data-mode=fullscreen]) .who b{font-size:18px;letter-spacing:-.015em;line-height:1.25}
+  .who em{font-style:normal;color:var(--tx2)}
   .who b{display:block;font-weight:600;font-size:var(--fs);letter-spacing:-.005em;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .who span{display:block;color:var(--tx3);font-size:var(--fs-xs);overflow:hidden;text-overflow:ellipsis;
@@ -91,6 +97,33 @@
     transition:background .15s,color .15s}
   .icon:hover{background:var(--bg2);color:var(--tx)}
   .icon svg{width:15px;height:15px}
+
+  /* The verdict and the numbers, under the name. */
+  .summary{margin:0 auto 14px;max-width:calc(var(--sheet) + 104px)}
+  .verdict{display:flex;align-items:center;gap:14px;position:relative;padding:1px 0 1px 15px;margin-bottom:12px}
+  .verdict::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:3px;border-radius:2px;background:var(--acc)}
+  .verdict p{margin:0;flex:1;font-size:15.5px;line-height:1.45;font-weight:500;letter-spacing:-.008em;text-wrap:pretty}
+  .verdict .btn.go{flex:none;background:var(--acc);color:#fff;padding:6px 13px}
+  .pstats{display:flex;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .pstats>div{flex:1;padding:9px 12px 8px;min-width:0}
+  .pstats>div+div{box-shadow:inset 1px 0 0 var(--rule)}
+  .pstats b{display:block;font-size:20px;font-weight:600;letter-spacing:-.015em;line-height:1.2;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pstats span{display:block;font-size:var(--fs-xs);color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pstats .for b{font-size:15px;line-height:1.6}
+  .meter{display:block;height:4px;border-radius:2px;background:color-mix(in srgb,var(--tx) 9%,transparent);margin-top:6px;overflow:hidden}
+  .meter i{display:block;height:100%;border-radius:2px;background:var(--acc)}
+  @media (max-width:520px){.pstats .for{display:none}}
+
+  /* Arriving: once, when a new render comes in. */
+  @keyframes arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @keyframes growx{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .anim .bar,.anim .summary{animation:arrive .45s var(--ease) both}
+  .anim .summary{animation-delay:.05s}
+  .anim .delta{animation-delay:.1s}
+  .anim .sheet{animation:arrive .55s var(--ease) .12s both}
+  .anim .rail .thumb{animation:arrive .4s var(--ease) both;animation-delay:.25s}
+  .anim .meter i{transform-origin:left;animation:growx .7s var(--ease) .3s both}
 
   /* What a change changed: a strip under the bar, and the before/after switch. */
   .delta{display:flex;align-items:center;gap:10px;margin:-4px auto 12px;
@@ -364,6 +397,8 @@
   /* The page after a change without its marks (After), rather than with
      them (Changes). */
   let plain = false;
+  /* A new render arrives with a little motion, once. */
+  let fresh = false, settle = 0;
   /* Page images by id, as they arrive; and how full each is. */
   const cache = new Map(), loading = new Map(), fills = new Map();
   /* Set when a later render of this CV exists: {changed}. */
@@ -458,6 +493,7 @@
     data = sc; page = Math.max(0, Math.min((sc.page || 1) - 1, sc.shots.length - 1));
     spot = null; prefill = null;
     sel = null; sent = null; showBefore = false; plain = false; busy = false; earlier = null; unfolded = false;
+    fresh = true;
     editing = false; form = null;
     if (sc.first && sc.first.src) { cache.set(sc.first.id, sc.first.src); measure(sc.first.id); }
     if (!review()) listOpen = false;
@@ -601,8 +637,46 @@
     const d = data, file = String(d.path || "").split("/").pop();
     const title = d.title || file.replace(/\.(ya?ml|md)$/, "").replace(/[-_]+/g, " ");
     const sub = d.subtitle ? esc(d.subtitle) + " · " : "";
-    return '<div class="who"><b title="' + esc(title) + '">' + esc(title) + '</b><span title="' + esc(d.path) +
-      '">' + sub + "<code>" + esc(file) + "</code></span></div>";
+    const j = d.job, ini = s => String(s || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+    /* Whose it is and what it is for: the company it is tailored to when
+       it is attached to an application, else the person's initials. */
+    return (full() ? "" : '<span class="avatar">' + (j && j.logo ? '<img alt="" src="' + esc(j.logo) + '">' :
+        esc(ini(j && j.company ? j.company : title))) + "</span>") +
+      '<div class="who"><b title="' + esc(title) + '">' + esc(title) + '</b><span title="' + esc(d.path) +
+      '">' + (j && j.company && !full() ? '<em>For ' + esc(j.company) + (j.title ? ", " + esc(j.title) : "") + "</em> · " : sub) +
+      "<code>" + esc(file) + "</code></span></div>";
+  }
+  /* The verdict and the numbers under the name: what this page means in one
+     line, then pages, words and how full the last page is. Inline only:
+     full screen keeps the compact facts in its bar. */
+  function lastFill() {
+    const d = data, n = d.shots.length - 1;
+    return fills.has(d.shots[n]) ? fills.get(d.shots[n]) : fills.get((d.marked || [])[n]);
+  }
+  function summaryHtml() {
+    const d = data, f = lastFill(), r = review(), n = r ? r.units.length : 0;
+    const known = f != null && d.pages === d.shots.length;
+    const kind = d.letter ? "letter" : "CV";
+    const pg = p => p === 1 ? "one page" : p + " pages";
+    let say, act = "";
+    const changed = n ? " " + esc(r.agent || "Claude") + " changed " + n + (n === 1 ? " thing" : " things") +
+      ": check " + (n === 1 ? "it" : "them") + ", then it is ready to send." : "";
+    if (known && !d.letter && d.pages > 1 && f < 0.3) {
+      say = d.pages + " pages, and the last is only " + Math.max(1, Math.round(f * 100)) + "% full: fitting it on " +
+        pg(d.pages - 1) + " is a quick win.";
+      act = '<button class="btn go" id="fit">Fit on ' + pg(d.pages - 1) + "</button>";
+    } else if (d.pages === 1) {
+      say = "Fits on one page" + (n ? "." + changed : ", ready to send.");
+    } else {
+      say = "The " + kind + " runs to " + pg(d.pages) + (known ? ", every one of them full" : "") + "." + changed;
+    }
+    const meter = known ? '<span class="meter" aria-hidden="true"><i style="width:' + Math.max(3, Math.round(f * 100)) + '%"></i></span>' : "";
+    return '<div class="verdict"><p>' + say + "</p>" + act + "</div>" +
+      '<div class="pstats"><div><b>' + esc(d.pages) + "</b><span>" + (d.pages === 1 ? "page" : "pages") + "</span></div>" +
+      (d.words ? "<div><b>" + esc(Number(d.words).toLocaleString()) + "</b><span>words" + (d.letter ? "" : " an ATS reads") + "</span></div>" : "") +
+      "<div><b>" + (known ? Math.round(f * 100) + "%" : "–") + "</b><span>of the " + (d.pages === 1 ? "page" : "last page") + " used</span>" + meter + "</div>" +
+      (d.job && d.job.company ? '<div class="for"><b>' + esc(d.job.company) + "</b><span>" + esc(d.job.title || "the application") + "</span></div>" : "") +
+      "</div>";
   }
   function factsHtml() {
     const d = data, out = [];
@@ -621,7 +695,10 @@
   }
   function paintFacts() {
     const s = document.getElementById("stats");
-    if (s) { s.innerHTML = factsHtml(); wireFit(); }
+    if (s) s.innerHTML = factsHtml();
+    const m = document.getElementById("summary");
+    if (m) m.innerHTML = summaryHtml();
+    wireFit();
   }
   function wireFit() {
     const fit = document.getElementById("fit");
@@ -659,14 +736,21 @@
     const d = data, imgs = images(), n = imgs.length;
     if (page >= n) page = n - 1;
     if (earlier && !unfolded) return paintFolded();
+    if (fresh) {
+      fresh = false;
+      $app.classList.add("anim");
+      clearTimeout(settle);
+      settle = setTimeout(() => $app.classList.remove("anim"), 1400);
+    }
     const canFull = modes().includes("fullscreen");
     $app.innerHTML =
-      '<div class="bar">' + whoHtml() + '<div class="facts" id="stats">' + factsHtml() + "</div>" +
+      '<div class="bar">' + whoHtml() + (full() ? '<div class="facts" id="stats">' + factsHtml() + "</div>" : "") +
         (canDownload() ? '<button class="btn dl" id="dl" title="Download the PDF of this CV" aria-label="Download the PDF">' +
           ICON.down + "PDF</button>" : "") +
         (canFull ? '<button class="icon" id="mode" title="' + (full() ? "Back to the chat" : "Full screen") +
           '" aria-label="' + (full() ? "Back to the chat" : "Full screen") + '">' + (full() ? ICON.exit : ICON.full) +
           "</button>" : "") + "</div>" +
+      (full() || earlier ? "" : '<div class="summary" id="summary">' + summaryHtml() + "</div>") +
       (earlier ? '<div class="delta old" role="status"><i class="mark"></i><span>An earlier version: ' +
         esc(sinceText()) + '. The latest is further down.</span><button class="btn ghost" id="refold">Fold</button></div>'
         : deltaHtml()) +

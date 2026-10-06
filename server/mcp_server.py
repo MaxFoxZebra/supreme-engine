@@ -815,6 +815,17 @@ def _marked_pages(p: Path, letter: bool, typ: Path, count: int, rules: str) -> l
     return [_keep_bytes(b) for b in out]
 
 
+def _for_job(p: Path) -> dict | None:
+    try:
+        job = studio.job_for(p)
+    except Exception:
+        return None
+    if not job:
+        return None
+    return {"id": job["id"], "company": _one_line(job.get("company"), 60) or None,
+            "title": _one_line(job.get("title"), 80) or None, "logo": _logo_uri(job)}
+
+
 def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                words, pdf, bands=None, box=None, typ: Path | None = None) -> dict:
     """What the page view shows: every page (up to twelve) by id, where
@@ -891,6 +902,8 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
         "first": {"id": shots[first]} if shots else None,
         # The same pages with what changed highlighted, laid out identically.
         "marked": marked,
+        # The application this document is for, when it is attached to one.
+        "job": _for_job(p),
         "map": [{**b, "label": labels.get(f"{b['k']}|{b.get('name')}|{b.get('i')}")}
                 for b in bands or []],
         "box": box,
@@ -2297,6 +2310,17 @@ def _next_step(job: dict) -> dict | None:
     return None
 
 
+def _logo_uri(job: dict) -> str | None:
+    """A company's stored logo, inline, when it is small enough to carry."""
+    if not job.get("logo"):
+        return None
+    f = studio.logo_dir() / Path(str(job["logo"])).name
+    if f.is_file() and f.stat().st_size < 80_000 and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"):
+        mime = {".svg": "image/svg+xml", ".jpg": "image/jpeg"}.get(f.suffix.lower(), "image/" + f.suffix.lower()[1:])
+        return f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+    return None
+
+
 def _card(job: dict) -> dict:
     jobs = studio.jobstore.list_jobs(_ws())
     days = studio.jobstore._reply_days(job.get("status_history") or [])
@@ -2305,12 +2329,7 @@ def _card(job: dict) -> dict:
     faster = None
     if days is not None and len(others) >= 4:
         faster = round(100 * sum(1 for d in others if d > days) / len(others))
-    logo = None
-    if job.get("logo"):
-        f = studio.logo_dir() / Path(str(job["logo"])).name
-        if f.is_file() and f.stat().st_size < 80_000 and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"):
-            mime = {".svg": "image/svg+xml", ".jpg": "image/jpeg"}.get(f.suffix.lower(), "image/" + f.suffix.lower()[1:])
-            logo = f"data:{mime};base64," + base64.b64encode(f.read_bytes()).decode("ascii")
+    logo = _logo_uri(job)
     return {
         "view": "job-card", "id": job["id"],
         "company": _one_line(job.get("company"), 80), "title": _one_line(job.get("title"), 120),

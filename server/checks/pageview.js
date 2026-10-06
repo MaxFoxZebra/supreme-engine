@@ -136,8 +136,9 @@ async function main() {
     return {say: a ? a.textContent : "", marked: !!d.querySelector(".hit.sent")}})()`);
   check("then says it was sent, and marks the block", /Passed to the chat/.test(after.say) && after.marked,
     after.say.slice(0, 60));
-  const stats = await b.evalJs(`(${doc}.getElementById("stats")||{}).textContent||""`);
-  check("the bar says how the page lays out", /1 page/.test(stats) && /Fits on one page/.test(stats), stats);
+  const stats = await b.evalJs(`(${doc}.getElementById("summary")||{}).textContent||""`);
+  check("the page says how it lays out, in a sentence and in numbers",
+    /Fits on one page/.test(stats) && /words an ATS reads/.test(stats) && /of the page used/.test(stats), stats);
   await b.evalJs(`(()=>{const d=${doc}; [...d.querySelectorAll(".hit")][1].click(); const m=d.getElementById("msg");
     m.value="Tighten it"; m.dispatchEvent(new Event("input",{bubbles:true}));
     m.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))})()`);

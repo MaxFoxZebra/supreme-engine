@@ -8,6 +8,19 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **The CV page, in the same style as the job numbers.** Your name and the
+  application the CV is for, with the company's logo; one line on what the
+  page needs ("2 pages, and the last is only 20% full: fitting it on one
+  page is a quick win", with the button to do it, or "Fits on one page,
+  ready to send"); then the pages, the words an ATS reads, and how full the
+  last page is.
+- **A little motion where it helps.** The job numbers count up, the funnel
+  grows from its stages, every application's dot pops in, and a card's
+  progress line fills; a new page rises in. Once, as each arrives, and not
+  at all with reduced motion turned on.
+
 ## 0.42.3
 
 - Everything in 0.42.2, released together with the start screen's own

@@ -238,6 +238,24 @@
   .hist li{display:flex;gap:8px;padding:3px 0}
   .hist li span{color:var(--tx3);font-size:var(--fs-xs)}
   .flash{font-size:var(--fs-sm);color:var(--tx2);padding:8px 0;animation:in .2s var(--ease)}
+  /* ---- arriving: played once when new numbers or a card arrive ---- */
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+  @keyframes growx{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  @keyframes popin{0%{opacity:0;transform:scale(0)}70%{opacity:1;transform:scale(1.25)}100%{transform:scale(1)}}
+  @keyframes fadein{from{opacity:0}}
+  .anim .insight,.anim .stats,.anim .card-h,.anim .next{animation:rise .5s var(--ease) both}
+  .anim .stats{animation-delay:.06s}
+  .anim .funnel rect{transform-box:fill-box;transform-origin:center;animation:grow .6s var(--ease) both}
+  .anim .funnel rect.st1{animation-delay:.08s}.anim .funnel rect.st2{animation-delay:.16s}
+  .anim .funnel rect.st3{animation-delay:.24s}.anim .funnel rect.st4{animation-delay:.32s}
+  .anim .funnel .flow{animation:fadein .5s ease-out .35s both}
+  .anim .fdrop div{animation:rise .4s var(--ease) .55s both}
+  .anim .dots .dot{animation:popin .45s var(--ease) both;animation-delay:calc(var(--i,0) * 18ms + .3s)}
+  .anim .strk i{transform-origin:left;animation:growx .6s var(--ease) both}
+  .anim .strk .rep{animation-delay:.15s}
+  .anim .track li::before{transform-origin:left;animation:growx .35s var(--ease) both;animation-delay:calc(var(--i,0) * 120ms)}
+  .anim .track i{animation:popin .4s var(--ease) both;animation-delay:calc(var(--i,0) * 120ms + .1s)}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -393,8 +411,9 @@
     const at = d => s.series.by === "month" ? d.applied.slice(0, 7) : weekOf(d.applied);
     const cols = pts.map(p => ({key: p.key, dots: s.dots.filter(d => d.applied && at(d) === p.key)}));
     const tall = Math.max(1, ...cols.map(c => c.dots.length)), size = tall > 14 ? 8 : tall > 8 ? 11 : 15;
+    let n = 0;
     return '<div class="dots" style="--dot:' + size + 'px">' + cols.map(c => '<div class="dcol" title="' + esc(when(c, s.series.by)) + '">' +
-        c.dots.map(d => '<button class="dot r' + d.reached + '" data-job="' + esc(d.id) + '" data-tip="' + esc(d.id) + '" aria-label="' +
+        c.dots.map(d => '<button class="dot r' + d.reached + '" style="--i:' + (n++) + '" data-job="' + esc(d.id) + '" data-tip="' + esc(d.id) + '" aria-label="' +
           esc((d.company || "Unnamed") + ", " + (d.title || "") + ": " + REACHED[d.reached]) + '"></button>').join("") + "</div>").join("") +
       '</div><div class="axis"><span>' + esc(when(pts[0], s.series.by)) + "</span><span>" + esc(when(pts[pts.length - 1], s.series.by)) +
       '</span></div><div class="legend">' + REACHED.map((l, i) => '<span><i class="dot r' + i + '"></i>' + l + "</span>").join("") + "</div>";
@@ -491,7 +510,7 @@
     return '<ol class="track">' + tr.steps.slice(0, tr.stopped ? Math.max(tr.reached + 2, 2) : tr.steps.length).map((s, i) => {
       const stop = tr.stopped && i === tr.reached + 1;
       const cls = stop ? "stop" : i < tr.reached ? "done" : i === tr.reached ? (tr.stopped ? "done" : "now") : "todo";
-      return '<li class="' + cls + '"' + (i < upto ? ' data-fill="1"' : "") + "><i></i><b>" + esc(stop ? tr.stopped : s.label) +
+      return '<li class="' + cls + '" style="--i:' + i + '"' + (i < upto ? ' data-fill="1"' : "") + "><i></i><b>" + esc(stop ? tr.stopped : s.label) +
         "</b><span>" + (stop ? "" : esc(day(s.date) || "")) + "</span></li>";
     }).join("") + "</ol>";
   }
@@ -510,10 +529,36 @@
     return out;
   }
 
+  /* New numbers or a new card arrive with a little motion, once: the
+     marks grow from their baseline, the figures count up. Repainting the
+     same data (a hover, a list and back) does not replay it. */
+  let shown = null, settle = 0;
   function paint() {
     $app.innerHTML = card ? cardHtml() : list ? listHtml() : stats ? statsHtml() : '<div class="state">Loading…</div>';
     if (busy) $app.classList.add("busy"); else $app.classList.remove("busy");
+    const now = card || (list ? null : stats);
+    if (now && now !== shown && !busy) {
+      shown = now;
+      $app.classList.add("anim");
+      clearTimeout(settle);
+      settle = setTimeout(() => $app.classList.remove("anim"), 1600);
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) countUp();
+    }
     wire();
+  }
+  function countUp() {
+    $app.querySelectorAll(".stat b, .fst b").forEach(el => {
+      const m = /^(\d[\d,.\u00a0\u202f]*)(.*)$/s.exec(el.innerHTML);
+      const to = m ? +m[1].replace(/\D/g, "") : 0;
+      if (!m || to < 2) return;
+      const rest = m[2], t0 = performance.now();
+      const step = t => {
+        const k = Math.max(0, Math.min(1, (t - t0) / 700)), e = 1 - Math.pow(1 - k, 3);
+        el.innerHTML = (k < 1 ? Math.round(to * e).toLocaleString() : m[1]) + rest;
+        if (k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   function tipAt(el, html) {
