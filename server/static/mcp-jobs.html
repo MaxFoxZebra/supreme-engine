@@ -152,6 +152,34 @@
   .pill.live{background:color-mix(in srgb,var(--data) 14%,transparent);color:var(--tx)}
   .pill.good{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--tx)}
 
+  /* ---- today ---- */
+  .chip.plain::before{content:none}
+  .todo{display:flex;flex-direction:column;gap:8px}
+  .item{display:flex;align-items:center;gap:10px;border-radius:12px;padding:4px 10px 4px 4px;
+    background:var(--bg2);box-shadow:inset 3px 0 0 var(--data)}
+  .item.you{box-shadow:inset 3px 0 0 var(--acc)}
+  .item.late{box-shadow:inset 3px 0 0 var(--warn)}
+  .iopen{flex:1;min-width:0;display:flex;align-items:center;gap:12px;border:0;background:none;padding:9px 6px 9px 12px;
+    text-align:left;cursor:pointer;border-radius:10px}
+  .iopen:hover .w b{text-decoration:underline;text-underline-offset:2px}
+  .iopen .ini{width:36px;height:36px;border-radius:9px;font-size:12px;box-shadow:0 0 0 1px var(--rule)}
+  .iopen .w{flex:1;min-width:0}
+  .iopen .w b{display:block;font-weight:600}
+  .iopen .w span{display:block;font-size:var(--fs-xs);color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .iopen .w em{display:block;font-style:normal;font-size:var(--fs-sm);color:var(--tx2);margin-top:2px}
+  .iopen .when{flex:none;font-size:15px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+  .item.late .when{color:var(--warn)}
+  .item .act{flex:none}
+  .clear{display:flex;flex-direction:column;align-items:center;gap:4px;padding:26px 0 20px;text-align:center}
+  .clear i{width:38px;height:38px;border-radius:50%;background:color-mix(in srgb,var(--ok) 16%,transparent);position:relative;margin-bottom:8px}
+  .clear i::after{content:"";position:absolute;left:12px;top:12px;width:13px;height:7px;border:solid var(--ok);
+    border-width:0 0 2.5px 2.5px;transform:rotate(-45deg)}
+  .clear b{font-size:17px;font-weight:600}
+  .clear span{color:var(--tx2);font-size:var(--fs-sm)}
+  .anim .item{animation:rise .45s var(--ease) both;animation-delay:calc(var(--i,0) * 70ms + .1s)}
+  .anim .clear i{animation:popin .5s var(--ease) both}
+  @media (max-width:520px){.item{flex-wrap:wrap}.item .act{margin:0 0 8px 54px}}
+
   /* ---- the card ---- */
   .card-h{display:flex;align-items:center;gap:13px;margin-bottom:18px}
   .card-h .ini{width:46px;height:46px;border-radius:12px;font-size:15px;box-shadow:0 0 0 1px var(--rule)}
@@ -270,6 +298,8 @@
   /* What is on screen: the numbers, a list from them, or one card; and the
      way back from each. */
   let stats = null, list = null, card = null, confirming = null, busy = false, note = "";
+  /* What needs the user today (today()): the screen the others open from. */
+  let today = null;
   const pending = new Map();
   const $app = document.getElementById("app"), $tip = document.getElementById("tip");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
@@ -340,7 +370,9 @@
       $app.innerHTML = '<div class="state">' + esc(text || "Nothing to show.") + "</div>";
       return;
     }
-    if (sc.view === "job-card") { card = sc; stats = null; } else { stats = sc; card = null; }
+    if (sc.view === "job-card") { card = sc; stats = null; }
+    else if (sc.view === "job-today") { today = sc; stats = null; card = null; }
+    else { stats = sc; card = null; }
     list = null; paint();
   }
 
@@ -353,7 +385,8 @@
     const s = stats, t = s.totals;
     const period = '<div class="seg" role="group" aria-label="Period">' + PERIODS.map(([d, l]) =>
       '<button data-days="' + d + '" aria-pressed="' + ((s.days || 0) === d) + '">' + l + "</button>").join("") + "</div>";
-    const head = '<div class="head"><h1>Your job search<span>' + (s.days ? "Applied to in the last " + s.days + " days" :
+    const head = (today ? '<div class="head"><button class="back" id="back">← Today</button></div>' : "") +
+      '<div class="head"><h1>Your job search<span>' + (s.days ? "Applied to in the last " + s.days + " days" :
       "Everything you applied to") + "</span></h1>" + period + "</div>";
     if (!t.applications) return head + '<p class="state">No applications sent ' + (s.days ? "in the last " + s.days + " days" : "yet") +
       "." + (t.drafts ? " " + t.drafts + " " + (t.drafts === 1 ? "draft is" : "drafts are") + " waiting to be sent." : "") + "</p>";
@@ -434,6 +467,31 @@
     return "Week of " + day(p.key);
   }
 
+  /* ---- what needs you today ---- */
+  const KIND = {interview: "soon", outcome: "you", offer: "you", followup: "late", silent: "late"};
+  function todayHtml() {
+    const t = today, d = new Date(t.date + "T12:00:00");
+    const date = isNaN(d) ? t.date : d.toLocaleDateString(undefined, {weekday: "long", day: "numeric", month: "long"});
+    const head = '<div class="head"><h1>Today<span>' + esc(date) + "</span></h1>" +
+      (host.caps.serverTools ? '<button class="chip plain" id="nums">Your numbers →</button>' : "") + "</div>";
+    if (!t.items.length) return head + '<div class="clear"><i></i><b>Nothing needs you today.</b><span>' +
+      (t.drafts ? t.drafts + (t.drafts === 1 ? " draft is" : " drafts are") + " waiting to be sent." : "No interviews, follow-ups or decisions waiting.") +
+      "</span></div>" + (host.caps.message ? '<div class="ask">' + (t.drafts ? ["Which draft should I send first?"] : [])
+        .concat(["Find me something to apply to"]).map(q => '<button class="chip" data-ask="' + esc(q) + '">' + esc(q) + "</button>").join("") + "</div>" : "");
+    return head + '<div class="insight"><p>' + esc(t.headline) + "</p></div>" +
+      '<div class="todo">' + t.items.map((i, n) => '<div class="item ' + KIND[i.kind] + '" style="--i:' + n + '">' +
+        '<button class="iopen" data-job="' + esc(i.id) + '" aria-label="' + esc((i.company || "") + ": " + i.text) + '">' +
+          '<span class="ini">' + (i.logo ? '<img alt="" src="' + esc(i.logo) + '">' : esc(initials(i.company))) + "</span>" +
+          '<span class="w"><b>' + esc(i.company || "Unnamed") + "</b><span>" + esc(i.title || "") + "</span>" +
+          '<em>' + esc(i.text) + "</em></span>" +
+          (i.when ? '<span class="when">' + esc(i.when) + "</span>" : "") + "</button>" +
+        (i.action && host.caps.message ? '<button class="btn go act" data-ask-for="' + esc(i.id) + '" data-q="' + esc(i.action) + '">' +
+          esc(i.action) + "</button>" : i.kind === "outcome" ? '<button class="btn act" data-job="' + esc(i.id) + '">Record it</button>' : "") +
+        "</div>").join("") + "</div>" +
+      (t.drafts ? '<p class="fact" style="margin-top:14px">' + t.drafts + (t.drafts === 1 ? " draft is" : " drafts are") +
+        " not sent yet.</p>" : "");
+  }
+
   /* ---- a list behind a number ---- */
   function listHtml() {
     return '<div class="head"><button class="back" id="back">← The numbers</button><h1>' + esc(list.label) +
@@ -461,7 +519,8 @@
       : nx && nx.kind === "outcome" ? "Update" : null;
     const forward = c.moves.filter(m => FORWARD[m.status]), back = c.moves.filter(m => !FORWARD[m.status]);
     const asks = cardAsks(c).filter(q => !act || q !== act);
-    return (stats || list ? '<div class="head"><button class="back" id="back">← ' + (list ? esc(list.label) : "The numbers") + "</button></div>" : "") +
+    return (stats || list || today ? '<div class="head"><button class="back" id="back">← ' +
+        (list ? esc(list.label) : stats ? "The numbers" : "Today") + "</button></div>" : "") +
       '<div class="card-h"><span class="ini">' + (c.logo ? '<img alt="" src="' + esc(c.logo) + '">' : esc(initials(c.company))) +
         '</span><span class="w"><b>' + esc(c.company || "Unnamed") + "</b><span>" + esc(sub) + "</span></span>" +
         '<span class="pill' + pillClass(c.status) + '">' + esc(c.status_label) + "</span></div>" +
@@ -534,9 +593,10 @@
      same data (a hover, a list and back) does not replay it. */
   let shown = null, settle = 0;
   function paint() {
-    $app.innerHTML = card ? cardHtml() : list ? listHtml() : stats ? statsHtml() : '<div class="state">Loading…</div>';
+    $app.innerHTML = card ? cardHtml() : list ? listHtml() : stats ? statsHtml() : today ? todayHtml() :
+      '<div class="state">Loading…</div>';
     if (busy) $app.classList.add("busy"); else $app.classList.remove("busy");
-    const now = card || (list ? null : stats);
+    const now = card || (list ? null : stats || today);
     if (now && now !== shown && !busy) {
       shown = now;
       $app.classList.add("anim");
@@ -588,12 +648,21 @@
       b.onmouseenter = show; b.onfocus = show; b.onmouseleave = b.onblur = hideTip;
     });
     const back = document.getElementById("back");
-    if (back) back.onclick = () => { if (card) { card = null; confirming = null; note = ""; } else list = null; paint(); };
+    if (back) back.onclick = () => {
+      if (card) { card = null; confirming = null; note = ""; } else if (list) list = null; else if (stats && today) stats = null;
+      paint();
+    };
+    const nums = document.getElementById("nums");
+    if (nums) nums.onclick = () => period(90);
     $app.querySelectorAll("[data-move]").forEach(b => b.onclick = () => { confirming = b.dataset.move; paint(); });
     const no = document.getElementById("no"), yes = document.getElementById("yes");
     if (no) no.onclick = () => { confirming = null; paint(); };
     if (yes) yes.onclick = () => move(yes);
     $app.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => ask(b.dataset.ask));
+    $app.querySelectorAll("[data-ask-for]").forEach(b => b.onclick = () => {
+      const i = today.items.find(x => x.id === b.dataset.askFor);
+      if (i) ask(b.dataset.q, i);
+    });
     $app.querySelectorAll("[data-doc]").forEach(b => b.onclick = () => showDoc(b.dataset.doc));
   }
 
@@ -618,6 +687,7 @@
       card = await call({what: "status", job_id: c.id, status: to});
       confirming = null; note = "Moved to " + (LABEL[to] || to).toLowerCase() + ".";
       if (stats) try { stats = await call({what: "stats", days: stats.days || 0}); } catch (e) { /* stale numbers are still numbers */ }
+      if (today) try { today = await call({what: "today"}); } catch (e) { /* the list catches up next time */ }
       if (host.caps.updateModelContext) request("ui/update-model-context", {content: [{type: "text", text:
         "CV Studio job card: the user moved the application " + clean(c.company, 60) + ", " + clean(c.title, 80) +
         " (" + clean(c.id, 40) + ") from " + (LABEL[c.status] || c.status) + " to " + (LABEL[to] || to) +
@@ -629,8 +699,8 @@
   }
   /* A question about what is on screen, in the user's words, with what it is
      about passed to Claude out of the chat. */
-  async function ask(q) {
-    const c = card;
+  async function ask(q, item) {
+    const c = card || (item ? {id: item.id, company: item.company, title: item.title} : null);
     if (host.caps.updateModelContext) {
       const about = c ? "the application " + clean(c.company, 60) + ", " + clean(c.title, 80) + " (job_id " + clean(c.id, 40) + ")"
         : "their job search numbers" + (stats && stats.days ? " for the last " + stats.days + " days" : "");

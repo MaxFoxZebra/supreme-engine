@@ -33,7 +33,7 @@ from mcp.server.apps import Apps, client_supports_apps
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.prompts.base import Prompt
 from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource, Icon, ImageContent,
-                       TextContent, ToolAnnotations)
+                       ListToolsResult, PaginatedRequestParams, TextContent, ToolAnnotations)
 
 import ats
 import cjkfonts
@@ -219,7 +219,7 @@ USER_ACTIONS = {"review_change", "page_view_data", "edit_on_page", "job_view_dat
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info",
-             "page_view_data", "job_stats", "show_application"}
+             "page_view_data", "job_stats", "show_application", "today"}
 
 # What a client shows for each tool, and what it may assume of it. Claude
 # Desktop and others use the hints to decide what to ask permission for:
@@ -249,6 +249,7 @@ TITLES = {
     "job_stats": "How the job search is going",
     "show_application": "Show an application",
     "job_view_data": "Job view data",
+    "today": "What needs you today",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
 IDEMPOTENT = {"review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
@@ -348,6 +349,11 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
         # Record what happened, not merely that it was attempted: a refused
         # call logged like a successful one tells the user the model read a
         # file it was actually blocked from reading.
+        if app_only and not _shows_views():
+            # A view's own tool, called by a client that shows no views: only
+            # a model could have called it, and these act as the user.
+            raise ValueError(f"{fn.__name__} is for CV Studio's views in the conversation, "
+                             "and this client does not show them.")
         if fn.__name__ in USER_ACTIONS:
             # The user's own decision, made in a view: not an AI client's
             # change to review, nor its activity to show.
@@ -2426,14 +2432,96 @@ def show_application(job_id: str) -> CallToolResult:
                           structured_content=c if _shows_views() else None)
 
 
+def _today() -> dict:
+    """What needs the user now, most pressing first: interviews coming,
+    interviews with no outcome, offers to decide on, follow-ups due, and
+    applications gone quiet. The tracker's own alert rules (jobs.alerts),
+    each with the action that fits it."""
+    import datetime as dt
+    al = studio.jobstore.alerts(_ws())
+    jobs = {j["id"]: j for j in studio.jobstore.list_jobs(_ws())}
+    items = []
+
+    def add(kind, jid, text, when=None, action=None, order=0):
+        j = jobs.get(jid)
+        if not j or any(i["id"] == jid and i["kind"] == kind for i in items):
+            return
+        items.append({**_job_row(j), "kind": kind, "text": text, "when": when, "action": action,
+                      "logo": _logo_uri(j), "order": order})
+
+    for a in al["interview_soon"]:
+        nx = _next_step(jobs.get(a["id"]) or {}) or {}
+        d = nx.get("in_days")
+        add("interview", a["id"], nx.get("text") or "Interview coming up",
+            "Today" if d == 0 else "Tomorrow" if d == 1 else f"In {d} days" if d is not None else None,
+            "Prepare me for it", d if d is not None else 9)
+    for a in al["interview_passed"]:
+        add("outcome", a["id"], "The interview has passed: how did it go?", None, None, 20)
+    for j in jobs.values():
+        if j.get("status") == "offer":
+            add("offer", j["id"], "An offer to decide on", None, "Help me weigh it", 30)
+    for a in al["followup_due"]:
+        try:
+            late = (dt.date.today() - dt.date.fromisoformat(str(a.get("followup_date"))[:10])).days
+        except ValueError:
+            late = None
+        add("followup", a["id"], (f"A follow-up was due {late} day{'s' if late > 1 else ''} ago" if late
+                                  else "A follow-up is due today"),
+            "Due", "Draft a follow-up", 40)
+    for a in al["silent"]:
+        add("silent", a["id"], f"No reply in {a['silent_days']} days: worth a follow-up",
+            f"{a['silent_days']} days", "Draft a follow-up", 50 + min(a["silent_days"], 99) / 100)
+    items.sort(key=lambda i: i["order"])
+    drafts = sum(1 for j in jobs.values() if j.get("status") == "pending")
+    counts = {k: sum(1 for i in items if i["kind"] == k) for k in ("interview", "outcome", "offer", "followup", "silent")}
+    bits = []
+    if counts["interview"]:
+        bits.append(f"{counts['interview']} interview{'s' if counts['interview'] > 1 else ''} coming up")
+    if counts["outcome"] or counts["offer"]:
+        n = counts["outcome"] + counts["offer"]
+        bits.append(f"{n} decision{'s' if n > 1 else ''} to record")
+    if counts["followup"] or counts["silent"]:
+        n = counts["followup"] + counts["silent"]
+        bits.append(f"{n} to follow up")
+    head = (", ".join(bits) + ".")[:1].upper() + (", ".join(bits) + ".")[1:] if bits else "Nothing needs you today."
+    return {"view": "job-today", "date": dt.date.today().isoformat(), "headline": head,
+            "items": items, "drafts": drafts, "counts": counts}
+
+
+def _today_text(t: dict) -> str:
+    lines = ["Today: " + t["headline"]]
+    for i in t["items"]:
+        lines.append(f"- {i['company']}, {i['title']} ({i['id']}): {i['text']}")
+    if t["drafts"]:
+        lines.append(f"{t['drafts']} draft application(s) not sent yet.")
+    return "\n".join(lines)
+
+
+@tool(view=JOBS_VIEW)
+def today() -> CallToolResult:
+    """What needs the user today, most pressing first: interviews coming up
+    (with a countdown), interviews with no outcome recorded, offers to decide
+    on, follow-ups due, and applications that have gone quiet. Use it when
+    the user asks what to do today, or opens the conversation with their job
+    search; then offer to help with the first item. In a client that shows
+    views it is a list they can act on: each opens its application."""
+    t = _today()
+    return CallToolResult(content=[TextContent(type="text", text=_today_text(t))],
+                          structured_content=t if _shows_views() else None)
+
+
 @tool(view=JOBS_VIEW, app_only=True)
 def job_view_data(what: str, job_id: str = "", status: str = "", days: int = 0) -> CallToolResult:
     """For the job views only, hidden from the model. what="stats": the
     numbers for `days` (0 for all time). what="card": one application.
-    what="status": the user moves `job_id` to `status`, confirmed on the card."""
+    what="status": the user moves `job_id` to `status`, confirmed on the card.
+    what="today": what needs the user today."""
     if what == "stats":
         st = _stats(days or None)
         return CallToolResult(content=[TextContent(type="text", text=_stats_text(st))], structured_content=st)
+    if what == "today":
+        t = _today()
+        return CallToolResult(content=[TextContent(type="text", text=_today_text(t))], structured_content=t)
     if what == "card":
         c = _card(_job(job_id))
         return CallToolResult(content=[TextContent(type="text", text=_card_text(c))], structured_content=c)
@@ -2445,8 +2533,28 @@ def job_view_data(what: str, job_id: str = "", status: str = "", days: int = 0) 
             "status": status, "append_note": f"Moved to {STATUS_LABEL[status].lower()} on the card in the chat."})
         c = _card(_job(job_id))
         return CallToolResult(content=[TextContent(type="text", text=_card_text(c))], structured_content=c)
-    raise ValueError("what is stats, card or status")
+    raise ValueError("what is stats, card, status or today")
 
+
+
+# The views' own tools (app_only) are hidden from the model by a client that
+# shows views. A client that does not would list them to its model like any
+# other, and they act as the user: an edit saved as theirs, a status moved as
+# if they had clicked it. So such a client is not told about them at all, and
+# a call to one from it is refused (in tool()).
+async def _list_tools_for(ctx, params):
+    tools = await mcp.list_tools()
+    try:
+        views = client_supports_apps(ctx)
+    except Exception:
+        views = False
+    if not views:
+        tools = [t for t in tools
+                 if "app" not in (((t.meta or {}).get("ui") or {}).get("visibility") or [])]
+    return ListToolsResult(tools=tools)
+
+
+mcp._lowlevel_server.add_request_handler("tools/list", PaginatedRequestParams, _list_tools_for)
 
 # The skills, offered as prompts too. A client that reads skills has them
 # already (the app installs them); one that does not -- ChatGPT, or Claude

@@ -100,11 +100,18 @@ if __name__ == "__main__":
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
                     "get_interview_prep", "save_interview_prep",
-                    "set_company_logo", "read_posting", "job_stats", "show_application"}
-    # The page view's own, which a client that shows views keeps from the model.
+                    "set_company_logo", "read_posting", "job_stats", "show_application", "today"}
+    # The views' own tools act as the user. This client shows no views, so it
+    # is not told about them, and cannot call them by name either.
     view_only = {"review_change", "page_view_data", "edit_on_page", "job_view_data"}
-    check("every tool is advertised", set(tools) == documents | applications | view_only,
-          ",".join(sorted(set(tools) ^ (documents | applications | view_only))) or "exact match")
+    check("every tool is advertised", set(tools) == documents | applications,
+          ",".join(sorted(set(tools) ^ (documents | applications))) or "exact match")
+    # A call that would otherwise succeed: a status lookup reads nothing private.
+    r = c.send("tools/call", {"name": "page_view_data", "arguments": {
+        "what": "status", "path": "profile/my-cv.yaml", "rid": "00000000"}})
+    refused = r.get("result", {}).get("isError") is True or "error" in r
+    check("the views' own tools are neither listed nor callable without views",
+          not (set(tools) & view_only) and refused, json.dumps(r)[:120])
     check("no delete tool reaches the applications",
           not any("delete" in t or "remove" in t for t in tools),
           ",".join(sorted(tools)))

@@ -8,6 +8,18 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- **What needs you today.** Ask Claude what to do today and it shows the
+  list, most pressing first: interviews coming up with a countdown and
+  *Prepare me for it*, interviews with no outcome yet, offers to decide on,
+  follow-ups due and applications that have gone quiet, with *Draft a
+  follow-up*. Each opens its application; your numbers are one click away.
+- **Safer with Codex, Vibe and Hermes.** The tools CV Studio's views use in
+  Claude to save your own edits and status changes are no longer offered
+  to clients that do not show those views, so no model there can act as
+  you. It also makes every conversation in them a little cheaper.
+
 ## 0.43.0
 
 - **The CV page, in the same style as the job numbers.** Your name and the

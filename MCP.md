@@ -547,6 +547,12 @@ Two more tools show a view (`static/mcp-jobs.html`):
   people and documents, and questions that fit where it is (*Draft a
   follow-up email*, *Prepare me for the interview*).
 
+- **`today`** shows what needs the user today, most pressing first:
+  interviews coming up (with a countdown and *Prepare me for it*),
+  interviews with no outcome recorded, offers to decide on, follow-ups due
+  and applications gone quiet (with *Draft a follow-up*), from the tracker's
+  own alert rules. Each opens its card; the numbers open from it too.
+
 From a card the user can move an application to its next status. The view
 asks first, because the history is permanent and the funnel is drawn from it,
 then writes it through `job_view_data` (a tool only views can call) as the
@@ -555,6 +561,13 @@ does not change it back. Only the statuses that can come next are offered.
 
 The app keeps its own funnel screen: the chat is for the numbers with a
 reading of them, and for acting on one application where the conversation is.
+
+**Only for clients that show views.** The views' own tools (`review_change`,
+`page_view_data`, `edit_on_page`, `job_view_data`) act as the user: an edit
+saved as theirs, a status moved as if they had clicked it. A client that
+shows views keeps them from its model. A client that does not (Codex, Vibe,
+Hermes) is not told about them at all, and a call to one from it is
+refused.
 
 ## What a client is told about each tool
 

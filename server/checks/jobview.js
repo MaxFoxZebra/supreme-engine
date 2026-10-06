@@ -143,6 +143,47 @@ async function main() {
   check("a company name is only ever text, and one line in what reaches the model",
     !pwned && out.every(t => !/[\n\r]/.test(t)), JSON.stringify(out.map(t => t.slice(0, 60))));
 
+  console.log("Today");
+  check("today shows the job view", by("today")._meta.ui.resourceUri === "ui://cv-studio/jobs.html");
+  /* One sent and overdue for a follow-up, beside the sample's interviews. */
+  const late = (await c.send("tools/call", {name: "add_job", arguments: {company: "Doctolib", title: "Platform Engineer"}})).result;
+  const lateId = (JSON.stringify(late).match(/[0-9a-f]{32}/) || [])[0];
+  await c.send("tools/call", {name: "set_job_status", arguments: {job_id: lateId, status: "applied"}});
+  const past = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+  await c.send("tools/call", {name: "update_job_tracking", arguments: {job_id: lateId, followup_date: past}});
+  const td = (await c.send("tools/call", {name: "today", arguments: {}})).result;
+  const tsc = td.structuredContent;
+  check("the model gets the day as a short list", /^Today: /.test(td.content[0].text) && td.content[0].text.includes(lateId),
+    td.content[0].text.split("\n")[0]);
+  check("most pressing first: interviews, then follow-ups",
+    tsc.items.length >= 2 && tsc.items[0].kind === "interview" && tsc.items.some(i => i.id === lateId && i.kind === "followup" &&
+      /3 days ago/.test(i.text)), JSON.stringify(tsc.items.map(i => [i.company, i.kind, i.when])));
+  await show(td);
+  const rows = await b.evalJs(`[...${doc}.querySelectorAll(".item")].map(x=>x.innerText.replace(/\\n+/g," | "))`);
+  check("the view lists each with its countdown and its action", rows.length === tsc.items.length &&
+    /In \d+ days|Tomorrow|Today/.test(rows[0]) && /Prepare me for it/.test(rows[0]) && rows.some(r => /Due/.test(r) && /follow-up/.test(r)),
+    rows[0]);
+  await b.evalJs(`${doc}.querySelector('.iopen[data-job="${lateId}"]').click()`);
+  await until(`!!${doc}.querySelector(".card-h")`);
+  const back = await b.evalJs(`(${doc}.getElementById("back")||{}).textContent||""`);
+  check("an item opens its card, with the way back to Today", /Today/.test(back), back);
+  await b.evalJs(`${doc}.getElementById("back").click()`);
+  await sleep(200);
+  check("and back is Today again", await b.evalJs(`${doc}.querySelectorAll(".item").length`) === tsc.items.length);
+  const before = await b.evalJs(`LOG.filter(m=>m.method==="ui/message").length`);
+  await b.evalJs(`${doc}.querySelector('[data-ask-for="${lateId}"]').click()`);
+  await sleep(300);
+  const asked2 = await b.evalJs(`(LOG.filter(m=>m.method==="ui/message").pop()||{params:{content:[{text:""}]}}).params.content[0].text`);
+  const ctx2 = await b.evalJs(`(LOG.filter(m=>m.method==="ui/update-model-context").pop()||{params:{content:[{text:""}]}}).params.content[0].text`);
+  check("an item's action asks Claude about that application", asked2 === "Doctolib — Draft a follow-up" &&
+    ctx2.includes(lateId) && (await b.evalJs(`LOG.filter(m=>m.method==="ui/message").length`)) === before + 1, asked2);
+  await b.evalJs(`${doc}.getElementById("nums").click()`);
+  await until(`!!${doc}.querySelector(".stats")`);
+  await b.evalJs(`${doc}.getElementById("back").click()`);
+  await sleep(200);
+  check("the numbers open from Today, and come back to it",
+    await b.evalJs(`!!${doc}.querySelector(".todo")`));
+
   b.close(); srv.close(); c.close();
   console.log();
   console.log(fails ? `${fails} failure(s)` : "every job view check passes");

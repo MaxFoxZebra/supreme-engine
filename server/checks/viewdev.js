@@ -25,8 +25,8 @@ const PORT = +(opt("--port") || 5180);
 const VIEW = path.join(SERVER, "static", "mcp-page.html");
 const JOBS_VIEW = path.join(SERVER, "static", "mcp-jobs.html");
 /* The job views are previewed beside the pages: the numbers, and a card. */
-const STATS = "Job search (job_stats)", CARD = "An application (show_application)";
-const viewFor = p => fs.readFileSync(p === STATS || p === CARD ? JOBS_VIEW : VIEW, "utf-8");
+const STATS = "Job search (job_stats)", CARD = "An application (show_application)", TODAY = "What needs you (today)";
+const viewFor = p => fs.readFileSync([STATS, CARD, TODAY].includes(p) ? JOBS_VIEW : VIEW, "utf-8");
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function sampleWorkspace() {
@@ -101,6 +101,18 @@ async function main() {
     }
   }
   {
+    /* One more application, sent and overdue for a follow-up, so Today has
+       more than the sample's interviews on it. Only in the sample. */
+    if (!opt("--workspace")) {
+      const a = (await c.send("tools/call", {name: "add_job", arguments: {company: "Doctolib", title: "Platform Engineer",
+        source: "LinkedIn"}})).result;
+      const id = (JSON.stringify(a).match(/[0-9a-f]{32}/) || [])[0];
+      await c.send("tools/call", {name: "set_job_status", arguments: {job_id: id, status: "applied"}});
+      const past = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10);
+      await c.send("tools/call", {name: "update_job_tracking", arguments: {job_id: id, followup_date: past}});
+    }
+    const td = (await c.send("tools/call", {name: "today", arguments: {}})).result;
+    if (td && td.structuredContent) { results[TODAY] = td; ok.push(TODAY); console.log("today      " + td.content[0].text.split("\n")[0]); }
     const r = (await c.send("tools/call", {name: "job_stats", arguments: {days: 365}})).result;
     if (r && r.structuredContent) { results[STATS] = r; ok.push(STATS); console.log("stats      " + r.content[0].text.split("\n")[0]); }
     /* The card of the application furthest along: the one with most to show. */
