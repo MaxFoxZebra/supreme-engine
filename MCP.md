@@ -526,17 +526,22 @@ the client's light or dark theme.
 
 Two more tools show a view (`static/mcp-jobs.html`):
 
-- **`job_stats`** shows how the search is going: applications sent, the share
+- **`job_stats`** shows how the search is going. It opens with a sentence or
+  two on where applications are being lost, worked out from the numbers (the
+  weakest step, counting only applications with an outcome there, and the
+  source that gets most replies), then: applications sent, the share
   that got a reply and an interview, the median days to a reply, the funnel
   (applied, replied, interviewed, offer, accepted, each as a share of the
-  stage before), where each application stands now, applications per week
-  or month, and which sources got replies. 30 days, 90 days, a year or
+  stage before, with who stopped between each and how), every application
+  as a dot in the week or month it went out, shaded by how far it got, and
+  which sources got replies. 30 days, 90 days, a year or
   everything, switched on the view. Every number opens the applications
   behind it, and each of those opens its card, in the same view. The model
   gets the same numbers as a few lines of text, and is asked to say what they
   mean; *What do these numbers say?* asks it from the view.
-- **`show_application`** shows one application as a card: its status and the
-  one thing to do next (a follow-up due, an interview coming, an outcome to
+- **`show_application`** shows one application as a card: where it is on its
+  way from applied to offer, with the day it reached each stage, and the
+  one thing to do next, with a countdown and the matching action (a follow-up due, an interview coming, an outcome to
   record, an offer to decide on), when it was applied to and how fast they
   replied compared with your other replies, its history, interview rounds,
   people and documents, and questions that fit where it is (*Draft a

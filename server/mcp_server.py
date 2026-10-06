@@ -2110,6 +2110,61 @@ def _job_row(job: dict) -> dict:
             "applied": _applied_on(job)}
 
 
+# Where an application stopped, between each stage and the next.
+STOPPED_AT = [["applied", "ghosted"], ["rejected"],
+              ["interviewing", "rejected_interviewing", "ghosted_interviewing"], ["offer", "refused"]]
+DROP_LABEL = {"applied": "waiting", "ghosted": "no reply", "rejected": "rejected",
+              "interviewing": "still interviewing", "rejected_interviewing": "rejected",
+              "ghosted_interviewing": "no reply", "offer": "deciding", "refused": "declined"}
+
+
+def _reached(status: str | None) -> int:
+    """How far an application got: 0 sent, 1 replied, 2 interviewed, 3 offer, 4 accepted."""
+    return max((i for i, (_, _, ss) in enumerate(STAGES) if status in ss), default=0)
+
+
+def _insight(st: dict, sent: list[dict]) -> list[str]:
+    """One or two plain sentences on where the search is losing applications,
+    worked out from the numbers rather than written by a model: the view
+    opens with them, and Claude is there to say more."""
+    t, g = st["totals"], st["stages"]
+    n = t["applications"]
+    if n < 3:
+        return [f"Too early to read much: {n} application{'s' if n != 1 else ''} so far."]
+    out = []
+    # (rate, index) for each step, counting only what has an outcome there:
+    # an application still waiting, or an interview still going, is not lost.
+    still = {1: sum(1 for j in sent if j.get("status") == "applied"),
+             2: 0, 3: sum(1 for j in sent if j.get("status") == "interviewing")}
+    steps = []
+    for i in range(1, 4):
+        settled = g[i - 1]["count"] - still[i]
+        if settled >= 3:
+            steps.append((g[i]["count"] / settled, i))
+    if steps:
+        rate, i = min(steps)
+        if i == 1:
+            quiet = g[0]["count"] - g[1]["count"]
+            out.append(f"Most of what is lost is lost early: {quiet} of {g[0]['count']} applications "
+                       "have had no answer. Tailoring each one, and following up, is where to work.")
+        elif i == 2:
+            no = g[1]["count"] - g[2]["count"]
+            out.append(f"Your applications get answers ({round(100 * g[1]['count'] / n)}% replied), but "
+                       f"{no} of {g[1]['count']} replies were rejections before an interview: "
+                       "the CV is read, and not yet convincing for these roles.")
+        else:
+            out.append(f"You reach interviews ({g[2]['count']} so far) but "
+                       f"{'no offer yet' if not g[3]['count'] else 'few offers'}: interview "
+                       "preparation is where to look.")
+    good = [r for r in st["sources"] if r["count"] >= 2 and r["source"] != "Not recorded"]
+    if len(good) >= 2:
+        best = max(good, key=lambda r: (r["replied"] / r["count"], r["count"]))
+        avg = sum(r["replied"] for r in good) / sum(r["count"] for r in good)
+        if best["replied"] / best["count"] > avg + 0.1:
+            out.append(f"{best['source']} works best: {best['replied']} of {best['count']} replied.")
+    return out[:2]
+
+
 def _stats(days: int | None) -> dict:
     import datetime as dt
     jobs = studio.jobstore.list_jobs(_ws())
@@ -2165,8 +2220,23 @@ def _stats(days: int | None) -> dict:
                           for k, v in sources.items()), key=lambda r: -r["count"])[:8]
     n = len(sent)
     rate = lambda a: round(100 * a / n) if n else None  # noqa: E731
+    # Who stopped between one stage and the next, and how.
+    drops = []
+    for i in range(len(STAGES) - 1):
+        parts = [{"key": k, "label": DROP_LABEL[k], "count": sum(1 for j in sent if j.get("status") == k),
+                  "jobs": [_job_row(j) for j in sent if j.get("status") == k][:80]}
+                 for k in STOPPED_AT[i]]
+        drops.append([p for p in parts if p["count"]])
+    dots = sorted(({**_job_row(j), "reached": _reached(j.get("status"))} for j in sent),
+                  key=lambda d: d["applied"] or "")[-400:]
+    stats = {
+        "stages": stages, "totals": {"applications": n, "replied": stages[1]["count"],
+                                     "interviewed": stages[2]["count"], "offers": stages[3]["count"]},
+        "sources": source_rows,
+    }
     return {
         "view": "job-stats", "days": days, "since": since,
+        "insight": _insight(stats, sent), "drops": drops, "dots": dots,
         "totals": {"applications": n, "replied": stages[1]["count"], "reply_rate": rate(stages[1]["count"]),
                    "interviewed": stages[2]["count"], "interview_rate": rate(stages[2]["count"]),
                    "offers": stages[3]["count"], "median_reply_days": studio.jobstore._median(replies),
@@ -2187,6 +2257,8 @@ def _stats_text(st: dict) -> str:
              f"Median days to a reply: {t['median_reply_days'] if t['median_reply_days'] is not None else 'no replies yet'}.",
              "Where they stand: " + ", ".join(f"{o['label'].lower()} {o['count']}" for o in st["outcomes"]) + ".",
              "By source (sent, replied): " + ", ".join(f"{r['source']} {r['count']}/{r['replied']}" for r in st["sources"]) + "."]
+    if st.get("insight"):
+        lines.append("The view opens with: " + " ".join(st["insight"]))
     return "\n".join(lines)
 
 
@@ -2208,7 +2280,8 @@ def _next_step(job: dict) -> dict | None:
             said = str(job["interview_at"])[:16].replace("T", " at ")
         what = _one_line(rnd.get("kind"), 40) or "Interview"
         who = _one_line(rnd.get("with"), 60)
-        return {"kind": "interview", "text": f"{what} on {said}" + (f", with {who}" if who else "")}
+        return {"kind": "interview", "text": f"{what} on {said}" + (f", with {who}" if who else ""),
+                "in_days": -age}
     if age is not None and age > 0 and st == "interviewing":
         return {"kind": "outcome", "text": "The interview has passed: how did it go?"}
     if st == "applied":
@@ -2248,6 +2321,7 @@ def _card(job: dict) -> dict:
         "followup": job.get("followup_date") or None,
         "reply_days": days, "faster_than": faster,
         "next": _next_step(job),
+        "track": _track(job),
         "moves": [{"status": s, "label": STATUS_LABEL[s]} for s in NEXT.get(job.get("status"), [])],
         "history": [{"status": h.get("status"), "label": STATUS_LABEL.get(h.get("status"), h.get("status")),
                      "at": str(h.get("at") or "")[:10]} for h in job.get("status_history") or []][-12:],
@@ -2258,6 +2332,30 @@ def _card(job: dict) -> dict:
         "cv": job.get("cv_path") or None, "letter": job.get("letter_path") or None,
         "has_posting": bool(job.get("description")),
     }
+
+
+def _track(job: dict) -> dict:
+    """The application's way through the stages, with the day it reached
+    each, and where it stopped if it did."""
+    hist = job.get("status_history") or []
+    first = {}
+    applied = None
+    for h in hist:
+        st, at = h.get("status"), str(h.get("at") or "")[:10]
+        if st == "applied" and not applied:
+            applied = at
+        r = _reached(st)
+        if st in ("ghosted", "ghosted_interviewing"):
+            continue
+        for k in range(1, r + 1):
+            first.setdefault(k, at)
+    first.setdefault(0, applied or _applied_on(job))
+    status = job.get("status")
+    reached = _reached(status) if status != "pending" else -1
+    stopped = {"rejected": "Rejected", "ghosted": "No reply", "rejected_interviewing": "Rejected",
+               "ghosted_interviewing": "No reply", "refused": "Declined"}.get(status)
+    return {"steps": [{"label": label, "date": first.get(i)} for i, (_, label, _) in enumerate(STAGES)],
+            "reached": reached, "stopped": stopped}
 
 
 def _card_text(c: dict) -> str:

@@ -66,11 +66,16 @@ async function main() {
   const doc = `document.getElementById("v").contentDocument`;
   const until = async (expr, n = 40) => { for (let i = 0; i < n && !(await b.evalJs(expr)); i++) await sleep(200); };
   await show(st);
-  const kpis = await b.evalJs(`[...${doc}.querySelectorAll(".kpi .v")].map(x=>x.textContent)`);
+  const kpis = await b.evalJs(`[...${doc}.querySelectorAll(".stat b")].map(x=>x.textContent)`);
   check("it shows the top line", kpis.length === 4 && kpis[0] === String(sc.totals.applications), JSON.stringify(kpis));
-  const bars = await b.evalJs(`[...${doc}.querySelectorAll(".fun .bar")].map(x=>x.getAttribute("aria-label"))`);
+  const bars = await b.evalJs(`[...${doc}.querySelectorAll(".fst")].map(x=>x.getAttribute("aria-label"))`);
   check("and the funnel, each stage named and counted", bars.length === 5 && /^Applied: \d+/.test(bars[0]), bars[1]);
-  await b.evalJs(`${doc}.querySelector('.bar[data-stage="interviewed"]').click()`);
+  const insight = await b.evalJs(`(${doc}.querySelector(".insight")||{}).textContent||""`);
+  check("led by a sentence on where applications are lost, from the numbers", insight.length > 30 &&
+    insight === sc.insight.join(""), insight.slice(0, 90));
+  const dots = await b.evalJs(`${doc}.querySelectorAll(".dots .dot").length`);
+  check("with every application as a dot", dots === sc.dots.length, String(dots));
+  await b.evalJs(`${doc}.querySelector('.fst[data-stage="interviewed"]').click()`);
   await sleep(200);
   const listed = await b.evalJs(`[...${doc}.querySelectorAll(".job")].map(x=>x.dataset.job)`);
   check("a stage opens the applications behind it",

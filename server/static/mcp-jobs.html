@@ -62,66 +62,78 @@
   .back:hover{background:var(--bg2);color:var(--tx)}
   .busy{opacity:.55;transition:opacity .15s}
 
-  /* ---- stat tiles ---- */
-  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:22px}
-  @media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  .kpi{border:0;background:var(--bg2);border-radius:var(--r);padding:10px 12px;text-align:left;cursor:pointer;
-    transition:background .15s}
-  .kpi:hover{background:color-mix(in srgb,var(--tx) 8%,var(--bg2))}
-  .kpi:disabled{cursor:default}
-  .kpi .l{display:block;font-size:var(--fs-xs);color:var(--tx2)}
-  .kpi .v{display:block;font-size:24px;font-weight:600;letter-spacing:-.01em;line-height:1.25;margin-top:2px}
-  .kpi .s{display:block;font-size:var(--fs-xs);color:var(--tx3)}
+  /* ---- the numbers ---- */
+  /* How far an application got, one hue darker the further: an ordinal
+     ramp validated on both chat surfaces (lighter the further, on dark). */
+  :root{--r0:light-dark(#86b6ef,#1c5cab);--r1:light-dark(#5598e7,#2a78d6);--r2:light-dark(#2a78d6,#5598e7);
+    --r3:light-dark(#1c5cab,#86b6ef);--r4:light-dark(#104281,#b7d3f6)}
+  .insight{position:relative;padding:2px 0 2px 16px;margin:0 0 18px}
+  .insight::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:var(--data)}
+  .insight p{margin:0;font-size:17px;line-height:1.45;font-weight:500;letter-spacing:-.01em;text-wrap:pretty}
+  .insight p.sub{font-size:var(--fs-sm);font-weight:400;color:var(--tx2);margin-top:6px;letter-spacing:0}
+  .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0 0 26px;border-top:1px solid var(--rule);
+    border-bottom:1px solid var(--rule)}
+  @media (max-width:520px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .stat{border:0;background:none;text-align:left;padding:12px 12px 11px;cursor:pointer;border-radius:0;transition:background .15s}
+  .stat+.stat{box-shadow:inset 1px 0 0 var(--rule)}
+  .stat:hover{background:var(--bg2)}
+  .stat:disabled{cursor:default;background:none}
+  .stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.15}
+  .stat b small{font-size:15px;font-weight:500;color:var(--tx2);margin-left:1px}
+  .stat span{display:block;font-size:var(--fs-xs);color:var(--tx2);margin-top:3px}
+  .stat em{font-style:normal;color:var(--tx3)}
 
-  /* ---- sections ---- */
-  h2{font-size:var(--fs-sm);font-weight:600;margin:0 0 10px;color:var(--tx)}
+  h2{font-size:var(--fs-sm);font-weight:600;margin:0 0 12px;color:var(--tx)}
   h2 span{font-weight:400;color:var(--tx3);margin-left:6px}
-  section{margin-bottom:24px}
+  section{margin-bottom:28px}
 
-  /* The funnel: one bar per stage, its share of what was sent. */
-  .fun{display:grid;grid-template-columns:96px 1fr;gap:6px 12px;align-items:center}
-  .fun .lab{font-size:var(--fs-sm);color:var(--tx2);text-align:right;white-space:nowrap}
-  .bar{position:relative;display:flex;align-items:center;gap:8px;height:28px;border:0;background:none;padding:0;
-    cursor:pointer;width:100%;text-align:left;border-radius:4px}
-  .bar:disabled{cursor:default}
-  .bar i{display:block;height:20px;background:var(--data);border-radius:0 4px 4px 0;min-width:2px;transition:filter .15s}
-  .bar:hover i,.bar:focus-visible i{filter:brightness(1.12)}
-  .bar b{font-weight:600;font-size:var(--fs-sm);white-space:nowrap}
-  .bar em{font-style:normal;font-size:var(--fs-xs);color:var(--tx3);white-space:nowrap}
+  .funnel{position:relative}
+  .flab{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));text-align:center}
+  .fst{border:0;background:none;padding:4px 2px 6px;cursor:pointer;border-radius:8px;transition:background .15s}
+  .fst:hover{background:var(--bg2)}
+  .fst:disabled{cursor:default;background:none;opacity:.6}
+  .fst span{display:block;font-size:var(--fs-xs);color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fst b{display:block;font-size:20px;font-weight:600;letter-spacing:-.01em;line-height:1.2}
+  .fst em{display:block;font-style:normal;font-size:11.5px;color:var(--tx3)}
+  .funnel svg{display:block;width:100%;height:140px}
+  .funnel .flow{fill:var(--data);opacity:.12}
+  .funnel .none{stroke:var(--rule2);stroke-width:2;stroke-dasharray:3 4}
+  .st0{fill:var(--r0)}.st1{fill:var(--r1)}.st2{fill:var(--r2)}.st3{fill:var(--r3)}.st4{fill:var(--r4)}
+  .fdrop{position:relative;height:40px}
+  .fdrop div{position:absolute;top:0;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:1px}
+  .fdrop button{border:0;background:none;padding:1px 6px;border-radius:5px;font-size:11.5px;color:var(--tx3);cursor:pointer;white-space:nowrap}
+  .fdrop button b{color:var(--tx2);font-weight:600}
+  .fdrop button:hover{background:var(--bg2);color:var(--tx)}
+  .fdrop button::before{content:"↓ ";color:var(--tx3)}
 
-  /* Where each one stands: a row each, the count, a thin bar. */
-  .rows{display:flex;flex-direction:column}
-  .row{display:grid;grid-template-columns:1fr 90px 34px;align-items:center;gap:10px;border:0;background:none;
-    padding:6px 6px;margin:0 -6px;border-radius:7px;cursor:pointer;text-align:left;font-size:var(--fs-sm)}
-  .row:hover{background:var(--bg2)}
-  .row .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .row .m{height:6px;background:var(--grid);border-radius:3px;overflow:hidden}
-  .row .m i{display:block;height:100%;background:var(--data);border-radius:0 3px 3px 0}
-  .row .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--tx2)}
-
-  /* Over time: columns from one baseline. */
-  .cols{position:relative;height:120px;display:flex;align-items:flex-end;gap:2px;border-bottom:1px solid var(--grid);
-    padding-top:16px}
-  .col{flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%;border:0;background:none;padding:0;cursor:default;min-width:3px}
-  .col i{display:block;width:100%;max-width:24px;background:var(--data);border-radius:4px 4px 0 0;min-height:0}
-  .col:hover i,.col:focus-visible i{filter:brightness(1.12)}
-  .col .zero{display:block;width:100%;max-width:24px;height:1px;background:var(--rule2)}
-  .axis{display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);margin-top:4px;font-variant-numeric:tabular-nums}
-  .ymax{position:absolute;left:0;top:0;font-size:11px;color:var(--tx3)}
-  .ygrid{position:absolute;left:0;right:0;top:16px;border-top:1px solid var(--grid)}
-  .tip{position:fixed;z-index:9;pointer-events:none;background:var(--bg);border:1px solid var(--rule);border-radius:7px;
-    padding:5px 9px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.12);display:none;white-space:nowrap}
+  .dots{display:flex;align-items:flex-end;gap:3px;min-height:72px;padding:4px 0 6px;border-bottom:1px solid var(--rule2)}
+  .dcol{flex:1;display:flex;flex-direction:column-reverse;align-items:center;gap:2px;min-width:0}
+  .dot{display:block;width:var(--dot,11px);height:var(--dot,11px);border-radius:50%;border:0;padding:0;cursor:pointer;
+    background:var(--r0);transition:transform .12s var(--ease),box-shadow .12s}
+  .dot:hover,.dot:focus-visible{transform:scale(1.35);box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--tx2);outline:none}
+  .dot.r0{background:var(--r0)}.dot.r1{background:var(--r1)}.dot.r2{background:var(--r2)}.dot.r3{background:var(--r3)}.dot.r4{background:var(--r4)}
+  i.dot{display:inline-block;width:9px;height:9px;cursor:default;vertical-align:-1px;margin-right:5px}
+  .axis{display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);margin-top:5px}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:var(--fs-xs);color:var(--tx2);margin-top:10px}
+  .legend .sw{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+  .sw.rep,.strk .rep{background:var(--r2)}
+  .sw.sent,.strk .sent{background:color-mix(in srgb,var(--r0) 45%,transparent)}
+  .srcs{display:flex;flex-direction:column;gap:8px}
+  .src{display:grid;grid-template-columns:132px 1fr 72px;align-items:center;gap:12px;font-size:var(--fs-sm)}
+  .src .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .strk{position:relative;height:12px}
+  .strk i{position:absolute;left:0;top:0;bottom:0;border-radius:0 4px 4px 0}
+  .src .n{text-align:right;color:var(--tx3);font-size:var(--fs-xs);white-space:nowrap}
+  .src .n b{color:var(--tx);font-weight:600;font-size:var(--fs-sm)}
+  .tip{position:fixed;z-index:9;pointer-events:none;background:var(--bg);border:1px solid var(--rule);border-radius:8px;
+    padding:6px 10px;font-size:12px;line-height:1.4;box-shadow:0 6px 18px rgba(0,0,0,.14);display:none;max-width:260px}
   .tip b{font-size:13px}
 
-  table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
-  th{font-weight:500;color:var(--tx3);font-size:var(--fs-xs);text-align:left;padding:0 6px 6px}
-  td{padding:6px;border-top:1px solid var(--rule)}
-  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
-
   .ask{display:flex;gap:6px;flex-wrap:wrap}
-  .chip{border:1px solid var(--rule);background:var(--bg);border-radius:99px;padding:4px 11px;cursor:pointer;
-    font-size:12.5px;color:var(--tx2);transition:border-color .15s,color .15s}
-  .chip:hover{color:var(--tx);border-color:var(--acc)}
+  .chip{border:1px solid var(--rule);background:var(--bg);border-radius:99px;padding:5px 12px;cursor:pointer;
+    font-size:12.5px;color:var(--tx2);transition:border-color .15s,color .15s,background .15s}
+  .chip::before{content:"✦ ";color:var(--acc)}
+  .chip:hover{color:var(--tx);border-color:var(--acc);background:color-mix(in srgb,var(--acc) 6%,var(--bg))}
 
   /* ---- a list of applications ---- */
   .list{display:flex;flex-direction:column}
@@ -141,43 +153,90 @@
   .pill.good{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--tx)}
 
   /* ---- the card ---- */
-  .card-h{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-  .card-h .ini{width:42px;height:42px;border-radius:10px;font-size:14px}
+  .card-h{display:flex;align-items:center;gap:13px;margin-bottom:18px}
+  .card-h .ini{width:46px;height:46px;border-radius:12px;font-size:15px;box-shadow:0 0 0 1px var(--rule)}
   .card-h .w{flex:1;min-width:0}
-  .card-h b{display:block;font-size:16px;font-weight:600;letter-spacing:-.01em}
-  .card-h span{display:block;color:var(--tx2);font-size:var(--fs-sm)}
-  .next{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:var(--r);background:var(--bg2);
-    margin-bottom:12px;font-size:var(--fs-sm)}
-  .next i{width:7px;height:7px;border-radius:50%;background:var(--data);flex:none}
-  .next.warn{background:var(--warnbg)}
-  .next.warn i{background:var(--warn)}
+  .card-h b{display:block;font-size:18px;font-weight:600;letter-spacing:-.015em;line-height:1.25}
+  .card-h span{display:block;color:var(--tx2);font-size:var(--fs-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill.end{background:color-mix(in srgb,var(--tx) 6%,transparent);color:var(--tx3)}
+
+  /* Where it is on its way: a line through the stages. */
+  .track{list-style:none;margin:0 0 18px;padding:0;display:flex}
+  .track li{flex:1;position:relative;padding-top:20px;min-width:0;text-align:center}
+  .track li::before{content:"";position:absolute;top:6px;left:-50%;right:50%;height:2px;background:var(--rule)}
+  .track li:first-child::before{display:none}
+  .track li[data-fill]::before,.track li.now::before,.track li.stop::before{background:var(--data)}
+  .track li.stop::before{background:linear-gradient(90deg,var(--data),var(--rule2))}
+  .track i{position:absolute;top:0;left:50%;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;
+    background:var(--bg);box-shadow:inset 0 0 0 2px var(--rule2)}
+  .track .done i{background:var(--data);box-shadow:0 0 0 3px var(--bg)}
+  .track .done i::after{content:"";position:absolute;left:4px;top:3.5px;width:5px;height:3px;border:solid #fff;
+    border-width:0 0 1.6px 1.6px;transform:rotate(-45deg)}
+  .track .now i{background:var(--bg);box-shadow:inset 0 0 0 4px var(--data),0 0 0 4px color-mix(in srgb,var(--data) 22%,transparent)}
+  .track .stop i{background:var(--bg);box-shadow:inset 0 0 0 2px var(--tx3)}
+  .track .stop i::before,.track .stop i::after{content:"";position:absolute;left:3px;right:3px;top:6px;height:2px;background:var(--tx3);
+    transform:rotate(45deg)}
+  .track .stop i::after{transform:rotate(-45deg)}
+  .track b{display:block;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .track .todo b{color:var(--tx3);font-weight:400}
+  .track .stop b{color:var(--tx2)}
+  .track span{display:block;font-size:11px;color:var(--tx3);min-height:1em}
+
+  .next{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:12px;margin-bottom:14px;
+    background:color-mix(in srgb,var(--data) 8%,var(--bg2));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--data) 18%,transparent)}
+  .next .when{font-size:20px;font-weight:600;letter-spacing:-.015em;white-space:nowrap;color:var(--tx)}
+  .next .what{flex:1;min-width:0;font-size:var(--fs-sm);color:var(--tx2);line-height:1.4}
+  .next.warn{background:var(--warnbg);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 25%,transparent)}
+  .next .btn.go{flex:none}
   .moves{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
   .moves .l{font-size:var(--fs-xs);color:var(--tx3);margin-right:2px}
-  .mv{border:1px solid var(--rule2);background:var(--bg);border-radius:7px;padding:4px 11px;font-size:12.5px;cursor:pointer}
-  .mv:hover{border-color:var(--acc)}
-  .confirm{border:1px solid var(--rule2);border-radius:var(--r);padding:10px 12px;margin:-6px 0 16px;font-size:var(--fs-sm);
-    animation:in .18s var(--ease)}
-  .confirm p{margin:0 0 8px}
+  .moves .end{display:inline-flex;gap:4px;align-items:center;margin-left:auto}
+  .mv{border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+  .mv.fwd{border:1px solid color-mix(in srgb,var(--data) 45%,transparent);background:color-mix(in srgb,var(--data) 8%,var(--bg));font-weight:500}
+  .mv.fwd:hover{background:color-mix(in srgb,var(--data) 16%,var(--bg))}
+  .mv.quiet{border:0;background:none;color:var(--tx3);padding:5px 8px}
+  .mv.quiet:hover{color:var(--tx);background:var(--bg2)}
+  .confirm{border:1px solid var(--rule2);border-radius:12px;padding:11px 13px;margin:-6px 0 16px;font-size:var(--fs-sm);
+    animation:in .18s var(--ease);background:var(--bg)}
+  .confirm p{margin:0 0 9px}
   .confirm .acts{display:flex;gap:6px;justify-content:flex-end}
-  .btn{border:0;background:color-mix(in srgb,var(--tx) 7%,transparent);border-radius:7px;padding:4px 12px;font-size:12.5px;
+  .btn{border:0;background:color-mix(in srgb,var(--tx) 7%,transparent);border-radius:8px;padding:6px 13px;font-size:12.5px;
     font-weight:500;cursor:pointer}
   .btn.go{background:var(--acc);color:#fff}
+  .btn.go:hover{filter:brightness(1.06)}
   .btn[aria-busy=true]{opacity:.55;pointer-events:none}
   @keyframes in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
-  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:2px 16px;margin-bottom:16px;font-size:var(--fs-sm)}
-  .facts div{padding:5px 0;border-top:1px solid var(--rule)}
-  .facts span{display:block;font-size:var(--fs-xs);color:var(--tx3)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .fact{margin:0 0 18px;font-size:var(--fs-sm);color:var(--tx2)}
+  .fact b{color:var(--tx);font-weight:600}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
   @media (max-width:560px){.grid2{grid-template-columns:1fr}}
-  .tl{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--rule);font-size:var(--fs-sm)}
-  .tl li{position:relative;padding:0 0 9px 4px}
-  .tl li::before{content:"";position:absolute;left:-20px;top:6px;width:8px;height:8px;border-radius:50%;
-    background:var(--bg);box-shadow:inset 0 0 0 2px var(--rule2)}
-  .tl li:last-child::before{background:var(--data);box-shadow:0 0 0 2px var(--bg)}
-  .tl span{color:var(--tx3);font-size:var(--fs-xs);margin-left:6px}
-  .ppl{list-style:none;margin:0;padding:0;font-size:var(--fs-sm)}
-  .ppl li{padding:4px 0}
-  .ppl span{display:block;font-size:var(--fs-xs);color:var(--tx3);overflow:hidden;text-overflow:ellipsis}
+  .rnd{display:flex;gap:10px;padding:7px 0;font-size:var(--fs-sm)}
+  .rnd+.rnd{border-top:1px solid var(--rule)}
+  .rnd i{width:16px;height:16px;border-radius:50%;flex:none;margin-top:2px;box-shadow:inset 0 0 0 2px var(--rule2);position:relative}
+  .rnd.ok i{background:var(--ok);box-shadow:none}
+  .rnd.ok i::after{content:"";position:absolute;left:4.5px;top:4px;width:6px;height:3px;border:solid #fff;border-width:0 0 1.6px 1.6px;transform:rotate(-45deg)}
+  .rnd.no i{box-shadow:inset 0 0 0 2px var(--tx3)}
+  .rnd.up i{box-shadow:inset 0 0 0 4px var(--data)}
+  .rnd.up b{font-weight:600}
+  .rnd b{font-weight:500}
+  .rnd em{font-style:normal;font-size:11px;color:var(--ok);margin-left:4px}
+  .rnd.no em{color:var(--tx3)}
+  .rnd small,.per small{display:block;color:var(--tx3);font-size:var(--fs-xs)}
+  .per{display:flex;gap:10px;align-items:center;padding:5px 0;font-size:var(--fs-sm)}
+  .per b{font-weight:500}
+  .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;flex:none;
+    background:color-mix(in srgb,var(--data) 14%,transparent);color:var(--tx)}
+  .docs{display:flex;gap:6px;flex-wrap:wrap}
+  .doc{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--rule);background:var(--bg);border-radius:8px;
+    padding:5px 11px;font-size:12.5px;cursor:pointer}
+  .doc:hover{border-color:var(--acc)}
+  .doc i{width:10px;height:13px;border-radius:2px;box-shadow:inset 0 0 0 1.5px var(--tx3);position:relative}
+  .doc i::after{content:"";position:absolute;left:2.5px;right:2.5px;top:4px;height:1.5px;background:var(--tx3);box-shadow:0 3px 0 var(--tx3)}
+  .hist{margin:6px 0 16px;font-size:var(--fs-sm)}
+  .hist summary{cursor:pointer;color:var(--tx2);font-size:var(--fs-xs)}
+  .hist ol{list-style:none;margin:8px 0 0;padding:0}
+  .hist li{display:flex;gap:8px;padding:3px 0}
+  .hist li span{color:var(--tx3);font-size:var(--fs-xs)}
   .flash{font-size:var(--fs-sm);color:var(--tx2);padding:8px 0;animation:in .2s var(--ease)}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -207,6 +266,12 @@
     if (!iso) return "";
     const d = new Date(iso + "T12:00:00");
     return isNaN(d) ? iso : d.toLocaleDateString(undefined, {day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric"});
+  };
+  /* "Thu 8 Oct, 10:00": an interview's wall-clock time, as the invitation gave it. */
+  const moment = at => {
+    const d = new Date(String(at).slice(0, 16));
+    return isNaN(d) ? String(at).replace("T", " ") : d.toLocaleDateString(undefined, {weekday: "short", day: "numeric", month: "short"}) +
+      ", " + d.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
   };
   const initials = s => String(s || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 
@@ -263,48 +328,87 @@
 
   /* ---- the numbers ---- */
   const PERIODS = [[30, "30 days"], [90, "90 days"], [365, "1 year"], [0, "All"]];
+  /* How far each application got, as the stage ramp: one hue, darker the
+     further it went (validated as an ordinal ramp on both chat surfaces). */
+  const REACHED = ["Sent", "Replied", "Interviewed", "Offer", "Accepted"];
   function statsHtml() {
-    const s = stats, t = s.totals, max = Math.max(1, s.stages[0].count);
+    const s = stats, t = s.totals;
     const period = '<div class="seg" role="group" aria-label="Period">' + PERIODS.map(([d, l]) =>
       '<button data-days="' + d + '" aria-pressed="' + ((s.days || 0) === d) + '">' + l + "</button>").join("") + "</div>";
-    if (!t.applications) return '<div class="head"><h1>Your job search</h1>' + period + "</div>" +
-      '<p class="state">No applications sent ' + (s.days ? "in the last " + s.days + " days" : "yet") + "." +
-      (t.drafts ? " " + t.drafts + " " + (t.drafts === 1 ? "draft is" : "drafts are") + " waiting to be sent." : "") + "</p>";
-    const kpi = (label, value, sub, stage) => '<button class="kpi"' + (stage ? ' data-stage="' + stage + '"' : " disabled") +
-      '><span class="l">' + label + '</span><span class="v">' + value + '</span><span class="s">' + sub + "</span></button>";
-    const pts = s.series.points, top = Math.max(1, ...pts.map(p => p.count));
-    return '<div class="head"><h1>Your job search<span>' + (s.days ? "Applied to in the last " + s.days + " days" : "Everything you applied to") +
-        "</span></h1>" + period + "</div>" +
-      '<div class="kpis">' +
-        kpi("Applications sent", num(t.applications), t.drafts ? num(t.drafts) + " drafts not sent" : "&nbsp;", "applied") +
-        kpi("Replied", t.reply_rate + "%", num(t.replied) + " of " + num(t.applications), "replied") +
-        kpi("Interviewed", t.interview_rate + "%", num(t.interviewed) + " of " + num(t.applications), "interviewed") +
-        kpi("Days to a reply", t.median_reply_days == null ? "–" : num(t.median_reply_days), "median", null) +
+    const head = '<div class="head"><h1>Your job search<span>' + (s.days ? "Applied to in the last " + s.days + " days" :
+      "Everything you applied to") + "</span></h1>" + period + "</div>";
+    if (!t.applications) return head + '<p class="state">No applications sent ' + (s.days ? "in the last " + s.days + " days" : "yet") +
+      "." + (t.drafts ? " " + t.drafts + " " + (t.drafts === 1 ? "draft is" : "drafts are") + " waiting to be sent." : "") + "</p>";
+    const stat = (v, l, stage) => '<button class="stat"' + (stage ? ' data-stage="' + stage + '"' : " disabled") +
+      '><b>' + v + "</b><span>" + l + "</span></button>";
+    return head +
+      (s.insight && s.insight.length ? '<div class="insight"><p>' + esc(s.insight[0]) + "</p>" +
+        (s.insight[1] ? '<p class="sub">' + esc(s.insight[1]) + "</p>" : "") + "</div>" : "") +
+      '<div class="stats">' +
+        stat(num(t.applications), "sent" + (t.drafts ? ' <em>+' + num(t.drafts) + " drafts</em>" : ""), "applied") +
+        stat(t.reply_rate + "%", "replied", "replied") +
+        stat(t.interview_rate + "%", "reached an interview", "interviewed") +
+        stat(t.median_reply_days == null ? "–" : num(t.median_reply_days) + "<small>d</small>", "median wait for a reply", null) +
       "</div>" +
-      '<section><h2>How far they got<span>share of the stage before</span></h2><div class="fun">' +
-        s.stages.map(g => '<span class="lab">' + esc(g.label) + "</span>" +
-          '<button class="bar" data-stage="' + g.key + '"' + (g.count ? "" : " disabled") + ' aria-label="' +
-            esc(g.label + ": " + g.count + (g.of_previous != null ? ", " + g.of_previous + "% of the stage before" : "")) + '">' +
-            '<i style="width:' + (g.count / max * 78) + '%"></i><b>' + num(g.count) + "</b>" +
-            (g.of_previous != null ? "<em>" + g.of_previous + "%</em>" : "") + "</button>").join("") +
-      "</div></section>" +
-      '<section><h2>Where they stand now</h2><div class="rows">' +
-        s.outcomes.map(o => '<button class="row" data-outcome="' + o.key + '"><span class="t">' + esc(o.label) +
-          '</span><span class="m"><i style="width:' + (o.count / max * 100) + '%"></i></span><span class="n">' +
-          num(o.count) + "</span></button>").join("") +
-      "</div></section>" +
-      (pts.length > 1 ? '<section><h2>Applications per ' + s.series.by + "</h2>" +
-        '<div class="cols" id="cols"><span class="ymax">' + top + '</span><span class="ygrid"></span>' +
-          pts.map((p, i) => '<button class="col" data-pt="' + i + '" aria-label="' + esc(when(p, s.series.by) + ": " + p.count) + '">' +
-            (p.count ? '<i style="height:' + (p.count / top * 100) + '%"></i>' : '<span class="zero"></span>') + "</button>").join("") +
-        '</div><div class="axis"><span>' + esc(when(pts[0], s.series.by)) + "</span><span>" +
-          esc(when(pts[pts.length - 1], s.series.by)) + "</span></div></section>" : "") +
-      (s.sources.length > 1 ? '<section><h2>Where you found them</h2><table><thead><tr><th>Source</th><th class="n">Sent</th>' +
-        '<th class="n">Replied</th><th class="n">Rate</th></tr></thead><tbody>' + s.sources.map(r => "<tr><td>" + esc(r.source) +
-          '</td><td class="n">' + num(r.count) + '</td><td class="n">' + num(r.replied) + '</td><td class="n">' +
-          Math.round(100 * r.replied / r.count) + "%</td></tr>").join("") + "</tbody></table></section>" : "") +
-      (host.caps.message ? '<div class="ask">' + ["What do these numbers say?", "Where am I losing applications?",
+      "<section><h2>How far they got</h2>" + funnelHtml() + "</section>" +
+      (s.dots.length > 1 ? "<section><h2>Every application<span>by the " + s.series.by + " you sent it, shaded by how far it got</span></h2>" +
+        dotsHtml() + "</section>" : "") +
+      (s.sources.length > 1 ? "<section><h2>Where you found them<span>replied, of sent</span></h2>" + sourcesHtml() + "</section>" : "") +
+      (host.caps.message ? '<div class="ask">' + ["Where am I losing applications?", "What should I change in my CV?",
         "What should I follow up on?"].map(q => '<button class="chip" data-ask="' + esc(q) + '">' + esc(q) + "</button>").join("") + "</div>" : "");
+  }
+
+  /* The funnel: a column per stage, height for how many got there, joined
+     by the flow between them; under each join, who stopped there and how. */
+  function funnelHtml() {
+    const g = stats.stages, max = Math.max(1, g[0].count), W = 600, H = 132, cw = 46;
+    const x = i => (i + 0.5) * W / g.length, h = c => c ? Math.max(6, c / max * H) : 0;
+    let svg = "";
+    for (let i = 0; i < g.length - 1; i++) {
+      const a = h(g[i].count), b = h(g[i + 1].count);
+      if (!a) continue;
+      const x1 = x(i) + cw / 2, x2 = x(i + 1) - cw / 2, m = H / 2 + 4;
+      svg += '<path class="flow" d="M' + x1 + "," + (m - a / 2) + " L" + x2 + "," + (m - b / 2) + " L" + x2 + "," + (m + b / 2) +
+        " L" + x1 + "," + (m + a / 2) + 'Z"/>';
+    }
+    g.forEach((s, i) => {
+      const hh = h(s.count), m = H / 2 + 4;
+      svg += hh ? '<rect class="st' + i + '" x="' + (x(i) - cw / 2) + '" y="' + (m - hh / 2) + '" width="' + cw + '" height="' + hh + '" rx="4"/>'
+        : '<line class="none" x1="' + (x(i) - cw / 2) + '" x2="' + (x(i) + cw / 2) + '" y1="' + (m) + '" y2="' + (m) + '"/>';
+    });
+    return '<div class="funnel">' +
+      '<div class="flab">' + g.map((s, i) => '<button class="fst" data-stage="' + s.key + '"' + (s.count ? "" : " disabled") +
+        ' aria-label="' + esc(s.label + ": " + s.count) + '"><span>' + esc(s.label) + "</span><b>" + num(s.count) + "</b><em>" +
+        (s.of_previous != null ? s.of_previous + "%" : "&nbsp;") + "</em></button>").join("") + "</div>" +
+      '<svg viewBox="0 0 ' + W + " " + (H + 8) + '" preserveAspectRatio="none" aria-hidden="true">' + svg + "</svg>" +
+      '<div class="fdrop">' + stats.drops.map((parts, i) => '<div style="left:' + ((i + 1) / g.length * 100) + '%">' +
+        parts.map((p, k) => '<button data-drop="' + i + ":" + k + '"><b>' + num(p.count) + "</b> " + esc(p.label) + "</button>").join("") +
+        "</div>").join("") + "</div></div>";
+  }
+
+  /* Every application as a dot in the week or month it went out, stacked,
+     shaded by how far it got. A dot opens its card. */
+  function dotsHtml() {
+    const s = stats, pts = s.series.points;
+    const at = d => s.series.by === "month" ? d.applied.slice(0, 7) : weekOf(d.applied);
+    const cols = pts.map(p => ({key: p.key, dots: s.dots.filter(d => d.applied && at(d) === p.key)}));
+    const tall = Math.max(1, ...cols.map(c => c.dots.length)), size = tall > 14 ? 8 : tall > 8 ? 11 : 15;
+    return '<div class="dots" style="--dot:' + size + 'px">' + cols.map(c => '<div class="dcol" title="' + esc(when(c, s.series.by)) + '">' +
+        c.dots.map(d => '<button class="dot r' + d.reached + '" data-job="' + esc(d.id) + '" data-tip="' + esc(d.id) + '" aria-label="' +
+          esc((d.company || "Unnamed") + ", " + (d.title || "") + ": " + REACHED[d.reached]) + '"></button>').join("") + "</div>").join("") +
+      '</div><div class="axis"><span>' + esc(when(pts[0], s.series.by)) + "</span><span>" + esc(when(pts[pts.length - 1], s.series.by)) +
+      '</span></div><div class="legend">' + REACHED.map((l, i) => '<span><i class="dot r' + i + '"></i>' + l + "</span>").join("") + "</div>";
+  }
+  const weekOf = iso => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+
+  /* Each source: what was sent, and the part of it that got a reply. */
+  function sourcesHtml() {
+    const top = Math.max(1, ...stats.sources.map(r => r.count));
+    return '<div class="srcs">' + stats.sources.map(r => '<div class="src"><span class="t">' + esc(r.source) + "</span>" +
+      '<span class="strk"><i class="sent" style="width:' + (r.count / top * 100) + '%"></i><i class="rep" style="width:' +
+      (r.replied / top * 100) + '%"></i></span><span class="n"><b>' + num(r.replied) + "</b> of " + num(r.count) + "</span></div>").join("") +
+      '</div><div class="legend"><span><i class="sw rep"></i>Replied</span><span><i class="sw sent"></i>Sent</span></div>';
   }
   function when(p, by) {
     if (by === "month") { const d = new Date(p.key + "-15T12:00:00"); return d.toLocaleDateString(undefined, {month: "short", year: "numeric"}); }
@@ -323,56 +427,87 @@
   const LABEL = {pending: "Not sent yet", applied: "Applied", interviewing: "Interviewing", offer: "Offer",
     accepted: "Accepted", refused: "Declined", rejected: "Rejected", ghosted: "No reply",
     rejected_interviewing: "Rejected after interviews", ghosted_interviewing: "No reply after interviews"};
-  const pillClass = st => st === "interviewing" || st === "offer" ? " live" : st === "accepted" ? " good" : "";
+  const pillClass = st => st === "interviewing" || st === "offer" ? " live" : st === "accepted" ? " good" :
+    /rejected|ghosted|refused/.test(st || "") ? " end" : "";
+  /* The good news and the bad news do not look alike. */
+  const FORWARD = {applied: 1, interviewing: 1, offer: 1, accepted: 1};
 
   /* ---- one application ---- */
   function cardHtml() {
-    const c = card;
-    const facts = [];
-    if (c.applied) facts.push(["Applied", day(c.applied)]);
-    if (c.reply_days != null) facts.push(["First reply", "after " + c.reply_days + (c.reply_days === 1 ? " day" : " days") +
-      (c.faster_than == null ? "" : c.faster_than >= 50 ? ", faster than " + c.faster_than + "% of your replies"
-        : ", slower than " + (100 - c.faster_than) + "% of your replies")]);
-    if (c.last_contact) facts.push(["Last contact", day(c.last_contact)]);
-    if (c.followup) facts.push(["Follow up", day(c.followup)]);
-    if (c.source) facts.push(["Found on", c.source]);
-    if (c.location) facts.push(["Where", c.location]);
-    const docs = [c.cv ? ["cv", "The CV you sent"] : null, c.letter ? ["letter", "The cover letter"] : null].filter(Boolean);
-    const asks = [];
-    if (c.status === "applied" || (c.next && c.next.kind === "silent")) asks.push("Draft a follow-up email");
-    if (c.status === "interviewing" || (c.next && c.next.kind === "interview")) asks.push("Prepare me for the interview");
-    if (c.status === "pending" && c.has_posting) asks.push("Tailor my CV to this posting");
-    if (c.status === "offer") asks.push("Help me weigh this offer");
-    if (c.status === "rejected" || c.status === "rejected_interviewing") asks.push("What could I learn from this one?");
+    const c = card, tr = c.track || {steps: [], reached: -1};
+    const sub = [c.title, c.location, c.source ? "via " + c.source : ""].filter(Boolean).join(" · ");
+    const nx = c.next, act = nextAction(c);
+    const count = nx && nx.in_days != null ? (nx.in_days === 0 ? "Today" : nx.in_days === 1 ? "Tomorrow" : "In " + nx.in_days + " days")
+      : nx && nx.kind === "followup" ? "Due" : nx && nx.kind === "silent" ? "Quiet" : nx && nx.kind === "decide" ? "Offer"
+      : nx && nx.kind === "outcome" ? "Update" : null;
+    const forward = c.moves.filter(m => FORWARD[m.status]), back = c.moves.filter(m => !FORWARD[m.status]);
+    const asks = cardAsks(c).filter(q => !act || q !== act);
     return (stats || list ? '<div class="head"><button class="back" id="back">← ' + (list ? esc(list.label) : "The numbers") + "</button></div>" : "") +
       '<div class="card-h"><span class="ini">' + (c.logo ? '<img alt="" src="' + esc(c.logo) + '">' : esc(initials(c.company))) +
-        '</span><span class="w"><b>' + esc(c.company || "Unnamed") + "</b><span>" + esc(c.title || "") + "</span></span>" +
+        '</span><span class="w"><b>' + esc(c.company || "Unnamed") + "</b><span>" + esc(sub) + "</span></span>" +
         '<span class="pill' + pillClass(c.status) + '">' + esc(c.status_label) + "</span></div>" +
-      (c.next ? '<div class="next' + (["followup", "silent", "outcome", "decide"].includes(c.next.kind) ? " warn" : "") +
-        '"><i></i><span>' + esc(c.next.text) + "</span></div>" : "") +
+      trackHtml(tr) +
+      (nx ? '<div class="next' + (["followup", "silent", "outcome"].includes(nx.kind) ? " warn" : "") + '">' +
+        (count ? '<span class="when">' + esc(count) + "</span>" : "") + '<span class="what">' + esc(nx.text) + "</span>" +
+        (act && host.caps.message ? '<button class="btn go" data-ask="' + esc(act) + '">' + esc(act) + "</button>" : "") + "</div>" : "") +
       (note ? '<div class="flash" role="status">' + esc(note) + "</div>" : "") +
-      (c.moves.length && host.caps.serverTools ? '<div class="moves"><span class="l">Move to</span>' + c.moves.map(m =>
-        '<button class="mv" data-move="' + esc(m.status) + '">' + esc(m.label) + "</button>").join("") + "</div>" : "") +
+      (c.moves.length && host.caps.serverTools ? '<div class="moves">' +
+        (forward.length ? '<span class="l">Move to</span>' + forward.map(m => '<button class="mv fwd" data-move="' + esc(m.status) + '">' +
+          esc(m.label) + " →</button>").join("") : "") +
+        (back.length ? '<span class="end"><span class="l">' + (forward.length ? "or it ended:" : "It ended:") + "</span>" +
+          back.map(m => '<button class="mv quiet" data-move="' + esc(m.status) + '">' + esc(m.label) + "</button>").join("") + "</span>" : "") +
+        "</div>" : "") +
       (confirming ? '<div class="confirm" role="dialog" aria-label="Confirm"><p>Move ' + esc(c.company) + " to <b>" +
-        esc(LABEL[confirming] || confirming) + "</b>? It is added to its history, which the funnel is drawn from.</p>" +
+        esc(LABEL[confirming] || confirming) + "</b>? It is added to its history, which your numbers are drawn from.</p>" +
         '<div class="acts"><button class="btn" id="no">Cancel</button><button class="btn go" id="yes">Move it</button></div></div>' : "") +
-      (facts.length ? '<div class="facts">' + facts.map(([k, v]) => "<div><span>" + esc(k) + "</span>" + esc(v) + "</div>").join("") + "</div>" : "") +
+      (c.reply_days != null ? '<p class="fact">They replied after <b>' + c.reply_days + (c.reply_days === 1 ? " day" : " days") + "</b>" +
+        (c.faster_than == null ? "" : c.faster_than >= 50 ? ", faster than " + c.faster_than + "% of your replies."
+          : ", slower than " + (100 - c.faster_than) + "% of your replies.") + "</p>" : "") +
       '<div class="grid2">' +
-        "<section><h2>History</h2>" + (c.history.length ? '<ol class="tl">' + c.history.map(h => "<li>" + esc(h.label) +
-          "<span>" + esc(day(h.at)) + "</span></li>").join("") + "</ol>" : '<p class="muted">Nothing yet.</p>') + "</section>" +
-        "<section>" +
-          (c.rounds.length ? "<h2>Interviews</h2><ul class=\"ppl\">" + c.rounds.map(r => "<li>" + esc(r.kind || "Interview") +
-            (r.outcome ? " · " + esc(r.outcome) : "") + "<span>" + esc([r.at ? r.at.replace("T", " ") : "not scheduled", r.with].filter(Boolean).join(" · ")) +
-            "</span></li>").join("") + "</ul>" : "") +
-          (c.people.length ? '<h2 style="margin-top:' + (c.rounds.length ? 14 : 0) + 'px">People</h2><ul class="ppl">' + c.people.map(p =>
-            "<li>" + esc(p.name || p.email || "Someone") + "<span>" + esc([p.role, p.name ? p.email : ""].filter(Boolean).join(" · ")) +
-            "</span></li>").join("") + "</ul>" : "") +
-          (docs.length ? '<h2 style="margin-top:' + (c.rounds.length || c.people.length ? 14 : 0) + 'px">Documents</h2><div class="ask">' +
-            docs.map(([k, l]) => '<button class="chip" data-doc="' + k + '">' + esc(l) + "</button>").join("") + "</div>" : "") +
-        "</section>" +
+        (c.rounds.length ? "<section><h2>Interviews</h2>" + c.rounds.map(r => {
+          const state = r.outcome === "passed" ? "ok" : r.outcome === "failed" ? "no" : r.at ? "up" : "todo";
+          return '<div class="rnd ' + state + '"><i></i><span><b>' + esc(r.kind || "Interview") + "</b>" +
+            (r.outcome ? ' <em>' + esc(r.outcome) + "</em>" : "") + "<small>" +
+            esc([r.at ? moment(r.at) : "not scheduled yet", r.with].filter(Boolean).join(" · ")) + "</small></span></div>";
+        }).join("") + "</section>" : "") +
+        (c.people.length || c.cv || c.letter ? "<section>" +
+          (c.people.length ? "<h2>People</h2>" + c.people.map(p => '<div class="per"><span class="av">' + esc(initials(p.name || p.email)) +
+            "</span><span><b>" + esc(p.name || p.email || "Someone") + "</b><small>" +
+            esc([p.role, p.name ? p.email : ""].filter(Boolean).join(" · ")) + "</small></span></div>").join("") : "") +
+          (c.cv || c.letter ? '<h2 style="margin-top:' + (c.people.length ? 14 : 0) + 'px">Sent with it</h2><div class="docs">' +
+            [c.cv ? ["cv", "CV"] : null, c.letter ? ["letter", "Cover letter"] : null].filter(Boolean).map(([k, l]) =>
+              '<button class="doc" data-doc="' + k + '"><i></i>' + esc(l) + "</button>").join("") + "</div>" : "") +
+        "</section>" : "") +
       "</div>" +
-      (asks.length && host.caps.message ? '<div class="ask" style="margin-top:14px">' + asks.map(q =>
+      (c.history.length > 1 ? '<details class="hist"><summary>Full history (' + c.history.length + ")</summary><ol>" +
+        c.history.map(h => "<li><b>" + esc(h.label) + "</b><span>" + esc(day(h.at)) + "</span></li>").join("") + "</ol></details>" : "") +
+      (asks.length && host.caps.message ? '<div class="ask">' + asks.map(q =>
         '<button class="chip" data-ask="' + esc(q) + '">' + esc(q) + "</button>").join("") + "</div>" : "");
+  }
+  /* The stages as a progress line: done, where it is, and where it stopped. */
+  function trackHtml(tr) {
+    if (!tr.steps.length) return "";
+    const upto = tr.stopped ? tr.reached + 1 : tr.reached;
+    return '<ol class="track">' + tr.steps.slice(0, tr.stopped ? Math.max(tr.reached + 2, 2) : tr.steps.length).map((s, i) => {
+      const stop = tr.stopped && i === tr.reached + 1;
+      const cls = stop ? "stop" : i < tr.reached ? "done" : i === tr.reached ? (tr.stopped ? "done" : "now") : "todo";
+      return '<li class="' + cls + '"' + (i < upto ? ' data-fill="1"' : "") + "><i></i><b>" + esc(stop ? tr.stopped : s.label) +
+        "</b><span>" + (stop ? "" : esc(day(s.date) || "")) + "</span></li>";
+    }).join("") + "</ol>";
+  }
+  function nextAction(c) {
+    const k = c.next && c.next.kind;
+    return k === "interview" ? "Prepare me for it" : k === "silent" || k === "followup" ? "Draft a follow-up" :
+      k === "decide" ? "Help me weigh it" : k === "send" && c.has_posting ? "Tailor my CV to it" : null;
+  }
+  function cardAsks(c) {
+    const out = [];
+    if (c.status === "applied") out.push("Draft a follow-up");
+    if (c.status === "interviewing") out.push("Prepare me for it");
+    if (c.status === "pending" && c.has_posting) out.push("Tailor my CV to it");
+    if (c.status === "offer") out.push("Help me weigh it");
+    if (/rejected/.test(c.status)) out.push("What could I learn from this one?");
+    return out;
   }
 
   function paint() {
@@ -381,17 +516,32 @@
     wire();
   }
 
+  function tipAt(el, html) {
+    $tip.innerHTML = html; $tip.style.display = "block";
+    const r = el.getBoundingClientRect();
+    $tip.style.left = Math.min(window.innerWidth - $tip.offsetWidth - 4, Math.max(4, r.left + r.width / 2 - $tip.offsetWidth / 2)) + "px";
+    $tip.style.top = Math.max(4, r.top - $tip.offsetHeight - 8) + "px";
+  }
+  const hideTip = () => { $tip.style.display = "none"; };
+
   function wire() {
     $app.querySelectorAll("[data-days]").forEach(b => b.onclick = () => period(+b.dataset.days));
     $app.querySelectorAll("[data-stage]").forEach(b => b.onclick = () => {
       const g = stats.stages.find(x => x.key === b.dataset.stage);
-      if (g && g.count) { list = {label: g.label, jobs: g.jobs}; paint(); }
+      if (g && g.count) { list = {label: g.label, jobs: g.jobs}; hideTip(); paint(); }
     });
-    $app.querySelectorAll("[data-outcome]").forEach(b => b.onclick = () => {
-      const o = stats.outcomes.find(x => x.key === b.dataset.outcome);
-      if (o) { list = {label: o.label, jobs: o.jobs}; paint(); }
+    $app.querySelectorAll("[data-drop]").forEach(b => b.onclick = () => {
+      const [i, k] = b.dataset.drop.split(":").map(Number), p = stats.drops[i][k];
+      list = {label: p.label[0].toUpperCase() + p.label.slice(1) + " after " + stats.stages[i].label.toLowerCase(), jobs: p.jobs};
+      paint();
     });
-    $app.querySelectorAll("[data-job]").forEach(b => b.onclick = () => open(b.dataset.job));
+    $app.querySelectorAll("[data-job]").forEach(b => b.onclick = () => { hideTip(); open(b.dataset.job); });
+    $app.querySelectorAll(".dot[data-tip]").forEach(b => {
+      const d = stats.dots.find(x => x.id === b.dataset.tip);
+      const show = () => tipAt(b, "<b>" + esc(d.company || "Unnamed") + "</b><br>" + esc(d.title || "") +
+        '<br><span class="muted">' + esc(REACHED[d.reached]) + " · sent " + esc(day(d.applied)) + "</span>");
+      b.onmouseenter = show; b.onfocus = show; b.onmouseleave = b.onblur = hideTip;
+    });
     const back = document.getElementById("back");
     if (back) back.onclick = () => { if (card) { card = null; confirming = null; note = ""; } else list = null; paint(); };
     $app.querySelectorAll("[data-move]").forEach(b => b.onclick = () => { confirming = b.dataset.move; paint(); });
@@ -400,19 +550,6 @@
     if (yes) yes.onclick = () => move(yes);
     $app.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => ask(b.dataset.ask));
     $app.querySelectorAll("[data-doc]").forEach(b => b.onclick = () => showDoc(b.dataset.doc));
-    $app.querySelectorAll("[data-pt]").forEach(b => {
-      const p = stats.series.points[+b.dataset.pt];
-      const show = e => {
-        $tip.innerHTML = "<b>" + num(p.count) + "</b> " + (p.count === 1 ? "application" : "applications") +
-          '<br><span class="muted">' + esc(when(p, stats.series.by)) + "</span>";
-        $tip.style.display = "block";
-        const r = b.getBoundingClientRect();
-        $tip.style.left = Math.min(window.innerWidth - $tip.offsetWidth - 4, Math.max(4, r.left + r.width / 2 - $tip.offsetWidth / 2)) + "px";
-        $tip.style.top = Math.max(4, r.top - $tip.offsetHeight - 6) + "px";
-      };
-      b.onmouseenter = show; b.onfocus = show;
-      b.onmouseleave = b.onblur = () => { $tip.style.display = "none"; };
-    });
   }
 
   async function period(days) {
