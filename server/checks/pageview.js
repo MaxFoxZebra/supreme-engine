@@ -401,6 +401,27 @@ async function main() {
   check("and goes back into the chat", await b.evalJs(`${doc}.documentElement.dataset.mode === "inline" && !!${doc}.getElementById("summary")`));
   await c.send("tools/call", {name: "review_change", arguments: {path: cvPath, ids: ["*"], action: "undo"}});
 
+  console.log("Full screen, while Claude changes it");
+  const fullRes = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, fullRes, {width: 900, mode: "fullscreen", height: 800}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(2000);
+  /* What a new view of the same file does when its tool starts: the client
+     opens it in the chat, behind the full-screen one. */
+  await b.evalJs(`(()=>{const f=document.createElement("iframe"); f.setAttribute("sandbox","allow-scripts allow-same-origin");
+    f.srcdoc='<script>localStorage.setItem("cvs-working:${cvPath}", String(Date.now()))<\\/script>'; document.body.appendChild(f)})()`);
+  await sleep(600);
+  const busy = await b.evalJs(`(${doc}.getElementById("busy")||{}).textContent||""`);
+  check("the full-screen view says Claude is changing the CV", /Claude is changing it/.test(busy), busy);
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
+    {path: ["cv", "name"], value: "Full Screen Person"}]}});
+  await sleep(6000);
+  const fsAfter = await b.evalJs(`(()=>{const d=${doc}; return {name: (d.querySelector(".who b")||{}).textContent||"",
+    busy: !!d.getElementById("busy"), mode: d.documentElement.dataset.mode}})()`);
+  check("then shows the new page, still full screen", fsAfter.name === "Full Screen Person" && !fsAfter.busy &&
+    fsAfter.mode === "fullscreen", JSON.stringify(fsAfter));
+  await c.send("tools/call", {name: "review_change", arguments: {path: cvPath, ids: ["*"], action: "undo"}});
+
   console.log("A conversation opened again");
   const again = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
   fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, again, {width: 720}));

@@ -10,6 +10,10 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- Full screen while you ask for changes: the full-screen page says "Claude is
+  changing it…" as soon as Claude starts on that CV, then shows the new page
+  in place, still full screen. Claude still adds the new page to the chat
+  behind it, which a view cannot prevent.
 - The words no longer appear on a sheet while Claude writes: the chat shows
   Claude's own reply, and the page appears once the change is made, marked,
   ready to keep or undo.

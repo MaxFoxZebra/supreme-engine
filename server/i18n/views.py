@@ -200,6 +200,7 @@ VC = {
         "Il démarre peut-être encore, ou le connecteur est désactivé. Cette vue réessaie d'elle-même.",
         "Puede que aún esté arrancando, o el conector está desactivado. Esta vista lo reintenta sola.",
         "Talvez ainda esteja iniciando, ou o conector está desligado. Esta visualização tenta de novo sozinha."),
+    "Claude is changing it…": ("Claude le modifie…", "Claude lo está cambiando…", "O Claude está alterando…"),
     "Try again": ("Réessayer", "Reintentar", "Tentar de novo"),
     "This page is no longer kept.": ("Cette page n'est plus conservée.", "Esta página ya no se conserva.",
                                      "Esta página não é mais guardada."),
