@@ -499,6 +499,12 @@ view shows the new page in place, and Claude is told the user already sees it
 and not to call `render_cv`, which would open another frame. Otherwise Claude
 renders as usual and the page appears in the chat.
 
+**Full screen, kept across renders.** The client leaves full screen when a
+message is sent and shows each new render as a new view. A view in full screen
+notes it for its file (in the views' shared storage); the next view of that
+file goes full screen by itself if the last one was there in the last three
+minutes, unless the user left with the view's own button.
+
 **Pinned beside the chat.** In a client that offers it (MCP Apps' `pip`
 display mode), a pin button keeps the page in a small window while you go on
 talking: the page, its pages, and *Keep all* / *Undo all* for what is waiting.

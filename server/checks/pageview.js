@@ -423,6 +423,21 @@ async function main() {
     busy: !!d.getElementById("busy"), mode: d.documentElement.dataset.mode}})()`);
   check("then shows the new page, still full screen", fsAfter.name === "Full Screen Person" && !fsAfter.busy &&
     fsAfter.mode === "fullscreen", JSON.stringify(fsAfter));
+  /* The client leaves full screen when a message is sent, and shows the next
+     render as a new view in the chat: that one goes back to full screen. */
+  const nextRes = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, nextRes, {width: 900, height: 800}));
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(2500);
+  check("the next render of a CV left full screen goes back to full screen by itself",
+    await b.evalJs(`${doc}.documentElement.dataset.mode === "fullscreen" &&
+      LOG.some(m=>m.method==="ui/request-display-mode"&&m.params.mode==="fullscreen")`));
+  await b.evalJs(`${doc}.getElementById("mode").click()`);
+  await sleep(600);
+  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  await sleep(2500);
+  check("but not once the user left full screen with its button",
+    await b.evalJs(`${doc}.documentElement.dataset.mode === "inline"`));
   await c.send("tools/call", {name: "review_change", arguments: {path: cvPath, ids: ["*"], action: "undo"}});
 
   console.log("A conversation opened again");

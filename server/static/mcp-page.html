@@ -56,7 +56,7 @@
     --fs-sm:var(--font-text-sm-size,13px);
     --fs-xs:var(--font-text-xs-size,12px);
     --r:var(--border-radius-md,8px);
-    --sheet:560px;
+    --sheet:880px;
     --ease:cubic-bezier(.2,.7,.2,1);
   }
   :root[data-theme=light]{color-scheme:light}
@@ -155,6 +155,12 @@
     letter-spacing:.04em;text-transform:uppercase;color:#fff;background:rgba(31,30,29,.78);
     padding:3px 9px;border-radius:99px}
   .rail{display:flex;flex-direction:column;gap:12px;flex:none;width:84px}
+  /* In the chat: the page as wide as the conversation lets it be, so it can
+     be read there; the other pages in a row under it. */
+  :root[data-mode=inline] .body{flex-direction:column;align-items:center;gap:10px}
+  :root[data-mode=inline] .stage{width:100%;flex:none}
+  :root[data-mode=inline] .rail{flex-direction:row;flex-wrap:wrap;justify-content:center;width:auto;gap:10px}
+  :root[data-mode=inline] .rail .thumb{width:52px}
   .thumb{border:0;padding:0;background:none;cursor:pointer;text-align:center;color:var(--tx3);
     font-size:11px;font-variant-numeric:tabular-nums}
   .thumb img{display:block;width:100%;border-radius:2px;background:#fff;margin-bottom:4px;
@@ -621,6 +627,7 @@ window.cvsI18n = (function () {
       document.head.appendChild(st);
     }
     root.dataset.mode = host.ctx.displayMode || "inline";
+    if (data && host.ctx.displayMode === "fullscreen") noteFull(Date.now());
     if (data && host.ctx.displayMode !== was) paint();
   }
 
@@ -651,7 +658,11 @@ window.cvsI18n = (function () {
     /* This is the latest render of the file, as far as this view knows: the
        earlier views of it in the conversation hear so and fold away. */
     try { if (sc.rid) localStorage.setItem("cvs-render:" + sc.path, sc.rid); } catch (e) { /* sandboxed */ }
-    check(true).then(() => { if (!earlier) prefetch(); });
+    check(true).then(() => {
+      if (earlier) return;
+      prefetch();
+      if (!full() && modes().includes("fullscreen") && wasFull()) setMode("fullscreen");
+    });
   }
 
   /* ---- pages: the one shown first, the rest when asked for ---- */
@@ -1040,7 +1051,21 @@ window.cvsI18n = (function () {
     showWorking();
   }
 
+  /* Full screen, kept across renders. The client opens each new render as a
+     new view in the chat, and leaves full screen when a message is sent. So
+     a view in full screen notes it, for its file; the next view of that file
+     goes full screen by itself if the last one was there in the last few
+     minutes, unless the user left it with the button that says so. */
+  const FULL_KEY = () => "cvs-full:" + (data && data.path);
+  const noteFull = v => { try { v == null ? localStorage.removeItem(FULL_KEY()) :
+    localStorage.setItem(FULL_KEY(), String(v)); } catch (e) { /* sandboxed */ } };
+  function wasFull() {
+    try { const at = +localStorage.getItem(FULL_KEY()); return at > 0 && Date.now() - at < 180000; }
+    catch (e) { return false; }
+  }
+  setInterval(() => { if (data && full()) noteFull(Date.now()); }, 3000);
   async function setMode(mode) {
+    if (full() && mode !== "fullscreen") noteFull(null);
     try {
       const r = await request("ui/request-display-mode", {mode});
       applyContext({displayMode: (r && r.mode) || host.ctx.displayMode});

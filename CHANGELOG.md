@@ -8,6 +8,16 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- The CV is readable in the chat: the page now uses the conversation's whole
+  width, with the other pages in a row under it instead of beside it.
+- Full screen comes back after a change. Claude Desktop leaves full screen
+  when you send a message and shows the new page in the chat; that new page
+  now goes back to full screen by itself if you were in full screen on that
+  CV in the last few minutes. Leaving full screen with its own button turns
+  this off until you go full screen again.
+
 ## 0.45.1
 
 - Full screen stays full screen while you ask for changes. With the CV open
