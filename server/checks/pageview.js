@@ -413,31 +413,29 @@ async function main() {
   await sleep(600);
   const busy = await b.evalJs(`(${doc}.getElementById("busy")||{}).textContent||""`);
   check("the full-screen view says Claude is changing the CV", /Claude is changing it/.test(busy), busy);
-  const fsEdit = (await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
-    {path: ["cv", "name"], value: "Full Screen Person"}]}})).result;
-  check("an edit to a CV open full screen opens no view, and Claude is told not to render it",
-    !fsEdit.structuredContent && /already sees the new page/.test(textOf(fsEdit)) && /Do not call render_cv/.test(textOf(fsEdit)),
-    textOf(fsEdit));
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: cvPath, edits: [
+    {path: ["cv", "name"], value: "Full Screen Person"}]}});
+  const fsNext = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
   await sleep(6000);
   const fsAfter = await b.evalJs(`(()=>{const d=${doc}; return {name: (d.querySelector(".who b")||{}).textContent||"",
     busy: !!d.getElementById("busy"), mode: d.documentElement.dataset.mode}})()`);
   check("then shows the new page, still full screen", fsAfter.name === "Full Screen Person" && !fsAfter.busy &&
     fsAfter.mode === "fullscreen", JSON.stringify(fsAfter));
-  /* The client leaves full screen when a message is sent, and shows the next
-     render as a new view in the chat: that one goes back to full screen. */
-  const nextRes = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
-  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, nextRes, {width: 900, height: 800}));
+
+  console.log("In the chat, after a change");
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, fsNext, {width: 720}));
   await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
   await sleep(2500);
-  check("the next render of a CV left full screen goes back to full screen by itself",
-    await b.evalJs(`${doc}.documentElement.dataset.mode === "fullscreen" &&
-      LOG.some(m=>m.method==="ui/request-display-mode"&&m.params.mode==="fullscreen")`));
-  await b.evalJs(`${doc}.getElementById("mode").click()`);
+  const cards = await b.evalJs(`(()=>{const d=${doc}; return {cards: [...d.querySelectorAll(".ccard .ch b")].map(x=>x.textContent),
+    folded: !!d.querySelector(".body.folded"), img: !!d.querySelector(".crop img[src]"), mode: d.documentElement.dataset.mode,
+    acts: d.querySelectorAll(".ccard [data-act]").length}})()`);
+  check("the change shows as a card, cut from the page, with keep and undo, and the page folded under it",
+    cards.cards.length === 1 && /Header|Your|Full Screen/.test(cards.cards[0]) && cards.folded && cards.img &&
+    cards.acts === 2 && cards.mode === "inline", JSON.stringify(cards));
+  await b.evalJs(`${doc}.querySelector("[data-card]").click()`);
   await sleep(600);
-  await b.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
-  await sleep(2500);
-  check("but not once the user left full screen with its button",
-    await b.evalJs(`${doc}.documentElement.dataset.mode === "inline"`));
+  const cardOpen = await b.evalJs(`(()=>{const d=${doc}; return {folded: !!d.querySelector(".body.folded"), pop: !!d.querySelector(".pop")}})()`);
+  check("a card opens the whole page on that block", !cardOpen.folded && cardOpen.pop, JSON.stringify(cardOpen));
   await c.send("tools/call", {name: "review_change", arguments: {path: cvPath, ids: ["*"], action: "undo"}});
 
   console.log("A conversation opened again");

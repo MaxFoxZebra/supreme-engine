@@ -382,10 +382,6 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
             _checkpoint(watch, fn.__name__)
         studio.note_mcp_activity(fn.__name__,
                                  str(target) if target else None)
-        if isinstance(result, _Written):
-            # Rendered once the change is recorded, so the page offers it
-            # to keep or undo.
-            result = result.finish()
         return result
 
     wrapper.__signature__ = signature.replace(parameters=[
@@ -424,52 +420,11 @@ def _doc_path(path: str):
     return p
 
 
-# Files a page view is showing full screen or pinned right now: each such
-# view checks in every few seconds while it is, and follows the file's latest
-# render. Its path, and when it last checked in.
-_WATCHED: dict[str, float] = {}
-
-
-def _watched(path: str) -> bool:
-    try:
-        return time.time() - _WATCHED.get(str(studio.safe_path(path)), 0) < 15
-    except Exception:
-        return False
-
-
-class _Written:
-    """What a writing tool answers, finished by tool() once the change is
-    recorded. The writing tools show no view: each view is a new frame in the
-    conversation. When the user has this file open full screen or pinned,
-    it is rendered here instead, so that view shows the new page in place,
-    and the model is told not to render it again, which would open another."""
-
-    def __init__(self, path: str, said: str):
-        self.path, self.said = path, said
-
-    def finish(self) -> CallToolResult:
-        return _finish_written(self.path, self.said)
-
-
-def _written(path: str, said: str):
-    if not (_shows_views() and _watched(path)):
-        return CallToolResult(content=[TextContent(type="text", text=said)])
-    return _Written(path, said)
-
-
-def _finish_written(path: str, said: str) -> CallToolResult:
-    try:
-        r = _render(path, 1, True)
-    except Exception as e:
-        r = CallToolResult(content=[TextContent(type="text", text=f"RENDER FAILED\n\n{e}")], is_error=True)
-    text = next((c.text for c in r.content if isinstance(c, TextContent)), "")
-    if r.is_error:
-        return CallToolResult(content=[TextContent(type="text", text=f"{said}\nThe page did not render, so "
-                                                    f"fix this before going on:\n{text}")])
-    return CallToolResult(content=[TextContent(type="text", text=(
-        f"{said}\n{text}\nThe user has this document open full screen and already sees the new page "
-        "there, with your change marked. Do not call render_cv to show it: that would open another "
-        "view in the conversation. Call it only if you need to look at the page yourself."))])
+def _written(path: str, said: str) -> CallToolResult:
+    """What a writing tool answers: text. It shows no view of its own, since
+    each view is a new page in the conversation; render_cv shows the change
+    once every edit a request needs is made."""
+    return CallToolResult(content=[TextContent(type="text", text=said)])
 
 
 @tool
@@ -883,6 +838,25 @@ def _model_image(p: Path, letter: bool, typ: Path | None, idx: int, full: Path) 
     return ImageContent(type="image", data=base64.b64encode(data).decode("ascii"), mime_type="image/png")
 
 
+# The pages the view shows: sharper than the renderer's own PNGs, so the text
+# stays crisp on a high-density screen with the page as wide as the chat.
+VIEW_PPI = 200
+
+
+def _view_pages(p: Path, letter: bool, typ: Path | None, count: int) -> list[bytes] | None:
+    """Every page at VIEW_PPI, or None to use the renderer's."""
+    if typ is None or not typ.is_file():
+        return None
+    try:
+        import typst
+        fonts, extra = _typst_setup(p, letter)
+        out = typst.compile(str(typ), format="png", ppi=VIEW_PPI, root=str(typ.parent), font_paths=fonts, **extra)
+    except Exception:
+        return None
+    out = out if isinstance(out, list) else [out]
+    return out if len(out) == count else None
+
+
 def _marked_pages(p: Path, letter: bool, typ: Path, count: int, rules: str) -> list[str] | None:
     """The pages again with `rules` applied, kept by id like the pages, or
     None unless every block is exactly where it is on the real page."""
@@ -911,7 +885,7 @@ def _marked_pages(p: Path, letter: bool, typ: Path, count: int, rules: str) -> l
     scratch = typ.parent / ".cvstudio-marks.typ"
     try:
         scratch.write_text(rules + src, encoding="utf-8")
-        out = typst.compile(str(scratch), format="png", ppi=150 if letter else 144,
+        out = typst.compile(str(scratch), format="png", ppi=VIEW_PPI,
                             root=str(typ.parent), font_paths=fonts, **extra)
     finally:
         try:
@@ -972,7 +946,8 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
                 label += " · " + (studio.entry_title(entries[i], i) if i < len(entries)
                                   else f"entry {i + 1}")
         labels[f"{b['k']}|{b.get('name')}|{b.get('i')}"] = _one_line(label)
-    shots = [_keep_page(f) for f in pngs[:MAX_VIEW_PAGES]]
+    sharp = _view_pages(p, letter, typ, len(pngs))
+    shots = [_keep_bytes(b) for b in sharp[:MAX_VIEW_PAGES]] if sharp else [_keep_page(f) for f in pngs[:MAX_VIEW_PAGES]]
     images = shots
     last = _LAST_RENDER.get(str(p))
     changes = _changes(last["data"], data) if last and data and last.get("data") else None
@@ -1030,6 +1005,9 @@ def render_cv(path: str, page: int = 1) -> CallToolResult:
     Returns the page count, the word count an ATS would extract, the PDF's
     location, and an image of the requested page. Check the image before
     reporting success: page-break damage does not show up in the YAML.
+
+    Make every edit a request needs first, then render once: in a client
+    that shows views each render adds the page to the conversation.
 
     In a client that shows views, the user also sees every page in the
     conversation and can click a block to tell you what to change there:
@@ -1821,7 +1799,7 @@ def write_letter(path: str, body: str, subject: str | None = None) -> CallToolRe
         payload["meta"] = {"subject": subject}
     r = studio.save_letter(p, payload)
     return _written(path, f"Wrote {path}: {r['words']} words."
-                    + ("" if _shows_views() and _watched(path) else " render_cv it to see the page."))
+                    + " render_cv it to see the page.")
 
 
 @tool
@@ -1943,11 +1921,10 @@ def review_change(path: str, ids: list[str], action: str, sig: str | None = None
 
 @tool(view=PAGE_VIEW, app_only=True)
 def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
-                   block: dict | None = None, watching: bool = False) -> CallToolResult:
+                   block: dict | None = None) -> CallToolResult:
     """For the page view only, hidden from the model. what="page": a page's
     image by its id. what="pdf": the PDF at `path`, to download. what="status":
-    whether render `rid` of `path` is still its latest (`watching`: the view
-    is full screen or pinned, so changes to it are rendered at once). what="latest": the
+    whether render `rid` of `path` is still its latest. what="latest": the
     view of the latest render of `path`. what="fields": the text of `block`
     of `path`, to edit on the page."""
     if what == "fields":
@@ -1972,10 +1949,6 @@ def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
             return CallToolResult(content=[TextContent(type="text", text="No later render to show.")], is_error=True)
         return CallToolResult(content=[TextContent(type="text", text="latest")], structured_content=rec["view"])
     if what == "status":
-        if watching:
-            # Shown full screen or pinned: a change written to it is
-            # rendered at once, for this view to follow.
-            _WATCHED[str(studio.safe_path(path))] = time.time()
         st = _view_status(path, rid)
         return CallToolResult(content=[TextContent(type="text", text=json.dumps(st))], structured_content=st)
     raise ValueError("what is page, pdf, status, latest or fields")
