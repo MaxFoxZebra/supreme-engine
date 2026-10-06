@@ -832,6 +832,44 @@ def _mark_rules(p: Path, letter: bool, data: dict, last: dict | None, changes: d
     return marks.rules(pairs, document)
 
 
+def _typst_setup(p: Path, letter: bool) -> tuple[list, dict]:
+    """The fonts and packages a document's Typst source compiles with."""
+    if letter:
+        meta, _ = studio.letters.parse(p.read_text(encoding="utf-8"))
+        cvp = studio.letter_cv(studio.dated(meta, p))
+        return studio.letters._font_paths(([cvp.parent / "fonts"] if cvp else []) + [p.parent / "fonts"]), {}
+    import cv_map
+    from rendercv.renderer.pdf_png import get_package_path
+    return cv_map._fonts(p.parent), {"package_path": get_package_path()}
+
+
+# The page image the model gets with a render. Enough to see the layout (a
+# heading left at the foot of a page, a near-empty last page, a line that
+# wraps badly) and to read the text, at about half the tokens of the view's
+# 144 ppi page: an image is paid for by its pixels, every turn it stays in
+# the conversation.
+MODEL_PPI = 96
+
+
+def _model_image(p: Path, letter: bool, typ: Path | None, idx: int, full: Path) -> ImageContent:
+    """Page `idx` for the model, at MODEL_PPI; the view's own page if the
+    smaller one cannot be made."""
+    data = None
+    if typ is not None and typ.is_file():
+        try:
+            import typst
+            fonts, extra = _typst_setup(p, letter)
+            out = typst.compile(str(typ), format="png", ppi=MODEL_PPI, root=str(typ.parent),
+                                font_paths=fonts, **extra)
+            out = out if isinstance(out, list) else [out]
+            data = out[idx] if idx < len(out) else None
+        except Exception:
+            data = None
+    if data is None:
+        data = full.read_bytes()
+    return ImageContent(type="image", data=base64.b64encode(data).decode("ascii"), mime_type="image/png")
+
+
 def _marked_pages(p: Path, letter: bool, typ: Path, count: int, rules: str) -> list[str] | None:
     """The pages again with `rules` applied, kept by id like the pages, or
     None unless every block is exactly where it is on the real page."""
@@ -847,12 +885,7 @@ def _marked_pages(p: Path, letter: bool, typ: Path, count: int, rules: str) -> l
         where = lambda m: [(b["k"], b["i"], b["page"], round(b["y0"], 1)) for b in m["bands"]]
         if where(plain) != where(lit):
             return None
-        meta, _ = studio.letters.parse(p.read_text(encoding="utf-8"))
-        cvp = studio.letter_cv(studio.dated(meta, p))
-        fonts = studio.letters._font_paths(([cvp.parent / "fonts"] if cvp else []) + [p.parent / "fonts"])
-        extra = {}
     else:
-        from rendercv.renderer.pdf_png import get_package_path
         probed, probes = cv_map._inject(src)
         if not probes:
             return None
@@ -861,8 +894,7 @@ def _marked_pages(p: Path, letter: bool, typ: Path, count: int, rules: str) -> l
         b = cv_map._positions(typ, lit_src, p.parent)
         if [(x["n"], x["p"], round(x["y"], 1)) for x in a] != [(x["n"], x["p"], round(x["y"], 1)) for x in b]:
             return None
-        fonts = cv_map._fonts(p.parent)
-        extra = {"package_path": get_package_path()}
+    fonts, extra = _typst_setup(p, letter)
     scratch = typ.parent / ".cvstudio-marks.typ"
     try:
         scratch.write_text(rules + src, encoding="utf-8")
@@ -1001,10 +1033,6 @@ def _render(path: str, page: int, views: bool) -> CallToolResult:
     def failed(text: str) -> CallToolResult:
         return CallToolResult(content=[TextContent(type="text", text=text)], is_error=True)
 
-    def image(f: Path) -> ImageContent:
-        return ImageContent(type="image", data=base64.b64encode(f.read_bytes()).decode("ascii"),
-                            mime_type="image/png")
-
     if studio.is_letter(p):
         r = studio.render_letter(p)
         if not r.get("ok"):
@@ -1013,17 +1041,17 @@ def _render(path: str, page: int, views: bool) -> CallToolResult:
         idx = max(1, min(page, r["pages"])) - 1
         summary = f"Rendered {path}\nPages: {r['pages']}\nWords: {r['words']}\nPDF: {r['pdf']}"
         view = None
+        typs = [f for f in studio.output_dir(p).glob("*.typ") if not f.name.startswith(".")]
+        typ = max(typs, key=lambda f: f.stat().st_mtime) if typs else None
         if views:
             try:
                 mapped = studio.letter_map(p)
             except Exception:
                 mapped = None
-            typs = [f for f in studio.output_dir(p).glob("*.typ") if not f.name.startswith(".")]
             view = _page_view(path, p, pngs, idx + 1, r["pages"], r["words"], r["pdf"],
-                              (mapped or {}).get("bands"), (mapped or {}).get("box"),
-                              max(typs, key=lambda f: f.stat().st_mtime) if typs else None)
+                              (mapped or {}).get("bands"), (mapped or {}).get("box"), typ)
         return CallToolResult(
-            content=[TextContent(type="text", text=summary), image(pngs[idx])],
+            content=[TextContent(type="text", text=summary), _model_image(p, True, typ, idx, pngs[idx])],
             structured_content=view)
 
     result = render_file(p, studio.output_dir(p))
@@ -1043,7 +1071,7 @@ def _render(path: str, page: int, views: bool) -> CallToolResult:
     pngs = [Path(f) for f in result.get("png_pages") or []]
     idx = max(1, min(page, pages)) - 1
     if pngs:
-        content.append(image(pngs[idx]))
+        content.append(_model_image(p, False, Path(result["typ"]) if result.get("typ") else None, idx, pngs[idx]))
     view = None
     if views and pngs:
         mapped, _ = studio.block_map(result, p)

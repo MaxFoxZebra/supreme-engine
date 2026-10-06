@@ -8,6 +8,13 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- Rendering a CV or letter costs Claude about half the tokens it did: the
+  page image Claude looks at is made at screen resolution instead of print
+  resolution. Still sharp enough to read and to spot a stranded heading or a
+  half-empty page. The pages you see in the chat are unchanged.
+
 ## 0.45.0
 
 - Watch Claude write. When Claude changes a CV or writes a letter, the chat
