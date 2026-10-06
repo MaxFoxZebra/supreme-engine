@@ -490,6 +490,29 @@ already says most of what the posting asks, with *Add evidence for …, only
 what I have really done* to finish and send; nothing is sent until you do.
 The keywords are a heuristic, and the view says so.
 
+**Claude writing, as it writes.** `write_cv`, `edit_cv_fields` and
+`write_letter` show the page view too. While Claude is still writing, the view
+shows the words as they come (from the client's streamed tool input, or typed
+out quickly from the whole of it when the client sends it at once), on paper,
+with where each goes (*Experience 1 · Highlights 2*). Then the document is
+rendered and the page replaces them, with the change marked and offered to keep
+or undo. The model gets the render's summary, not the page image, and is told
+it need not call `render_cv` just to show the page.
+
+**Pinned beside the chat.** In a client that offers it (MCP Apps' `pip`
+display mode), a pin button keeps the page in a small window while you go on
+talking: the page, its pages, and *Keep all* / *Undo all* for what is waiting.
+Pinned or full screen, the view follows the file: each later render of it
+replaces what it shows (`page_view_data` with `what="latest"`), so you watch
+the CV change as Claude works.
+
+**In the chat's language.** The views' own words follow the locale the
+client gives them: French, Spanish and Brazilian Portuguese, else English;
+dates and numbers are written that locale's way. Your CV, the posting,
+names and notes are never translated. The words are in `server/i18n/views.py`;
+`python i18n/build.py` writes them into both views, and
+`node checks/i18nviews.js` lists anything new left untranslated.
+
 **Download the PDF.** In a client that can hand a view's file to you
 (`ui/download-file`), the bar has a *PDF* button: the file you send with the
 application, without opening the app or the folder.
@@ -508,7 +531,7 @@ while you look at the first, so a long CV does not make a heavy result and a
 conversation opened again later still has its pages.
 
 To work on the view, `node checks/viewdev.js` in `server/` shows it the way
-Claude frames it, inline in light and dark and full screen, and reloads when
+Claude frames it, inline in light and dark, full screen and pinned, and reloads when
 the file changes; `--shots dir` saves screenshots instead. To see it in Claude
 itself without a release, point Claude Desktop's config at the checkout
 (`python server_main.py --mcp --workspace <your workspace> --client claude`,

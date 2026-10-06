@@ -5,6 +5,7 @@
      node checks/viewdev.js --workspace ~/Documents/CV\ Studio
      node checks/viewdev.js --shots out/          # screenshots of every variant, then exit
      node checks/viewdev.js --shots out/ --only light-inline --cv "<a CV in the list>"
+     http://127.0.0.1:5180/host?v=light-inline&cv=…&locale=fr-FR   # one frame, in French
 
    It starts the connector, renders the CVs once (a few of them, the longest
    first), and serves a page with the view side by side as Claude would frame
@@ -179,7 +180,8 @@ load();
     if (u.pathname === "/host") {
       const v = VARIANTS.find(x => x.id === u.searchParams.get("v")) || VARIANTS[0];
       const p = u.searchParams.get("cv") || ok[0];
-      return html(hostPage(viewFor(p), {path: p.replace(CHANGED, "").replace(MATCH, "")}, results[p], v));
+      const locale = u.searchParams.get("locale");
+      return html(hostPage(viewFor(p), {path: p.replace(CHANGED, "").replace(MATCH, "")}, results[p], locale ? {...v, locale} : v));
     }
     r.writeHead(404); r.end();
   }).listen(PORT, "127.0.0.1");

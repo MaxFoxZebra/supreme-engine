@@ -2369,8 +2369,9 @@ def _next_step(job: dict) -> dict | None:
             said = str(job["interview_at"])[:16].replace("T", " at ")
         what = _one_line(rnd.get("kind"), 40) or "Interview"
         who = _one_line(rnd.get("with"), 60)
+        # The parts too, so a view can say the date in the chat's language.
         return {"kind": "interview", "text": f"{what} on {said}" + (f", with {who}" if who else ""),
-                "in_days": -age}
+                "in_days": -age, "what": what, "who": who or None, "at": str(job["interview_at"])[:16]}
     if age is not None and age > 0 and st == "interviewing":
         return {"kind": "outcome", "text": "The interview has passed: how did it go?"}
     if st == "applied":
@@ -2512,19 +2513,20 @@ def _today() -> dict:
     jobs = {j["id"]: j for j in studio.jobstore.list_jobs(_ws())}
     items = []
 
-    def add(kind, jid, text, when=None, action=None, order=0):
+    def add(kind, jid, text, when=None, action=None, order=0, **parts):
         j = jobs.get(jid)
         if not j or any(i["id"] == jid and i["kind"] == kind for i in items):
             return
         items.append({**_job_row(j), "kind": kind, "text": text, "when": when, "action": action,
-                      "logo": _logo_uri(j), "order": order})
+                      "logo": _logo_uri(j), "order": order, **parts})
 
     for a in al["interview_soon"]:
         nx = _next_step(jobs.get(a["id"]) or {}) or {}
         d = nx.get("in_days")
         add("interview", a["id"], nx.get("text") or "Interview coming up",
             "Today" if d == 0 else "Tomorrow" if d == 1 else f"In {d} days" if d is not None else None,
-            "Prepare me for it", d if d is not None else 9)
+            "Prepare me for it", d if d is not None else 9,
+            **{k: nx[k] for k in ("what", "who", "at") if nx.get(k)})
     for a in al["interview_passed"]:
         add("outcome", a["id"], "The interview has passed: how did it go?", None, None, 20)
     for j in jobs.values():

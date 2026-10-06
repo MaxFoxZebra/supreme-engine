@@ -8,6 +8,22 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- Watch Claude write. When Claude changes a CV or writes a letter, the chat
+  shows the words as they come, on paper, with where each one goes; then the
+  page, rendered, with the change marked and ready to keep or undo. No
+  separate render step is needed to see it.
+- Pin the CV beside the chat. Where Claude offers it, the pin button keeps the
+  page in a small window while you keep talking, with Keep all and Undo all,
+  and it follows every new render of the CV, so you see it change as Claude
+  works. Full screen follows new renders too.
+- The CV page, the job numbers, the application card and Today speak the
+  chat's language: French, Spanish or Brazilian Portuguese when Claude is set
+  to one of them, with dates and numbers written that way. Interview times are
+  written in that language too. Your CV, postings, names and notes stay as
+  they are.
+
 ## 0.44.1
 
 - A CV page in a conversation you come back to no longer stays blank with

@@ -131,7 +131,7 @@ jobs:
       - name: Translations built and complete
         run: |
           python i18n/build.py
-          git diff --exit-code -- static/i18n.js || { echo "static/i18n.js is stale: run python i18n/build.py"; exit 1; }
+          git diff --exit-code -- static/i18n.js static/mcp-page.html static/mcp-jobs.html || { echo "static/i18n.js or a view is stale: run python i18n/build.py"; exit 1; }
           python checks/i18nserver.py
 
       - name: MCP over stdio
