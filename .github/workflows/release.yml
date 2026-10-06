@@ -431,7 +431,9 @@ jobs:
             --platform "$PLAT" --out dist-mcpb
           # Checked against Anthropic's own schema, so a manifest Claude
           # Desktop would refuse fails here rather than on a user's machine.
-          python -c "import glob, zipfile; zipfile.ZipFile(glob.glob('dist-mcpb/*.mcpb')[0]).extract('manifest.json', 'mcpb-check')"
+          # The manifest and what it points at beside it (the icon): the
+          # validator reads both. The server itself is not needed for this.
+          python -c "import glob, zipfile; z = zipfile.ZipFile(glob.glob('dist-mcpb/*.mcpb')[0]); [z.extract(n, 'mcpb-check') for n in ('manifest.json', 'icon.png')]"
           npx -y @anthropic-ai/mcpb validate mcpb-check/manifest.json
           ls -la dist-mcpb
 

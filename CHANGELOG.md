@@ -8,6 +8,13 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.42.1
+
+- **The Claude Desktop extension is attached to the release.** 0.42.0's
+  build stopped before attaching the `.mcpb` files, on a check of the
+  extension that looked for its icon in the wrong place. Everything in
+  0.42.0 is in this release too.
+
 ## 0.42.0
 
 - **How your job search is going, in the chat.** Ask Claude and it shows your
