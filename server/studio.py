@@ -88,6 +88,8 @@ THEMES = ["classic", "ember", "engineeringclassic", "engineeringresumes", "harva
           "moderncv", "opal", "sb2nov"]
 PAGE_SIZES = ["a4", "us-letter"]
 DEFAULT_WORKSPACE = Path.home() / "Documents" / "CV Studio"
+# When the process started, set by server_main before this module was imported.
+STARTED: float | None = None
 
 yaml_rt = YAML(typ="rt")
 yaml_rt.preserve_quotes = True
@@ -97,7 +99,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.42.1"
+VERSION = "0.42.2"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -858,6 +860,10 @@ def refresh_connectors() -> dict:
 
 def start_connector_refresh() -> None:
     def run() -> None:
+        # Out of the way of the start: after an update this copies the whole
+        # server, which a virus scanner reads file by file, and that is
+        # nothing the window should be waiting behind.
+        time.sleep(45)
         try:
             r = refresh_connectors()
             if r["moved"] or r["pruned"]:
@@ -5945,7 +5951,10 @@ def main() -> int:
                     help="Version reported by the shell, so this cannot drift.")
     ap.add_argument("--parent-pid", type=int, default=None,
                     help="Exit when this process does, so we cannot be orphaned.")
+    ap.add_argument("--spawned-at", type=int, default=None,
+                    help="When the desktop app launched this, in ms since the epoch.")
     args = ap.parse_args()
+    imported = time.time()
 
     if args.app_version:
         VERSION = args.app_version
@@ -5961,6 +5970,7 @@ def main() -> int:
     cjkfonts.register()
     start_backups()
     start_connector_refresh()
+    ready = time.time()
 
     API_TOKEN = args.token
     if args.host not in ("127.0.0.1", "localhost", "::1") and not API_TOKEN:
@@ -5979,6 +5989,15 @@ def main() -> int:
         start_clip_listener()
     # Loopback only: this reads and writes files and has no authentication.
     with Server((args.host, args.port), Handler) as httpd:
+        # How long a start took, and where. Before "our code" is the system
+        # loading the program, which is where a virus scan or Gatekeeper's
+        # check of a newly installed version shows up.
+        spawned = args.spawned_at / 1000 if args.spawned_at else None
+        print("startup    : " + ", ".join(filter(None, [
+            f"system {STARTED - spawned:.1f}s" if spawned and STARTED else None,
+            f"imports {imported - STARTED:.1f}s" if STARTED else None,
+            f"workspace {ready - imported:.1f}s",
+            f"listening after {time.time() - (spawned or STARTED or imported):.1f}s"])))
         print(f"CV Studio  -> {url}")
         if API_TOKEN:
             print("Auth       : X-API-Key required")

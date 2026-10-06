@@ -14,7 +14,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -213,6 +213,11 @@ fn main() {
                 // Single source of truth for the version shown in About and the
                 // API spec: whatever this build actually is.
                 cmd.arg("--app-version").arg(env!("CARGO_PKG_VERSION"));
+                // When it was launched, so the server's log can say how long
+                // the system took to start it before any of its code ran.
+                if let Ok(t) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                    cmd.arg("--spawned-at").arg(t.as_millis().to_string());
+                }
                 if let Some(dir) = server.parent() {
                     cmd.current_dir(dir);
                 }
@@ -231,17 +236,26 @@ fn main() {
                     }
                 }
 
-                let deadline = Instant::now() + Duration::from_secs(60);
-                while Instant::now() < deadline {
+                // The first start of a new version can take a minute or more
+                // while macOS checks, or Windows scans, every file of it. Give
+                // up only after five, and keep watching until then: a server
+                // that comes up late is still a server.
+                let started = Instant::now();
+                let mut told = false;
+                while started.elapsed() < Duration::from_secs(300) {
                     if port_open(port) {
                         let _ = window.eval(&format!(
                             "location.replace('http://127.0.0.1:{port}/')"
                         ));
                         return;
                     }
+                    if !told && started.elapsed() > Duration::from_secs(45) {
+                        told = true;
+                        let _ = window.eval("window.studioSlow && window.studioSlow()");
+                    }
                     std::thread::sleep(Duration::from_millis(150));
                 }
-                show_error(&window, "The renderer did not start in time.");
+                show_error(&window, "The renderer did not start within five minutes.");
             });
 
             Ok(())

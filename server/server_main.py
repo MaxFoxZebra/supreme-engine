@@ -4,8 +4,12 @@ One binary, two modes:
   --mcp            speak MCP over stdio, for Claude Desktop and other AI clients
   (default)        run the local HTTP server the desktop app talks to
 """
-import multiprocessing
-import sys
+import time
+
+STARTED = time.time()   # before any import of ours: how long those take is in the log
+
+import multiprocessing  # noqa: E402
+import sys  # noqa: E402
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()   # a frozen app will fork-bomb itself without this
@@ -21,5 +25,6 @@ if __name__ == "__main__":
                 client = argv[i + 1]
         import mcp_server
         sys.exit(mcp_server.main(workspace, client))
-    from studio import main
-    sys.exit(main())
+    import studio
+    studio.STARTED = STARTED
+    sys.exit(studio.main())

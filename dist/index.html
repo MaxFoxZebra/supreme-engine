@@ -12,3 +12,27 @@ body{margin:0;height:100vh;display:grid;place-items:center;background:#131311;co
 </style>
 <div class="w"><div class="s"></div><div>Starting CV Studio</div>
 <div class="m" id="m">preparing the renderer…</div></div>
+<script>
+/* A first start after an update is slow because of the system, not CV
+   Studio: macOS checks, and Windows scans, every file of the new version
+   once. Say so rather than leave a spinner that looks stuck. */
+var m = document.getElementById("m");
+setTimeout(function () {
+  if (m.textContent.indexOf("preparing") === 0)
+    m.textContent = "Still starting. The first start after an update takes longer while your computer checks the new files; the next ones are quick.";
+}, 8000);
+window.studioSlow = function () {
+  m.textContent = "Still starting, nearly a minute now. This is your computer checking the new version's files, once. It will open by itself.";
+};
+/* Called by the app when the renderer could not start: stop the spinner and
+   say what happened, and where the log is. */
+window.studioError = function (msg) {
+  var s = document.querySelector(".s");
+  if (s) s.style.display = "none";
+  document.querySelector(".w > div:nth-child(2)").textContent = "CV Studio could not start";
+  m.style.opacity = 1;
+  m.textContent = msg + " Quit and open it again. If it happens again, the log is in " +
+    (navigator.platform.indexOf("Mac") === 0 ? "~/Library/Application Support/CV Studio/logs/server.log"
+      : "%LOCALAPPDATA%\\CV Studio\\logs\\server.log") + ".";
+};
+</script>

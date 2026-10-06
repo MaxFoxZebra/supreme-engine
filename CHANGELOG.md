@@ -8,6 +8,19 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.42.2
+
+- **A slow start no longer looks stuck.** The first start after an update can
+  take a minute or more on a Mac while macOS checks every file of the new
+  version (on Windows, while the virus scanner does). The window used to give
+  up waiting after 60 seconds and then spin forever, even once CV Studio was
+  ready; it now keeps waiting, says what is happening, and opens by itself.
+  If CV Studio really cannot start, the window now says so, with where the
+  log is, instead of spinning.
+- On Windows, the copy of the connector made after an update waits until the
+  app is open, so it never slows the start.
+- The log now records how long each start took, and where the time went.
+
 ## 0.42.1
 
 - **The Claude Desktop extension is attached to the release.** 0.42.0's
