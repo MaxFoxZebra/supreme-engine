@@ -8,6 +8,12 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.42.3
+
+- Everything in 0.42.2, released together with the start screen's own
+  update check: install this one by hand once, and every update after it
+  can be installed even if CV Studio cannot start.
+
 ## 0.42.2
 
 - **A slow start no longer looks stuck.** The first start after an update can
