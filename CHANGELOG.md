@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.45.2
 
 - The CV is readable in the chat: the page now uses the conversation's whole
   width, with the other pages in a row under it instead of beside it.
