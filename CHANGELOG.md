@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.45.1
 
 - Full screen stays full screen while you ask for changes. With the CV open
   full screen (or pinned), ask Claude for a change and the page updates right
