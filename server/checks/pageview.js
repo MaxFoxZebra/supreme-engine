@@ -438,6 +438,20 @@ async function main() {
   check("a card opens the whole page on that block", !cardOpen.folded && cardOpen.pop, JSON.stringify(cardOpen));
   await c.send("tools/call", {name: "review_change", arguments: {path: cvPath, ids: ["*"], action: "undo"}});
 
+  console.log("A CV Claude made in the conversation, changed again");
+  const madeCv = "profile/tailored.yaml";
+  const madeSrc = (await c.send("tools/call", {name: "read_cv", arguments: {path: cvPath}})).result.content[0].text;
+  await c.send("tools/call", {name: "write_cv", arguments: {path: madeCv, content: madeSrc}});
+  await c.send("tools/call", {name: "render_cv", arguments: {path: madeCv}});
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: madeCv, edits: [
+    {path: ["cv", "sections", "summary", 0], value: "Platform engineer who cut deploy time from 3 hours to 11 minutes."}]}});
+  const sc4 = (await c.send("tools/call", {name: "render_cv", arguments: {path: madeCv}})).result.structuredContent || {};
+  check("is marked against its last render, still to keep or undo as a new CV",
+    JSON.stringify((sc4.changes || {}).blocks) === JSON.stringify([{k: "entry", name: "summary", i: 0}]) &&
+    Array.isArray(sc4.marked) && sc4.marked.length === sc4.shots.length &&
+    ((sc4.changes || {}).review || {units: []}).units.some(u => u.kind === "created"),
+    JSON.stringify({changes: sc4.changes && sc4.changes.blocks, marked: sc4.marked}));
+
   console.log("A conversation opened again");
   const again = (await c.send("tools/call", {name: "render_cv", arguments: {path: cvPath}})).result;
   fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, again, {width: 720}));

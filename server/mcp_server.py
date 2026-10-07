@@ -768,11 +768,12 @@ def _mark_rules(p: Path, letter: bool, data: dict, last: dict | None, changes: d
         payload = studio.review_payload(p)
     except Exception:
         payload = None
-    if payload and payload.get("units"):
-        for u in payload["units"]:
-            if u.get("after") not in (None, "", []):
-                pairs.append((marks.texts(u.get("before")), marks.texts(u.get("after"))))
-    elif last and last.get("data"):
+    for u in (payload or {}).get("units") or []:
+        if u.get("after") not in (None, "", []):
+            pairs.append((marks.texts(u.get("before")), marks.texts(u.get("after"))))
+    # A document made in this conversation has no text before it to review
+    # against: what is new is what changed since its last render.
+    if not pairs and last and last.get("data"):
         old = last["data"]
         if letter:
             ol, nl = old.get("letter") or {}, data.get("letter") or {}
@@ -955,7 +956,11 @@ def _page_view(path: str, p: Path, pngs: list[Path], page: int, pages: int,
     # from the last render: it is what they can act on, and it survives a
     # restart of the client.
     pending = _review_units(p)
-    if pending:
+    if pending and all(u["kind"] == "created" for u in pending["units"]):
+        # Made in this conversation: all of it is new against the file, so the
+        # page marks what changed since its last render, still to keep or undo.
+        changes = {**(changes or {"blocks": [], "removed": 0, "design": False}), "review": pending}
+    elif pending:
         units = pending["units"]
         changes = {"blocks": [u["block"] for u in units if u["block"]],
                    "removed": sum(1 for u in units if u.get("tag") == "del" or

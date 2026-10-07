@@ -8,6 +8,14 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- A CV Claude made in the conversation shows its changes again. After Claude
+  creates a tailored CV and then changes it, the page now opens on the
+  changed parts with the new words marked, as for any other CV, instead of
+  only saying "changed 1 thing". Keep all and Undo all still apply to the
+  whole new CV.
+
 ## 0.46.0
 
 - Made for the chat. After Claude changes your CV, the page opens on the
