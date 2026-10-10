@@ -8,6 +8,29 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.47.1
+
+- Claude no longer writes anything about the company from memory in a
+  letter: only what the posting, the company's own site or a page it read
+  says, and an inferred problem is written as your reading of it.
+- In a letter, facts come from your CV and the story around them from you,
+  never from Claude.
+- Ask for a stronger line than your facts allow and Claude says why,
+  writes the strongest version that stays true, and asks for the fact that
+  would make the stronger one true.
+- Language levels and work authorisation ("EU citizen") appear only as you
+  stated them. A CV that says "fluent" keeps the word, and Claude asks for
+  your level instead of guessing one. "N years as" counts only the roles
+  that were that work.
+- One page by default, two from about ten years of experience. If the base
+  CV uses a two-column theme, the tailored copy switches to one column and
+  Claude says so.
+- The starter CV no longer says numbers get read first: no study shows it.
+  The two-column themes' note says why one column is the safer choice for
+  anything sent through a job portal, without singling out Workday.
+- A letter for no company in particular says "the company" in its own
+  language.
+
 ## 0.47.0
 
 - A CV Claude made in the conversation shows its changes again. After Claude
@@ -18,19 +41,15 @@ tag, so a release is never published with nothing said about it.
 - Claude tailors a CV and writes a letter by rules checked against
   research: hiring studies, applicant-tracking documentation, and French
   and Dutch employment law. It keeps job titles, dates and numbers the same
-  in every version, puts each of the posting's requirements you really meet
-  in a real achievement, in the posting's own words, names the ones you do
-  not meet as gaps, and never invents a tool, a number or a level. It
-  writes the motivation text the application asks for: a letter when there
-  is a place for one, a direct answer when the form asks a question,
-  nothing when it has no place for one. It also reminds you of the form's
-  screening questions, listing the ones it can see.
+  in every version, puts each of the posting's requirements in a real
+  achievement in the posting's own words, and never invents a tool, a
+  number or a level. It writes the motivation text the application asks
+  for: a letter when there is a place for one, a direct answer when the
+  form asks a question. It also lists the form's screening questions for
+  you to answer.
 - Letters aim for about 250 words, half a page, and the word meter says
   so. A new Dutch letter starts with Dutch writing prompts, and the prompts
   no longer push Claude to put a number in the letter when there is none.
-- The starter CV no longer says numbers get read first: no study shows it.
-  The two-column themes' note now says why one column is the safer choice
-  for anything sent through a job portal.
 
 ## 0.46.0
 
