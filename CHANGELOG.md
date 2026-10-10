@@ -18,15 +18,19 @@ tag, so a release is never published with nothing said about it.
 - Claude tailors a CV and writes a letter by rules checked against
   research: hiring studies, applicant-tracking documentation, and French
   and Dutch employment law. It keeps job titles, dates and numbers the same
-  in every version, puts each of the posting's requirements in a real
-  achievement in the posting's own words, and never invents a tool, a
-  number or a level. It writes the motivation text the application asks
-  for: a letter when there is a place for one, a direct answer when the
-  form asks a question. It also lists the form's screening questions for
-  you to answer.
+  in every version, puts each of the posting's requirements you really meet
+  in a real achievement, in the posting's own words, names the ones you do
+  not meet as gaps, and never invents a tool, a number or a level. It
+  writes the motivation text the application asks for: a letter when there
+  is a place for one, a direct answer when the form asks a question,
+  nothing when it has no place for one. It also reminds you of the form's
+  screening questions, listing the ones it can see.
 - Letters aim for about 250 words, half a page, and the word meter says
   so. A new Dutch letter starts with Dutch writing prompts, and the prompts
   no longer push Claude to put a number in the letter when there is none.
+- The starter CV no longer says numbers get read first: no study shows it.
+  The two-column themes' note now says why one column is the safer choice
+  for anything sent through a job portal.
 
 ## 0.46.0
 

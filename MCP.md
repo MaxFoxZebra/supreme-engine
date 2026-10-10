@@ -162,10 +162,12 @@ you. That one is a rule in prose, not a lock in the code.
 `plugin/skills/cv-studio-apply/SKILL.md` takes a job link to an application ready to
 send: it adds the job with the posting read from the board, copies the base CV
 in the posting's language and tailors it (never adding experience), checks it
-renders and passes the ATS check, attaches it, then writes and attaches a
-cover letter. Adding a job without the skill gets the same steps from the
-server's instructions and from `add_job`'s `next`, but the skill carries the
-judgement: what to reorder, what to cut, what a letter says. See
+renders and passes the ATS check, attaches it, then writes the motivation text
+the application asks for: a cover letter, attached; a short answer when the
+form asks a question instead; nothing when it has no place for one. Adding a
+job without the skill gets the same steps from the server's instructions and
+from `add_job`'s `next`, but the skill carries the judgement: what to reorder,
+what to cut, what a letter says, and where honest framing stops. See
 [Skills](#skills) for how it reaches each client.
 
 ### Interview prep, as a skill

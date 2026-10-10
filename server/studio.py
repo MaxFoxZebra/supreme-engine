@@ -2485,7 +2485,7 @@ cv:
         start_date: 2022-01
         end_date: present
         highlights:
-          - An achievement with a number in it, because numbers get read first
+          - What you achieved, with its real number or a scope you can count
           - What you actually changed, rather than what you were responsible for
 
     education:
@@ -2545,68 +2545,11 @@ locale:
 settings:
   current_date: today
 """
-
-
-STARTER_LETTER = """# A cover letter, written as a RenderCV document so it renders with the same
-# letterhead and typography as your CV. The section title becomes the subject
-# line. Keep it under about 350 words and on one page.
-cv:
-  name: Your Name
-  location: City, Country
-  email: you@example.com
-  phone: "+33-6-12-34-56-78"
-
-  sections:
-    Re Solutions Engineer at Company:
-      - Dear Hiring Team,
-      - >-
-        Open with something only you could write about this company: a specific
-        problem their product implies, or a genuine connection to your work. If
-        this paragraph could be pasted into another application, it is not
-        doing its job.
-      - >-
-        Then the strongest matching evidence, with a number in it, and one line
-        of context the CV had no room for: what was hard about it, what the
-        constraint was.
-      - >-
-        If there is a real gap, address it once, briefly, from strength. Name
-        the adjacent experience that transfers. Do not apologise for it.
-      - >-
-        Close with what you would like to happen next. No flourish.
-      - Kind regards,
-      - Your Name
-
-design:
-  theme: engineeringclassic
-  page:
-    size: a4
-    top_margin: 2cm
-    bottom_margin: 2cm
-    left_margin: 2cm
-    right_margin: 2cm
-    show_footer: false
-    # RenderCV prints "Last updated in <month> <year>" at the top right of
-    # page one. It dates the document rather than the work, and a CV that
-    # announces it was last touched four months ago is answering a question
-    # nobody asked.
-    show_top_note: false
-  colors:
-    name: rgb(0, 0, 0)
-    section_titles: rgb(0, 0, 0)
-    connections: rgb(70, 70, 70)
-  typography:
-    line_spacing: 0.75em
-    alignment: left
-    font_family:
-      body: Source Sans 3
-      name: Source Sans 3
-
-locale:
-  language: english
-
-settings:
-  current_date: today
-"""
+# The starter as earlier versions wrote it: a workspace still holding it
+# untouched is still a first run.
+STARTER_CV_BEFORE = STARTER_CV.replace(
+    "What you achieved, with its real number or a scope you can count",
+    "An achievement with a number in it, because numbers get read first")
 
 
 # --------------------------------------------------------------------------
@@ -2780,7 +2723,7 @@ def starter_untouched() -> bool:
     if not base or base.get("missing"):
         return False
     try:
-        return safe_path(base["path"]).read_text(encoding="utf-8") == STARTER_CV
+        return safe_path(base["path"]).read_text(encoding="utf-8") in (STARTER_CV, STARTER_CV_BEFORE)
     except OSError:
         return False
 
@@ -5031,7 +4974,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if src:
                     body = safe_path(src).read_text(encoding="utf-8")
                 else:
-                    body = STARTER_LETTER if kind == "letter" else STARTER_CV
+                    body = STARTER_CV
                 dest.write_text(body, encoding="utf-8")
                 # Which CV this was tailored from is the whole basis of "what
                 # did this change from the base", and the Base on picker knew

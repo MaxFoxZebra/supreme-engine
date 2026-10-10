@@ -2721,14 +2721,14 @@ function ltPanel(){
   const lang=m.language||"en";
   const fits=LT.pages==null?(LT.rendering?"Checking the page…":"Not laid out yet.")
     :LT.pages===1?"Fits on one page.":"Runs to "+LT.pages+" pages. Letters read best on one.";
-  const scaffold=/Open with something only you could write|Commencez par ce que vous seul|Begin met iets wat alleen jij/.test(LT.body);
+  const scaffold=ltPrompts().size>0;
   const say="In CV Studio, write the cover letter "+LT.path+(j?" for my "+j.company+" application, against its posting.":".");
   $("#lt-panel").innerHTML=
     '<div style="display:flex;flex-direction:column;gap:8px"><h4>Length</h4>'+
       '<span><span class="big" id="lt-words">'+n+'</span> <span class="muted2">of about 250 words</span></span>'+
       '<div class="lt-meter'+(n>400?" over":"")+'"><i id="lt-meterfill" style="width:'+Math.min(100,n/250*100)+'%"></i></div>'+
       '<span class="muted2">'+fits+'</span>'+
-      '<span class="muted2" id="lt-short"'+(ltShort(n)?'':' hidden')+'>'+t("Short: most recruiters prefer about half a page.")+'</span></div>'+
+      '<span class="muted2" id="lt-short"'+(ltShort(n)?'':' hidden')+'>'+t("Short: half a page is what recruiters ask for most often.")+'</span></div>'+
     '<hr>'+
     '<div style="display:flex;flex-direction:column;gap:10px"><h4>This letter</h4><div class="fg">'+
       '<label>For</label><span>'+(j?'<b style="font-weight:600">'+esc(j.company)+'</b> · '+esc(j.title)
@@ -8253,7 +8253,7 @@ function paintThemes(){
       (img?'<img src="'+esc(img)+'" alt="">':thumbHTML(t))+
       '<span class="thumbcap"><span>'+esc(themeLabel(t))+'</span>'+
       (t==="sidebar"||t==="duo"
-        ?'<b class="th-ats warn" title="'+esc("Two columns: most ATS read them in order, some (Workday among them) may mix the right-hand column into your experience. Best when a person reads it first: a referral, an email to a hiring manager, a small company. For a big company's job portal, pick a one-column theme.")+'">ATS ~</b>'
+        ?'<b class="th-ats warn" title="'+esc("Two columns: parsers can read them out of order, and in one recruiter study cluttered multi-column layouts ranked lowest. Best for a CV handed straight to a person; for anything sent through a job portal, pick a one-column theme.")+'">ATS ~</b>'
         :t==="ledger"
         ?'<b class="th-ats warn" title="'+esc("Most ATS read it in order; some read the column of dates on its own, apart from each job")+'">ATS ~</b>'
         :'<b class="th-ats" title="'+esc("Read in order by both kinds of PDF reader ATS use, in our tests; no icon characters in the text")+'">ATS ✓</b>')+
@@ -9323,7 +9323,7 @@ async function packSheet(id){
   const warn=[];
   if(j.letter_path){
     try{ const d=await api("/api/doc?path="+encodeURIComponent(j.letter_path));
-      if(/Open with something only you could write|Commencez par ce que vous seul|Begin met iets wat alleen jij/.test(d.body||""))
+      if((d.prompts||[]).length)
         warn.push(t("The letter still has its writing prompts in it."));
     }catch(e){}
   }

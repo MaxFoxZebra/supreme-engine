@@ -45,8 +45,8 @@ except Exception:  # pragma: no cover - ruamel ships with the app
     _yaml = None
 
 EXT = ".md"
-# About half a page: what most recruiters say they prefer. One page is the
-# most a letter should take.
+# About half a page: the length recruiters most often say they prefer. One
+# page is the most a letter should take.
 WORD_TARGET = 250
 
 # What a new letter says before it is written, in the languages people apply
@@ -78,11 +78,11 @@ PROMPTS = {
     "fr": ["Commencez par ce que vous seul pouvez dire de {company} : un problème "
            "que leur produit laisse deviner, ou un vrai lien avec votre travail.",
            "Puis votre meilleure preuve tirée du CV, avec son vrai chiffre ou une "
-           "ampleur que vous pouvez compter, et ce que le CV n'avait pas la place "
-           "de raconter.",
+           "échelle que vous pouvez chiffrer, et ce que le CV n'avait pas la "
+           "place de raconter.",
            "Terminez par ce que vous aimeriez qu'il se passe ensuite."],
     "nl": ["Begin met iets wat alleen jij over {company} kunt schrijven: een "
-           "probleem dat hun product doet vermoeden, of een echte link met je werk.",
+           "probleem dat hun product doet vermoeden, of een echte band met je werk.",
            "Dan je sterkste bewijs uit je cv, met het echte getal of een omvang "
            "die je kunt tellen, en het deel van het verhaal waar je cv geen ruimte "
            "voor had.",
@@ -95,7 +95,14 @@ PROMPTS_BEFORE = [
     "part of the story the CV had no room for.",
     "Puis votre meilleure preuve, chiffrée, et ce que le CV n'avait pas la "
     "place de raconter.",
+    "Puis votre meilleure preuve tirée du CV, avec son vrai chiffre ou une "
+    "ampleur que vous pouvez compter, et ce que le CV n'avait pas la place "
+    "de raconter.",
+    "Begin met iets wat alleen jij over {company} kunt schrijven: een "
+    "probleem dat hun product doet vermoeden, of een echte link met je werk.",
 ]
+# The company in a prompt, when the letter is for no company in particular.
+THE_COMPANY = {"en": "the company", "fr": "l'entreprise", "nl": "het bedrijf"}
 
 # Where the place and date go, per language. {month} is lower case where the
 # language writes it so.
@@ -976,12 +983,13 @@ def _elide(text: str, lang: str) -> str:
 def scaffold(*, company: str = "", role: str = "", lang: str = "en", place: str = "",
              looks_like: str | None = None, application: str | None = None) -> str:
     subj, greet, close = PHRASES.get(lang, PHRASES["en"])
-    prompts = PROMPTS.get(lang, PROMPTS["en"])
+    plang = lang if lang in PROMPTS else "en"
+    prompts = PROMPTS[plang]
     meta = {"application": application, "company": company or None,
             "looks_like": looks_like, "place": place or None, "date": "today",
             "subject": _elide(subj.format(role=role), lang) if role else None,
             "language": lang}
-    body = "\n\n".join([greet] + [p.format(company=company or "the company")
+    body = "\n\n".join([greet] + [p.format(company=company or THE_COMPANY[plang])
                                   for p in prompts] + [close])
     return dump(meta, body)
 
