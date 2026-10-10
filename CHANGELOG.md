@@ -15,6 +15,18 @@ tag, so a release is never published with nothing said about it.
   changed parts with the new words marked, as for any other CV, instead of
   only saying "changed 1 thing". Keep all and Undo all still apply to the
   whole new CV.
+- Claude tailors a CV and writes a letter by rules checked against
+  research: hiring studies, applicant-tracking documentation, and French
+  and Dutch employment law. It keeps job titles, dates and numbers the same
+  in every version, puts each of the posting's requirements in a real
+  achievement in the posting's own words, and never invents a tool, a
+  number or a level. It writes the motivation text the application asks
+  for: a letter when there is a place for one, a direct answer when the
+  form asks a question. It also lists the form's screening questions for
+  you to answer.
+- Letters aim for about 250 words, half a page, and the word meter says
+  so. A new Dutch letter starts with Dutch writing prompts, and the prompts
+  no longer push Claude to put a number in the letter when there is none.
 
 ## 0.46.0
 

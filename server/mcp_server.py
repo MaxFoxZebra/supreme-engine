@@ -128,9 +128,19 @@ mcp = MCPServer(
         "only track it, follow each add_job with a CV tailored to the posting "
         "(create_cv copying the base CV in the posting's language, "
         "edit_cv_fields, render_cv, ats_check, then update_job_tracking with "
-        "cv_path) and a cover letter (create_letter, write_letter, render_cv). "
-        "add_job's `next` says the same. Never tailor against a summary of "
-        "the posting, and never add experience the base CV does not have.\n\n"
+        "cv_path) and the motivation text its application asks for: usually "
+        "a short cover letter (create_letter, write_letter, render_cv), or a "
+        "direct answer when the form asks a question instead. add_job's "
+        "`next` says the same. Never tailor against a summary of the "
+        "posting.\n\n"
+        "Tailoring chooses, orders and words real facts; it never changes "
+        "them. Never add experience, tools, numbers, titles or dates the base "
+        "CV does not have, in a CV, a letter or an answer for an application "
+        "form. Employer names, official job titles, dates, degrees and every "
+        "number stay the same in every version: an applicant tracking system "
+        "keeps all of a person's applications to one company together, and "
+        "background checks verify titles and dates. Use a one-column theme "
+        "unless the user asks otherwise, and never hidden or white text.\n\n"
         "When you add an application, pass company_website: the company's own "
         "domain, found from the posting or its careers page, not the job "
         "board's. Its logo is fetched from there and shown on the row.\n\n"
@@ -139,7 +149,7 @@ mcp = MCPServer(
         "add_language: it writes the copy with dates, month names and section "
         "titles already in the new language. Then translate the remaining "
         "text with edit_cv_fields, and leave names, contact details, links, "
-        "company names and dates as they are. When the source CV changes, "
+        "company names, official job titles and dates as they are. When the source CV changes, "
         "translation_status lists what the translation is missing; carry each "
         "change over, then call mark_translation_current. To tailor for a "
         "posting, copy the base CV in the posting's language (list_cvs says "
@@ -150,7 +160,8 @@ mcp = MCPServer(
         "It prints bold, italic, [links](url) and '- ' bullet lists, nothing "
         "else. The letterhead, font and colours come from the CV named in "
         "looks_like, so never write a name or contact details into the body. "
-        "create_letter starts one for an application; write_letter replaces "
+        "About 250 words, never more than a page, and every fact in it is "
+        "already on the CV it goes with. create_letter starts one for an application; write_letter replaces "
         "its body (and subject); render_cv shows the page."
     ),
 )
@@ -1636,8 +1647,10 @@ def add_job(company: str, title: str, status: str = "pending",
     job["next"] = ("Unless the user asked only to track it: tailor a CV for it "
                    "(create_cv copying the base CV in the posting's language, "
                    "edit_cv_fields, render_cv, ats_check with this job_id, then "
-                   "update_job_tracking with cv_path), then create_letter and "
-                   "write_letter. Report what you wrote and any gap.")
+                   "update_job_tracking with cv_path), then the motivation text "
+                   "its form asks for: create_letter and write_letter, or a short "
+                   "answer when the form asks a question instead. Report what "
+                   "you wrote, any gap, and the form's screening questions.")
     return job
 
 
@@ -1680,7 +1693,9 @@ def ats_check(path: str, job_id: str | None = None) -> CallToolResult:
     this CV is attached to, which of the posting's keywords the CV uses.
 
     Use it after tailoring. A missing keyword is worth working in only where
-    it is true of the user: never add a skill they have not claimed. The
+    it is true of the user: never add a skill they have not claimed, and put
+    it in the bullet that proves it, not only in the skills list, since
+    screening models look for evidence in the experience. The
     keyword list is picked out of the posting by a heuristic, so read it as a
     prompt, not a checklist. `design.header.connections.show_icons: false` and
     `display_urls_instead_of_usernames: true` fix the two commonest parsing
@@ -1781,7 +1796,8 @@ def create_letter(job_id: str) -> dict:
     meta, body = studio.letters.parse(studio.safe_path(r["path"]).read_text(encoding="utf-8"))
     return {"path": r["path"], "header": meta, "body": body,
             "next": "Write the letter with write_letter, then render_cv to look at it. "
-                    "Keep it under about 350 words and on one page."}
+                    "Aim for about 250 words, never more than one page, with every fact "
+                    "already on the CV it goes with."}
 
 
 @tool
@@ -1795,6 +1811,8 @@ def write_letter(path: str, body: str, subject: str | None = None) -> CallToolRe
     [text](url). Most cover letters need only paragraphs; use the rest where
     it helps the reader. The name, contact details and signature are printed
     from the CV the letter looks like, so leave them out. The header is kept.
+    Every factual claim must already be on that CV: a letter adds context and
+    motivation, never a fact of its own.
     """
     p = studio.safe_path(path)
     if not studio.is_letter(p):

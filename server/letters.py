@@ -45,7 +45,9 @@ except Exception:  # pragma: no cover - ruamel ships with the app
     _yaml = None
 
 EXT = ".md"
-WORD_TARGET = 350
+# About half a page: what most recruiters say they prefer. One page is the
+# most a letter should take.
+WORD_TARGET = 250
 
 # What a new letter says before it is written, in the languages people apply
 # in most. The greeting and closing are the language's own conventions, not a
@@ -69,15 +71,31 @@ PHRASES = {
 PROMPTS = {
     "en": ["Open with something only you could write about {company}: a problem "
            "their product implies, or a real connection to your work.",
-           "Then your strongest matching evidence, with a number in it, and the "
-           "part of the story the CV had no room for.",
+           "Then your strongest matching evidence from the CV, with its real "
+           "number or a scope you can count, and the part of the story the CV "
+           "had no room for.",
            "Close with what you would like to happen next."],
     "fr": ["Commencez par ce que vous seul pouvez dire de {company} : un problème "
            "que leur produit laisse deviner, ou un vrai lien avec votre travail.",
-           "Puis votre meilleure preuve, chiffrée, et ce que le CV n'avait pas la "
-           "place de raconter.",
+           "Puis votre meilleure preuve tirée du CV, avec son vrai chiffre ou une "
+           "ampleur que vous pouvez compter, et ce que le CV n'avait pas la place "
+           "de raconter.",
            "Terminez par ce que vous aimeriez qu'il se passe ensuite."],
+    "nl": ["Begin met iets wat alleen jij over {company} kunt schrijven: een "
+           "probleem dat hun product doet vermoeden, of een echte link met je werk.",
+           "Dan je sterkste bewijs uit je cv, met het echte getal of een omvang "
+           "die je kunt tellen, en het deel van het verhaal waar je cv geen ruimte "
+           "voor had.",
+           "Sluit af met wat je als volgende stap zou willen."],
 }
+# Prompts as earlier versions wrote them, still known as prompts in the
+# letters they started.
+PROMPTS_BEFORE = [
+    "Then your strongest matching evidence, with a number in it, and the "
+    "part of the story the CV had no room for.",
+    "Puis votre meilleure preuve, chiffrée, et ce que le CV n'avait pas la "
+    "place de raconter.",
+]
 
 # Where the place and date go, per language. {month} is lower case where the
 # language writes it so.
@@ -195,7 +213,7 @@ def is_prompt(text: str) -> bool:
     """A paragraph that is still one of a new letter's writing prompts, as
     written, in any language: a note to the writer, not part of the letter."""
     if not _PROMPT_RES:
-        for ps in PROMPTS.values():
+        for ps in [*PROMPTS.values(), PROMPTS_BEFORE]:
             for p in ps:
                 rx = re.escape(" ".join(p.split())).replace(re.escape("{company}"), ".+?")
                 _PROMPT_RES.append(re.compile("^" + rx + "$"))

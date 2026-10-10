@@ -2694,12 +2694,12 @@ function ltDirty(){
   clearTimeout(LT.auto); LT.auto=setTimeout(()=>{ if(LT.dirty) ltSave() },1200);
   if(S.view==="letter") paintStatus();
   const w=$("#lt-words"); if(w) w.textContent=ltWords(LT.body);
-  const m=$("#lt-meterfill"); if(m) m.style.width=Math.min(100,ltWords(LT.body)/350*100)+"%";
+  const m=$("#lt-meterfill"); if(m) m.style.width=Math.min(100,ltWords(LT.body)/250*100)+"%";
   const sh=$("#lt-short"); if(sh) sh.hidden=!ltShort(ltWords(LT.body));
 }
 /* Short is worth saying once there is a letter to speak of, not while the
    page is still empty. */
-const ltShort=n=>n>=20&&n<200;
+const ltShort=n=>n>=20&&n<120;
 /* Words of the letter, as the server counts them: every block's text, not
    its markup, and not a writing prompt. */
 const ltWords=b=>{ const ps=ltPrompts(), texts=[];
@@ -2721,14 +2721,14 @@ function ltPanel(){
   const lang=m.language||"en";
   const fits=LT.pages==null?(LT.rendering?"Checking the page…":"Not laid out yet.")
     :LT.pages===1?"Fits on one page.":"Runs to "+LT.pages+" pages. Letters read best on one.";
-  const scaffold=/Open with something only you could write|Commencez par ce que vous seul/.test(LT.body);
+  const scaffold=/Open with something only you could write|Commencez par ce que vous seul|Begin met iets wat alleen jij/.test(LT.body);
   const say="In CV Studio, write the cover letter "+LT.path+(j?" for my "+j.company+" application, against its posting.":".");
   $("#lt-panel").innerHTML=
     '<div style="display:flex;flex-direction:column;gap:8px"><h4>Length</h4>'+
-      '<span><span class="big" id="lt-words">'+n+'</span> <span class="muted2">of about 350 words</span></span>'+
-      '<div class="lt-meter'+(n>420?" over":"")+'"><i id="lt-meterfill" style="width:'+Math.min(100,n/350*100)+'%"></i></div>'+
+      '<span><span class="big" id="lt-words">'+n+'</span> <span class="muted2">of about 250 words</span></span>'+
+      '<div class="lt-meter'+(n>400?" over":"")+'"><i id="lt-meterfill" style="width:'+Math.min(100,n/250*100)+'%"></i></div>'+
       '<span class="muted2">'+fits+'</span>'+
-      '<span class="muted2" id="lt-short"'+(ltShort(n)?'':' hidden')+'>'+t("Short: most letters run 250 to 350 words.")+'</span></div>'+
+      '<span class="muted2" id="lt-short"'+(ltShort(n)?'':' hidden')+'>'+t("Short: most recruiters prefer about half a page.")+'</span></div>'+
     '<hr>'+
     '<div style="display:flex;flex-direction:column;gap:10px"><h4>This letter</h4><div class="fg">'+
       '<label>For</label><span>'+(j?'<b style="font-weight:600">'+esc(j.company)+'</b> · '+esc(j.title)
@@ -9323,7 +9323,7 @@ async function packSheet(id){
   const warn=[];
   if(j.letter_path){
     try{ const d=await api("/api/doc?path="+encodeURIComponent(j.letter_path));
-      if(/Open with something only you could write|Commencez par ce que vous seul/.test(d.body||""))
+      if(/Open with something only you could write|Commencez par ce que vous seul|Begin met iets wat alleen jij/.test(d.body||""))
         warn.push(t("The letter still has its writing prompts in it."));
     }catch(e){}
   }
