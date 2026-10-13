@@ -206,6 +206,7 @@ jobs:
             --hidden-import posting \
             --hidden-import prep \
             --hidden-import marks \
+            --hidden-import scans \
             --exclude-module PIL \
             --paths . \
             server_main.py
