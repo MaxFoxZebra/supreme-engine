@@ -74,6 +74,7 @@ import languages  # noqa: E402
 import letters  # noqa: E402
 import review  # noqa: E402
 import backups  # noqa: E402
+import history  # noqa: E402
 import posting  # noqa: E402
 import themes  # noqa: E402
 
@@ -1370,6 +1371,117 @@ def _forget_deleted(data: dict) -> bool:
 
 def backup_dir() -> Path:
     return cjkfonts.cache_dir().parent
+
+
+def history_dir() -> Path:
+    """This workspace's history: beside its backups, named the same way."""
+    b = backups.folder(backup_dir(), WORKSPACE)
+    return b.parent.parent / "history" / b.name
+
+
+def history_files() -> list[Path]:
+    """What history keeps every version of: the documents and the applications."""
+    out = [f for f, _, _ in document_files()]
+    t = WORKSPACE / "tracker"
+    if t.is_dir():
+        out += [f for f in sorted(t.glob("*.yaml")) if not f.name.startswith(".")]
+    return out
+
+
+def note_history(who: str, agent: str | None = None, tool: str | None = None,
+                 note: str | None = None) -> int:
+    """Look for files that changed and keep their new versions, as `who`'s.
+    Never what fails the call it sits beside."""
+    if not WORKSPACE.is_dir() or in_sample():
+        return 0
+    try:
+        return history.sweep(history_dir(), WORKSPACE, history_files(), who, agent, tool, note)
+    except Exception as exc:
+        print(f"history: {exc}", file=sys.stderr)
+        return 0
+
+
+def history_of(path: str) -> dict:
+    """Every version of a document or an application's file, newest first."""
+    rel_path = rel(safe_path(path))
+    store = history_dir()
+    out = history.versions(store, rel_path)
+    for i, v in enumerate(out):
+        older = out[i + 1]["hash"] if i + 1 < len(out) else None
+        try:
+            v["lines"] = history.summary(history.text_of(store, older or v.get("prev")),
+                                         history.text_of(store, v["hash"]))
+        except (OSError, ValueError):
+            v["lines"] = None
+    p = WORKSPACE / rel_path
+    return {"path": rel_path, "exists": p.is_file(), "versions": out}
+
+
+def history_diff(path: str, vid: str, against: str = "before") -> dict:
+    """What a version changed: against the version before it, or against the
+    file as it is now."""
+    rel_path = rel(safe_path(path))
+    store = history_dir()
+    v = history.version(store, vid)
+    if v["path"] != rel_path:
+        raise ValueError("That version is of another file.")
+    new = history.text_of(store, v["hash"])
+    if against == "now":
+        p = WORKSPACE / rel_path
+        old, new = new, (p.read_text(encoding="utf-8", errors="replace") if p.is_file() else "")
+    else:
+        old = history.text_of(store, v.get("prev"))
+    return {"version": v, "against": against, "lines": history.diff(old, new),
+            "summary": history.summary(old, new)}
+
+
+def history_recent(limit: int = 100) -> list[dict]:
+    """The latest changes; an application's is labelled with its company and
+    role, read from the version itself, since its file name says little."""
+    store = history_dir()
+    out = history.recent(store, limit)
+    names: dict[str, str] = {}
+    for c in out:
+        if not c["path"].startswith("tracker/"):
+            continue
+        if c["path"] not in names:
+            try:
+                text = history.text_of(store, c["hash"] or c["prev"])
+            except (OSError, ValueError):
+                text = ""
+            get = lambda k: (re.search(rf"^{k}:\s*['\"]?(.+?)['\"]?\s*$", text, re.M) or [None, ""])[1]
+            names[c["path"]] = ", ".join(x for x in (get("company"), get("title")) if x)
+        c["label"] = names[c["path"]] or None
+    return out
+
+
+def restore_version(path: str, vid: str, who: str = "you", agent: str | None = None,
+                    tool: str = "restore") -> dict:
+    """Put a document or an application back as one of its versions. The
+    restore is a version of its own: nothing between is lost."""
+    rel_path = rel(safe_path(path))
+    store = history_dir()
+    note_history("elsewhere")
+    v = history.version(store, vid)
+    if v["path"] != rel_path:
+        raise ValueError("That version is of another file.")
+    if v["deleted"]:
+        raise ValueError("That version is the file being deleted. Restore the one before it.")
+    text = history.text_of(store, v["hash"])
+    p = WORKSPACE / rel_path
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if rel_path.startswith("tracker/"):
+        if jobstore is None:
+            raise ValueError("The application store is unavailable.")
+        with jobstore._locked(WORKSPACE):
+            tmp = p.with_name(f".{p.name}.restore.tmp")
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, p)
+    else:
+        write_doc(p, text, tool)
+    when = (v.get("at") or "")[:16].replace("T", " ")
+    note_history(who, agent, tool, note=f"Restored the version of {when}")
+    return {"ok": True, "path": rel_path, "restored": v}
 
 
 def start_backups() -> None:
@@ -3923,6 +4035,24 @@ def openapi_spec() -> dict:
                 "responses": ok}},
             "/api/backups/new": {"post": {"summary": "Back the workspace up now",
                 "responses": ok}},
+            "/api/history": {"get": {"summary":
+                "Every version of a document or application file (path, or job id), newest first, with who made it",
+                "parameters": [{"name": "path", "in": "query", "schema": {"type": "string"}},
+                               {"name": "job", "in": "query", "schema": {"type": "string"}}],
+                "responses": ok}},
+            "/api/history/diff": {"get": {"summary":
+                "What a version changed, line by line: against the version before it, or against the file now",
+                "parameters": [{"name": "path", "in": "query", "schema": {"type": "string"}},
+                               {"name": "id", "in": "query", "schema": {"type": "string"}},
+                               {"name": "against", "in": "query", "schema": {"type": "string",
+                                                                           "enum": ["before", "now"]}}],
+                "responses": ok}},
+            "/api/history/recent": {"get": {"summary":
+                "The latest changes across the workspace, newest first", "responses": ok}},
+            "/api/history/restore": {"post": {"summary":
+                "Put a file back as one of its versions; the restore is a version of its own",
+                "requestBody": body({"path": {"type": "string"}, "id": {"type": "string"}}),
+                "responses": ok}},
             "/api/backups/restore": {"post": {"summary":
                 "Put a backup's files back into the workspace (what is there is backed up first)",
                 "requestBody": body({"name": {"type": "string"}}), "responses": ok}},
@@ -4643,6 +4773,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json({"backups": backups.listing(backup_dir(), WORKSPACE),
                                    "folder": str(backups.folder(backup_dir(), WORKSPACE)),
                                    "keep": backups.KEEP, "sample": in_sample()})
+            if u.path == "/api/history" or u.path == "/api/history/diff" or u.path == "/api/history/recent":
+                try:
+                    if u.path == "/api/history/recent":
+                        return self._json({"changes": history_recent()})
+                    path = (q.get("path") or [""])[0]
+                    if not path and q.get("job") and jobstore is not None:
+                        found = jobstore._find(WORKSPACE, q["job"][0])
+                        if not found:
+                            return self._json({"error": "No such application."}, 404)
+                        path = f"{jobstore.DIR}/{found[0]}"
+                    if u.path == "/api/history":
+                        return self._json(history_of(path))
+                    return self._json(history_diff(path, (q.get("id") or [""])[0],
+                                                   (q.get("against") or ["before"])[0]))
+                except (ValueError, OSError, KeyError) as exc:
+                    return self._json({"error": str(exc)}, 400)
             if u.path == "/api/jobs/trash":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -4771,7 +4917,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         return self._send(200, f.read_bytes(), "font/ttf" if f.suffix == ".ttf" else "font/otf")
 
+    # Requests that never change a file history keeps: no need to look.
+    QUIET_POSTS = ("/api/preview", "/api/theme-preview", "/api/prefs", "/api/open",
+                   "/api/reveal", "/api/skills/package", "/api/skills/install",
+                   "/api/ai/connect", "/api/sample", "/api/ats")
+
     def do_POST(self):
+        """Every write the app makes, with a look at the files on either side:
+        what changed before it is somebody else's, what changed after is yours."""
+        path = urlparse(self.path).path
+        look = path.startswith("/api/") and path not in self.QUIET_POSTS
+        if look:
+            note_history("elsewhere")
+        try:
+            return self._do_post()
+        finally:
+            if look:
+                note_history("you", tool=path.removeprefix("/api/"))
+
+    def _do_post(self):
         if not (self._addressed_here() and self._from_here()):
             return self._json({"error": "not found"}, 404)
         u = urlparse(self.path)
@@ -4984,6 +5148,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/language/set":
                 return self._json({"ok": True, **set_cv_language(
                     safe_path(payload.get("path", "")), payload.get("language", ""))})
+            if u.path == "/api/history/restore":
+                try:
+                    return self._json(restore_version(payload.get("path", ""), str(payload.get("id", ""))))
+                except (ValueError, OSError) as exc:
+                    return self._json({"error": str(exc)}, 400)
             if u.path == "/api/backups/new":
                 if in_sample():
                     return self._json({"error": "Sample data is not backed up; it is made fresh each time."}, 409)
@@ -5172,6 +5341,7 @@ const API_TOKEN=__API_TOKEN__;
         <span class="acts" id="act-doc">
           <button class="obtn" id="btn-ats" title="What an applicant tracking system reads from this CV">ATS check</button>
           <button class="obtn" id="btn-design" title="Theme, typeface and page size">Design</button>
+          <button class="obtn" id="btn-history" title="Every version of this CV, and who made it">History</button>
           <button class="obtn" id="btn-pdf" disabled>Export PDF&#8230;</button>
           <button class="pbtn" id="btn-render" title="Save and lay out the page again (Ctrl S)">Save</button>
         </span>
@@ -5383,6 +5553,7 @@ const API_TOKEN=__API_TOKEN__;
         <button role="tab" data-lt="md" aria-selected="false">Markdown</button>
       </div>
       <div class="grow"></div>
+      <button class="obtn" id="lt-history" title="Every version of this letter, and who made it">History</button>
       <span class="lt-export"><button class="obtn" id="lt-export" aria-haspopup="menu">Export &#9662;</button></span>
       <button class="pbtn" id="lt-save">Save</button>
     </div>
@@ -5589,6 +5760,10 @@ const API_TOKEN=__API_TOKEN__;
           a folder of its own, made fresh each time; your workspace is not touched, and a
           restart brings you back to it.</span></div>
           <button class="obtn" id="s-sample">Open sample data</button></div>
+        <div class="srow"><div><b>Version history</b><span>Every version of every CV, letter and
+          application, and who made it: you, an AI client, or a change made outside CV Studio.
+          Kept beside the backups, and any version can be put back.</span></div>
+          <button class="obtn" id="s-history">Recent changes</button></div>
         <div class="srow"><div><b>Folder</b><span id="s-ws" class="mono"></span></div>
           <button class="obtn" id="s-open">Open folder</button></div>
         <div class="srow"><div><b>Applications</b><span>Exported as CSV for a spreadsheet, or JSON
@@ -5912,6 +6087,8 @@ def main() -> int:
     FIRST_RUN = bootstrap(WORKSPACE)
     cjkfonts.register()
     start_backups()
+    # Where history begins, or what changed while the app was closed.
+    threading.Thread(target=note_history, args=("elsewhere",), daemon=True).start()
     start_connector_refresh()
     ready = time.time()
 

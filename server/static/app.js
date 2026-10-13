@@ -1857,6 +1857,8 @@ function atsPaint(r){
       '<pre class="mono">'+atsReadable(r.text)+'</pre></div>';
   $$("#ats-body [data-fix]").forEach(b=>b.onclick=()=>{ b.disabled=true; atsRun(b.dataset.fix) });
 }
+$("#btn-history").onclick=()=>{ if(S.path) historySheet({path:S.path},$("#doctitle .t").textContent) };
+$("#lt-history").onclick=()=>{ if(LT.path) historySheet({path:LT.path},$("#lt-title").textContent) };
 $("#btn-ats").onclick=()=>{
   if(!S.path) return;
   if(S.dirty) toast("Checking the saved file. Save to include your edits");
@@ -5066,6 +5068,97 @@ async function fillBackups(){
     });
   };
 }
+/* ---- History: every version of a document or an application ---------------
+   What each was, when, and who made it: you, an AI client (and which tool),
+   or something outside CV Studio. A version shows what it changed against the
+   one before it, or against the file now; restoring one is a version of its
+   own, so nothing in between is lost. */
+const HV_WHO={you:"You",start:"When history began",elsewhere:"Outside CV Studio"};
+const HV_TOOL={write_cv:"rewrote the whole file",edit_cv_fields:"changed fields",write_letter:"rewrote the letter",
+  edit_on_page:"edited on the page",review_change:"kept or undid a change",restore:"restored a version",
+  restore_version:"restored a version",add_language:"added a translation",update_job_tracking:"updated it",
+  set_job_status:"changed the status",add_job:"added it",save_person:"saved a contact",
+  save_interview_prep:"saved interview prep",save:"saved","jobs/update":"saved","jobs/prep":"saved interview prep",
+  "backups/restore":"restored a backup","doc/rename":"renamed it",import:"imported it"};
+function hvWho(v){ return HV_WHO[v.who]?t(HV_WHO[v.who]):(v.agent||PROV_LABEL[v.who]||t("An AI client")) }
+function hvWhen(at){ try{ return DTF(uiLocale(),{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",
+  hourCycle:clock12()?"h12":"h23"}).format(new Date(at)) }catch(e){ return String(at||"").slice(0,16).replace("T"," ") } }
+function hvWhat(v){
+  if(v.deleted) return t("Deleted");
+  if(v.who==="start") return t("The file as it was");
+  const parts=[];
+  if(v.tool&&HV_TOOL[v.tool]) parts.push(t(HV_TOOL[v.tool])); else if(v.note) parts.push(v.note);
+  if(v.lines) parts.push("+"+v.lines.added+" −"+v.lines.removed+" "+t("lines"));
+  return parts.join(" · ");
+}
+function hvLines(lines){
+  if(!lines.length) return '<p class="muted">'+esc(t("No difference."))+'</p>';
+  const cls={add:"hv-add",del:"hv-del",skip:"hv-skip",same:"hv-same"};
+  return '<pre class="hv-diff mono">'+lines.map(l=>'<span class="'+(cls[l.t]||"hv-same")+'">'+
+    esc((l.t==="add"?"+ ":l.t==="del"?"− ":l.t==="skip"?"⋯ ":"  ")+l.text)+'</span>').join("")+'</pre>';
+}
+/* q is {path} or {job}. */
+async function historySheet(q,title){
+  let d; try{ d=await api("/api/history?"+new URLSearchParams(q)) }catch(e){ return toast(e.message,true) }
+  const vs=d.versions||[];
+  let sel=vs.length>1?vs[0].id:(vs[0]&&vs[0].id), against="before";
+  const head='<div><h3>'+esc(t("History"))+(title?' · '+esc(title):'')+'</h3><p>'+
+    esc(vs.length?t("Every version CV Studio kept of this file, newest first, and who made it. Restoring one is a version of its own: nothing in between is lost."):
+      t("No versions yet. Every change from now on is kept here."))+'</p></div>';
+  const draw=async()=>{
+    const list='<div class="bk-list hv-list" role="listbox" aria-label="'+esc(t("Versions"))+'">'+vs.map((v,i)=>
+      '<button class="bk-row hv-row'+(v.id===sel?' sel':'')+'" role="option" aria-selected="'+(v.id===sel)+'" data-hv="'+esc(v.id)+'">'+
+        '<span><b>'+esc(hvWhen(v.since||v.at))+(i===0&&d.exists?' · '+esc(t("now")):'')+'</b>'+
+        '<small>'+esc(hvWho(v))+(hvWhat(v)?' · '+esc(hvWhat(v)):'')+'</small></span></button>').join("")+'</div>';
+    const v=vs.find(x=>x.id===sel);
+    openSheet(head+(vs.length?list+'<div class="hv-pane" id="hv-pane"><p class="muted">'+esc(t("Loading…"))+'</p></div>':'')+
+      '<div class="foot">'+(v&&!v.deleted?'<div class="seg light hv-seg" role="group" aria-label="'+esc(t("Compare"))+'">'+
+        '<button data-ag="before" aria-pressed="'+(against==="before")+'" aria-selected="'+(against==="before")+'">'+esc(t("What it changed"))+'</button>'+
+        '<button data-ag="now" aria-pressed="'+(against==="now")+'" aria-selected="'+(against==="now")+'">'+esc(t("Compared with now"))+'</button></div>':'')+
+        '<div class="grow"></div><button class="sbtn" data-cancel>'+esc(t("Close"))+'</button>'+
+        (v&&!v.deleted&&!(vs[0]&&v.id===vs[0].id&&d.exists)?'<button class="sbtn primary" id="hv-restore">'+esc(t("Restore this version"))+'</button>':'')+
+      '</div>');
+    $("#sheet [data-cancel]").onclick=closeSheet;
+    $$("#sheet [data-hv]").forEach(b=>b.onclick=()=>{ sel=b.dataset.hv; draw() });
+    $$("#sheet [data-ag]").forEach(b=>b.onclick=()=>{ against=b.dataset.ag; draw() });
+    const rs=$("#hv-restore"); if(rs) rs.onclick=()=>hvRestore(d.path,v);
+    if(!v) return;
+    const pane=$("#hv-pane");
+    if(v.deleted){ pane.innerHTML='<p class="muted">'+esc(t("The file was deleted here. Restore the version before it to bring it back."))+'</p>'; return }
+    try{
+      const r=await api("/api/history/diff?"+new URLSearchParams({path:d.path,id:v.id,against}));
+      if(pane.isConnected) pane.innerHTML=hvLines(r.lines||[]);
+    }catch(e){ if(pane.isConnected) pane.innerHTML='<p class="muted">'+esc(e.message)+'</p>' }
+  };
+  draw();
+}
+async function hvRestore(path,v){
+  const open=path===S.path&&S.view==="cvs", openLt=path===LT.path&&S.view==="letter";
+  if(open&&!(await leaveEdits())) return;
+  if(openLt&&LT.dirty){ try{ await ltSave() }catch(e){} }
+  if(!(await askConfirm({title:t("Restore this version?"),
+      body:t("The file goes back to how it was on {d}. The version it replaces stays in the history.",{d:hvWhen(v.since||v.at)}),
+      ok:t("Restore")}))) return;
+  try{ await post("/api/history/restore",{path,id:v.id}) }catch(e){ return toast(e.message,true) }
+  closeSheet(); toast(t("Restored the version of {d}",{d:hvWhen(v.since||v.at)}));
+  if(open) openDoc(path); else if(openLt){ LT.path=null; openLetter(path) }
+  if(/^tracker\//.test(path)) loadJobs(true).then(()=>{ if(S.view==="jobs") drawJobs() });
+}
+/* The latest changes across the workspace; each opens its file's history. */
+async function recentChangesSheet(){
+  let r; try{ r=await api("/api/history/recent") }catch(e){ return toast(e.message,true) }
+  const ch=r.changes||[];
+  const docs=(S.state&&S.state.documents)||[];
+  const named=Object.fromEntries(ch.filter(c=>c.label).map(c=>[c.path,c.label]));
+  const label=p=>{ const d=docs.find(x=>x.path===p); return d?docTitle(d):named[p]||p };
+  openSheet('<div><h3>'+esc(t("Recent changes"))+'</h3><p>'+esc(t("Every change to a CV, letter or application, newest first, and who made it. Open one to see what it changed or to restore an earlier version."))+'</p></div>'+
+    (ch.length?'<div class="bk-list hv-list">'+ch.map(c=>'<button class="bk-row hv-row" data-hp="'+esc(c.path)+'">'+
+      '<span><b>'+esc(label(c.path))+'</b><small>'+esc(hvWhen(c.since||c.at))+' · '+esc(hvWho(c))+(hvWhat(c)?' · '+esc(hvWhat(c)):'')+'</small></span></button>').join("")+'</div>'
+      :'<p class="muted">'+esc(t("No changes yet. Every change from now on is kept here."))+'</p>')+
+    '<div class="foot"><div class="grow"></div><button class="sbtn" data-cancel>'+esc(t("Close"))+'</button></div>');
+  $("#sheet [data-cancel]").onclick=closeSheet;
+  $$("#sheet [data-hp]").forEach(b=>b.onclick=()=>historySheet({path:b.dataset.hp},label(b.dataset.hp)));
+}
 function fillNotify(){
   const on=$("#s-notify"), iv=$("#s-notify-iv"), fu=$("#s-notify-fu"), st=$("#s-notify-state"), A=notifyApi();
   const pr=prefs();
@@ -6335,7 +6428,9 @@ function drawJobInspector(){
         (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
           'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
           esc(j.cv_path)+'"></div></div>':'')+
-        '<div class="block"><span class="blabel">History</span>'+timeline+'</div>'+
+        '<div class="block"><div class="bhead"><span class="blabel">History</span>'+
+          '<button class="linkbtn" id="ap-versions" data-job="'+esc(j.id)+'" data-name="'+esc(j.company+", "+j.title)+'">'+
+          esc(t("Every version"))+'</button></div>'+timeline+'</div>'+
         '<details class="fold"><summary>Company, role and the rest</summary>'+
           '<div class="fg2" style="margin-top:11px">'+more+'</div>'+
           '<div class="card" style="margin-top:12px">'+docRow("CV","cv_path","My CVs")+
@@ -8810,6 +8905,7 @@ function fillSettings(){
     try{ await post("/api/reveal",{}) }catch(e){ toast(e.message,true) }
   };
   $("#s-setup").onclick=()=>{ closeOverlays(); onboardingSheet() };
+  $("#s-history").onclick=()=>{ closeOverlays(); recentChangesSheet() };
   const ul=$("#s-uilang");
   ul.value=pr.ui_lang||"";
   ul.onchange=()=>{ setPref("ui_lang",ul.value||null); location.reload() };
@@ -9313,6 +9409,7 @@ document.addEventListener("keydown",e=>{
 
 /* ---- Export both: the CV and the letter for one application ------------- */
 document.addEventListener("click",e=>{ const b=e.target.closest("#ap-pack"); if(b) packSheet(b.dataset.job) });
+document.addEventListener("click",e=>{ const b=e.target.closest("#ap-versions"); if(b) historySheet({job:b.dataset.job},b.dataset.name) });
 async function packSheet(id){
   const j=(S.jobs||[]).find(x=>x.id===id); if(!j) return;
   let info;

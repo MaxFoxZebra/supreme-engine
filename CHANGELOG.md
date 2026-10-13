@@ -8,6 +8,27 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- Version history. Every version of every CV, letter and application is
+  kept, with when it was made and by whom: you, Claude or another AI
+  client, or an editor outside CV Studio. *History* on a CV or a letter, and
+  on an application's panel, lists them; pick one to see what it changed,
+  or what differs from the file now, and *Restore this version* puts it
+  back. A restore is a version of its own, so nothing is lost by it.
+- *Settings → Workspace → Recent changes* lists the latest changes across
+  the workspace.
+- Your own saves of one file within ten minutes are one version, so typing
+  doesn't bury the versions that matter. Each change an AI client makes is
+  its own.
+- A deleted CV or letter keeps its versions and can be brought back from
+  them.
+- The history is kept beside the backups, outside the workspace, so a
+  synced folder never copies it half-written.
+- AI clients can read the history (`file_history`) and put a CV or letter
+  back as an earlier version when you ask (`restore_version`).
+  Applications are restored only in the app.
+
 ## 0.47.1
 
 - Claude no longer writes anything about the company from memory in a

@@ -18,6 +18,8 @@ one rendered by clicking Save.
 | `render_cv` | Render to PDF and **return the page as an image** |
 | `design_options` | Available themes, fonts and page sizes |
 | `workspace_info` | Where the workspace is and what is in it |
+| `file_history` | Every version of a CV, letter or application, who made it, and what each changed |
+| `restore_version` | Put a CV or letter back as an earlier version, when you ask. Applications are restored in the app, since a restore would also take back notes and statuses set since |
 
 ## The applications
 
@@ -154,8 +156,9 @@ what fixes that, and the skill below tells it to re-read every interview it has
 already recorded.
 
 A status change appends to the permanent history the funnel is drawn from, and
-this app has no undo. The model is told to show you every change and wait for
-you. That one is a rule in prose, not a lock in the code.
+the model cannot take it back: only you can, by restoring an earlier version of
+the application in the app. The model is told to show you every change and wait
+for you. That one is a rule in prose, not a lock in the code.
 
 ### Applying, as a skill
 
@@ -341,8 +344,10 @@ A healthy server answers with its name and protocol version.
 ## Things worth knowing
 
 **It edits real files.** `edit_cv_fields` and `write_cv` write to disk
-immediately. There is no undo inside the app, but the files are plain YAML, so
-keeping the workspace in git gives you a real history.
+immediately. Every version is kept, with who made it: *History* in the app
+shows what each changed and puts any of them back, and `file_history` and
+`restore_version` let the model do the same for a CV or a letter when you
+ask.
 
 **Every edit is marked in the app.** Which fields a model changed, what they
 said before, and which of them no longer match the CV this one was copied from,

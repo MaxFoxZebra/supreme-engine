@@ -145,6 +145,7 @@ an entry in one view selects it in all of them.
 | **Render** | Or `Ctrl`/`Cmd` + `S`. The status bar reports how long it took |
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, with what the line said before, and a second mark for every field that no longer matches the base. Neither is in the YAML, so neither prints |
+| **History** | Every version of the document, kept as it changes: when, and who made it (you, Claude, Codex, or an edit made outside CV Studio). Pick one to see what it changed, or how it differs from now, and restore it. A restore is a version of its own, so nothing in between is lost. Applications have the same, under *Every version* on the application |
 | **Review what it changed** | Until you have looked, a document an AI client wrote says so, on every list that shows it and in a bar over it. **Review changes** shows each change as the words it took out, struck through, and the words it put in, underlined: on a letter, marked on the page itself; on a CV, entry by entry. Keep or undo each one, or all of them. Undo puts back only what that change touched |
 
 **Funnel** is the whole search at a glance: sent, heard back, interviewed,
@@ -185,7 +186,8 @@ in the calendar you already use.
 - **Workspace.** Where your files are, backups (one a day, the last fourteen
   kept, outside the workspace, with *Back up now* and *Restore…*), and exports of
   your applications as JSON or CSV. A deleted application goes to a trash for
-  thirty days, and the toast that says so has *Undo*.
+  thirty days, and the toast that says so has *Undo*. *Recent changes* lists
+  the latest versions of every CV, letter and application, and who made each.
 - **AI clients.** Whether Claude, OpenAI, Hermes Agent and Mistral Vibe are wired
   up to this workspace, and a button to do it.
 

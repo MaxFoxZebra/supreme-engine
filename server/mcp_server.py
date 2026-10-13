@@ -107,7 +107,7 @@ mcp = MCPServer(
         "or more than one candidate, ask rather than guessing.\n"
         "2. Show the user every change you intend to make and wait for them "
         "to agree. A status change is appended to a permanent history that "
-        "the funnel is drawn from, and this app has no undo.\n"
+        "the funnel is drawn from, and you cannot take it back.\n"
         "3. An automated acknowledgement is not a status change. Record it "
         "with last_contact_at and leave the status alone. Never set a ghosted "
         "status from silence: absence of a message is not a message.\n\n"
@@ -166,7 +166,12 @@ mcp = MCPServer(
         "date, number, tool and level in it is already on the CV it goes "
         "with; the context around them comes from the user, never from you. "
         "create_letter starts one for an application; write_letter replaces "
-        "its body (and subject); render_cv shows the page."
+        "its body (and subject); render_cv shows the page.\n\n"
+        "Every version of every CV, letter and application is kept, with who "
+        "made it. When the user wants back something a change removed, "
+        "file_history lists the versions and what each changed, and "
+        "restore_version puts a CV or letter back as one of them, when they "
+        "ask. An application is restored in the app, by the user."
     ),
 )
 
@@ -236,7 +241,7 @@ ACTS_AS_USER = {"review_change", "edit_on_page"}   # and job_view_data's "status
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info",
-             "page_view_data", "job_stats", "show_application", "today"}
+             "page_view_data", "job_stats", "show_application", "today", "file_history"}
 
 # What a client shows for each tool, and what it may assume of it. Claude
 # Desktop and others use the hints to decide what to ask permission for:
@@ -267,9 +272,11 @@ TITLES = {
     "show_application": "Show an application",
     "job_view_data": "Job view data",
     "today": "What needs you today",
+    "file_history": "Every version of a CV, letter or application",
+    "restore_version": "Restore an earlier version",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
-IDEMPOTENT = {"review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
+IDEMPOTENT = {"restore_version", "review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
               "save_interview_prep", "write_letter", "mark_translation_current"}
 OPEN_WORLD = {"add_job", "read_posting", "set_company_logo"}
 
@@ -376,10 +383,18 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
                              "and this client does not show them.")
         if fn.__name__ in USER_ACTIONS:
             # The user's own decision, made in a view: not an AI client's
-            # change to review, nor its activity to show.
-            return fn(*args, **kwargs)
+            # change to review, nor its activity to show. History still
+            # keeps what it changed, as theirs.
+            if fn.__name__ not in ACTS_AS_USER:
+                return fn(*args, **kwargs)
+            studio.note_history("elsewhere")
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                studio.note_history("you", agent=studio.CLIENT_AGENT, tool=fn.__name__)
         watch = None
         if fn.__name__ not in READ_ONLY:
+            studio.note_history("elsewhere")
             try:
                 watch = _snapshot()
             except Exception:
@@ -389,12 +404,14 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
         except Exception as exc:
             if watch is not None:
                 _checkpoint(watch, fn.__name__)
+                studio.note_history(studio.CLIENT_ID or "ai", studio.CLIENT_AGENT, fn.__name__)
             studio.note_mcp_activity(fn.__name__,
                                      str(target) if target else None,
                                      ok=False, error=str(exc)[:200])
             raise
         if watch is not None:
             _checkpoint(watch, fn.__name__)
+            studio.note_history(studio.CLIENT_ID or "ai", studio.CLIENT_AGENT, fn.__name__)
         studio.note_mcp_activity(fn.__name__,
                                  str(target) if target else None)
         return result
@@ -475,6 +492,70 @@ def edit_cv_fields(path: str, edits: list[dict]) -> CallToolResult:
     if not result["applied"]:
         return CallToolResult(content=[TextContent(type="text", text="\n".join(lines))])
     return _written(path, "\n".join(lines))
+
+
+def _versions_text(h: dict, limit: int) -> str:
+    whos = {"you": "you", "start": "as it was when history began", "elsewhere": "outside CV Studio"}
+    lines = [f"{h['path']}: {len(h['versions'])} version(s), newest first."
+             + ("" if h["exists"] else " The file no longer exists.")]
+    for v in h["versions"][:limit]:
+        who = whos.get(v["who"]) or v.get("agent") or v["who"]
+        ch = v.get("lines") or {}
+        what = ("deleted" if v["deleted"] else "" if v["who"] == "start" else
+                f"+{ch.get('added', 0)} -{ch.get('removed', 0)} lines" if ch else "")
+        lines.append(f"- {v['id']}  {str(v['at'])[:16].replace('T', ' ')}  "
+                     + (who if v["who"] == "start" else f"by {who}")
+                     + (f" ({v['tool']})" if v.get("tool") else "")
+                     + (f", {what}" if what else "") + (f". {v['note']}" if v.get("note") else ""))
+    return "\n".join(lines)
+
+
+@tool
+def file_history(path: str | None = None, job_id: str | None = None, version_id: str | None = None,
+                 limit: int = 30) -> str:
+    """Every version CV Studio kept of a CV, a letter or an application: when,
+    and who made it (the user, an AI client and which tool, or a change made
+    outside CV Studio). Give `path` for a document or `job_id` for an
+    application.
+
+    With `version_id`, what that version changed, line by line, against the
+    version before it. Use it when the user asks what changed, when, or by
+    whom, or wants something back that a rewrite removed.
+    """
+    if job_id and not path:
+        found = studio.jobstore._find(_ws(), job_id) if studio.jobstore else None
+        if not found:
+            raise ValueError("No application with that id.")
+        path = f"{studio.jobstore.DIR}/{found[0]}"
+    if not path:
+        raise ValueError("Give a path or a job_id.")
+    if version_id:
+        d = studio.history_diff(path, version_id)
+        out = [f"Version {version_id} of {d['version']['path']}, "
+               f"{str(d['version']['at'])[:16].replace('T', ' ')}: "
+               f"+{d['summary']['added']} -{d['summary']['removed']} lines against the version before."]
+        for ln in d["lines"]:
+            out.append({"add": "+ ", "del": "- ", "same": "  ", "skip": "  ... "}[ln["t"]] + ln["text"])
+        return "\n".join(out)
+    return _versions_text(studio.history_of(path), max(1, min(limit, 300)))
+
+
+@tool
+def restore_version(path: str, version_id: str) -> str:
+    """Put a CV or a cover letter back as one of its earlier versions (ids
+    from file_history). Only when the user asks for it. The restore is a
+    version of its own, so nothing between is lost, and it is shown to the
+    user as your change, to keep or undo.
+
+    Applications are not restored here: a restore would also take back notes
+    and statuses the user set since. They can restore one in the app.
+    """
+    p = _doc_path(path)
+    r = studio.restore_version(studio.rel(p), version_id, who=studio.CLIENT_ID or "ai",
+                               agent=studio.CLIENT_AGENT, tool="restore_version")
+    v = r["restored"]
+    return (f"Restored {r['path']} to its version of {str(v['at'])[:16].replace('T', ' ')}. "
+            f"Call render_cv to show it.")
 
 
 @tool
