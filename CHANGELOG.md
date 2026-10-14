@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.49.1
 
 - Changing theme no longer takes the icons off your contact line. Whether
   the icons show is now your choice and stays the same from theme to
