@@ -76,6 +76,7 @@ import review  # noqa: E402
 import backups  # noqa: E402
 import history  # noqa: E402
 import posting  # noqa: E402
+import scans  # noqa: E402
 import themes  # noqa: E402
 
 # Vendored d3 modules for the funnel chart. In a frozen build PyInstaller
@@ -1482,6 +1483,104 @@ def restore_version(path: str, vid: str, who: str = "you", agent: str | None = N
     when = (v.get("at") or "")[:16].replace("T", " ")
     note_history(who, agent, tool, note=f"Restored the version of {when}")
     return {"ok": True, "path": rel_path, "restored": v}
+
+
+# --- job scans ----------------------------------------------------------------
+# What a scheduled job search found, waiting for a yes or a no: a spreadsheet
+# in a folder of the workspace (scans.py). A yes adds the application the way
+# add_job does, posting read from its link; a no is remembered in the sheet,
+# so the same job is not offered again.
+
+OWN_FOLDERS = {"profile", "applications", "tracker", "letters", "assets"}
+
+
+def scan_folder() -> Path:
+    """Settings > Job scans, else `Job scans` in the workspace. The sample
+    data keeps its own, wherever yours is."""
+    if in_sample():
+        return WORKSPACE / scans.DEFAULT_FOLDER
+    return scans.folder_for(WORKSPACE, (load_prefs() or {}).get("scan_folder"))
+
+
+def scan_folder_choices() -> list[str]:
+    """The workspace's own folders a scan could write to: not CV Studio's."""
+    try:
+        return sorted((p.name for p in WORKSPACE.iterdir()
+                       if p.is_dir() and not p.name.startswith((".", "_")) and p.name not in OWN_FOLDERS),
+                      key=str.casefold)
+    except OSError:
+        return []
+
+
+def _all_jobs() -> list[dict]:
+    return jobstore.list_jobs(WORKSPACE) if jobstore is not None else []
+
+
+def scans_state() -> dict:
+    st = scans.state(scan_folder(), _all_jobs())
+    st["setting"] = (load_prefs() or {}).get("scan_folder") or ""
+    st["default"] = scans.DEFAULT_FOLDER
+    st["choices"] = scan_folder_choices()
+    return st
+
+
+def scan_record(found: list[dict], scan: str | None = None, day: str | None = None) -> dict:
+    return scans.record(scan_folder(), found, _all_jobs(), scan, day)
+
+
+def scan_decide(keys: list[str], status: str) -> dict:
+    return scans.set_status(scan_folder(), [str(k) for k in keys or []], status, _all_jobs())
+
+
+def scan_add(key: str) -> dict:
+    """Yes to a job a scan found: it becomes an application, with the
+    posting's own title and text when its link can be read, and the scan's
+    reason in its notes. {job, posting: read | unread | none, already}."""
+    if jobstore is None:
+        raise ValueError("The application store is unavailable.")
+    folder = scan_folder()
+    row = scans.find(folder, key)
+    if row is None:
+        raise ValueError("That job is no longer in the scans folder.")
+    jobs = _all_jobs()
+    index = scans.tracked_index(jobs)
+    if scans.is_tracked(row, index):
+        link = scans.norm_link(row.get("link"))
+        pair = (scans._fold(row.get("company")), scans._fold(row.get("role")))
+        have = next((j for j in jobs if link and scans.norm_link(j.get("url")) == link), None) or next(
+            (j for j in jobs if (scans._fold(j.get("company")), scans._fold(j.get("title"))) == pair), None)
+        scans.set_status(folder, [key], scans.ADDED, jobs)
+        return {"ok": True, "job": have, "already": True, "posting": "none"}
+    company, title = row.get("company") or "", row.get("role") or ""
+    url, location = row.get("link") or None, row.get("location") or None
+    description = row.get("description") or None
+    read_how = "none"
+    if url:
+        try:
+            got = posting.read(url)
+        except Exception:  # the application matters, the reading does not
+            read_how = "unread"
+        else:
+            read_how = "read"
+            title = got.get("title") or title
+            description = got.get("description") or description
+            location = location or got.get("location")
+            company = company or got.get("company") or ""
+    notes = "\n".join(x for x in (row.get("why"), row.get("notes")) if x) or None
+    job = jobstore.add_job(WORKSPACE, {
+        "company": company, "title": title, "url": url, "location": location,
+        "source": row.get("scan") or "Job scan", "description": description, "notes": notes,
+        "logo": stored_logo(company) if company else None})
+    scans.set_status(folder, [key], scans.ADDED, jobs + [job])
+    return {"ok": True, "job": job, "already": False, "posting": read_how}
+
+
+def scan_undo(key: str, job_id: str | None = None) -> dict:
+    """Take a yes or a no back: the application a yes made goes to the trash,
+    and the job is waiting again."""
+    if job_id and jobstore is not None:
+        jobstore.delete_job(WORKSPACE, job_id)
+    return scans.set_status(scan_folder(), [key], scans.NEW, _all_jobs())
 
 
 def start_backups() -> None:
@@ -3192,7 +3291,16 @@ def pulse() -> dict:
         except OSError:
             pass
     return {"docs": stamps, "mcp": mcp_activity(), "jobs": jobs_stamp(),
-            "edits": edits_stamp(), "review": review.stamp(WORKSPACE)}
+            "edits": edits_stamp(), "review": review.stamp(WORKSPACE), "scans": scans_stamp()}
+
+
+def scans_stamp() -> str | None:
+    """A fingerprint of the scans folder, so a morning's search shows up in
+    the open app without waiting for a reload."""
+    try:
+        return scans.stamp(scan_folder())
+    except Exception:
+        return None
 
 
 def jobs_stamp() -> str | None:
@@ -4053,6 +4161,34 @@ def openapi_spec() -> dict:
                 "Put a file back as one of its versions; the restore is a version of its own",
                 "requestBody": body({"path": {"type": "string"}, "id": {"type": "string"}}),
                 "responses": ok}},
+            "/api/scans": {"get": {"summary":
+                "What scheduled job searches found: the folder, its files, and the jobs still to look at",
+                "responses": ok}},
+            "/api/scans/record": {"post": {"summary":
+                "Hand over what a search found: one row per job not already in the scans spreadsheet, "
+                "decided, or an application",
+                "requestBody": body({"jobs": {"type": "array", "items": {"type": "object", "properties": {
+                    "company": {"type": "string"}, "role": {"type": "string"}, "link": {"type": "string"},
+                    "location": {"type": "string"}, "why": {"type": "string"}, "posted": {"type": "string"},
+                    "scan": {"type": "string"}, "notes": {"type": "string"}, "description": {"type": "string"},
+                    "details": {"type": "object"}}}},
+                    "scan": {"type": "string"}, "found": {"type": "string"}}),
+                "responses": ok}},
+            "/api/scans/add": {"post": {"summary":
+                "Add a job a scan found to the applications, its posting read from its link",
+                "requestBody": body({"key": {"type": "string"}}), "responses": ok}},
+            "/api/scans/decide": {"post": {"summary":
+                "Mark jobs a scan found as New, Added or Skipped",
+                "requestBody": body({"keys": {"type": "array", "items": {"type": "string"}},
+                                     "status": {"type": "string", "enum": ["New", "Added", "Skipped"]}}),
+                "responses": ok}},
+            "/api/scans/undo": {"post": {"summary":
+                "Take a decision back: the job is waiting again, and the application a yes made goes to the trash",
+                "requestBody": body({"key": {"type": "string"}, "job_id": {"type": "string"}}),
+                "responses": ok}},
+            "/api/scans/create": {"post": {"summary":
+                "Make the scans spreadsheet, with its header row, in the scans folder",
+                "responses": ok}},
             "/api/backups/restore": {"post": {"summary":
                 "Put a backup's files back into the workspace (what is there is backed up first)",
                 "requestBody": body({"name": {"type": "string"}}), "responses": ok}},
@@ -4789,6 +4925,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                                    (q.get("against") or ["before"])[0]))
                 except (ValueError, OSError, KeyError) as exc:
                     return self._json({"error": str(exc)}, 400)
+            if u.path == "/api/scans":
+                return self._json(scans_state())
             if u.path == "/api/jobs/trash":
                 if jobstore is None:
                     return self._json({"error": "job store unavailable"}, 501)
@@ -5083,6 +5221,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if payload.get("logs"):
                     target = log_path().parent
                     target.mkdir(parents=True, exist_ok=True)
+                elif payload.get("scans"):
+                    target = scan_folder()
+                    target.mkdir(parents=True, exist_ok=True)
                 elif sub_:
                     target = safe_path(sub_)
                 try:
@@ -5151,6 +5292,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if u.path == "/api/history/restore":
                 try:
                     return self._json(restore_version(payload.get("path", ""), str(payload.get("id", ""))))
+                except (ValueError, OSError) as exc:
+                    return self._json({"error": str(exc)}, 400)
+            if u.path == "/api/scans/add" or u.path == "/api/scans/decide" or u.path == "/api/scans/undo" \
+                    or u.path == "/api/scans/create" or u.path == "/api/scans/record":
+                try:
+                    if u.path == "/api/scans/record":
+                        found = payload.get("jobs")
+                        if not isinstance(found, list) or not all(isinstance(j, dict) for j in found):
+                            raise ValueError("jobs is a list of jobs, each with a company, a role and a link.")
+                        return self._json({"ok": True, **scan_record(found, payload.get("scan"),
+                                                                     payload.get("found"))})
+                    if u.path == "/api/scans/add":
+                        return self._json(scan_add(str(payload.get("key", ""))))
+                    if u.path == "/api/scans/decide":
+                        return self._json({"ok": True, **scan_decide(payload.get("keys") or [],
+                                                                     str(payload.get("status", "")))})
+                    if u.path == "/api/scans/undo":
+                        return self._json({"ok": True, **scan_undo(str(payload.get("key", "")),
+                                                                   payload.get("job_id") or None)})
+                    return self._json({"ok": True, "file": str(scans.create(scan_folder()))})
                 except (ValueError, OSError) as exc:
                     return self._json({"error": str(exc)}, 400)
             if u.path == "/api/backups/new":
@@ -5264,7 +5425,8 @@ const API_TOKEN=__API_TOKEN__;
        a peer of these, so it has no tab of its own: the tab it came from stays
        lit, and the crumb in the editor's own bar is the way back. -->
   <div class="tabs" id="nav" role="tablist" aria-label="View">
-    <button role="tab" data-view="jobs" aria-selected="true">Applications</button>
+    <button role="tab" data-view="jobs" aria-selected="true">Applications<span class="nav-badge mono"
+      id="scan-badge" title="New jobs from your scans" hidden></span></button>
     <button role="tab" data-view="docs" aria-selected="false">Documents</button>
     <button role="tab" data-view="funnel" aria-selected="false">Funnel</button>
     <button role="tab" data-view="cal" aria-selected="false">Calendar</button>
@@ -5466,6 +5628,8 @@ const API_TOKEN=__API_TOKEN__;
       </div>
       <!-- What is next, above the list: the next interview, the follow-ups
            that are late, and the week. Only there when something is. -->
+      <!-- What the scheduled searches found and you have not looked at yet. -->
+      <section class="scanbar" id="scanbar" aria-label="New jobs from your scans" hidden></section>
       <section class="na" id="nextup" aria-label="Next actions" hidden></section>
       <div class="tcard">
         <div class="thead"><button type="button" data-sort="company">Company</button><button type="button" data-sort="title">Role</button>
@@ -5724,6 +5888,15 @@ const API_TOKEN=__API_TOKEN__;
 </div>
 
 <!-- ----------------------------------------------------------- Settings -->
+<!-- The jobs the scheduled searches found, one card at a time. -->
+<div class="ovl scans" id="ovl-scans" role="dialog" aria-modal="true" aria-labelledby="sc-title" hidden>
+  <div class="ovl-bar" data-tauri-drag-region><span class="ttl" id="sc-title">New jobs</span>
+    <span class="sc-count mono" id="sc-count"></span>
+    <div class="grow"></div><button class="cbtn" id="sc-done">Done</button></div>
+  <div class="sc-body" id="sc-body"></div>
+  <div class="sr-only" id="sc-live" aria-live="polite"></div>
+</div>
+
 <div class="ovl" id="ovl-settings" hidden>
   <div class="ovl-bar" data-tauri-drag-region><span class="ttl">Settings</span>
     <div class="grow"></div><button class="cbtn" data-close-ovl>Done</button></div>
@@ -5734,6 +5907,7 @@ const API_TOKEN=__API_TOKEN__;
       <button data-s="region" aria-selected="false">Language &amp; region</button>
       <button data-s="notify" aria-selected="false">Notifications</button>
       <button data-s="browser" aria-selected="false">Save from the browser</button>
+      <button data-s="scans" aria-selected="false">Job scans</button>
       <button data-s="ai" aria-selected="false">AI clients</button>
       <button data-s="api" aria-selected="false">API</button>
       <button data-s="updates" aria-selected="false">Updates</button>
@@ -5795,6 +5969,9 @@ const API_TOKEN=__API_TOKEN__;
             <option value="10">At 10:00</option>
             <option value="14">At 14:00</option>
           </select></div>
+        <div class="srow nf-sub"><div><b>New jobs from your scans</b><span>Once, when a search leaves
+          jobs you have not seen.</span></div>
+          <label class="tgl"><input type="checkbox" id="s-notify-scans"><i></i></label></div>
         <div class="srow nf-sub" data-desk hidden><div><b>Keep running when the window is closed</b><span>So
           reminders still come. CV Studio stays in the tray (the menu bar on a Mac); quit it from there.</span></div>
           <label class="tgl"><input type="checkbox" id="s-keep"><i></i></label></div>
@@ -5803,6 +5980,25 @@ const API_TOKEN=__API_TOKEN__;
           <label class="tgl"><input type="checkbox" id="s-autostart"><i></i></label></div>
         <div class="srow nf-sub"><div><b>Try it</b><span>Sends one now, so you can see where they appear.</span></div>
           <button class="obtn" id="s-notify-test">Send a test</button></div>
+      </section>
+
+      <section class="sp" id="sp-scans" hidden>
+        <h3>Job scans</h3>
+        <p class="sp-lede">A search that runs every morning, in Claude or another AI client, can
+          leave the jobs it finds here. You go through them one card at a time: right to add one
+          to your applications, left to pass. A job you passed on is not offered again.</p>
+        <div class="srow"><div><b>Folder</b><span>Where the searches leave what they find: any
+          .xlsx or .csv spreadsheet in it is read, whatever its columns are called.</span></div>
+          <select id="s-scan-folder" aria-label="Folder"></select></div>
+        <div class="srow"><div><b>Spreadsheet</b><span id="s-scan-say"></span></div>
+          <div class="acts"><button class="obtn" id="s-scan-open">Open folder</button>
+          <button class="obtn" id="s-scan-create">Create it</button></div></div>
+        <div class="srow"><div><b>Waiting for you</b><span id="s-scan-new"></span></div>
+          <button class="obtn" id="s-scan-review">Review</button></div>
+        <div class="srow"><div><b>The morning search</b><span>A scheduled task in the Claude desktop
+          app, on this computer, with CV Studio connected. Copy its instructions, add the roles and
+          places you want, and paste them into a new scheduled task.</span></div>
+          <button class="obtn" id="s-scan-task">Copy the task</button></div>
       </section>
 
       <section class="sp" id="sp-region" hidden>

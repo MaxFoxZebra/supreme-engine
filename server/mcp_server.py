@@ -25,7 +25,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypedDict
 
 from pydantic import Field
 
@@ -171,7 +171,10 @@ mcp = MCPServer(
         "made it. When the user wants back something a change removed, "
         "file_history lists the versions and what each changed, and "
         "restore_version puts a CV or letter back as one of them, when they "
-        "ask. An application is restored in the app, by the user."
+        "ask. An application is restored in the app, by the user.\n\n"
+        "When a scheduled job search hands you the jobs it found, give them "
+        "to record_job_scan, not add_job: the user says yes or no to each in "
+        "CV Studio, and only the ones they choose become applications."
     ),
 )
 
@@ -241,7 +244,8 @@ ACTS_AS_USER = {"review_change", "edit_on_page"}   # and job_view_data's "status
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info",
-             "page_view_data", "job_stats", "show_application", "today", "file_history"}
+             "page_view_data", "job_stats", "show_application", "today", "file_history",
+             "job_scans"}
 
 # What a client shows for each tool, and what it may assume of it. Claude
 # Desktop and others use the hints to decide what to ask permission for:
@@ -274,9 +278,11 @@ TITLES = {
     "today": "What needs you today",
     "file_history": "Every version of a CV, letter or application",
     "restore_version": "Restore an earlier version",
+    "job_scans": "Jobs your searches found",
+    "record_job_scan": "Hand over the jobs a search found",
 }
-ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language"}
-IDEMPOTENT = {"restore_version", "review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
+ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language", "record_job_scan"}
+IDEMPOTENT = {"record_job_scan", "restore_version", "review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
               "save_interview_prep", "write_letter", "mark_translation_current"}
 OPEN_WORLD = {"add_job", "read_posting", "set_company_logo"}
 
@@ -556,6 +562,68 @@ def restore_version(path: str, version_id: str) -> str:
     v = r["restored"]
     return (f"Restored {r['path']} to its version of {str(v['at'])[:16].replace('T', ' ')}. "
             f"Call render_cv to show it.")
+
+
+class ScanJob(TypedDict, total=False):
+    company: str
+    role: str
+    link: Annotated[str, Field(description="The posting's own permanent link")]
+    location: str
+    why: Annotated[str, Field(description="One line on why it fits the user")]
+    posted: Annotated[str, Field(description="YYYY-MM-DD, or as the posting says it")]
+    scan: Annotated[str, Field(description="The search that found it, when not the same for all")]
+    notes: str
+    description: Annotated[str, Field(description="The posting's text, when the link may not last")]
+    details: Annotated[dict[str, str | bool], Field(
+        description='Anything else for the card, a column each: {"Sector": "Cloud & data", "Top pick": true}')]
+
+
+@tool
+def record_job_scan(jobs: list[ScanJob], scan: str | None = None, found: str | None = None) -> str:
+    """Hand CV Studio the jobs a scheduled job search found. The user goes
+    through them in the app, one card at a time: right to add one to their
+    applications, left to pass.
+
+    Pass every job the search found, each with its permanent posting link,
+    company, role and one line on why it fits. `scan` names the search
+    ("Media, AI & cloud"), `found` the day it ran (YYYY-MM-DD; today when left
+    out). A job already handed over, already decided or already an
+    application is left out, so handing over yesterday's again is harmless.
+
+    Do not add these jobs with add_job yourself: which become applications is
+    the user's choice, made in the app.
+    """
+    if not jobs:
+        raise ValueError("No jobs given.")
+    r = studio.scan_record([dict(j) for j in jobs], scan, found)
+    out = (f"{r['added']} new job(s) waiting for the user in CV Studio; {r['already']} were "
+           f"already there and {r['tracked']} are already applications. Saved in {r['file']}.")
+    if not r["written"]:
+        out += (" The spreadsheet is open in another program, so they are queued and written "
+                "as soon as it is closed; the app shows them already.")
+    return out
+
+
+@tool
+def job_scans(limit: int = 50) -> str:
+    """What the user's scheduled job searches found that they have not said
+    yes or no to yet, newest first, and how many they added or passed on.
+
+    record_job_scan already leaves out what was handed over before; read this
+    when the user asks what is waiting, or to tell them how a search is
+    doing.
+    """
+    st = studio.scans_state()
+    c = st["counts"]
+    lines = [f"Scans folder: {st['folder']}. Waiting: {c['new']}; added to applications: "
+             f"{c['added']}; passed on: {c['skipped']}."]
+    lines += [f"Problem: {x}" for x in st["problems"]]
+    for r in st["new"][:max(1, min(limit, 500))]:
+        bits = [r["found"], r["scan"], f"{r['company']}, {r['role']}", r["location"], r["link"]]
+        lines.append("- " + " · ".join(b for b in bits if b) + (f". Why: {r['why']}" if r["why"] else ""))
+    if not st["new"]:
+        lines.append("Nothing is waiting.")
+    return "\n".join(lines)
 
 
 @tool

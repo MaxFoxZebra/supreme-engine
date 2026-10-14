@@ -585,5 +585,30 @@ def build(studio, applications: int = 64) -> dict:
                      encoding="utf-8")
         letters_made += 1
 
+    # What two morning searches found and nobody has looked at yet: the
+    # cards in Applications > Review.
+    day = lambda n: (now - dt.timedelta(days=n)).date().isoformat()
+    found = []
+    for scan, company, role, where, posted, top, why in SCANS:
+        found.append({"company": company, "role": role, "location": where, "scan": scan,
+                      "link": "https://example.com/scans/" + re.sub(r"[^a-z0-9]+", "-", f"{company} {role}".lower()),
+                      "posted": day(posted), "why": why, "found": day(0 if posted < 4 else 1),
+                      "details": {"Top pick": True} if top else {}})
+    studio.scan_record(found)
+
     return {"applications": len(made), "tailored": len(tailored), "letters": letters_made,
-            "translations": len(TR)}
+            "translations": len(TR), "scans": len(found)}
+
+
+SCANS = [
+    ("Platform roles, Paris & remote", "Scaleway", "Infrastructure Engineer, GPU Cloud", "Paris", 2, True,
+     "Moving 140 services to Kubernetes at Northwind is the work this team does for its customers."),
+    ("Platform roles, Paris & remote", "Datadog", "Senior SRE, Observability", "Paris (hybrid)", 1, False,
+     "The incident review practice that took pages from 14 to 3 a week is what this role is about."),
+    ("Platform roles, Paris & remote", "Hugging Face", "Cloud Infrastructure Engineer", "Remote (EU)", 5, False,
+     "Remote in the EU, with Terraform and Go, and the 31% cut in cloud cost to talk about."),
+    ("Lyon & Grenoble", "OVHcloud", "Kubernetes Platform Lead", "Lyon", 3, True,
+     "In Lyon, and the internal deploy pipeline used by 60 engineers is the platform this lead would own."),
+    ("Lyon & Grenoble", "Malt", "Principal Engineer, Developer Platform", "Lyon", 6, False,
+     "A developer platform for product teams: the line your CV's summary opens with."),
+]

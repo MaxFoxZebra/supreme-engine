@@ -38,6 +38,8 @@ one rendered by clicking Save.
 | `add_job` | Add one, refusing a likely duplicate unless you confirm. Given the posting's link, it reads the title and full text from the job board itself; given the company's website, it fetches the company's logo too |
 | `read_posting` | Read a posting from its link exactly as published: Lever, Greenhouse, Ashby and SmartRecruiters from their public feeds, any other page from the job it describes for search engines |
 | `set_company_logo` | Give a company a logo, from its website or an image on disk, and use it on every application to that company |
+| `record_job_scan` | Hand over the jobs a scheduled search found. They wait in the app as cards for you to say yes or no to; none becomes an application until you do. A job handed over before, decided, or already an application is left out |
+| `job_scans` | What the searches found that you have not decided on yet, and how many you added or passed on |
 
 `render_cv` returning an image is the point of the whole thing. The model can
 *look* at the rendered page and catch what only shows up visually: a bullet
@@ -181,6 +183,30 @@ round will bring, match every ask of the posting to a line of the CV (or say it
 is a gap), and suggest questions to ask back, all saved with
 `save_interview_prep` so the user rehearses them in the app. Ask "prepare my
 Monzo interview".
+
+### Morning job searches
+
+A scheduled task can search for postings every morning and hand what it finds
+to CV Studio with `record_job_scan`. The model does not add them as
+applications: you go through them in the app, one card at a time, right to add
+one (its posting is then read from its link), left to pass. A job you passed on
+is remembered and not offered again, however many mornings a search finds it.
+
+The task has to run where CV Studio's connector does: in the Claude desktop app
+on the computer CV Studio is on, as a scheduled task, with CV Studio connected.
+A routine that runs in Anthropic's cloud cannot reach it. Such a routine can
+write what it finds to a Google Sheet, and a scheduled task on your computer can
+copy that sheet into the scans folder as a CSV each morning: CV Studio reads it
+as it is, offers only the jobs it has not offered before, and never rewrites it.
+*Settings → Job scans → Copy the task* gives instructions to start from.
+
+What a search found is kept in a spreadsheet in the workspace (`Job scans/Job
+scans.xlsx`, or the folder chosen in Settings): one row a job, with the day it
+was found, the search, the company, the role, where, the link, why it fits, when
+it was posted, and a status (New, Added or Skipped). Any .xlsx or .csv in that
+folder is read too, whatever its columns are called, in English or French, so a
+search that writes its own sheet works as well. `POST /api/scans/record` takes
+the same jobs from any other program.
 
 ### The sweep, as a skill
 

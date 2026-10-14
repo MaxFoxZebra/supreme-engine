@@ -97,7 +97,7 @@ if __name__ == "__main__":
                  "create_cv", "render_cv", "ats_check", "design_options",
                  "workspace_info", "add_language", "translation_status",
                  "mark_translation_current", "create_letter", "write_letter",
-                 "file_history", "restore_version"}
+                 "file_history", "restore_version", "job_scans", "record_job_scan"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
                     "get_interview_prep", "save_interview_prep",

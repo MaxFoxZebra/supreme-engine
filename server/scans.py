@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import hashlib
 import io
 import json
 import os
@@ -37,12 +38,23 @@ FILE_NAME = "Job scans.xlsx"
 SHEET = "Job scans"
 # The file's columns, in order. Status is the bookkeeping: New, Added, Skipped.
 COLUMNS = ["Found", "Scan", "Company", "Role", "Location", "Link", "Why it fits",
-           "Posted", "Status", "Notes"]
+           "Posted", "Status", "Notes", "Description"]
 FIELD_OF = {"Found": "found", "Scan": "scan", "Company": "company", "Role": "role",
             "Location": "location", "Link": "link", "Why it fits": "why",
-            "Posted": "posted", "Status": "status", "Notes": "notes"}
+            "Posted": "posted", "Status": "status", "Notes": "notes",
+            "Description": "description"}
 NEW, ADDED, SKIPPED = "New", "Added", "Skipped"
 STATUSES = (NEW, ADDED, SKIPPED)
+# What a person or another program may have written in a status column. Any
+# other value ("To review", "À voir", empty) is still to look at.
+STATUS_WORDS = {
+    ADDED: ["added", "applied", "imported", "tracked", "in cv studio", "ajoute", "ajoutee",
+            "postule", "postulee", "candidature envoyee", "agregado", "aplicado",
+            "adicionado", "candidatado"],
+    SKIPPED: ["skipped", "skip", "not interested", "no", "pass", "passed", "rejected",
+              "declined", "ignored", "nope", "not for me", "pas interesse", "pas interessee",
+              "non", "ignore", "refuse", "no me interesa", "descartado", "nao", "sem interesse"],
+}
 # What a sheet written somewhere else may call each column. Exact names first;
 # then a header containing one of these as a word (so "Date posted" is
 # posted, not found: posted is tried before found).
@@ -252,6 +264,14 @@ def _field(header: str) -> str | None:
     return None
 
 
+def _status(v: str) -> str:
+    f = _fold(v)
+    for status, words in STATUS_WORDS.items():
+        if f == _fold(status) or f in (_fold(w) for w in words):
+            return status
+    return NEW
+
+
 def _date(v: str) -> str:
     """Excel's day numbers as dates; anything else as written."""
     v = (v or "").strip()
@@ -260,11 +280,36 @@ def _date(v: str) -> str:
     return v
 
 
+def _columns(cells: list[tuple[str, str]]) -> dict[int, str]:
+    """Which column holds which field: an exact name first, then a name that
+    contains one, and each field once, so "Scan" and "Sector" side by side
+    are the scan and a column of its own."""
+    exact, loose = {}, {}
+    for j, (t, _) in enumerate(cells):
+        h = _fold(t)
+        if not h:
+            continue
+        for f in ORDER:
+            if h in (_fold(s) for s in SYNONYMS[f]):
+                exact[j] = f
+                break
+        else:
+            got = _field(t)
+            if got:
+                loose[j] = got
+    out, taken = {}, set()
+    for group in (exact, loose):
+        for j, f in sorted(group.items()):
+            if f not in taken:
+                out[j] = f
+                taken.add(f)
+    return out
+
+
 def _records(sheet: str, rows: list[list[tuple[str, str]]]) -> list[dict]:
     head, fields = None, {}
     for i, r in enumerate(rows[:10]):
-        got = {j: _field(t) for j, (t, _) in enumerate(r)}
-        found = {j: f for j, f in got.items() if f}
+        found = _columns(r)
         if len(found) >= 2 and set(found.values()) & {"link", "role", "company"}:
             head, fields = i, found
             break
@@ -297,8 +342,7 @@ def _records(sheet: str, rows: list[list[tuple[str, str]]]) -> list[dict]:
         if not any(rec.get(k) for k in ("link", "role", "company")):
             continue
         rec.setdefault("scan", sheet if sheet and sheet.casefold() != SHEET.casefold() else "")
-        st = (rec.get("status") or "").strip().capitalize()
-        rec["status"] = st if st in STATUSES else NEW
+        rec["status"] = _status(rec.get("status") or "")
         out.append(rec)
     return out
 
@@ -329,7 +373,7 @@ def _clean(v) -> str:
 
 
 WIDTHS = {"Found": 12, "Scan": 22, "Company": 22, "Role": 40, "Location": 22, "Link": 46,
-          "Why it fits": 60, "Posted": 12, "Status": 10, "Notes": 40}
+          "Why it fits": 60, "Posted": 12, "Status": 10, "Notes": 40, "Description": 60}
 
 
 def write_xlsx(path: Path, rows: list[dict], extra: list[str]) -> None:
@@ -438,6 +482,19 @@ def _readable(folder: Path) -> list[Path]:
                   if p.is_file() and p.suffix.lower() in READABLE and not p.name.startswith((".", "~$")))
 
 
+def stamp(folder: Path) -> str:
+    """Each readable file's name, size and time, and the queue's: changes
+    whenever anything in the folder that counts does."""
+    parts = []
+    for p in _readable(folder) + [folder / PENDING]:
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        parts.append(f"{p.name}:{st.st_size}:{st.st_mtime_ns}")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
 def own_file(folder: Path) -> Path:
     """The file CV Studio writes: `Job scans.xlsx`, or the only .xlsx in the
     folder when someone made one for it (an empty one included)."""
@@ -508,7 +565,8 @@ def load(folder: Path) -> dict:
             seen[k] = r
             rows.append(r)
     for p in folder.glob("*.xls") if folder.is_dir() else []:
-        problems.append(f"{p.name} is in the old Excel format. Save it as .xlsx (or .csv) to have it read.")
+        if p.stat().st_size:        # an empty one made for it has nothing to read
+            problems.append(f"{p.name} is in the old Excel format. Save it as .xlsx (or .csv) to have it read.")
     rows = _apply(rows, _load_pending(folder))
     for r in rows:
         r["key"] = key_of(r)
@@ -546,8 +604,23 @@ def _queue(folder: Path, op: dict) -> None:
 
 
 def _row_out(r: dict) -> dict:
-    return {k: r.get(k) or "" for k in ("key", "found", "scan", "company", "role", "location",
-                                       "link", "why", "posted", "status", "notes", "file")}
+    out = {k: r.get(k) or "" for k in ("key", "found", "scan", "company", "role", "location",
+                                      "link", "why", "posted", "status", "notes", "file")}
+    out["details"] = {k: v for k, v in (r.get("extra") or {}).items() if v}
+    out["has_description"] = bool((r.get("description") or "").strip())
+    return out
+
+
+YES = re.compile(r"^(yes|y|true|oui|si|sim|x|1)$", re.I)
+
+
+def _order(r: dict) -> tuple:
+    """Newest day first; within a day, a search's top picks first, then the
+    most recently posted."""
+    top = any(YES.match(str(v).strip()) for k, v in (r.get("extra") or {}).items()
+              if re.search(r"\btop\b|priorit", _fold(k)))
+    posted = str(r.get("posted") or "")
+    return (str(r.get("found") or ""), top, posted if re.match(r"\d{4}-\d\d-\d\d", posted) else "")
 
 
 def state(folder: Path, jobs: list[dict]) -> dict:
@@ -556,11 +629,23 @@ def state(folder: Path, jobs: list[dict]) -> dict:
     data = load(folder)
     index = tracked_index(jobs)
     new = [r for r in data["rows"] if r.get("status") == NEW and not is_tracked(r, index)]
-    new.sort(key=lambda r: (str(r.get("found") or ""), str(r.get("posted") or "")), reverse=True)
+    new.sort(key=_order, reverse=True)
+    counts = {NEW: len(new), ADDED: 0, SKIPPED: 0}
+    for r in data["rows"]:
+        st = ADDED if r.get("status") == NEW and is_tracked(r, index) else r.get("status")
+        if st in (ADDED, SKIPPED):
+            counts[st] += 1
+    scans: dict[str, int] = {}
+    for r in new:
+        name = r.get("scan") or ""
+        scans[name] = scans.get(name, 0) + 1
     return {"folder": str(folder), "exists": folder.is_dir(), "file": data["own"].name,
             "file_exists": data["own"].exists(), "files": data["files"],
             "problems": data["problems"], "rows": len(data["rows"]),
             "new": [_row_out(r) for r in new],
+            "counts": {"new": counts[NEW], "added": counts[ADDED], "skipped": counts[SKIPPED]},
+            "scans": [{"name": k, "new": v} for k, v in scans.items()],
+            "latest": max((str(r.get("found") or "") for r in new), default=""),
             "pending": bool(_load_pending(folder))}
 
 
@@ -582,11 +667,14 @@ def record(folder: Path, jobs_found: list[dict], jobs: list[dict], scan: str | N
     day = (found or dt.date.today().isoformat())[:10]
     new_rows, already, tracked = [], 0, 0
     for j in jobs_found:
-        r = {"found": day, "scan": (j.get("scan") or scan or "").strip(),
-             "company": (j.get("company") or "").strip(), "role": (j.get("role") or j.get("title") or "").strip(),
-             "location": (j.get("location") or "").strip(), "link": (j.get("link") or j.get("url") or "").strip(),
-             "why": (j.get("why") or "").strip(), "posted": (j.get("posted") or "").strip(),
-             "notes": (j.get("notes") or "").strip(), "status": NEW, "own": True, "recorded": True}
+        txt = lambda *ks: next((str(j[k]).strip() for k in ks if j.get(k) not in (None, "")), "")
+        r = {"found": (txt("found") or day)[:10], "scan": txt("scan") or (scan or "").strip(),
+             "company": txt("company"), "role": txt("role", "title"),
+             "location": txt("location"), "link": txt("link", "url"),
+             "why": txt("why", "fit", "why_it_fits"), "posted": txt("posted"),
+             "notes": txt("notes"), "description": txt("description"),
+             "extra": _details(j.get("details")),
+             "status": NEW, "own": True, "recorded": True}
         k = key_of(r)
         if not k or not (r["company"] or r["role"] or r["link"]):
             continue
@@ -608,11 +696,27 @@ def record(folder: Path, jobs_found: list[dict], jobs: list[dict], scan: str | N
             "file": str(own_file(folder)), "written": written}
 
 
+def _details(d) -> dict:
+    """What a scan says beyond the columns (a sector, a top pick): a column
+    each, a few short ones."""
+    if not isinstance(d, dict):
+        return {}
+    out = {}
+    for k, v in d.items():
+        k = re.sub(r"\s+", " ", str(k or "")).strip()[:40]
+        if not k or k.casefold() in (c.casefold() for c in COLUMNS) or v in (None, "", False):
+            continue
+        out[k] = "Yes" if v is True else str(v).strip()[:500]
+        if len(out) == 8:
+            break
+    return out
+
+
 def set_status(folder: Path, keys: list[str], status: str, jobs: list[dict]) -> dict:
     """Mark rows Added or Skipped. A row from another file is copied into the
     own file with its new status, so the other file is never rewritten."""
     if status not in STATUSES:
-        raise ValueError(f"Status is one of {', '.join(STATUSES)}.")
+        raise ValueError("A job a scan found is New, Added or Skipped.")
     data = load(folder)
     rows, by_key = data["rows"], {r["key"]: r for r in data["rows"]}
     wanted = [k for k in keys if k in by_key]

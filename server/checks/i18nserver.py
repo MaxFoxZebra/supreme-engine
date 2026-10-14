@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE / "i18n"))
 from catalogue import C, RX  # noqa: E402
 
-FILES = ["studio.py", "jobs.py", "importer.py", "letters.py", "languages.py", "backups.py"]
+FILES = ["studio.py", "jobs.py", "importer.py", "letters.py", "languages.py", "backups.py", "scans.py"]
 FILL = "Engineering"   # what a run-time part looks like, for matching a pattern
 
 # For a programmer, never shown in the interface.
@@ -32,7 +32,7 @@ INTERNAL = {
     "unknown client: Engineering", "path outside the workspace", "not http", "too large",
     "unauthorised: supply X-API-Key", "bad request", "Unknown fix: Engineering",
     "Could not record the base CV in Engineering.", "Engineering: Engineering",
-    "Typst mapping is unavailable in this build",
+    "Typst mapping is unavailable in this build", "Engineering is too large to read",
     # The reason in brackets after "…config file cannot be read": the file's own fault.
     '"mcpServers" is not a JSON object', '"mcp_servers" is not a YAML mapping',
 }

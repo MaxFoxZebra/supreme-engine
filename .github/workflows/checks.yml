@@ -93,6 +93,9 @@ jobs:
       - name: Version history
         run: python checks/historytest.py
 
+      - name: Job scans
+        run: python checks/scanstest.py
+
       - name: Applications as files
         run: python checks/trackertest.py
 
@@ -170,6 +173,10 @@ jobs:
 
       - name: Quick with 500 applications
         run: node checks/scaletest.js "http://127.0.0.1:8750/?token=t"
+
+      # The jobs a morning search found, one card at a time: keys, a drag, undo.
+      - name: The job scans deck
+        run: node checks/scandeck.js "http://127.0.0.1:8750/?token=t&lang=en"
 
       # The page view an AI client shows with render_cv (MCP Apps): this
       # check is the client, over stdio and in Chrome.

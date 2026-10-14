@@ -79,7 +79,8 @@ async function main() {
     ["calendar", `setView("cal")`],
     ["month", `document.querySelector('#cal-views [data-cv=month]').click()`],
     ["week", `document.querySelector('#cal-views [data-cv=week]').click()`],
-    ...["workspace", "editor", "region", "notify", "browser", "ai", "api", "updates", "about"].map(p =>
+    ["job scans", `setView("jobs"); await loadScans(); openScans()`],
+    ...["workspace", "editor", "region", "notify", "browser", "scans", "ai", "api", "updates", "about"].map(p =>
       ["settings " + p, `openSettings("${p}")`]),
     ["people", `closeOverlays(); setView("jobs"); selectJob(S.jobs.find(j=>j.people&&j.people.length>1).id)`],
     ["email draft", `document.querySelector("[data-pp-write]").click(); await new Promise(r=>setTimeout(r,600))`],

@@ -84,6 +84,18 @@ follow-up*), an offer to answer, a thank-you after yesterday's interview, a
 draft left sitting. Beside it, this week in seven days, with the interviews
 this week, what you sent and how many are waiting on a reply.
 
+**New jobs from your scans.** A search that runs every morning, a scheduled
+task in Claude or another AI client, can hand CV Studio the postings it found.
+They wait above the list, and as a count on the tab, until you go through them
+one card at a time: the company, the role, where, when it was posted, and the
+search's one line on why it fits. Drag the card right (or press `→`) and it
+becomes an application, its posting read from its link; drag it left (`←`) and
+it is not offered again; `↓` leaves it for later, and `Z` takes the last one
+back. What a search found is kept in a spreadsheet in your workspace, one row a
+job with the day it was found and what you decided, which you can open, sort and
+annotate in Excel; any spreadsheet a search leaves in that folder is read,
+whatever its columns are called.
+
 Click a row and the application opens beside the list, and `↑` `↓` walk through
 them without closing it. Its facts sit in one card: status, follow-up date, how
 good a fit it is, where you found it and the language the posting is in.
@@ -173,7 +185,8 @@ in the calendar you already use.
   theirs beside it.
 - **Notifications.** Off until you turn them on. Before an interview (10
   minutes, an hour, both, or the day before), and once a day at the hour you
-  pick for the follow-ups that are due. With them on, closing the window keeps
+  pick for the follow-ups that are due, and when a search leaves new jobs. With
+  them on, closing the window keeps
   CV Studio in the tray so they still come, and it can open at login.
 - **Editor.** Live preview, the theme for new documents, the accent colour, and
   light or dark. The rendered page stays white either way: it is a document,
@@ -183,6 +196,10 @@ in the calendar you already use.
   place, the salary and the posting already read from the page, and saves them
   as an application; a link you already track gets its posting saved instead of
   a duplicate. Nothing leaves your computer.
+- **Job scans.** The folder the morning searches leave their spreadsheet in,
+  how many jobs are waiting, and the instructions for a scheduled task in the
+  Claude desktop app that searches every morning and hands what it finds to
+  CV Studio.
 - **Workspace.** Where your files are, backups (one a day, the last fourteen
   kept, outside the workspace, with *Back up now* and *Restore…*), and exports of
   your applications as JSON or CSV. A deleted application goes to a trash for

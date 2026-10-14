@@ -28,6 +28,23 @@ tag, so a release is never published with nothing said about it.
 - AI clients can read the history (`file_history`) and put a CV or letter
   back as an earlier version when you ask (`restore_version`).
   Applications are restored only in the app.
+- New jobs from your morning searches, one card at a time. A scheduled
+  task in the Claude desktop app (or another AI client) can hand CV Studio
+  the postings it finds each morning. They show as a count on the
+  Applications tab and a bar above the list; *Review* opens them as a deck
+  of cards. Drag a card right (or press →) to add it to your applications,
+  with its posting read from its link and the search's reason in its notes;
+  drag it left (←) to pass, and it is not offered again; ↓ leaves it for
+  later, and Z takes the last decision back.
+- What the searches found is kept in a spreadsheet in your workspace, one
+  row a job with the day it was found and what you decided. Any .xlsx or
+  .csv a search leaves in that folder is read too, whatever its columns are
+  called. *Settings → Job scans* chooses the folder and copies instructions
+  for the scheduled task.
+- A notification when a search leaves jobs you have not seen, if
+  notifications are on.
+- AI clients hand the jobs over with `record_job_scan` and read what is
+  waiting with `job_scans`.
 
 ## 0.47.1
 
