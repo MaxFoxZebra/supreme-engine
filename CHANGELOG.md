@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.48.0
 
 - Version history. Every version of every CV, letter and application is
   kept, with when it was made and by whom: you, Claude or another AI
