@@ -320,9 +320,17 @@ def _checkpoint(before: dict, tool_name: str) -> None:
                     continue
             except OSError:
                 continue
-            review.checkpoint(studio.WORKSPACE, rel, held[1] if held else None,
+            before, base = (held[1] if held else None), None
+            if not held and (base := studio.doc_base(f)):
+                # A copy of the base: compared with the base as it was when it
+                # was copied, so a later edit of the base is not this client's.
+                try:
+                    before = studio.safe_path(base).read_text(encoding="utf-8")
+                except (OSError, ValueError):
+                    before, base = None, None
+            review.checkpoint(studio.WORKSPACE, rel, before,
                               by=studio.CLIENT_ID or "ai", agent=studio.CLIENT_AGENT,
-                              tool=tool_name)
+                              tool=tool_name, base=base)
     except Exception:
         # Bookkeeping is never what fails a tool call.
         pass

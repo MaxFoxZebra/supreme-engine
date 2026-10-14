@@ -639,20 +639,39 @@ async function fillBaseDiff(el,path){
       'in the workspace, so there is nothing to compare it with.</p>';
     return;
   }
-  const n=d.changes.length;
-  const item=c=>'<li><span class="bd-where">'+esc(c.where)+
-      (c.kind==="changed"?"":' <em class="bd-kind '+c.kind+'">'+c.kind+'</em>')+'</span>'+
-    (c.before&&c.kind!=="added"?'<del data-noi18n>'+esc(c.before)+'</del>':'')+
-    (c.after&&c.kind!=="removed"?'<ins data-noi18n>'+esc(c.after)+'</ins>':'')+'</li>';
+  /* The same changes the Changes tab lists, so the two never give different
+     counts: an entry once, by what in it moved, rather than field by field,
+     where a bullet inserted above another read as every bullet below it
+     rewritten into the next one. */
+  const units=d.units||[], n=units.length;
+  const brief=v=>{ const x=rvVal(v); return x.length>140?x.slice(0,137)+"…":x };
+  const obj=v=>v&&typeof v==="object"&&!Array.isArray(v);
+  const item=u=>{
+    const kind=u.tag==="ins"||u.label==="Section added"?"added":u.tag==="del"||u.label==="Section removed"?"removed":"";
+    const keys=obj(u.before)&&obj(u.after)?[...new Set([...Object.keys(u.before),...Object.keys(u.after)])]
+      .filter(k=>JSON.stringify(u.before[k])!==JSON.stringify(u.after[k])).map(k=>k.replace(/_/g," ")):null;
+    const where=u.kind==="field"?t("Header")+" › "+t(u.label):u.kind==="block"?t(u.label):u.where;
+    return '<li><span class="bd-where" data-noi18n>'+esc(where)+
+        (kind?' <em class="bd-kind '+kind+'">'+esc(t(kind==="added"?"Added":"Removed"))+'</em>':'')+'</span>'+
+      (keys?'<span class="bd-keys" data-noi18n>'+esc(t("Changed: {list}",{list:keys.join(", ")}))+'</span>'
+        :kind?'':(u.before!=null?'<del data-noi18n>'+esc(brief(u.before))+'</del>':'')+
+          (u.after!=null?'<ins data-noi18n>'+esc(brief(u.after))+'</ins>':''))+'</li>';
+  };
   el.innerHTML=
     '<p class="bd-head">'+(n
       ?'<b>'+esc(t("{n} change(s)",{n}))+'</b> from <b>'+esc(base)+'</b>'
       :'Same as <b>'+esc(base)+'</b> so far. Nothing has been tailored yet.')+
-    (d.design.length?'<span class="bd-design">Design: '+esc(d.design.join(", "))+'</span>':'')+
     '</p>'+
-    (n?'<ul class="bd-list">'+d.changes.slice(0,DIFF_SHOWN).map(item).join("")+'</ul>':'')+
+    (n?'<ul class="bd-list">'+units.slice(0,DIFF_SHOWN).map(item).join("")+'</ul>':'')+
     (n>DIFF_SHOWN?'<details class="bd-more"><summary>'+(n-DIFF_SHOWN)+' more</summary>'+
-      '<ul class="bd-list">'+d.changes.slice(DIFF_SHOWN).map(item).join("")+'</ul></details>':'');
+      '<ul class="bd-list">'+units.slice(DIFF_SHOWN).map(item).join("")+'</ul></details>':'')+
+    (n?'<button class="linkbtn bd-open" type="button">'+esc(t("See every change beside the page"))+'</button>':'');
+  const go=el.querySelector(".bd-open");
+  if(go) go.onclick=async()=>{
+    if(!await leaveEdits()) return;
+    await openDoc(path);
+    if(S.path===path) showTab("diff");
+  };
 }
 
 /* Links out of the app. The desktop webview ignores target=_blank -- the
@@ -1210,6 +1229,8 @@ function setProv(prov){
   if(S.prov) S.prov.baseSet=new Set(S.prov.from_base||[]);
   paintProv();
   cvRvBar();
+  paintDiffTab();
+  loadDiff();
 }
 
 /* The base says so. A tailored copy has always said what it came from; the
@@ -1334,8 +1355,11 @@ function provSheet(){
       :'')+
     'None of this is written into the YAML, so none of it prints.</p></div>'+
     '<div class="provlist">'+body+'</div>'+
-    '<div class="foot"><button class="sbtn primary" data-cancel>Close</button></div>');
+    '<div class="foot">'+(hasBase()?'<button class="sbtn" data-df-tab>'+esc(t("See every change beside the page"))+'</button>':'')+
+      '<div class="grow"></div><button class="sbtn primary" data-cancel>Close</button></div>');
   $("#sheet [data-cancel]").onclick=closeSheet;
+  const dt=$("#sheet [data-df-tab]");
+  if(dt) dt.onclick=()=>{ closeSheet(); showTab("diff") };
   $$("#sheet [data-sel]").forEach(el=>el.onclick=()=>{
     const path=JSON.parse(el.dataset.sel);
     if(path[1]==="sections"&&path.length>3)
@@ -3208,17 +3232,24 @@ function rvBar(el,r,kind,on){
   if(!r){ el.hidden=true; el.innerHTML=""; return }
   const who=whoLabel(r), n=r.units.length;
   const what=kind==="letter"?t("this letter"):t("this CV");
+  /* Made by copying the base: what it is compared with, by name, rather
+     than "wrote this CV", which said nothing of what it changed. */
+  const from=r.base?r.base.split("/").pop().replace(/\.ya?ml$/,""):null;
+  const all=(r.created?'<button class="obtn" data-rv="undo">'+esc(t("Delete it"))+'</button>'
+      :'<button class="obtn" data-rv="undo">'+esc(t("Undo all"))+'</button>')+
+    '<button class="obtn" data-rv="keep">'+esc(t("Keep all"))+'</button>';
   el.innerHTML=rvIcon(r.by)+
-    '<div class="rvtx"><b>'+esc(r.created?t("{who} wrote {what}",{who,what}):t("{who} changed {what}",{who,what}))+'</b>'+
-      '<span>'+esc(r.created?t("{t} ago. Not reviewed yet.",{t:ago(r.at*1000)})
+    '<div class="rvtx"><b>'+esc(from?t("{who} tailored this CV from {base}",{who,base:from})
+        :r.created?t("{who} wrote {what}",{who,what}):t("{who} changed {what}",{who,what}))+'</b>'+
+      '<span>'+esc(from?t("{t} ago · {n} change(s) from it, not reviewed yet",{t:ago(r.at*1000),n})
+        :r.created?t("{t} ago. Not reviewed yet.",{t:ago(r.at*1000)})
         :t("{t} ago · {n} change(s) to review",{t:ago(r.at*1000),n}))+'</span></div>'+
     '<div class="grow"></div>'+
-    (r.created
+    (r.created&&!from
       ?'<button class="obtn" data-rv="undo">'+esc(t("Delete it"))+'</button>'+
        '<button class="pbtn" data-rv="keep">'+esc(t("Keep it"))+'</button>'
-      :on.open?'<button class="obtn" data-rv="undo">'+esc(t("Undo all"))+'</button>'+
-       '<button class="obtn" data-rv="keep">'+esc(t("Keep all"))+'</button>'+
-       '<button class="pbtn" data-rv="open">'+esc(on.label||t("Review changes"))+'</button>'
+      :on.open?all+'<button class="pbtn" data-rv="open">'+esc(on.label||t("Review changes"))+'</button>'
+      :on.note?'<span class="rvnote">'+esc(on.note)+'</span>'+all
       :'<span class="rvnote">'+esc(t("Decide on each change beside the page, or all at once at the bottom."))+'</span>');
   el.hidden=false;
   el.onclick=async e=>{ const b=e.target.closest("[data-rv]"); if(!b) return;
@@ -3364,25 +3395,40 @@ function ltRvPanel(){
 /* ---- CVs ----------------------------------------------------------------- */
 function cvRvBar(){
   const r=S.doc&&S.doc.review;
-  rvBar($("#cv-rv"),r,"cv",{open:()=>cvRvSheet(), all:a=>cvRvDo(["*"],a)});
+  const beside=!!r&&dfShowsAll(r);
+  rvBar($("#cv-rv"),r,"cv",{
+    open:!beside?()=>cvRvSheet():S.tab==="diff"?null:()=>showTab("diff"),
+    label:beside?t("See what changed"):null,
+    note:beside?t("Keep or undo each change beside the page."):null,
+    all:a=>cvRvDo(["*"],a)});
 }
 async function cvRvDo(ids,action){
   const r=S.doc&&S.doc.review; if(!r) return;
   if(S.dirty){ toast(t("Save your edits first (Ctrl S), then decide on the changes."),true); return }
+  /* "Delete it" on a copy of the base: the document goes, which undoing its
+     changes would not do -- that leaves the copy, back as the base has it. */
+  if(ids[0]==="*"&&action==="undo"&&r.created&&r.base){
+    try{ await post("/api/doc/delete",{path:S.path}) }catch(e){ toast(e.message,true); return }
+    closeSheet(); toast(t("Deleted. It is in the trash folder."));
+    try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
+    S.path=null; refreshDocBadges(); return setView("docs");
+  }
   const out=await rvCall(S.path,ids,action,r.sig);
   if(!out){ await reopenInPlace(); return }
   if(out.deleted){ closeSheet(); toast(t("Deleted. It is in the trash folder."));
     try{ const st=await api("/api/state"); S.state=st; renderDocs(st.documents) }catch(e){}
     S.path=null; return setView("docs") }
   if(action==="undo") await reopenInPlace();
-  else { S.doc.review=out.doc.review; cvRvBar() }
+  else { S.doc.review=out.doc.review; cvRvBar(); if(S.tab==="diff"){ paintDiff(); paintHits() } }
   refreshDocBadges();
   if(!S.doc.review){ closeSheet(); toast(ids[0]==="*"?(action==="keep"?t("Kept"):t("Undone")):t("All reviewed")) }
   else if(!$("#sheet").hidden&&$("#sheet .rvsheet")) cvRvSheet();
 }
 /* An entry, field by field: what stayed plainly, what changed as words, a
    list of bullets as bullets added, removed and reworded. */
-function rvEntryHTML(a,b,tag){
+/* `compact` folds the fields that stayed into one line naming them, for the
+   Changes tab, where the card sits beside the page that already shows them. */
+function rvEntryHTML(a,b,tag,compact){
   if(tag==="ins"||tag==="del"){
     const e=tag==="ins"?b:a, cls=tag==="ins"?"rvi":"rvd", el=tag==="ins"?"ins":"del";
     if(e==null||typeof e!=="object") return '<'+el+' class="'+cls+'">'+rvText(rvVal(e))+'</'+el+'>';
@@ -3392,14 +3438,16 @@ function rvEntryHTML(a,b,tag){
   }
   if(typeof a!=="object"||typeof b!=="object"||!a||!b) return diffHTML(rvVal(a),rvVal(b));
   const keys=[...new Set([...Object.keys(a),...Object.keys(b)])];
-  return '<dl>'+keys.map(k=>{
+  const kept=compact?keys.filter(k=>JSON.stringify(a[k])===JSON.stringify(b[k])):[];
+  return '<dl>'+keys.filter(k=>!kept.includes(k)).map(k=>{
     const x=a[k], y=b[k], same=JSON.stringify(x)===JSON.stringify(y);
     let v;
     if(same) v='<span class="rvsame">'+rvText(rvVal(y))+'</span>';
     else if(Array.isArray(x)||Array.isArray(y)) v=rvListHTML(x||[],y||[]);
     else v=diffHTML(rvVal(x),rvVal(y));
     return '<dt>'+esc(k.replace(/_/g," "))+'</dt><dd'+(same?' class="same"':'')+'>'+v+'</dd>';
-  }).join("")+'</dl>';
+  }).join("")+'</dl>'+
+  (kept.length?'<p class="rvkept">'+esc(t("Unchanged: {list}",{list:kept.map(k=>k.replace(/_/g," ")).join(", ")}))+'</p>':'');
 }
 function rvListHTML(x,y){
   const A=x.map(rvVal), B=y.map(rvVal), n=A.length, m=B.length, W=m+1;
@@ -3410,26 +3458,63 @@ function rvListHTML(x,y){
   while(i<n&&j<m){ if(A[i]===B[j]){ ops.push(["eq",A[i++]]); j++ }
     else if(T[(i+1)*W+j]>=T[i*W+j+1]) ops.push(["del",A[i++]]); else ops.push(["ins",B[j++]]) }
   while(i<n) ops.push(["del",A[i++]]); while(j<m) ops.push(["ins",B[j++]]);
-  /* A bullet taken out and one put in at the same place is a bullet reworded. */
+  /* A bullet taken out and one put in where it was is a bullet reworded --
+     but only paired with the one that says most nearly the same thing. Pairing
+     whatever happened to be adjacent turned two bullets rewritten in a row into
+     the first one deleted and the second "reworded" into the first, which is
+     a diff that lies. Too little in common, and they are a bullet removed and
+     a bullet added, shown as that. */
+  const words=s=>(String(s).match(/[\p{L}\p{N}]+/gu)||[]).length;
+  const sim=(a,b)=>{ let same=0; wdiff(a,b).forEach(([op,tx])=>{ if(op==="eq") same+=words(tx) });
+    return same/Math.max(1,words(a),words(b)) };
+  const gone=tx=>'<li class="del"><del class="rvd">'+rvText(tx)+'</del></li>';
+  const came=tx=>'<li class="ins"><ins class="rvi">'+rvText(tx)+'</ins></li>';
   const li=[];
-  for(let k=0;k<ops.length;k++){
-    const [op,tx]=ops[k], nx=ops[k+1];
-    if(op==="del"&&nx&&nx[0]==="ins"){ li.push('<li class="chg">'+diffHTML(tx,nx[1])+'</li>'); k++ }
-    else if(op==="eq") li.push('<li class="same">'+rvText(tx)+'</li>');
-    else li.push('<li class="'+op+'"><'+op+' class="'+(op==="ins"?"rvi":"rvd")+'">'+rvText(tx)+'</'+op+'></li>');
+  for(let k=0;k<ops.length;){
+    if(ops[k][0]==="eq"){ li.push('<li class="same">'+rvText(ops[k][1])+'</li>'); k++; continue }
+    const D=[], I=[];
+    while(k<ops.length&&ops[k][0]!=="eq"){ (ops[k][0]==="del"?D:I).push(ops[k][1]); k++ }
+    const cand=[];
+    D.forEach((a,i)=>I.forEach((b,j)=>{ const v=sim(a,b); if(v>=0.3) cand.push([v,i,j]) }));
+    cand.sort((p,q)=>q[0]-p[0]||p[1]-q[1]);
+    const pairOf=new Map(), taken=new Set();
+    for(const [,i,j] of cand) if(!pairOf.has(i)&&!taken.has(j)){ pairOf.set(i,j); taken.add(j) }
+    const from=new Map([...pairOf].map(([i,j])=>[j,i]));
+    D.forEach((a,i)=>{ if(!pairOf.has(i)) li.push(gone(a)) });
+    I.forEach((b,j)=>li.push(from.has(j)?'<li class="chg">'+diffHTML(D[from.get(j)],b)+'</li>':came(b)));
   }
   return '<ul>'+li.join("")+'</ul>';
+}
+/* One change to a CV, written out: the sheet and the Changes tab draw the
+   same thing. */
+function cvUnitHTML(u,compact){
+  if(u.kind==="entry") return rvEntryHTML(u.before,u.after,u.tag,compact);
+  if(u.kind==="section") return u.before==null?'<span class="rvs">'+esc(t("{n} entry(s) added",{n:(u.after||[]).length}))+'</span>'
+    :u.after==null?'<span class="rvs">'+esc(t("{n} entry(s) removed",{n:(u.before||[]).length}))+'</span>':rvListHTML(u.before||[],u.after||[]);
+  if(u.kind==="text") return '<span class="rvs">'+esc(t("The file no longer reads as a CV, so it is shown whole."))+'</span>';
+  if(Array.isArray(u.before)||Array.isArray(u.after)) return rvListHTML(u.before||[],u.after||[]);
+  /* The design is a tree of settings, most of them untouched: only the ones
+     that moved, each where it sits, rather than the whole tree as one line. */
+  const obj=v=>v&&typeof v==="object"&&!Array.isArray(v);
+  if(u.kind==="block"&&obj(u.before)&&obj(u.after)){
+    const rows=[];
+    const walk=(a,b,at)=>{
+      for(const k of new Set([...Object.keys(a||{}),...Object.keys(b||{})])){
+        const x=(a||{})[k], y=(b||{})[k];
+        if(JSON.stringify(x)===JSON.stringify(y)) continue;
+        if(obj(x)&&obj(y)) walk(x,y,at.concat(k));
+        else rows.push('<dt>'+esc(at.concat(k).join(" › ").replace(/_/g," "))+'</dt><dd>'+diffHTML(rvVal(x),rvVal(y))+'</dd>');
+      }
+    };
+    walk(u.before,u.after,[]);
+    if(rows.length) return '<dl>'+rows.join("")+'</dl>';
+  }
+  return diffHTML(rvVal(u.before),rvVal(u.after));
 }
 function cvRvSheet(){
   const r=S.doc&&S.doc.review; if(!r) return;
   const body=r.units.map((u,i)=>{
-    let x;
-    if(u.kind==="entry") x=rvEntryHTML(u.before,u.after,u.tag);
-    else if(u.kind==="section") x=u.before==null?'<span class="rvs">'+esc(t("{n} entry(s) added",{n:(u.after||[]).length}))+'</span>'
-      :u.after==null?'<span class="rvs">'+esc(t("{n} entry(s) removed",{n:(u.before||[]).length}))+'</span>':rvListHTML(u.before||[],u.after||[]);
-    else if(u.kind==="text") x='<span class="rvs">'+esc(t("The file no longer reads as a CV, so it is shown whole."))+'</span>';
-    else if(Array.isArray(u.before)||Array.isArray(u.after)) x=rvListHTML(u.before||[],u.after||[]);
-    else x=diffHTML(rvVal(u.before),rvVal(u.after));
+    const x=cvUnitHTML(u);
     const show=u.kind==="entry"&&u.tag!=="del"||u.kind==="field";
     return rvCard(u,i,x,show?'<button class="obtn" data-go="'+esc(u.id)+'">'+esc(t("Show on the page"))+'</button>':'');
   }).join("");
@@ -3464,11 +3549,210 @@ async function refreshDocBadges(){
 /* Open a document straight into its review. */
 async function openForReview(path){
   if(isLetterPath(path)){ await openLetter(path); if(ltRv()) ltRvEnter() }
-  else{ await openDoc(path); if(S.doc&&S.doc.review) cvRvSheet() }
+  else{ await openDoc(path); const r=S.doc&&S.doc.review;
+    if(r) r.base&&hasBase()?showTab("diff"):cvRvSheet() }
 }
 const docByPath=p=>((S.state&&S.state.documents)||[]).find(d=>d.path===p)||null;
 const rvPill=d=>d&&d.review?'<span class="rvpill" title="'+esc(t("{who} changed this. Not reviewed yet.",{who:whoLabel(d.review)}))+'">'+
   esc(t("Review"))+'</span>':"";
+
+/* =========================================================================
+   Changes: what a tailored CV changed from its base
+   ========================================================================= */
+/* The question a tailored CV has to answer before it is sent: what exactly is
+   different from the CV it was copied from. The page cannot say -- it is the
+   new version, finished -- and "13 fields differ" says how much, not what.
+   So this tab writes every difference out beside the page: an entry field by
+   field, a reworded bullet as the words taken out and the words put in, an
+   entry added or removed whole, each numbered, with the same number on the
+   block it changed on the page. What is not listed is said to be the base's
+   word for word, and is listed too, so the account is the whole CV rather
+   than a highlight reel.
+
+   Inline rather than two pages side by side: beside each other, the pages
+   leave the comparing to your eyes, and a word changed in one bullet of
+   forty lines is exactly what eyes miss.
+
+   Against the base as it is now, the same comparison the marks make. A change
+   an AI client made that you have not reviewed carries Keep and Undo; any
+   other difference can be put back as the base has it. */
+const DF={data:null,path:null,seq:0};
+function hasBase(){ return !!(S.prov&&S.prov.base&&!S.prov.base.missing) }
+function dfOn(){ return !!DF.data&&DF.path===S.path }
+/* The same change, whichever comparison found it: a review compares with
+   what the CV said before the model wrote, this with the base, and while
+   those agree on a change it is one change with one pair of buttons. */
+const dfKey=u=>[u.kind,u.kind==="entry"?u.section+"|"+u.tag:u.id,
+  JSON.stringify(u.before??null),JSON.stringify(u.after??null)].join("\u0001");
+function dfPending(){
+  const r=S.doc&&S.doc.review, m=new Map();
+  if(r&&r.units) r.units.forEach(u=>m.set(dfKey(u),u));
+  return m;
+}
+/* Whether every change waiting on review is one of the differences shown
+   here, so the review can happen beside the page instead of in a sheet. */
+function dfShowsAll(r){
+  if(!hasBase()||!dfOn()||!r||!r.units||r.units.some(u=>u.kind==="created")) return false;
+  const here=new Set(DF.data.units.map(dfKey));
+  return r.units.every(u=>here.has(dfKey(u)));
+}
+/* The blocks of the page a change shows on. A removed entry is on no block:
+   it is not on the page any more, which is the point of it. */
+function dfBlocks(u){
+  if(/^cv:/.test(u.id)) return [{k:"header",name:"",i:""}];
+  if(u.kind==="entry"&&u.i!=null&&u.tag!=="del") return [{k:"entry",name:u.section,i:u.i}];
+  if(u.kind==="section"&&Array.isArray(u.after)) return u.after.map((_,i)=>({k:"entry",name:u.section,i}));
+  return [];
+}
+const dfBlockId=b=>b.k+"/"+(b.name??"")+"/"+(b.i??"");
+
+function restTab(){ const p=prefs().tab; return p==="form"||p==="yaml"?p:"page" }
+function paintDiffTab(){
+  const b=$("#tab-diff"), on=hasBase();
+  b.hidden=!on;
+  const n=on&&dfOn()?DF.data.units.length:0;
+  $("#tab-diff-n").textContent=n?String(n):"";
+  b.title=on?t("What this CV changed from {base}, beside the page",{base:baseName()}):"";
+  if(!on&&S.tab==="diff") showTab(restTab());
+}
+async function loadDiff(){
+  const path=S.path, seq=++DF.seq;
+  if(!path||!hasBase()){ DF.data=null; DF.path=null; paintDiffTab(); return }
+  let d;
+  try{ d=await api("/api/basediff?path="+encodeURIComponent(path)) }catch(e){ return }
+  if(seq!==DF.seq||path!==S.path) return;
+  DF.data=d; DF.path=path;
+  paintDiffTab(); cvRvBar();
+  if(S.tab==="diff"){ paintDiff(); paintHits() }
+}
+
+/* Every block the comparison found nothing in, by the names the outline
+   uses: what you are told is the same, rather than left to assume it. */
+function dfSame(units){
+  const cv=(S.data&&S.data.cv)||{}, touched=new Set(), out=[];
+  units.forEach(u=>{
+    if(u.kind==="entry"&&u.i!=null&&u.tag!=="del") touched.add(u.section+"/"+u.i);
+    if(u.kind==="section") touched.add(u.section+"/*");
+  });
+  if(!units.some(u=>/^cv:/.test(u.id))) out.push({label:t("Header"),sel:{kind:"header"}});
+  for(const name of Object.keys(cv.sections||{})){
+    if(touched.has(name+"/*")) continue;
+    (cv.sections[name]||[]).forEach((it,i)=>{
+      if(!touched.has(name+"/"+i))
+        out.push({label:sectionLabel(name)+" › "+entryTitle(it,i),sel:{kind:"entry",name,i}});
+    });
+  }
+  return out;
+}
+
+function paintDiff(){
+  const pane=$("#pane-diff");
+  if(!dfOn()){ pane.innerHTML='<p class="muted">'+esc(t("Loading…"))+'</p>'; return }
+  const d=DF.data, units=d.units||[], base=baseName(), wait=dfPending(), r=S.doc&&S.doc.review;
+  const same=dfSame(units);
+  const card=(u,n)=>{
+    const mine=wait.get(dfKey(u));
+    const acts=mine
+      ?'<span class="dfpend">'+rvIcon(r.by)+esc(t("{who}’s, not reviewed yet",{who:whoLabel(r)}))+'</span>'+
+       '<div class="grow"></div>'+
+       '<button class="obtn" data-df="undo" data-id="'+esc(mine.id)+'" title="'+
+         esc(t("Put back what {base} says",{base}))+'">'+esc(t("Undo"))+'</button>'+
+       '<button class="pbtn rvkeep" data-df="keep" data-id="'+esc(mine.id)+'">'+esc(t("Keep"))+'</button>'
+      :'<div class="grow"></div>'+
+       '<button class="obtn" data-df="revert" data-id="'+esc(u.id)+'" title="'+
+         esc(t("Put back what {base} says",{base}))+'">'+esc(t("Undo"))+'</button>';
+    return '<div class="rvc dfc" data-u="'+esc(u.id)+'" data-tag="'+esc(u.tag||"chg")+'"'+
+        (dfBlocks(u).length||/^cv:/.test(u.id)?' data-go="1"':'')+'>'+
+      '<div class="rvh"><span class="rvn">'+n+'</span><b>'+esc(t(u.label))+'</b>'+
+        /* "Header" and "Document" are the app's words; the rest is the CV's. */
+        (u.where?'<span class="rvw" data-noi18n>'+esc(/^(Header|Document)$/.test(u.where)?t(u.where):u.where)+'</span>':'')+'</div>'+
+      '<div class="rvx" data-noi18n>'+cvUnitHTML(u,true)+'</div>'+
+      '<div class="rva">'+acts+'</div></div>';
+  };
+  pane.innerHTML='<div class="df">'+
+    '<div class="dfhead"><h4>'+esc(units.length
+        ?t("{n} change(s) from {base}",{n:units.length,base})
+        :t("The same as {base}, word for word",{base}))+'</h4>'+
+      '<p class="muted2">'+(units.length
+        ?'<del class="rvd">'+esc(t("Struck through"))+'</del> '+esc(t("is what {base} says and this CV does not;",{base}))+' '+
+         '<ins class="rvi">'+esc(t("underlined"))+'</ins> '+esc(t("is what this CV says instead. Everything not listed here is word for word the same."))
+        :esc(t("Nothing has been tailored yet.")))+'</p>'+
+      (S.dirty?'<p class="dfwarn">'+esc(t("Your unsaved edits are not in this yet. Save (Ctrl S) to see them here."))+'</p>':'')+
+    '</div>'+
+    (units.length?'<div class="rvlist">'+units.map((u,i)=>card(u,i+1)).join("")+'</div>':'')+
+    (same.length&&units.length?'<details class="dfsame"><summary>'+
+        esc(t("{n} part(s) the same as {base}",{n:same.length,base}))+'</summary><ul>'+
+      same.map((x,i)=>'<li><button class="linkbtn" data-same="'+i+'" data-noi18n>'+esc(x.label)+'</button></li>').join("")+
+      '</ul></details>':'')+
+  '</div>';
+  pane.onclick=async e=>{
+    const b=e.target.closest("[data-df]");
+    if(b) return dfAct(b.dataset.df,b.dataset.id);
+    const s=e.target.closest("[data-same]");
+    if(s){ select(same[+s.dataset.same].sel); return }
+    const c=e.target.closest(".dfc[data-go]");
+    if(c&&!e.target.closest("button,a,summary")) dfGo(c.dataset.u);
+  };
+  pane.onmouseover=e=>{ const c=e.target.closest(".dfc"); dfHot(c&&c.dataset.u) };
+  pane.onmouseleave=()=>dfHot(null);
+}
+/* A card selects its block, which brings the page to it; a block on the
+   page brings its card into view. Either way the two light up together. */
+function dfGo(id){
+  const u=dfOn()&&DF.data.units.find(x=>x.id===id); if(!u) return;
+  const b=dfBlocks(u)[0];
+  if(!b) return;
+  select(b.k==="header"?{kind:"header"}:{kind:"entry",name:b.name,i:+b.i});
+  dfHot(id);
+}
+function dfHot(id){
+  $$("#pane-page .hit.hot,#pane-page .pgchg.hot,#pane-diff .dfc.hot").forEach(x=>x.classList.remove("hot"));
+  if(!id) return;
+  $$('#pane-diff .dfc[data-u="'+CSS.escape(id)+'"]').forEach(x=>x.classList.add("hot"));
+  $$('#pane-page [data-us~="'+CSS.escape(id)+'"]').forEach(x=>x.classList.add("hot"));
+}
+function dfCard(ids){
+  const id=(ids||"").split(" ")[0]; if(!id) return;
+  const c=$('#pane-diff .dfc[data-u="'+CSS.escape(id)+'"]'); if(!c) return;
+  c.scrollIntoView({block:"nearest",behavior:"smooth"});
+  c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash");
+}
+async function dfAct(kind,id){
+  if(S.dirty){ toast(t("Save your edits first (Ctrl S), then decide on the changes."),true); return }
+  if(kind==="keep"||kind==="undo") return cvRvDo([id],kind);
+  try{ await post("/api/basediff/revert",{path:S.path,ids:[id],sig:DF.data&&DF.data.sig}) }
+  catch(e){ toast(e.message,true); return loadDiff() }
+  toast(t("Put back as {base} has it",{base:baseName()}));
+  await reopenInPlace();
+  refreshDocBadges();
+}
+/* On the page: the changed blocks tinted, a number beside each matching its
+   card. Drawn over the PNG like the other marks, so nothing reaches the PDF. */
+function paintDiffMarks(wrap,leftPct,pageH){
+  if(!dfOn()) return;
+  const by=new Map();
+  DF.data.units.forEach((u,i)=>dfBlocks(u).forEach(b=>{
+    const id=dfBlockId(b);
+    if(!by.has(id)) by.set(id,{n:[],ids:[],tag:u.tag||"chg"});
+    const m=by.get(id); m.n.push(i+1); m.ids.push(u.id);
+    if(m.tag!==(u.tag||"chg")) m.tag="chg";
+  }));
+  wrap.querySelectorAll(".hit").forEach(el=>{
+    const m=by.get(el.dataset.k+"/"+el.dataset.name+"/"+el.dataset.i);
+    if(!m) return;
+    el.classList.add("dfchg"); el.dataset.dftag=m.tag; el.dataset.us=m.ids.join(" ");
+  });
+  const seen=new Set();
+  wrap.insertAdjacentHTML("beforeend",bandsOn(S.page).map(b=>{
+    const id=dfBlockId({k:b.k,name:b.name,i:b.i}), m=by.get(id);
+    if(!m||seen.has(id)) return "";
+    seen.add(id);
+    const top=(Math.max(14,Math.min(pageH,b.y0))/pageH)*100;
+    const n=m.n.length>3?m.n[0]+"–"+m.n[m.n.length-1]:m.n.join(",");
+    return '<span class="pgchg" aria-hidden="true" data-tag="'+esc(m.tag)+'" data-us="'+esc(m.ids.join(" "))+
+      '" style="top:'+top.toFixed(3)+'%;left:'+leftPct.toFixed(3)+'%">'+esc(n)+'</span>';
+  }).join(""));
+}
 
 /* =========================================================================
    Editor
@@ -4355,12 +4639,17 @@ function showTab(tab){
     x.setAttribute("aria-selected",String(x.dataset.tab===tab)));
   $("#pane-form").hidden=tab!=="form";
   $("#pane-yaml").hidden=tab!=="yaml";
+  $("#pane-diff").hidden=tab!=="diff";
   $("#split").hidden=tab==="page";
   if(tab==="yaml"){ paint(); markYamlSelection() }
   if(tab==="form") buildForm();   /* re-read the model, in case the page moved on */
+  if(tab==="diff"){ paintDiff(); loadDiff() }
+  cvRvBar();                      /* where its Review button goes depends on the tab */
   trackSelectionOnPage();         /* the selection may have moved while away */
   refit();                        /* the page just got a different amount of room */
-  setPref("tab",tab);
+  /* Not remembered: it only exists for a tailored CV, and the next document
+     opened may not be one. */
+  if(tab!=="diff") setPref("tab",tab);
 }
 $$("#edtabs button").forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
@@ -4682,7 +4971,12 @@ function paintHits(){
     /* Beside a form or the source, clicking a block is navigation: select()
        has already scrolled the left pane to it and marked it. */
     if(S.tab==="page") openEditor();
+    if(S.tab==="diff") dfCard(el.dataset.us);
   });
+  if(S.tab==="diff"){
+    wrap.onmouseover=e=>{ const h=e.target.closest(".hit.dfchg"); dfHot(h&&h.dataset.us.split(" ")[0]) };
+    wrap.onmouseleave=()=>dfHot(null);
+  }else{ wrap.onmouseover=null; wrap.onmouseleave=null }
   paintPageMarks(wrap,img,left);
 }
 
@@ -4708,9 +5002,10 @@ function bandProv(b){
   return provUnder(["cv","sections",b.name,b.i]);
 }
 function paintPageMarks(wrap,img,leftPct){
-  wrap.querySelectorAll(".pgmark").forEach(el=>el.remove());
+  wrap.querySelectorAll(".pgmark,.pgchg").forEach(el=>el.remove());
   if(!S.prov) return;
   const pageH=img.naturalHeight/2;
+  if(S.tab==="diff") return paintDiffMarks(wrap,leftPct,pageH);
   const seen=new Set();
   const html=bandsOn(S.page).map(b=>{
     const p=bandProv(b);

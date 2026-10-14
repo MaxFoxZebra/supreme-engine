@@ -8,7 +8,9 @@ all at once. What must hold: the first write's "before" survives later
 writes, a kept change stops being shown, an undone one is back as it was and
 nothing else moves, undoing everything gives back the file byte for byte, a
 letter the model created can be taken back, and a request made against a
-document that has since changed is refused.
+document that has since changed is refused. A CV the model tailored from the
+base is reviewed against the base as it copied it, each change kept or put back
+as the base has it, and undoing all of it leaves the copy rather than deleting it.
 """
 
 from __future__ import annotations
@@ -196,6 +198,88 @@ def main() -> int:
         out = studio.review_resolve(dest, ["*"], "undo", studio.review_payload(dest)["sig"])
         check("undoing it moves it to the trash", not dest.exists() and out.get("deleted"))
         check("and forgets it", review.pending(ws) == {}, repr(review.pending(ws)))
+
+        print("A CV the model tailored from the base")
+        cv.write_text(CV, encoding="utf-8")
+        tailored = ws / "profile" / "northwind.yaml"
+        as_ai("create_cv", lambda: mcp_server.create_cv("northwind", copy_from="profile/my-cv.yaml"))
+        r = studio.review_payload(tailored)
+        check("a copy not changed yet is a new document", ids(r) == ["created"] and r["base"] is None,
+              repr(r and ids(r)))
+        as_ai("edit_cv_fields", lambda: studio.apply_patches(tailored, [
+            {"path": ["cv", "headline"], "value": "Platform Lead"},
+            {"path": ["cv", "sections", "experience", 0, "highlights", 0],
+             "value": "Moved payments onto Kubernetes in six months"}]))
+        as_ai("write_cv", lambda: studio.apply_ops(tailored, [
+            {"op": "remove_entry", "section": "experience", "at": 1}]))
+        r = studio.review_payload(tailored)
+        tags = sorted((k.split(":")[0], u.get("tag")) for k, u in ((x["id"], x) for x in r["units"]))
+        check("compared with the base it was copied from, not with nothing",
+              r["created"] and r["base"] == "profile/my-cv.yaml"
+              and tags == [("cv", None), ("ent", "chg"), ("ent", "del")], repr(tags))
+        chg = next(u for u in r["units"] if u.get("tag") == "chg")
+        check("a reworded bullet carries what the base said",
+              chg["before"]["highlights"][0] == "Moved payments onto Kubernetes"
+              and chg["after"]["highlights"][0].endswith("in six months"))
+        d = studio.base_diff(tailored)
+        check("the Changes tab gets the same units",
+              [u["id"] for u in d["units"]] == ids(r) and d["sig"], repr([u["id"] for u in d["units"]]))
+        gone = next(u["id"] for u in r["units"] if u.get("tag") == "del")
+        studio.review_resolve(tailored, [gone], "undo", r["sig"])
+        check("undoing a removed entry puts the base's back",
+              "Globex" in tailored.read_text(encoding="utf-8"))
+        r = studio.review_payload(tailored)
+        studio.review_resolve(tailored, ["cv:headline"], "keep", r["sig"])
+        r = studio.review_payload(tailored)
+        check("a kept change stops being shown, the rest still are",
+              ids(r) == [chg["id"]] and not r["created"], repr(ids(r)))
+        try:
+            studio.base_revert(tailored, [chg["id"]], "stale0000000")
+            check("a stale revert is refused", False)
+        except ValueError:
+            check("a stale revert is refused", True)
+        d = studio.base_revert(tailored, [chg["id"]], studio.base_diff(tailored)["sig"])
+        text = tailored.read_text(encoding="utf-8")
+        check("reverting to the base puts its bullet back, and keeps the rest",
+              "in six months" not in text and "Platform Lead" in text
+              and [u["id"] for u in d["units"]] == ["cv:headline"], repr([u["id"] for u in d["units"]]))
+        check("and the comments survive", "# the one I use on LinkedIn" in text)
+        check("nothing of the model's is left to review", studio.review_payload(tailored) is None)
+
+        print("The base edited after the model copied it")
+        third = ws / "profile" / "initech.yaml"
+        as_ai("create_cv", lambda: mcp_server.create_cv("initech", copy_from="profile/my-cv.yaml"))
+        as_ai("edit_cv_fields", lambda: studio.apply_patches(third, [
+            {"path": ["cv", "headline"], "value": "SRE Lead"}]))
+        held = cv.read_text(encoding="utf-8")
+        cv.write_text(held.replace("Lyon, France", "Lyon"), encoding="utf-8")
+        r = studio.review_payload(third)
+        check("the model's changes are against the base as it copied it",
+              ids(r) == ["cv:headline"] and r["base"] == "profile/my-cv.yaml", repr(ids(r)))
+        check("while the Changes tab also shows what the base changed since",
+              sorted(u["id"] for u in studio.base_diff(third)["units"]) == ["cv:headline", "cv:location"])
+        cv.write_text(held, encoding="utf-8")
+
+        print("A copy recorded before the base was kept with it")
+        old = ws / "profile" / "hooli.yaml"
+        old.write_text(CV.replace("Staff Engineer", "Data Engineer"), encoding="utf-8")
+        studio.note_lineage(old, "profile/my-cv.yaml")
+        review.checkpoint(ws, "profile/hooli.yaml", None, by="claude", agent=None, tool="create_cv")
+        r = studio.review_payload(old)
+        check("is compared with the base as it is now",
+              ids(r) == ["cv:headline"] and r["base"] == "profile/my-cv.yaml", repr(ids(r)))
+
+        other = ws / "profile" / "globex.yaml"
+        as_ai("create_cv", lambda: mcp_server.create_cv("globex", copy_from="profile/my-cv.yaml"))
+        as_ai("edit_cv_fields", lambda: studio.apply_patches(other, [
+            {"path": ["cv", "location"], "value": "Paris, France"}]))
+        r = studio.review_payload(other)
+        out = studio.review_resolve(other, ["*"], "undo", r["sig"])
+        check("undoing all of a tailored copy puts the base back and keeps the copy",
+              other.exists() and not out.get("deleted")
+              and other.read_text(encoding="utf-8") == cv.read_text(encoding="utf-8"))
+        check("which is then a new document to keep or delete",
+              ids(studio.review_payload(other)) == ["created"])
 
         print("Only the app's own process writes nothing")
         studio.save_letter(lt, {"meta": {"place": "Nantes"}})

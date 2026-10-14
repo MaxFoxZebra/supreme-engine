@@ -1846,21 +1846,27 @@ def base_diff(path: Path) -> dict:
     written for one job should keep saying what it changed from what it was
     made from, even after another document becomes the base.
     """
-    doc = (_edits_read()["docs"].get(rel(path)) or {})
-    base_path = (doc.get("base") or {}).get("path")
-    out = {"base": base_path, "missing": False, "changes": [], "design": []}
+    base_path = doc_base(path)
+    out = {"base": base_path, "missing": False, "changes": [], "design": [],
+           "units": [], "sig": None}
     if not base_path:
         return out
     try:
-        mine = to_plain(yaml_rt.load(path.read_text(encoding="utf-8"))) or {}
-        theirs = to_plain(yaml_rt.load(
-            safe_path(base_path).read_text(encoding="utf-8"))) or {}
+        now = path.read_text(encoding="utf-8")
+        then = safe_path(base_path).read_text(encoding="utf-8")
+        mine = to_plain(yaml_rt.load(now)) or {}
+        theirs = to_plain(yaml_rt.load(then)) or {}
     except (OSError, ValueError):
         out["missing"] = True
         return out
     except Exception:
         # Unparseable mid-edit: say nothing rather than something wrong.
         return out
+    # The same units a review shows, so the Changes tab can draw each one
+    # whole -- an entry field by field, its bullets reworded, added, removed --
+    # and put the base's version of any one of them back.
+    out["units"] = review.cv_units(theirs, mine, entry_title)
+    out["sig"] = review.signature(then, now)
     for f in changed_fields(theirs.get("cv"), mine.get("cv"), ["cv"]):
         before, after = get_at(theirs, f), get_at(mine, f)
         out["changes"].append({
@@ -1871,6 +1877,31 @@ def base_diff(path: Path) -> dict:
     out["design"] = sorted({str(f[1]) for f in changed_fields(
         theirs.get("design"), mine.get("design"), ["design"]) if len(f) > 1})
     return out
+
+
+def base_revert(path: Path, ids: list, sig: str | None) -> dict:
+    """Put back what the base says for some of the ways a CV differs from it.
+
+    `ids` are units of base_diff. Everything else in the CV stays as it is,
+    comments included. Refused when the CV or its base changed since the
+    units were read, so an id never lands on a different entry.
+    """
+    base_path = doc_base(path)
+    if not base_path:
+        raise ValueError("This CV was not copied from another one.")
+    now = path.read_text(encoding="utf-8")
+    then = safe_path(base_path).read_text(encoding="utf-8")
+    if sig and sig != review.signature(then, now):
+        raise ValueError("The CV or the one it was copied from changed. "
+                         "The changes are shown again as they are now.")
+    units = review.cv_units(to_plain(yaml_rt.load(then)), to_plain(yaml_rt.load(now)),
+                            entry_title)
+    chosen = set(ids) & {u["id"] for u in units}
+    if chosen:
+        text, _ = review.cv_resolve(yaml_rt, to_plain, entry_title, then, now,
+                                    chosen, "undo")
+        write_doc(path, text, "revert")
+    return base_diff(path)
 
 
 # --------------------------------------------------------------------------
@@ -2247,27 +2278,72 @@ def review_units(path: Path, before: str | None, now: str) -> list[dict]:
                            entry_title)
 
 
-def review_payload(path: Path) -> dict | None:
-    """The changes waiting on this document, as units to keep or undo."""
-    e = review.entry(WORKSPACE, rel(path))
-    if not e:
-        return None
-    now = path.read_text(encoding="utf-8")
+def doc_base(path: Path) -> str | None:
+    """The document this one was copied from, as note_lineage recorded it."""
+    return ((_edits_read()["docs"].get(rel(path)) or {}).get("base") or {}).get("path")
+
+
+def review_before(path: Path, e: dict) -> tuple[str | None, str | None]:
+    """What a review compares the document with, and the base when it is one.
+
+    A CV an AI client made by copying the base had no text of its own before,
+    so compared with nothing, all a review could say was "Claude wrote this
+    CV": not one word of what it changed. It is a copy of the base, so the
+    base is what it is compared with -- every reworded bullet, every entry
+    added or taken out, each kept or undone on its own, undo putting back what
+    the base says.
+
+    The base as it was when the copy was made, which the MCP wrapper keeps:
+    an edit you make to the base afterwards is a difference the Changes tab
+    shows, but not a change of the model's. A copy recorded before that was
+    kept is compared with the base as it is now.
+    """
     before = e.get("before")
+    if not e.get("created") or is_letter(path):
+        return before, None
+    if before is not None:
+        return before, e.get("base")
+    base = doc_base(path)
+    if not base:
+        return None, None
+    try:
+        return safe_path(base).read_text(encoding="utf-8"), base
+    except (OSError, ValueError):
+        return None, None
+
+
+def _review_state(path: Path, e: dict, now: str) -> tuple[str | None, str | None, list]:
+    """(before, base, units) for a document with changes waiting."""
+    before, base = review_before(path, e)
     try:
         units = review_units(path, before, now)
     except Exception:
         # A file the model left unparseable is still reviewable, whole.
         units = [{"id": "all", "kind": "text", "label": "The whole file",
                   "before": before, "after": now}]
+    if base and not units:
+        # Copied and not changed yet: nothing differs from the base, but it is
+        # still a new document somebody else made.
+        before, base = None, None
+        units = review_units(path, None, now)
+    return before, base, units
+
+
+def review_payload(path: Path) -> dict | None:
+    """The changes waiting on this document, as units to keep or undo."""
+    e = review.entry(WORKSPACE, rel(path))
+    if not e:
+        return None
+    now = path.read_text(encoding="utf-8")
+    before, base, units = _review_state(path, e, now)
     if not units:
         # Everything it changed has been changed back, by hand or otherwise.
         review.clear(WORKSPACE, rel(path))
         return None
     return {"by": e.get("by"), "agent": e.get("agent"), "since": e.get("since"),
             "at": e.get("at"), "writes": e.get("writes"), "tools": e.get("tools") or [],
-            "created": bool(e.get("created")), "sig": review.signature(before, now),
-            "units": units}
+            "created": bool(e.get("created")), "base": base,
+            "sig": review.signature(before, now), "units": units}
 
 
 def review_resolve(path: Path, ids: list, action: str, sig: str | None) -> dict:
@@ -2279,7 +2355,7 @@ def review_resolve(path: Path, ids: list, action: str, sig: str | None) -> dict:
     if not e:
         return {"review": None}
     now = path.read_text(encoding="utf-8")
-    before = e.get("before")
+    before, base, units = _review_state(path, e, now)
     if sig and sig != review.signature(before, now):
         raise ValueError("The document changed while you were reviewing it. "
                          "The changes are shown again as they are now.")
@@ -2287,14 +2363,14 @@ def review_resolve(path: Path, ids: list, action: str, sig: str | None) -> dict:
         review.clear(WORKSPACE, rp)
         return {"review": None}
     if before is None:
+        # A document it made from nothing: taking it back is deleting it. One
+        # it copied from the base is compared with the base instead, so undoing
+        # all of it puts the base's text back and leaves the copy to keep or
+        # delete; "Delete it" in the app deletes the document itself.
         if action == "keep":
             review.clear(WORKSPACE, rp)
             return {"review": None}
         return {"review": None, "deleted": delete_document(rp)}
-    try:
-        units = review_units(path, before, now)
-    except Exception:
-        units = [{"id": "all"}]
     known = {u["id"] for u in units}
     chosen = known if "*" in ids or "all" in known else set(ids) & known
     if not chosen:
@@ -4279,6 +4355,12 @@ def openapi_spec() -> dict:
                 "parameters": [{"name": "path", "in": "query", "required": True,
                                 "schema": {"type": "string"}}],
                 "responses": ok}},
+            "/api/basediff/revert": {"post": {"summary":
+                "Put back what the base CV says for some of the ways a tailored CV differs from it",
+                "requestBody": body({"path": {"type": "string"},
+                                     "ids": {"type": "array", "items": {"type": "string"}},
+                                     "sig": {"type": "string"}}),
+                "responses": ok}},
             "/api/ats": {"post": {"summary":
                 "What an ATS reads from a CV's PDF, and which of a posting's keywords it uses",
                 "requestBody": body({"path": {"type": "string"},
@@ -5122,6 +5204,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json(ai_connect(payload.get("client", "")))
                 except (ValueError, OSError) as exc:
                     return self._json({"error": str(exc)}, 400)
+            if u.path == "/api/basediff/revert":
+                p = safe_path(payload["path"])
+                try:
+                    d = base_revert(p, list(payload.get("ids") or []), payload.get("sig"))
+                except ValueError as exc:
+                    return self._json({"error": str(exc), "diff": base_diff(p)}, 409)
+                return self._json({"ok": True, "diff": d, "doc": load_doc(p)})
             if u.path == "/api/review":
                 p = safe_path(payload["path"])
                 try:
@@ -5535,6 +5624,9 @@ const API_TOKEN=__API_TOKEN__;
             title="Fields on the left, the page on the right">Form</button>
           <button role="tab" data-tab="yaml" aria-selected="false"
             title="The source on the left, the page on the right">YAML</button>
+          <button role="tab" data-tab="diff" aria-selected="false" id="tab-diff" hidden
+            title="What this CV changed from the one it was copied from, beside the page"
+            >Changes<span class="tabn" id="tab-diff-n"></span></button>
         </div>
         <button class="prov" id="basechip" hidden></button>
         <button class="prov" id="provchip" hidden></button>
@@ -5559,6 +5651,9 @@ const API_TOKEN=__API_TOKEN__;
            hidden now; the tabs decide what stands beside it. -->
       <div class="panes" id="panes">
         <div class="pane pane-form" id="pane-form" hidden></div>
+        <!-- What a tailored CV changed from its base, every change written
+             out, the page beside it with the same numbers on its blocks. -->
+        <div class="pane pane-diff" id="pane-diff" hidden></div>
         <div class="pane pane-yaml" id="pane-yaml" hidden>
           <div class="yamlerr" id="yamlerr" hidden><span></span>
             <button type="button">Go to line</button></div>

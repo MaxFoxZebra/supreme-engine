@@ -458,7 +458,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .pane{min-height:0;overflow:auto}
 .pane-page{flex:1;min-width:0;display:grid;justify-items:center;align-content:start;
   padding:26px;--ed-room:406px}
-.pane-form,.pane-yaml{flex:none;width:var(--split);min-width:260px}
+.pane-form,.pane-yaml,.pane-diff{flex:none;width:var(--split);min-width:260px}
 /* A hairline you can actually hit: 1px of rule inside 7px of grab area, which
    is the difference between a divider that drags and one you chase. */
 .split{flex:none;width:7px;cursor:col-resize;touch-action:none;
@@ -493,6 +493,7 @@ body.dragging{cursor:col-resize;user-select:none}
 .hit.sel:hover{background:rgba(192,138,62,.21)}
 .hit:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .pane-form{background:var(--app);padding:16px 20px 40px}
+.pane-diff{background:var(--app);padding:16px 20px 40px}
 /* The pane is the whole width of the app now that the panel beside it is gone,
    and a start date stretched across a thousand pixels reads as a bug. Hold the
    form to a measure you can scan, the way the page tab holds a sheet. */
@@ -739,11 +740,11 @@ body.dragging{cursor:col-resize;user-select:none}
 .bdiff{font-size:12px;color:var(--t700);line-height:1.45}
 .bd-head{margin:0;display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
 .bd-head b{color:var(--t900);font-weight:600}
-.bd-design{font-size:11.5px;color:var(--t500)}
 .bd-list{list-style:none;margin:7px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
 .bd-list li{display:flex;flex-direction:column;gap:2px;padding-left:9px;
   border-left:2px solid var(--rule)}
 .bd-where{font-size:11.5px;color:var(--t500)}
+.bd-keys{color:var(--t700)}
 .bd-kind{font-style:normal;font-size:10.5px;color:var(--t600);background:var(--bar);
   border-radius:3px;padding:0 4px;margin-left:4px}
 .bdiff del{color:var(--t500);text-decoration:line-through;text-decoration-color:var(--t400)}
@@ -3487,3 +3488,48 @@ del.rvd+ins.rvi{margin-left:3px}
   .sc-body{grid-template-columns:1fr;overflow:auto}
   .sc-log{border-left:0;border-top:1px solid var(--rule)}
 }
+
+/* ---------- Changes: a tailored CV against its base -------------------------
+   The review's cards, every one of them, in the pane beside the page; the
+   page's changed blocks tinted with the card's number in the margin. Fixed
+   colours on the page, since the sheet is always paper. */
+#pane-diff>*{max-width:760px;margin-inline:auto}
+.df{display:flex;flex-direction:column;gap:14px}
+.dfhead{display:flex;flex-direction:column;gap:5px}
+.dfhead h4{font-size:14px;font-weight:600;color:var(--t900)}
+.dfhead p{margin:0;font-size:12px;line-height:1.5}
+.dfwarn{padding:7px 10px;border-radius:8px;background:var(--acc-wash);border-left:2px solid var(--acc);
+  color:var(--t800)}
+.dfc .rva{min-height:28px}
+.dfpend{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--t600)}
+.dfpend .rvlogo{width:13px;height:13px}
+.dfpend .rvlogo.dot{width:8px;height:8px;margin:0 2px}
+.dfc[data-tag=ins]{box-shadow:inset 3px 0 0 var(--rv-ins)}
+.dfc[data-tag=del]{box-shadow:inset 3px 0 0 var(--rv-del)}
+.dfc[data-tag=ins]:hover,.dfc[data-tag=ins].hot{box-shadow:inset 3px 0 0 var(--rv-ins),0 0 0 3px var(--acc-wash)}
+.dfc[data-tag=del]:hover,.dfc[data-tag=del].hot{box-shadow:inset 3px 0 0 var(--rv-del),0 0 0 3px var(--acc-wash)}
+.dfc:not([data-go]){cursor:default}
+.dfsame summary{cursor:pointer;font-size:12px;color:var(--t600)}
+.dfsame ul{list-style:none;margin:8px 0 0;padding:0 0 0 2px;display:flex;flex-direction:column;gap:5px}
+.dfsame .linkbtn{font-size:12px;font-weight:400;color:var(--t600);text-decoration:none;text-align:left}
+.dfsame .linkbtn:hover{color:var(--t900);text-decoration:underline}
+.tabn{margin-left:6px;padding:0 5px;border-radius:7px;background:var(--acc);color:#1b1a17;
+  font-size:10px;font-weight:600;line-height:14px;display:inline-block;vertical-align:1px}
+.tabn:empty{display:none}
+.hit.dfchg{background:rgba(216,168,106,.11);box-shadow:inset 3px 0 0 #d8a86a}
+.hit.dfchg[data-dftag=ins]{background:rgba(47,143,104,.08);box-shadow:inset 3px 0 0 #3f9f7b}
+.hit.dfchg:hover,.hit.dfchg.hot{background:rgba(216,168,106,.24)}
+.hit.dfchg.sel{box-shadow:inset 3px 0 0 var(--acc)}
+.pgchg{position:absolute;transform:translate(-140%,-1px);min-width:18px;height:18px;padding:0 5px;
+  border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:#1b1a17;
+  color:#f5f2ea;font:600 10.5px 'IBM Plex Sans',system-ui,sans-serif;line-height:1;pointer-events:none;
+  white-space:nowrap;transition:box-shadow .12s}
+.pgchg[data-tag=ins]{background:#1d6a4b}
+.pgchg.hot{box-shadow:0 0 0 3px rgba(216,168,106,.55)}
+.bd-open{display:block;margin-top:9px;font-size:12px}
+.rvx .rvkept{margin:6px 0 0;font-size:11.5px;color:var(--t500)}
+.rvx .rvkept::first-letter{text-transform:uppercase}
+/* a bullet's own mark says what happened to it, before the words do */
+.rvx li.ins::marker{color:var(--rv-ins)}
+.rvx li.del::marker{color:var(--rv-del)}
+.rvx li.chg::marker{color:var(--acc)}

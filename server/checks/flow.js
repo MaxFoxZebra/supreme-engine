@@ -179,6 +179,56 @@ design:
   check("Ctrl K opens search, and Enter opens what it found",
     r && r.open && /Qonto/.test(r.first || "") && r.closed && r.company === "Qonto", JSON.stringify(r));
 
+  /* Changes: a copy of the CV with one job retitled and another taken out
+     says exactly that beside the page, numbered on the page, and Undo puts
+     back what the base says. */
+  r = await evalJs(`(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    await post("/api/new", {name: "hard-tailored", from: "profile/hard.yaml"});
+    await post("/api/save", {path: "profile/hard-tailored.yaml",
+      patches: [{path: ["cv","sections","experience",2,"position"], value: "Staff Software Engineer"}],
+      ops: [{op: "remove_entry", section: "experience", at: 3}]});
+    const st = await api("/api/state"); S.state = st; renderDocs(st.documents);
+    await openDoc("profile/hard-tailored.yaml");
+    for (let i = 0; i < 40 && $("#tab-diff-n").textContent !== "2"; i++) await wait(250);
+    const tab = {shown: !$("#tab-diff").hidden, n: $("#tab-diff-n").textContent};
+    $("#tab-diff").click();
+    for (let i = 0; i < 40 && !document.querySelector("#pane-page .pgchg"); i++) await wait(250);
+    const cards = [...document.querySelectorAll("#pane-diff .dfc")];
+    const band = document.querySelector('#pane-page .hit.dfchg[data-name="experience"][data-i="2"]');
+    const removed = cards.find(c => c.dataset.tag === "del");
+    return {tab, labels: cards.map(c => c.querySelector(".rvh b").textContent),
+      words: (cards[0] && cards[0].querySelector(".rvx ins.rvi") || {}).textContent,
+      badges: document.querySelectorAll("#pane-page .pgchg").length,
+      tint: band ? getComputedStyle(band).backgroundColor : null,
+      removedOnPage: !!(removed && removed.dataset.go)};
+  })()`);
+  check("a copy of the base gets a Changes tab with how many there are",
+    r && r.tab && r.tab.shown && r.tab.n === "2", JSON.stringify(r && r.tab));
+  check("each change is a card, by what happened to it",
+    r && JSON.stringify(r.labels) === '["Changed","Removed"]', JSON.stringify(r && r.labels));
+  check("the words put in are marked", r && /Staff/.test(r.words || ""), r && r.words);
+  check("the changed block is tinted and numbered on the page",
+    r && r.badges === 1 && r.tint && r.tint !== "rgba(0, 0, 0, 0)" && !r.removedOnPage,
+    JSON.stringify(r));
+
+  r = await evalJs(`(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const card = [...document.querySelectorAll("#pane-diff .dfc")].find(c => c.dataset.tag !== "del");
+    card.querySelector('[data-df="revert"]').click();
+    for (let i = 0; i < 60 && $("#tab-diff-n").textContent !== "1"; i++) await wait(250);
+    const yaml = $("#yaml").value;
+    const left = document.querySelectorAll("#pane-diff .dfc").length;
+    $('#edtabs [data-tab="page"]').click();
+    await wait(300);
+    return {base: /position: Software Engineer/.test(yaml), still: /Staff Software/.test(yaml),
+      hooliGone: !/Hooli/.test(yaml), left, n: $("#tab-diff-n").textContent,
+      marksOff: !document.querySelector("#pane-page .pgchg")};
+  })()`);
+  check("Undo puts back what the base says, and only that",
+    r && r.base && !r.still && r.hooliGone && r.left === 1 && r.n === "1", JSON.stringify(r));
+  check("the numbers leave the page with the tab", r && r.marksOff);
+
   console.log(fails ? `\n${fails} failure(s)` : "\nall flows pass");
   ws.close(); process.exit(fails ? 1 : 0);
 }

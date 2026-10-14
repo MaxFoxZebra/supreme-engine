@@ -62,18 +62,23 @@ def stamp(ws: Path) -> float | None:
 
 
 def checkpoint(ws: Path, rel: str, before: str | None, *, by: str, agent: str | None,
-               tool: str) -> None:
+               tool: str, base: str | None = None) -> None:
     """Note that an AI client changed `rel`, which held `before` until now.
 
-    `before` is None for a document the client created. Only the first write
-    since the last review keeps its text; later ones only add to the count.
+    `before` is None for a document the client created, or, with `base`, the
+    text of the document it was copied from as it was then: a copy is new,
+    and what it changed is what it says that its base did not. Only the first
+    write since the last review keeps its text; later ones only add to the
+    count.
     """
     data = _read(ws)
     now = time.time()
     entry = data["docs"].get(rel)
     if entry is None:
-        entry = {"before": before, "created": before is None, "since": now,
+        entry = {"before": before, "created": before is None or bool(base), "since": now,
                  "writes": 0, "tools": []}
+        if base:
+            entry["base"] = base
         data["docs"][rel] = entry
     entry["at"] = now
     entry["by"] = by

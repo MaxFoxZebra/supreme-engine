@@ -120,7 +120,8 @@ named for you, the company and the role.
 **Documents** is the base CV and everything written from it. The **base CV** is
 the one every tailored copy starts from: an application with no CV offers one,
 and a click copies the base, names it after the company and role, attaches it
-and opens it. Every field you then change is marked as differing from the base.
+and opens it. Every field you then change is marked as differing from the base,
+and its **Changes** tab writes every difference out beside the page.
 With **CVs in more than one language** turned on (Settings → Language & region),
 the base has a tab per language, each saying what it is missing since the
 source changed. Cover letters are Markdown with a short header, printed in the
@@ -149,6 +150,7 @@ an entry in one view selects it in all of them.
 | | |
 |---|---|
 | **Page / Form / YAML** | The page on its own, or the page beside every field at once, or beside the raw file with syntax highlighting |
+| **Changes** | On a tailored CV, every way it differs from the base it was copied from, beside the page: a reworded bullet as the words taken out, struck through, and the words put in, underlined; an entry added or removed whole; each numbered, with the same number on the block it changed on the page. What is not listed is listed too, as the same word for word. Undo any one to put back what the base says |
 | **Add and remove** | Sections and entries, from the Form. Blank entries are built from RenderCV's own models, so a half-filled one still renders |
 | **Click the page** | Every block on the rendered page is a target: click the job you are reading and its fields open beside it, with `+` and `−` to add or drop a bullet |
 | **Page budget** | Page count, the word count an ATS reads, and how full the last page is, measured off the render |
@@ -158,7 +160,7 @@ an entry in one view selects it in all of them.
 | **When the model edits** | The app watches the files it has open. No unsaved work: it reloads and says so. Unsaved work: it asks, rather than saving over what the model wrote |
 | **What the model changed** | A mark beside every field it wrote, with what the line said before, and a second mark for every field that no longer matches the base. Neither is in the YAML, so neither prints |
 | **History** | Every version of the document, kept as it changes: when, and who made it (you, Claude, Codex, or an edit made outside CV Studio). Pick one to see what it changed, or how it differs from now, and restore it. A restore is a version of its own, so nothing in between is lost. Applications have the same, under *Every version* on the application |
-| **Review what it changed** | Until you have looked, a document an AI client wrote says so, on every list that shows it and in a bar over it. **Review changes** shows each change as the words it took out, struck through, and the words it put in, underlined: on a letter, marked on the page itself; on a CV, entry by entry. Keep or undo each one, or all of them. Undo puts back only what that change touched |
+| **Review what it changed** | Until you have looked, a document an AI client wrote says so, on every list that shows it and in a bar over it. **Review changes** shows each change as the words it took out, struck through, and the words it put in, underlined: on a letter, marked on the page itself; on a CV, entry by entry, and on a CV it tailored from the base, compared with the base, in the Changes tab. Keep or undo each one, or all of them. Undo puts back only what that change touched |
 
 **Funnel** is the whole search at a glance: sent, heard back, interviewed,
 offers and accepted, with the rate between each and the biggest drop marked.

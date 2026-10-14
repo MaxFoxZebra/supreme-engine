@@ -80,7 +80,8 @@ cover letter) through the app's API.
 Each `shot.js` argument is `name::javascript`: the script runs in the page,
 then the frame is saved as `name.png`. `flow.js` exercises clicking a block on
 the rendered page, the selection following into the other views, linking a CV to
-an application, and the document rail's grouping.
+an application, the document rail's grouping, and the Changes tab of a
+tailored CV: its cards, the numbers on the page, and Undo putting back the base.
 
 **Assert on computed style, not on class presence.** A class can be applied
 while its rule was discarded as malformed; that exact bug shipped once because a

@@ -8,6 +8,27 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- See exactly what a tailored CV changed from your base CV. A new
+  **Changes** tab, beside Page, Form and YAML, writes out every difference
+  next to the page: a reworded bullet shows the words taken out struck
+  through and the words put in underlined, an added or removed entry shows
+  whole, and each change has a number that is also on the block it changed
+  on the page. Everything not listed is listed too, as the same word for
+  word, so nothing is left to guess. **Undo** on any change puts back what
+  the base says.
+- A CV Claude tailored from your base no longer says only "Claude wrote
+  this CV". It is compared with the base, so the bar says what it changed,
+  and **See what changed** opens the Changes tab, where you keep or undo
+  each change. **Undo all** puts the base's text back; **Delete it** deletes
+  the copy.
+- When two bullets in a row were rewritten, a review could pair the wrong
+  old bullet with the wrong new one. Each removed bullet is now matched with
+  the new one that says nearly the same thing, or shown as removed.
+- An application's *Changed from the base* lists the same changes as the
+  Changes tab, with the same count.
+
 ## 0.48.0
 
 - Version history. Every version of every CV, letter and application is
