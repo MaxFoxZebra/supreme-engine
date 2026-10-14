@@ -8949,7 +8949,7 @@ const rgbOf=v=>(/(\d+)\D+(\d+)\D+(\d+)/.exec(v||"")||[0,0,0,0]).slice(1).map(Num
 const near=(a,b)=>{ const x=rgbOf(a),y=rgbOf(b); return Math.max(...x.map((v,i)=>Math.abs(v-y[i])))<40 };
 /* What an ATS reads cleanly, applied to a theme you switch to unless the
    document already says otherwise: new CVs carry these already. Icons are
-   pictures in every theme, not text, so each theme keeps its own choice. */
+   pictures in every theme, not text, so an ATS has no say in them. */
 const ATS_SAFE=[[["header","connections","display_urls_instead_of_usernames"],true],
   [["sections","show_time_spans_in"],[]],[["typography","alignment"],"left"],
   [["page","show_top_note"],false],[["page","show_footer"],false]];
@@ -8966,13 +8966,20 @@ function inkNow(theme){
   const r=dzRow(["colors",accentKey(theme)]);
   return r&&S.schemaTheme===theme?rowValue(r):TH_INK[theme]||"";
 }
+/* The icons in the contact line go with you to the next theme, whichever
+   way they were. Left to each theme's own default, picking Timeline after
+   Vivid took them off a CV that had them, and nothing on screen said they
+   were a setting rather than something the new theme could not draw. */
+const ICONS=["header","connections","show_icons"];
 async function pickTheme(theme,ink){
   const cur=DZ.theme||(S.state.themes||[])[0];
   if(theme!==cur){
+    const had=dzRow(ICONS), icons=had?rowValue(had):undefined;
     DZ.theme=theme; S.schema=null;
     await ensureSchema(); paintAdvanced();
     const saved=(S.data&&S.data.design)||{};
     ATS_SAFE.forEach(([p,v])=>{ const r=dzRow(p); if(r&&getAt(saved,p)===undefined) setRow(r,v) });
+    const ir=dzRow(ICONS); if(ir&&icons!==undefined) setRow(ir,icons);
     setTimeout(fillThemePreviews,0);
   }
   if(ink!==undefined) inkKeys(theme).forEach(k=>{ const r=dzRow(["colors",k]);

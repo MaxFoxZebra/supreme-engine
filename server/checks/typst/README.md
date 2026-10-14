@@ -10,6 +10,12 @@ the last shape before RenderCV unified its themes onto one template, which a
 developer gets from an unpinned `uv pip install "rendercv[full]"` on Python
 3.11.
 
+`studio/` is CV Studio's own themes on 2.8, which add a preamble of their own
+above the name: Crisp, Ledger and Timeline once lost every click target to a
+`#let` in it whose closing `})` was indented. Duo and Sidebar are left out:
+they move some sections into a side column, and cv_map declines to map a page
+whose headings do not match the YAML in order, rather than guess.
+
 To regenerate, render this CV with each theme and copy the `.typ` out of the
 output folder:
 

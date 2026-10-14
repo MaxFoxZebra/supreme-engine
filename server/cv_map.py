@@ -93,6 +93,7 @@ def _inject(source: str) -> tuple[str, list[dict]]:
     out: list[str] = [HELPER]
     probes: list[dict] = []
     depth = 0            # open parens across column-0 lines
+    begun = False        # past the theme's preamble, at the `= ` heading
     in_block = False     # inside a run of lines forming one block
     section = -1         # index into the YAML's section order
     entry = 0
@@ -117,9 +118,11 @@ def _inject(source: str) -> tuple[str, list[dict]]:
                 # compile -- taking every click target on the page with it.
                 pass
             elif not indented and line.startswith("= "):
+                begun = True
                 probe("header")
                 in_block = opens = True
             elif not indented and line.startswith("== "):
+                begun = True     # a theme that prints the name some other way
                 section += 1
                 entry = 0
                 probe("section", s=section)
@@ -154,7 +157,11 @@ def _inject(source: str) -> tuple[str, list[dict]]:
         # block at all but the middle of a `#show` rule -- counting its `(`
         # without ever seeing the matching `)` left depth stuck open and the
         # document with no probes whatsoever.
-        if not indented or (opens and section >= 0):
+        # Nor any line of the preamble at all: nothing in it is probed, and a
+        # theme's own `#let x(body) = block(` at column 0 closes with an
+        # indented `})`, which left depth open at the name and every page of
+        # Crisp, Duo, Timeline and Ledger without a single click target.
+        if begun and (not indented or (opens and section >= 0)):
             depth = max(0, depth + line.count("(") - line.count(")"))
 
     return "\n".join(out) + "\n", probes

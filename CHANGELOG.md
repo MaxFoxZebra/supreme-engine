@@ -8,6 +8,17 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- Changing theme no longer takes the icons off your contact line. Whether
+  the icons show is now your choice and stays the same from theme to
+  theme. Before, picking Timeline, Swiss or another theme whose own default
+  is no icons quietly removed them. Turn them on or off under *Design →
+  Header → Show icons*.
+- The page is clickable again on the Crisp, Ledger and Timeline themes.
+  Clicking a block to edit it did nothing on those themes, and the Changes
+  tab couldn't number their blocks.
+
 ## 0.49.0
 
 - See exactly what a tailored CV changed from your base CV. A new

@@ -229,6 +229,30 @@ design:
     r && r.base && !r.still && r.hooliGone && r.left === 1 && r.n === "1", JSON.stringify(r));
   check("the numbers leave the page with the tab", r && r.marksOff);
 
+  /* The contact icons go with the CV to another theme: Timeline's own
+     default is none, and switching to it used to take them away. */
+  r = await evalJs(`(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const icons = () => { const row = dzRow(["header","connections","show_icons"]); return row ? rowValue(row) : null };
+    $("#btn-design").click();
+    for (let i = 0; i < 40 && !dzRow(["header","connections","show_icons"]); i++) await wait(250);
+    const before = icons();
+    await pickTheme("timeline");
+    const kept = icons();
+    await save();
+    const yaml = $("#yaml").value;
+    const row = dzRow(["header","connections","show_icons"]);
+    row.querySelector("[data-d]").click();
+    await pickTheme("vivid");
+    const off = icons();
+    closeOverlays();
+    return {before, kept, off, theme: /theme: timeline/.test(yaml), saved: /show_icons: true/.test(yaml)};
+  })()`);
+  check("icons shown before a theme switch are shown after it, and saved",
+    r && r.before === true && r.kept === true && r.theme && r.saved, JSON.stringify(r));
+  check("and icons turned off stay off in the next theme, whose default is on",
+    r && r.off === false, JSON.stringify(r));
+
   console.log(fails ? `\n${fails} failure(s)` : "\nall flows pass");
   ws.close(); process.exit(fails ? 1 : 0);
 }
