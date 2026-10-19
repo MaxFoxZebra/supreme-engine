@@ -37,6 +37,7 @@ from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource, I
 
 import ats
 import cjkfonts
+import greypng
 import marks
 import review
 import studio
@@ -1010,26 +1011,37 @@ def _typst_setup(p: Path, letter: bool) -> tuple[list, dict]:
 # heading left at the foot of a page, a near-empty last page, a line that
 # wraps badly) and to read the text, at about half the tokens of the view's
 # 144 ppi page: an image is paid for by its pixels, every turn it stays in
-# the conversation.
+# the conversation. In sixteen greys, a quarter of the colour page's size: a
+# result over about 150,000 characters reaches Claude as a file when code
+# execution is on, and its view is then never shown (see greypng). A page
+# still over MODEL_IMAGE_MAX in base64 is made again at MODEL_PPI_SMALL.
 MODEL_PPI = 96
+MODEL_PPI_SMALL = 72
+MODEL_IMAGE_MAX = 100_000
 
 
 def _model_image(p: Path, letter: bool, typ: Path | None, idx: int, full: Path) -> ImageContent:
-    """Page `idx` for the model, at MODEL_PPI; the view's own page if the
-    smaller one cannot be made."""
+    """Page `idx` for the model, at MODEL_PPI and in grey; the view's own
+    page if the smaller one cannot be made."""
     data = None
     if typ is not None and typ.is_file():
         try:
             import typst
             fonts, extra = _typst_setup(p, letter)
-            out = typst.compile(str(typ), format="png", ppi=MODEL_PPI, root=str(typ.parent),
-                                font_paths=fonts, **extra)
-            out = out if isinstance(out, list) else [out]
-            data = out[idx] if idx < len(out) else None
+            for ppi in (MODEL_PPI, MODEL_PPI_SMALL):
+                out = typst.compile(str(typ), format="png", ppi=ppi, root=str(typ.parent),
+                                    font_paths=fonts, **extra)
+                out = out if isinstance(out, list) else [out]
+                if idx >= len(out):
+                    break
+                data = greypng.grey16(out[idx]) or out[idx]
+                if len(data) * 4 // 3 < MODEL_IMAGE_MAX:
+                    break
         except Exception:
-            data = None
+            pass
     if data is None:
         data = full.read_bytes()
+        data = greypng.grey16(data) or data
     return ImageContent(type="image", data=base64.b64encode(data).decode("ascii"), mime_type="image/png")
 
 
@@ -1203,7 +1215,8 @@ def render_cv(path: str, page: int = 1) -> CallToolResult:
 
     Returns the page count, the word count an ATS would extract, the PDF's
     location, and an image of the requested page. Check the image before
-    reporting success: page-break damage does not show up in the YAML.
+    reporting success: page-break damage does not show up in the YAML. The
+    image is in grey to keep it small; the PDF and the view keep the colours.
 
     Make every edit a request needs first, then render once: in a client
     that shows views each render adds the page to the conversation.

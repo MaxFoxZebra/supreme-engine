@@ -505,6 +505,25 @@ async function main() {
     JSON.stringify({frame: widths, sent: sent.slice(0, 6)}));
   b2.close();
 
+  console.log("A long CV");
+  /* Claude passes a tool result over about 150,000 characters on only as a
+     file when code execution is on, and the view bound to it then never gets
+     its data: all that showed was the page image's thumbnail. A dense page in
+     colour made 200,000 to 250,000. */
+  await c.send("tools/call", {name: "create_cv", arguments: {name: "long"}});
+  const jobs = Array.from({length: 16}, (_, i) => ({company: `Company ${i}`, position: `Senior Engineer ${i}`,
+    location: "Paris, France", start_date: "2010-01", end_date: "2011-01", highlights: [
+      `Shipped project ${i} alpha, a long line of text about what changed, who it served and how it was measured over two quarters.`,
+      `Led project ${i} beta with four engineers, from the first prototype to production, cutting response time by 40%.`,
+      `Built the tooling for project ${i} gamma: tests, dashboards and alerts that the on-call team still uses.`]}));
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: "profile/long.yaml",
+    edits: [{path: ["cv", "sections", "experience"], value: jobs}]}});
+  const long = (await c.send("tools/call", {name: "render_cv", arguments: {path: "profile/long.yaml"}})).result;
+  const size = JSON.stringify(long).length;
+  check("a dense page's render stays well under what Claude takes in a conversation",
+    !long.isError && long.structuredContent && long.structuredContent.pages >= 3 && size < 100000,
+    long.isError ? textOf(long).slice(0, 200) : `${size} chars, ${long.structuredContent && long.structuredContent.pages} pages`);
+
   b.close(); srv.close(); c.close();
   console.log();
   console.log(fails ? `${fails} failure(s)` : "every page view check passes");

@@ -14,6 +14,11 @@ tag, so a release is never published with nothing said about it.
   you only saw a small thumbnail of the page next to the tool call. CV
   Studio's connector now tells Claude it has views, which Claude needs
   before it shows one. The job search views come back too.
+- A full CV page shows in the chat too, with Claude's code execution on. The
+  picture of the page that Claude looks at was too large for Claude to keep
+  in the conversation, so the page you can edit never appeared. Claude now
+  gets that picture in grey, a quarter of the size; your CV, its PDF and the
+  page you see keep their colours.
 - Claude shows your CV on CV Studio's page whenever you ask to see it, in
   whatever words (the page, the render, the full view), and no longer tries
   a PDF viewer or other tools instead. The page's own button opens it full

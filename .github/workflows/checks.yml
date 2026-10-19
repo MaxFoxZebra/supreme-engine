@@ -49,9 +49,10 @@ jobs:
           pip install --only-binary=:all: cryptography
           pip install "rendercv[full]==2.8" "ruamel.yaml==0.19.1" "mcp==2.2.0" \
             "pypdf==6.19.0" "tzdata==2026.4"
-          # For the checks only: phototest makes its test JPEGs with it, and
-          # themetest reads PDFs by position the way some ATS do. The app
-          # itself is built without either.
+          # For the checks only: phototest makes its test JPEGs with it,
+          # greytest reads the model's page image back with it, and themetest
+          # reads PDFs by position the way some ATS do. The app itself is
+          # built without either.
           pip install pillow "pdfminer.six==20260107"
 
       - name: Scripts parse
@@ -77,6 +78,9 @@ jobs:
 
       - name: Photo
         run: python checks/phototest.py
+
+      - name: The page image the model gets
+        run: python checks/greytest.py
 
       - name: The page map
         run: python checks/maptest.py

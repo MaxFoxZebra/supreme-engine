@@ -208,6 +208,7 @@ jobs:
             --hidden-import marks \
             --hidden-import scans \
             --hidden-import history \
+            --hidden-import greypng \
             --exclude-module PIL \
             --paths . \
             server_main.py
