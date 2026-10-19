@@ -83,8 +83,10 @@ const THEMES = {
    height (fullscreen), caps (host capabilities), styled (send the theme's
    variables), proxy (where the page's server takes the view's tool calls),
    modes (the display modes the host offers), locale and timeZone, partials
-   (the tool's input as it streams in, sent before the whole of it) and delay
-   (ms before the result, as a render takes). */
+   (the tool's input as it streams in, sent before the whole of it), delay
+   (ms before the result, as a render takes) and fit (a client that sizes the
+   frame to every size-changed, width included, up to fit.maxHeight: what the
+   spec has a client with a flexible width do). */
 /* A pinned view's frame: a small window beside the chat. */
 const PIP = {width: 360, height: 520};
 
@@ -93,7 +95,8 @@ function hostPage(view, args, result, opts = {}) {
   const width = opts.width || 720, height = opts.height || 820;
   const caps = opts.caps || {message: {text: {}}, updateModelContext: {text: {}}, serverTools: {}, downloadFile: {}};
   const ctx = {theme, displayMode: mode, availableDisplayModes: opts.modes || ["inline", "fullscreen"],
-    containerDimensions: mode === "fullscreen" ? {width, height} : mode === "pip" ? PIP : {width, maxHeight: 2400},
+    containerDimensions: mode === "fullscreen" ? {width, height} : mode === "pip" ? PIP
+      : opts.fit ? {maxWidth: width, maxHeight: opts.fit.maxHeight} : {width, maxHeight: 2400},
     ...(opts.locale ? {locale: opts.locale} : {}), ...(opts.timeZone ? {timeZone: opts.timeZone} : {}),
     styles: opts.styled === false ? undefined : {variables: THEMES[theme]}, platform: "desktop"};
   /* The chat's own background, which is the colour the view is told is
@@ -123,7 +126,10 @@ window.addEventListener("message", e => {
       if (result) await later(${js(opts.delay || 0)}, () => post({method: "ui/notifications/tool-result", params: result}));
     })();
   } else if (m.method === "ui/notifications/size-changed") {
-    if (ctx.displayMode === "inline") f.style.height = m.params.height + "px";
+    if (ctx.displayMode === "inline" && ${js(!!opts.fit)}) {
+      if (m.params.width != null) f.style.width = Math.min(m.params.width, ${js(width)}) + "px";
+      f.style.height = Math.min(m.params.height, ${js((opts.fit || {}).maxHeight || 0)}) + "px";
+    } else if (ctx.displayMode === "inline") f.style.height = m.params.height + "px";
   } else if (m.method === "tools/call") {
     /* As Claude does: the view's tool calls go to the server, through the
        page that serves this (opts.proxy), and come back as the view's answer. */
@@ -144,7 +150,9 @@ f.srcdoc = view;
 
 /* Chrome over the DevTools protocol: the one on PORT if there is one,
    else a headless one started here. */
-async function browser(PORT = 9333, size = "1500,1300") {
+/* scrollbars: draw them, taking room as they do on Windows, rather than
+   hiding them as a check otherwise does; only for a Chrome started here. */
+async function browser(PORT = 9333, size = "1500,1300", scrollbars = false) {
   const fs = require("fs"), os = require("os");
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const list = async () => { try { return await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json(); }
@@ -155,7 +163,7 @@ async function browser(PORT = 9333, size = "1500,1300") {
       "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find(f => fs.existsSync(f));
     spawn(chrome, [`--remote-debugging-port=${PORT}`, "--headless=new", "--disable-gpu", "--no-sandbox",
-      "--hide-scrollbars", `--window-size=${size}`,
+      ...(scrollbars ? [] : ["--hide-scrollbars"]), `--window-size=${size}`,
       `--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), "view-"))}`, "about:blank"],
       {detached: true, stdio: "ignore"}).unref();
     for (let i = 0; i < 40 && !pages; i++) { await sleep(400); pages = await list(); }

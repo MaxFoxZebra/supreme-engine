@@ -8,6 +8,14 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- The CV page in the chat is full size again. In Claude on Windows it kept
+  shrinking until it was a small thumbnail beside the answer. Each time the
+  page told Claude its size, it left out the scrollbar's width, and Claude
+  made the frame that much narrower, again and again. The job views had the
+  same problem and are fixed too.
+
 ## 0.49.1
 
 - Changing theme no longer takes the icons off your contact line. Whether

@@ -1722,12 +1722,35 @@ window.cvsI18n = (function () {
     }
   });
 
-  /* The client sizes the frame to what is in it. */
-  new ResizeObserver(() => {
-    if (docked()) return;
-    const r = document.documentElement.getBoundingClientRect();
-    notify("ui/notifications/size-changed", {width: Math.ceil(r.width), height: Math.ceil(r.height)});
-  }).observe(document.documentElement);
+  /* The client sizes the frame to what is in it, measured as the MCP Apps SDK
+     measures: the height the content takes, and the frame's own width. Not
+     the page's box: that excludes a scrollbar, so in a client that applies
+     the width it reports (as the spec has a client with a flexible width do)
+     each report came back a scrollbar narrower than the frame -- 720, 705,
+     690... -- and the CV shrank to a stamp beside the chat, on Windows, where
+     scrollbars take room. */
+  let lastW = 0, lastH = 0, queued = false;
+  const sendSize = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      /* Full screen and pinned are the client's size; the first report back
+         inline is always sent. */
+      if (docked()) { lastW = lastH = 0; return; }
+      const html = document.documentElement, was = html.style.height;
+      html.style.height = "max-content";
+      const height = Math.ceil(html.getBoundingClientRect().height);
+      html.style.height = was;
+      const width = Math.ceil(window.innerWidth);
+      if (width === lastW && height === lastH) return;
+      lastW = width; lastH = height;
+      notify("ui/notifications/size-changed", {width, height});
+    });
+  };
+  const sizer = new ResizeObserver(sendSize);
+  sizer.observe(document.documentElement);
+  sizer.observe(document.body);
 
   request("ui/initialize", {
     appInfo: {name: "CV Studio page", version: "4"},

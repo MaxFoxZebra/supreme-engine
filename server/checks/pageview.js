@@ -481,6 +481,21 @@ async function main() {
   const asked = await b.evalJs(`LOG.filter(m=>m.method==="ui/message").map(m=>m.params.content[0].text).pop()||""`);
   check("which Claude is asked for in the chat", asked.includes(cvPath) && /again/.test(asked), asked);
 
+  console.log("A client that sizes the frame to the view, width included");
+  /* Its own Chrome, with scrollbars that take room: hidden ones are why this
+     passed while the page shrank to a stamp in Claude on Windows. */
+  const b2 = await browser(9477, "1100,1000", true);
+  fs.writeFileSync(hostFile, hostPage(item.text, {path: cvPath}, again, {width: 720, fit: {maxHeight: 640}}));
+  await b2.send("Page.navigate", {url: `http://127.0.0.1:${srv.address().port}/`});
+  const widths = [];
+  for (let i = 0; i < 8; i++) { await sleep(400);
+    widths.push(await b2.evalJs(`document.getElementById("v").offsetWidth`)); }
+  const sent = await b2.evalJs(`LOG.filter(m=>m.method==="ui/notifications/size-changed").map(m=>m.params.width)`);
+  check("the page keeps the width it is given, scrollbar and all",
+    widths.every(w => w === 720) && sent.length > 0 && sent.every(w => w === 720),
+    JSON.stringify({frame: widths, sent: sent.slice(0, 6)}));
+  b2.close();
+
   b.close(); srv.close(); c.close();
   console.log();
   console.log(fails ? `${fails} failure(s)` : "every page view check passes");

@@ -852,10 +852,27 @@ window.cvsI18n = (function () {
     } catch (e) { /* the client said no */ }
   }
 
-  new ResizeObserver(() => {
-    const r = document.documentElement.getBoundingClientRect();
-    notify("ui/notifications/size-changed", {width: Math.ceil(r.width), height: Math.ceil(r.height)});
-  }).observe(document.documentElement);
+  /* Measured as the MCP Apps SDK measures: the content's height and the
+     frame's own width. The page's box excludes a scrollbar, and a client that
+     applies the width it is sent narrowed the frame by one each time. */
+  let lastW = 0, lastH = 0, queued = false;
+  const sizer = new ResizeObserver(() => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      const html = document.documentElement, was = html.style.height;
+      html.style.height = "max-content";
+      const height = Math.ceil(html.getBoundingClientRect().height);
+      html.style.height = was;
+      const width = Math.ceil(window.innerWidth);
+      if (width === lastW && height === lastH) return;
+      lastW = width; lastH = height;
+      notify("ui/notifications/size-changed", {width, height});
+    });
+  });
+  sizer.observe(document.documentElement);
+  sizer.observe(document.body);
 
   request("ui/initialize", {
     appInfo: {name: "CV Studio job search", version: "1"},
