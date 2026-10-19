@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.49.2
 
 - The CV page in the chat is full size again. In Claude on Windows it kept
   shrinking until it was a small thumbnail beside the answer. Each time the
