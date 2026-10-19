@@ -80,9 +80,28 @@ apps.add_html_resource(
     description="How the job search is going, and one application as a card: "
                 "click through from a number to the applications behind it.")
 
+# Views are negotiated: the client says it can show them, and the server says
+# it has them, under capabilities.extensions. The SDK puts the server's half
+# there and then drops it again on the way out to a client on a 2025 protocol
+# version, whose schema has no `extensions` field. Claude connects on one, and
+# without it shows no view: render_cv answered, the page image's thumbnail
+# sat in the tool call, and the page itself never appeared. So it is said
+# again here, after the SDK has shaped the answer.
+UI_EXTENSION = {"io.modelcontextprotocol/ui": {"mimeTypes": ["text/html;profile=mcp-app"]}}
+
+
+async def _declare_views(ctx, call_next):
+    result = await call_next(ctx)
+    if ctx.method == "initialize" and isinstance(result, dict):
+        caps = result.setdefault("capabilities", {})
+        caps["extensions"] = {**(caps.get("extensions") or {}), **UI_EXTENSION}
+    return result
+
+
 mcp = MCPServer(
     name="cv-studio",
     extensions=[apps],
+    middleware=[_declare_views],
     title="CV Studio",
     version=studio.VERSION,
     website_url="https://github.com/MaxFoxZebra/supreme-engine",
@@ -97,6 +116,9 @@ mcp = MCPServer(
         "After editing, always call render_cv and look at the returned page "
         "image before telling the user it is done. Page-break problems are "
         "invisible in the source.\n\n"
+        "To show the user a CV or a letter, call render_cv: in a client that "
+        "shows views, that is the page they can click to edit and open full "
+        "screen. Never open the PDF with another tool to show it.\n\n"
         "You can also keep the user's job applications up to date. If you have "
         "access to their mail or calendar, those are read-only sources: read "
         "them, and write what you learn in here. Never write anything back to "
@@ -1191,6 +1213,12 @@ def render_cv(path: str, page: int = 1) -> CallToolResult:
     their message names the block and its place in the YAML. They can also
     keep or undo each change you made, from the page; you are told when
     they undo one, and should not make that change again unless asked.
+
+    To show the user a CV or a letter, whatever they call it (the page, the
+    render, the full view, the PDF), call this: the page it shows is the one
+    they can click to edit, and its own button opens it full screen. Never
+    show it through another tool (a PDF viewer, the file system, a shell):
+    that is a picture they cannot edit.
     """
     return _render(path, page, _shows_views())
 

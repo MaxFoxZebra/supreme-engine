@@ -8,6 +8,17 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- The CV page shows in the chat again. Claude had stopped showing it, and
+  you only saw a small thumbnail of the page next to the tool call. CV
+  Studio's connector now tells Claude it has views, which Claude needs
+  before it shows one. The job search views come back too.
+- Claude shows your CV on CV Studio's page whenever you ask to see it, in
+  whatever words (the page, the render, the full view), and no longer tries
+  a PDF viewer or other tools instead. The page's own button opens it full
+  screen.
+
 ## 0.49.2
 
 - The CV page in the chat is full size again. In Claude on Windows it kept

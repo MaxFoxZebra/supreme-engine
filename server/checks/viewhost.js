@@ -48,11 +48,13 @@ function mcp(workspace) {
   };
 }
 
-async function session(workspace, withApps = true) {
+/* version: the protocol version the client asks for. c.init is the
+   server's answer to the handshake. */
+async function session(workspace, withApps = true, version = "2025-06-18") {
   const c = mcp(workspace);
-  await c.send("initialize", {protocolVersion: "2025-06-18",
+  c.init = (await c.send("initialize", {protocolVersion: version,
     capabilities: withApps ? {extensions: APPS} : {},
-    clientInfo: {name: "claude-ai", version: "1"}});
+    clientInfo: {name: "claude-ai", version: "1"}})).result;
   await c.send("notifications/initialized", {}, true);
   return c;
 }

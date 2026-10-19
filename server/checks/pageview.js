@@ -25,6 +25,15 @@ async function main() {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "pv-ws-"));
   console.log("The connector, to a client that shows views");
   const c = await session(ws, true);
+  /* Without its half of the negotiation Claude shows no view at all, only
+     the page image's thumbnail in the tool call. The SDK drops it from the
+     answer to a 2025 protocol version; the connector puts it back. */
+  const says = init => !!((((init || {}).capabilities || {}).extensions || {})["io.modelcontextprotocol/ui"]);
+  check("the connector says it has views (MCP Apps), on the handshake Claude uses",
+    says(c.init), JSON.stringify((c.init || {}).capabilities));
+  const c3 = await session(ws, true, "2025-11-25");
+  check("and on the later 2025 one", says(c3.init), JSON.stringify((c3.init || {}).capabilities));
+  c3.close();
   const tools = (await c.send("tools/list", {})).result.tools;
   const rc = tools.find(t => t.name === "render_cv");
   const uri = rc && rc._meta && rc._meta.ui && rc._meta.ui.resourceUri;
