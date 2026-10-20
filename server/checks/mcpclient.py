@@ -286,6 +286,14 @@ if __name__ == "__main__":
 
     r = call("set_job_status", {"job_id": job_id, "status": "not_a_status"})
     check("an invented status is refused", errored(r))
+    r = call("set_job_status", {"job_id": job_id, "status": ""})
+    check("and an empty one, which the store took for Draft", errored(r))
+
+    (ws / "letters").mkdir(exist_ok=True)
+    (ws / "letters" / "probe.md").write_text("---\ncompany: Probe\n---\nDear team,\n", encoding="utf-8")
+    r = call("update_job_tracking", {"job_id": job_id, "letter_path": "letters/probe.md"})
+    check("a cover letter can be put on an application", not errored(r)
+          and json.loads(text(r)).get("letter_path") == "letters/probe.md", text(r)[:160])
 
     r = call("update_job_tracking", {"job_id": job_id,
                                      "interview_at": "2099-01-02T14:00:00",

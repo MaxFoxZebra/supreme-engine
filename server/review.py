@@ -380,12 +380,21 @@ def cv_units(before: dict | None, now: dict | None, entry_title) -> list[dict]:
     return units
 
 
-def _set(mapping, key, value) -> None:
+def _set(mapping, key, value, order=None) -> None:
+    """Set or remove `key`. One put back goes where it stood in `order`,
+    the side it comes from: after the nearest key before it that is still
+    there, not at the end (a section undone would move below the others)."""
     if value is None:
         if key in mapping:
             del mapping[key]
-    else:
+        return
+    keys = list(order or [])
+    if key in mapping or key not in keys or not hasattr(mapping, "insert"):
         mapping[key] = copy.deepcopy(value)
+        return
+    here = list(mapping)
+    pos = next((here.index(k) + 1 for k in reversed(keys[:keys.index(key)]) if k in here), 0)
+    mapping.insert(pos, key, copy.deepcopy(value))
 
 
 def cv_resolve(yaml_rt, to_plain, entry_title, before: str, now: str, ids: set,
@@ -400,13 +409,13 @@ def cv_resolve(yaml_rt, to_plain, entry_title, before: str, now: str, ids: set,
     for uid in ids:
         kind, _, rest = uid.partition(":")
         if kind == "top":
-            _set(dst, rest, src.get(rest))
+            _set(dst, rest, src.get(rest), src)
         elif kind == "cv":
-            _set(dst["cv"], rest, (src.get("cv") or {}).get(rest))
+            _set(dst["cv"], rest, (src.get("cv") or {}).get(rest), src.get("cv"))
         elif kind == "sec":
             if dst["cv"].get("sections") is None:
                 dst["cv"]["sections"] = {}
-            _set(dst["cv"]["sections"], rest, _sections(src).get(rest))
+            _set(dst["cv"]["sections"], rest, _sections(src).get(rest), _sections(src))
         elif kind == "ent":
             name, _, n = rest.rpartition(":")
             by_section.setdefault(name, set()).add(int(n))

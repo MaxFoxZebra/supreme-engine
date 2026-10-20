@@ -1650,14 +1650,18 @@ def rename_document(path: str, name: str) -> dict:
     if link and m:
         suffix = m.group(1)
     dest = src.with_name(clean + suffix + ext)
-    if dest == src:
+    # As text: Windows paths compare without case, and my-cv to My-CV is a
+    # rename all the same.
+    if str(dest) == str(src):
         return {"ok": True, "path": rel(src)}
     if dest.exists() and not _same_doc(dest, src):
         raise ValueError(f"Something called {dest.name} already exists.")
+    was = rel(src)
     src.rename(dest)
-    _rewrite_refs(rel(src), rel(dest))
-    review.moved(WORKSPACE, rel(src), rel(dest))
-    return {"ok": True, "path": rel(dest), "was": rel(src)}
+    now = rel(dest)
+    _rewrite_refs(was, now)
+    review.moved(WORKSPACE, was, now)
+    return {"ok": True, "path": now, "was": was}
 
 
 def _same_doc(a: Path, b: Path) -> bool:
@@ -2389,6 +2393,11 @@ def review_resolve(path: Path, ids: list, action: str, sig: str | None) -> dict:
     chosen = known if "*" in ids or "all" in known else set(ids) & known
     if not chosen:
         return {"review": review_payload(path)}
+    if action == "keep" and chosen == known:
+        # Keeping all of it is having nothing left to look at, and needs no
+        # parse: "The whole file" is the one card when the YAML has none.
+        review.clear(WORKSPACE, rp)
+        return {"review": None}
     if action == "undo" and chosen == known:
         # All of it: the text it had, exactly, comments and all.
         text, kept = before, before
@@ -3344,7 +3353,7 @@ def list_documents() -> list[dict]:
             path = rel(f)
             try:
                 meta, _ = letters.parse(f.read_text(encoding="utf-8"))
-            except OSError:
+            except (OSError, ValueError):     # ValueError: not UTF-8
                 meta = {}
             out.append({"path": path, "label": label, "group": group, "letter": True,
                         "mtime": f.stat().st_mtime, "ai": last_ai(path), "base": None,
@@ -3357,7 +3366,7 @@ def list_documents() -> list[dict]:
         path = rel(f)
         try:
             lang = languages.file_language(f.read_text(encoding="utf-8"))
-        except OSError:
+        except (OSError, ValueError):         # ValueError: not UTF-8
             lang = "en"
         trans = (docs.get(path, {}).get("translation") or {})
         if trans.get("of") and label.endswith("." + str(trans.get("lang"))):
@@ -3620,23 +3629,8 @@ def apply_ops(path: Path, ops: list[dict], tool: str = "edit") -> dict:
             "changed": record_edits(path, before, to_plain(data), tool)}
 
 
-def apply_patches(path: Path, patches: list[dict], tool: str = "edit", record: bool = True) -> dict:
-    """Set individual fields, keeping the rest of the file and its comments.
-
-    Returns {"applied": [...], "missed": [...], "changed": [...]}. `missed`
-    matters: a patch whose path does not exist in the document is skipped, and
-    reporting that as a success is how a model mis-indexes an entry, is told it
-    worked, and moves on. The paths that actually changed value are recorded as
-    provenance on the way past; not for a preview's scratch copy (`record`
-    False), which is no one's document.
-    """
-    data = yaml_rt.load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        # Empty, comments only, or caught mid-write by another program:
-        # writing it back would replace the file with `null`.
-        return {"applied": [], "missed": [{"path": p.get("path") or [], "why": "no cv in this file"}
-                                          for p in patches], "changed": []}
-    before = to_plain(data)
+def _patch_data(data, patches: list[dict]) -> tuple[list, list]:
+    """Write `patches` into loaded YAML: (applied paths, missed)."""
     applied: list[list] = []
     missed: list[dict] = []
     for patch in patches:
@@ -3673,6 +3667,76 @@ def apply_patches(path: Path, patches: list[dict], tool: str = "edit", record: b
             missed.append({"path": keys, "why": "no such field"})
             continue
         applied.append(keys)
+    return applied, missed
+
+
+def save_patches(path: Path, patches: list[dict]) -> dict:
+    """The user's own edits, from the app's form: written to the file, and
+    into the copy an AI client's changes are reviewed against, so they are
+    neither shown as the client's change nor taken back by its Undo.
+
+    Into that copy only where the entry, or the field outside any entry,
+    still reads there as it did in the file before this save. Anywhere the
+    client changed, the two no longer line up by position, and the edit is
+    left in the review as it was before this (edit_on_page does the same).
+    """
+    pre = path.read_text(encoding="utf-8")
+    wrote = apply_patches(path, patches, "save")
+    done = [p for p in patches if (p.get("path") or []) in wrote["applied"]]
+    rp = rel(path)
+    kept = (review.entry(WORKSPACE, rp) or {}).get("before")
+    if kept is None or not done:
+        return wrote
+    try:
+        data = yaml_rt.load(kept)
+        was = to_plain(yaml_rt.load(pre))
+    except Exception:
+        return wrote
+    if not isinstance(data, dict) or not isinstance(was, dict):
+        return wrote
+    then = to_plain(data)
+    missing = object()
+
+    def at(d, keys):
+        for k in keys:
+            try:
+                d = d[int(k)] if isinstance(d, list) else d[k]
+            except (KeyError, IndexError, ValueError, TypeError):
+                return missing
+        return d
+
+    def anchor(keys):
+        return keys[:4] if len(keys) > 4 and list(keys[:2]) == ["cv", "sections"] else keys
+
+    same = [p for p in done if at(was, anchor(p["path"])) == at(then, anchor(p["path"]))]
+    if not same:
+        return wrote
+    _patch_data(data, same)
+    buf = io.StringIO()
+    yaml_rt.dump(data, buf)
+    if buf.getvalue() != kept:
+        review.set_before(WORKSPACE, rp, buf.getvalue())
+    return wrote
+
+
+def apply_patches(path: Path, patches: list[dict], tool: str = "edit", record: bool = True) -> dict:
+    """Set individual fields, keeping the rest of the file and its comments.
+
+    Returns {"applied": [...], "missed": [...], "changed": [...]}. `missed`
+    matters: a patch whose path does not exist in the document is skipped, and
+    reporting that as a success is how a model mis-indexes an entry, is told it
+    worked, and moves on. The paths that actually changed value are recorded as
+    provenance on the way past; not for a preview's scratch copy (`record`
+    False), which is no one's document.
+    """
+    data = yaml_rt.load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        # Empty, comments only, or caught mid-write by another program:
+        # writing it back would replace the file with `null`.
+        return {"applied": [], "missed": [{"path": p.get("path") or [], "why": "no cv in this file"}
+                                          for p in patches], "changed": []}
+    before = to_plain(data)
+    applied, missed = _patch_data(data, patches)
     import io
     buf = io.StringIO()
     yaml_rt.dump(data, buf)
@@ -5221,7 +5285,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if "yaml" in payload:
                     wrote = write_doc(p, payload["yaml"], "save")
                 elif "patches" in payload:
-                    wrote = apply_patches(p, payload["patches"], "save")
+                    wrote = save_patches(p, payload["patches"])
                 # Fields first, then structure. Adding an entry has to carry
                 # whatever was already typed into the form with it, or the
                 # reload that follows would hand back the file as it was

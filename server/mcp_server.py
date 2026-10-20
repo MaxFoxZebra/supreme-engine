@@ -262,7 +262,7 @@ TARGET_KEYS = ("path", "name", "company", "job_id", "query")
 # client's change to review nor logged as its activity.
 USER_ACTIONS = {"review_change", "page_view_data", "edit_on_page", "job_view_data"}
 # Of those, the ones that change something, as if the user had clicked.
-ACTS_AS_USER = {"review_change", "edit_on_page"}   # and job_view_data's "status"
+ACTS_AS_USER = {"review_change", "edit_on_page"}   # and job_view_data's "status", in tool()
 
 READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
@@ -325,6 +325,13 @@ def _snapshot() -> dict:
     for f, _, _ in studio.document_files():
         try:
             out[studio.rel(f)] = (f.stat().st_mtime, f.read_text(encoding="utf-8"))
+        except ValueError:
+            # Not UTF-8: nothing to compare it with, but not new either, or
+            # every call would record it as made by the client.
+            try:
+                out[studio.rel(f)] = (f.stat().st_mtime, None)
+            except OSError:
+                continue
         except OSError:
             continue
     return out
@@ -336,12 +343,14 @@ def _checkpoint(before: dict, tool_name: str) -> None:
         for f, _, _ in studio.document_files():
             rel = studio.rel(f)
             held = before.get(rel)
+            if held and held[1] is None:
+                continue
             try:
-                if held and f.stat().st_mtime == held[0]:
-                    continue
+                # By text, not the time: a file system that keeps it to the
+                # second or two (FAT, HFS+) shows a quick second write as none.
                 if held and f.read_text(encoding="utf-8") == held[1]:
                     continue
-            except OSError:
+            except (OSError, ValueError):
                 continue
             prior, base = (held[1] if held else None), None
             if not held and (base := studio.doc_base(f)):
@@ -422,7 +431,15 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
             # The user's own decision, made in a view: not an AI client's
             # change to review, nor its activity to show. History still
             # keeps what it changed, as theirs.
-            if fn.__name__ not in ACTS_AS_USER:
+            acts = fn.__name__ in ACTS_AS_USER
+            if fn.__name__ == "job_view_data":
+                # It changes something only for "status": the user's move on
+                # the card, theirs in the history as a click in the app is.
+                try:
+                    acts = signature.bind(*args, **kwargs).arguments.get("what") == "status"
+                except TypeError:
+                    acts = False
+            if not acts:
                 return fn(*args, **kwargs)
             studio.note_history("elsewhere")
             try:
@@ -1366,7 +1383,7 @@ def _document(path: str, field: str) -> str | None:
     target = studio.safe_path(path)          # raises outside the workspace
     if not target.exists():
         raise ValueError(f"There is no document at {path}.")
-    if not studio.is_cv_yaml(target):
+    if not (studio.is_cv_yaml(target) or studio.is_letter(target)):
         raise ValueError(f"{path} is not a CV or cover letter.")
     rel = studio.rel(target)
     # Which of the two columns a document belongs in is decided by where it
@@ -1576,6 +1593,9 @@ def set_job_status(job_id: str, status: str, append_note: str | None = None) -> 
     `append_note` adds a dated line to the notes. Use it to record where the
     change came from, such as the subject line and date of the mail.
     """
+    if status not in studio.jobstore.STATUSES:
+        # The store takes an empty one as no status, which is Draft.
+        raise ValueError(f"{status!r} is not a status. One of: {', '.join(studio.jobstore.STATUSES)}.")
     return studio.jobstore.update_job(
         _ws(), job_id, {"status": status, "append_note": append_note})
 

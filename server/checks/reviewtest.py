@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import io
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
@@ -185,6 +186,59 @@ def main() -> int:
         studio.review_resolve(cv, ["*"], "undo", r["sig"])
         check("undo of a whole-file write gives the file back byte for byte",
               cv.read_text(encoding="utf-8") == held)
+
+        print("Your own edits after the model's")
+        as_ai("edit_cv_fields", lambda: studio.apply_patches(cv, [
+            {"path": ["cv", "headline"], "value": "Lead Engineer"},
+            {"path": ["cv", "sections", "experience", 0, "highlights", 0], "value": "Moved payments"}]))
+        studio.save_patches(cv, [{"path": ["cv", "location"], "value": "Nantes, France"},
+                                 {"path": ["cv", "sections", "experience", 0, "position"], "value": "SRE"}])
+        r = studio.review_payload(cv)
+        check("a field you changed in the app is not shown as the model's",
+              "cv:location" not in ids(r) and "cv:headline" in ids(r), repr(ids(r)))
+        studio.review_resolve(cv, ["*"], "undo", r["sig"])
+        text = cv.read_text(encoding="utf-8")
+        check("and Undo all leaves it, taking back only the model's",
+              "Nantes, France" in text and "Lead Engineer" not in text and "Moved payments onto" in text, text[:160])
+        check("in an entry the model changed, yours goes with that entry, as before",
+              "position: Platform Engineer" in text, text[:300])
+        # Under one of the model's undone, theirs: back to the file the next part starts from.
+        cv.write_text(held, encoding="utf-8")
+        review.clear(ws, "profile/my-cv.yaml")
+
+        print("A section taken out, then put back")
+        sec = ws / "profile" / "sections.yaml"
+        sec.write_text(studio.STARTER_CV, encoding="utf-8")
+        order = list(studio.yaml_rt.load(studio.STARTER_CV)["cv"]["sections"])
+        cut = studio.yaml_rt.load(studio.STARTER_CV)
+        del cut["cv"]["sections"][order[1]]
+        buf = io.StringIO()
+        studio.yaml_rt.dump(cut, buf)
+        as_ai("write_cv", lambda: studio.write_doc(sec, buf.getvalue(), "write_cv"))
+        r = studio.review_payload(sec)
+        gone = next((i for i in ids(r) if i.startswith("sec:")), None)
+        if gone:
+            studio.review_resolve(sec, [gone], "undo", r["sig"])
+        back = list(studio.yaml_rt.load(sec.read_text(encoding="utf-8"))["cv"]["sections"])
+        check("goes back where it was, not to the end", gone and back == order, f"{gone} {back}")
+
+        print("A document that is not UTF-8")
+        bad = ws / "profile" / "ansi.yaml"
+        bad.write_bytes(CV.replace("Alex Moreau", "Développeur").encode("cp1252"))
+        try:
+            listed = [d["path"] for d in studio.list_documents()]
+        except ValueError as exc:
+            listed = [repr(exc)]
+        check("the documents are still listed, it among them",
+              "profile/my-cv.yaml" in listed and "profile/ansi.yaml" in listed, repr(listed)[:200])
+        held = cv.read_text(encoding="utf-8")
+        as_ai("edit_cv_fields", lambda: studio.apply_patches(cv, [{"path": ["cv", "headline"], "value": "Ops"}]))
+        r = studio.review_payload(cv)
+        check("and a model's change to another is still kept to review", "cv:headline" in ids(r), repr(ids(r)))
+        check("with no change made up for it", studio.review_payload(bad) is None)
+        bad.unlink()
+        cv.write_text(held, encoding="utf-8")
+        review.clear(ws, "profile/my-cv.yaml")
 
         print("A letter the model made, renamed, then taken back")
         new = ws / "letters" / "cover-globex.md"
