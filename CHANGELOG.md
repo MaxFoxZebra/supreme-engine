@@ -8,6 +8,51 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.49.4
+
+- Your own edits no longer count as Claude's. A field you change in the app
+  after Claude changed the CV stays yours, and "Undo all" takes back only
+  Claude's changes.
+- A CV and a cover letter with the same name no longer overwrite each
+  other's files. Rendering the letter used to delete the CV's pages, and
+  "Export both", the ATS check and the thumbnail could then use the letter
+  in place of the CV.
+- A CV file that is empty, or caught while another program was writing it,
+  is no longer overwritten with nothing by a save.
+- CV Studio's own records (your base CV, which CV each copy came from, and
+  the changes waiting for you to keep or undo) can no longer be wiped when
+  the app and Claude write them at the same moment.
+- Undoing a section Claude removed puts it back where it was, not at the
+  end of the CV.
+- Every change Claude makes in one go is now there to review, not only the
+  first. A change made within a second or two of the last one is caught
+  too, on drives that keep time that coarsely.
+- One CV saved in another text encoding no longer empties the document list.
+- Opening two documents quickly can no longer show one under the other's
+  name, where a save would then write it into the wrong file.
+- The app no longer jumps to the CV editor when Claude changes the last CV
+  you opened while you are elsewhere, and Ctrl+S outside the editor no
+  longer saves that CV.
+- Letters you type while a save is in flight are kept, and removing your
+  photo keeps your unsaved edits.
+- A design value with an apostrophe no longer breaks saving.
+- Pressing Keep or Undo on the page in full screen no longer folds it away
+  as an earlier version.
+- The daily backup skips a file it cannot read rather than failing whole.
+- Renaming a document by changing only its capitals works on Windows and
+  macOS. Two documents with the same name deleted in the same second both
+  stay in the trash.
+- Claude can attach a cover letter to an application, and an empty status
+  is refused rather than turning the application back into a draft.
+- A status you move on the job card in the chat shows as yours in the
+  history.
+- Live previews and theme previews no longer interfere with each other when
+  they overlap, and a Chinese, Japanese or Korean font that failed to
+  download no longer holds up every render.
+- The job search view says when something could not be loaded, and the
+  views in the chat show their last few English phrases in French, Spanish
+  and Portuguese.
+
 ## 0.49.3
 
 - The CV page shows in the chat again. Claude had stopped showing it, and
