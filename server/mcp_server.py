@@ -343,15 +343,15 @@ def _checkpoint(before: dict, tool_name: str) -> None:
                     continue
             except OSError:
                 continue
-            before, base = (held[1] if held else None), None
+            prior, base = (held[1] if held else None), None
             if not held and (base := studio.doc_base(f)):
                 # A copy of the base: compared with the base as it was when it
                 # was copied, so a later edit of the base is not this client's.
                 try:
-                    before = studio.safe_path(base).read_text(encoding="utf-8")
+                    prior = studio.safe_path(base).read_text(encoding="utf-8")
                 except (OSError, ValueError):
-                    before, base = None, None
-            review.checkpoint(studio.WORKSPACE, rel, before,
+                    prior, base = None, None
+            review.checkpoint(studio.WORKSPACE, rel, prior,
                               by=studio.CLIENT_ID or "ai", agent=studio.CLIENT_AGENT,
                               tool=tool_name, base=base)
     except Exception:
@@ -1250,7 +1250,8 @@ def _render(path: str, page: int, views: bool) -> CallToolResult:
         idx = max(1, min(page, r["pages"])) - 1
         summary = f"Rendered {path}\nPages: {r['pages']}\nWords: {r['words']}\nPDF: {r['pdf']}"
         view = None
-        typs = [f for f in studio.output_dir(p).glob("*.typ") if not f.name.startswith(".")]
+        typs = [f for f in studio.output_dir(p).glob("*.typ")
+                if not f.name.startswith(".") and studio.letters.is_output(f)]
         typ = max(typs, key=lambda f: f.stat().st_mtime) if typs else None
         if views:
             try:

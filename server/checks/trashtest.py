@@ -63,6 +63,20 @@ def main() -> int:
     check("a document goes to .trash, not away", (ws / r3["trashed"]).exists(), r3["trashed"])
     after = next(x for x in J.list_jobs(ws) if x["id"] == j["id"])
     check("and its application no longer points at it", after["cv_path"] is None)
+    (ws / "applications" / "a").mkdir(parents=True, exist_ok=True)
+    one, two = ws / "profile" / "twin.yaml", ws / "applications" / "a" / "twin.yaml"
+    one.write_text(studio.STARTER_CV.replace("Your Name", "One"), encoding="utf-8")
+    two.write_text(studio.STARTER_CV.replace("Your Name", "Two"), encoding="utf-8")
+    # In the same second whatever the machine's speed: the clock stands still.
+    real = studio.time.strftime
+    studio.time.strftime = lambda fmt, *a: real(fmt, studio.time.localtime(0))
+    try:
+        t1, t2 = studio.delete_document("profile/twin.yaml"), studio.delete_document("applications/a/twin.yaml")
+    finally:
+        studio.time.strftime = real
+    check("two documents of one name deleted in the same second are both kept",
+          t1["trashed"] != t2["trashed"] and "One" in (ws / t1["trashed"]).read_text(encoding="utf-8")
+          and "Two" in (ws / t2["trashed"]).read_text(encoding="utf-8"), f"{t1['trashed']} {t2['trashed']}")
     studio.close_sample()
     print()
     print(f"{fails} failure(s)" if fails else "every trash and rename check passes")

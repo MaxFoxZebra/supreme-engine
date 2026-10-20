@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -49,6 +50,12 @@ HAN = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
 _lock = threading.Lock()
 _running: dict[str, threading.Thread] = {}
 _failed: dict[str, str] = {}
+# When each cut last failed to download. A render waits for a download, under
+# the renderer's lock, up to a minute and a half; with the network down every
+# render and preview would wait that long again, so a cut that failed is left
+# alone by renders for RETRY_AFTER seconds. Adding a language still asks.
+_failed_at: dict[str, float] = {}
+RETRY_AFTER = 300
 
 
 def cache_dir() -> Path:
@@ -130,9 +137,11 @@ def _fetch(code: str) -> None:
             part.write_bytes(data)
             part.replace(d / name)
         _failed.pop(code, None)
+        _failed_at.pop(code, None)
         register()
     except Exception as exc:
         _failed[code] = f"{type(exc).__name__}: {exc}"
+        _failed_at[code] = time.monotonic()
     finally:
         with _lock:
             _running.pop(code, None)
@@ -156,7 +165,9 @@ def fetch(codes: list[str]) -> list[str]:
 def ensure(text: str, timeout: float = 90) -> list[str]:
     """Before a render: fetch what the text needs and wait for it. Returns the
     cuts still missing afterwards, which print in a system font instead."""
-    for code in fetch(needed(text)):
+    now = time.monotonic()
+    wanted = [c for c in needed(text) if now - _failed_at.get(c, now - RETRY_AFTER) >= RETRY_AFTER]
+    for code in fetch(wanted):
         t = _running.get(code)
         if t:
             t.join(timeout)

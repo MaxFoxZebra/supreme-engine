@@ -80,14 +80,29 @@ def make(data_dir: Path, workspace: Path, reason: str = "daily") -> dict:
             stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"{int(now * 1000) % 1000:03d}"
             dest = d / f"{stamp}-{reason}.zip"
         part = dest.with_suffix(".part")
-        with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as z:
-            for f in sorted(workspace.rglob("*")):
-                if not f.is_file():
-                    continue
-                rel = f.relative_to(workspace).as_posix()
-                if _wanted(rel):
-                    z.write(f, rel)
-        part.replace(dest)
+        try:
+            with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as z:
+                for f in sorted(workspace.rglob("*")):
+                    if not f.is_file():
+                        continue
+                    rel = f.relative_to(workspace).as_posix()
+                    if not _wanted(rel):
+                        continue
+                    try:
+                        z.write(f, rel)
+                    except OSError:
+                        # Gone since the listing (a temporary file renamed
+                        # into place), or held by another program (the lock
+                        # file Excel keeps beside an open sheet): the rest
+                        # is still worth a backup.
+                        continue
+            part.replace(dest)
+        except BaseException:
+            try:
+                part.unlink()
+            except OSError:
+                pass
+            raise
         for old in sorted(d.glob("*.zip"), reverse=True)[KEEP:]:
             try:
                 old.unlink()

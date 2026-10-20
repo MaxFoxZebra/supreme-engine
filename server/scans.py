@@ -26,6 +26,7 @@ import io
 import json
 import os
 import re
+import threading
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -451,7 +452,9 @@ def write_xlsx(path: Path, rows: list[dict], extra: list[str]) -> None:
     }
     if links:
         parts["xl/worksheets/_rels/sheet1.xml.rels"] = sheet_rels
-    tmp = path.with_name(f".{path.name}.tmp")
+    # Its own name per writer: the app and the connector can both save the
+    # sheet, and two zips written into one file make neither.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
         for name, text in parts.items():
             z.writestr(name, text)

@@ -1175,8 +1175,7 @@ def _edits_write(data: dict) -> None:
     themselves are the record, and this only annotates them.
     """
     try:
-        (WORKSPACE / EDITS_FILE).write_text(
-            json.dumps(data, separators=(",", ":")), encoding="utf-8")
+        review.write_whole(WORKSPACE / EDITS_FILE, json.dumps(data, separators=(",", ":")))
     except OSError:
         pass
 
@@ -1653,12 +1652,21 @@ def rename_document(path: str, name: str) -> dict:
     dest = src.with_name(clean + suffix + ext)
     if dest == src:
         return {"ok": True, "path": rel(src)}
-    if dest.exists():
+    if dest.exists() and not _same_doc(dest, src):
         raise ValueError(f"Something called {dest.name} already exists.")
     src.rename(dest)
     _rewrite_refs(rel(src), rel(dest))
     review.moved(WORKSPACE, rel(src), rel(dest))
     return {"ok": True, "path": rel(dest), "was": rel(src)}
+
+
+def _same_doc(a: Path, b: Path) -> bool:
+    """Whether two names are one file: my-cv and My-CV are, on the file
+    systems Windows and macOS use, so that rename only changes the case."""
+    try:
+        return a.samefile(b)
+    except OSError:
+        return False
 
 
 def delete_document(path: str) -> dict:
@@ -1681,7 +1689,13 @@ def delete_document(path: str) -> dict:
                          + "). Delete those first.")
     trash = WORKSPACE / ".trash"
     trash.mkdir(exist_ok=True)
-    dest = trash / f"{time.strftime('%Y%m%d-%H%M%S')}-{src.name}"
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    dest = trash / f"{stamp}-{src.name}"
+    n = 1
+    while dest.exists():
+        # Two documents of one name, deleted in the same second.
+        n += 1
+        dest = trash / f"{stamp}-{n}-{src.name}"
     shutil.move(str(src), str(dest))
     _rewrite_refs(rp, None)
     review.moved(WORKSPACE, rp, None)
@@ -3017,7 +3031,9 @@ def starter_untouched() -> bool:
 
 def safe_path(raw: str) -> Path:
     p = (WORKSPACE / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
-    if not str(p).startswith(str(WORKSPACE.resolve())):
+    # By parts: as text, "CV Studio backup" starts with "CV Studio".
+    ws = WORKSPACE.resolve()
+    if p != ws and ws not in p.parents:
         raise PermissionError("path outside the workspace")
     return p
 
@@ -3604,16 +3620,22 @@ def apply_ops(path: Path, ops: list[dict], tool: str = "edit") -> dict:
             "changed": record_edits(path, before, to_plain(data), tool)}
 
 
-def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
+def apply_patches(path: Path, patches: list[dict], tool: str = "edit", record: bool = True) -> dict:
     """Set individual fields, keeping the rest of the file and its comments.
 
     Returns {"applied": [...], "missed": [...], "changed": [...]}. `missed`
     matters: a patch whose path does not exist in the document is skipped, and
     reporting that as a success is how a model mis-indexes an entry, is told it
     worked, and moves on. The paths that actually changed value are recorded as
-    provenance on the way past.
+    provenance on the way past; not for a preview's scratch copy (`record`
+    False), which is no one's document.
     """
     data = yaml_rt.load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        # Empty, comments only, or caught mid-write by another program:
+        # writing it back would replace the file with `null`.
+        return {"applied": [], "missed": [{"path": p.get("path") or [], "why": "no cv in this file"}
+                                          for p in patches], "changed": []}
     before = to_plain(data)
     applied: list[list] = []
     missed: list[dict] = []
@@ -3655,6 +3677,8 @@ def apply_patches(path: Path, patches: list[dict], tool: str = "edit") -> dict:
     buf = io.StringIO()
     yaml_rt.dump(data, buf)
     path.write_text(buf.getvalue(), encoding="utf-8")
+    if not record:
+        return {"applied": applied, "missed": missed, "changed": []}
     after = to_plain(data)
     if (before or {}).get("design") != (after or {}).get("design"):
         sync_design(path)
@@ -3798,10 +3822,15 @@ def render(path: Path) -> dict:
 
 
 def last_pdf(path: Path) -> Path | None:
-    """The newest PDF in this document's output folder, whatever its age."""
+    """The newest PDF in this document's output folder, whatever its age.
+
+    A CV and a letter of the same name share the folder (profile/x.yaml and
+    letters/x.md both render to assets/x), so each takes only its own kind.
+    """
     out = output_dir(path)
-    pdfs = sorted(out.glob("*.pdf"), key=lambda f: f.stat().st_mtime,
-                  reverse=True) if out.is_dir() else []
+    letter = is_letter(path)
+    pdfs = sorted((f for f in out.glob("*.pdf") if letters.is_output(f) == letter),
+                  key=lambda f: f.stat().st_mtime, reverse=True) if out.is_dir() else []
     return pdfs[0] if pdfs else None
 
 
@@ -3946,6 +3975,18 @@ def preview(path: Path, text: str | None = None,
     because RenderCV resolves a `fonts/` folder relative to the input file;
     rendering elsewhere would silently drop any custom font.
     """
+    with _PREVIEW_LOCK:
+        return _preview(path, text, patches)
+
+
+# One preview at a time, and one theme tile: each run writes the same scratch
+# file and clears the same folder, so one landing while another waited for
+# the renderer took the other's file, or its pages, from under it.
+_PREVIEW_LOCK = threading.Lock()
+_THEME_LOCK = threading.Lock()
+
+
+def _preview(path: Path, text: str | None, patches: list[dict] | None) -> dict:
     tmp = path.parent / (".cvstudio-preview" + path.suffix)
     try:
         # Form edits arrive as patches, so start from the saved file and apply
@@ -3953,7 +3994,7 @@ def preview(path: Path, text: str | None = None,
         tmp.write_text(text if text is not None
                        else path.read_text(encoding="utf-8"), encoding="utf-8")
         if patches:
-            apply_patches(tmp, patches)
+            apply_patches(tmp, patches, record=False)
         # Shaped against the scratch copy, not the saved file: the block map has
         # to describe the document as it was just rendered, unsaved edits and
         # all. `tmp` is still on disk here -- the unlink below runs after.
@@ -3986,6 +4027,11 @@ def theme_preview(path: Path, theme: str, patches: list[dict] | None = None) -> 
     """
     if theme not in available_themes():
         raise ValueError(f"Unknown theme: {theme}")
+    with _THEME_LOCK:
+        return _theme_preview(path, theme, patches)
+
+
+def _theme_preview(path: Path, theme: str, patches: list[dict] | None) -> dict:
     stem = re.sub(r"[^A-Za-z0-9_-]+", "-", path.stem) or "doc"
     out = WORKSPACE / "assets" / ".themes" / stem / theme
     if out.is_dir():
@@ -3999,7 +4045,7 @@ def theme_preview(path: Path, theme: str, patches: list[dict] | None = None) -> 
     try:
         tmp.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
         apply_patches(tmp, list(patches or []) +
-                      [{"path": ["design", "theme"], "value": theme}])
+                      [{"path": ["design", "theme"], "value": theme}], record=False)
         result = render_file(tmp, out)
     finally:
         try:

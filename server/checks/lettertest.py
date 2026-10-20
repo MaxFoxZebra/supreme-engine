@@ -204,6 +204,47 @@ def main() -> int:
             studio.save_letter(lp, {"body": body.replace("Terminez par", "Je terminerai par")})
             check("a prompt written over is the letter's", len(studio.load_letter(lp)["prompts"]) == 2)
 
+        print("A CV and a letter of one name")
+        # Both render to assets/<name>: a letter's render used to delete the
+        # CV's pages, and the newest PDF there went out as either.
+        twin_cv = ws / "profile" / "platform-acme.yaml"
+        twin_cv.write_text(CV, encoding="utf-8")
+        studio.new_letter(None, "platform-acme")
+        twin = ws / "letters" / "platform-acme.md"
+        check("they share a folder", studio.output_dir(twin_cv) == studio.output_dir(twin))
+        r_cv = studio.render(twin_cv)
+        import time
+        time.sleep(1.1)
+        r_letter = studio.render_letter(twin)
+        check("the letter's render leaves the CV's pages", r_cv.get("ok") and r_letter.get("ok")
+              and all((ws / f).exists() for f in [r_cv["pdf"]] + [Path(u.split("path=")[1].split("&")[0])
+                                                              for u in r_cv.get("pngs") or []]),
+              ", ".join(sorted(f.name for f in studio.output_dir(twin).iterdir())))
+        cv_pdf, letter_pdf = studio.last_pdf(twin_cv), studio.last_pdf(twin)
+        check("and each has its own PDF", cv_pdf and letter_pdf and cv_pdf != letter_pdf
+              and letters.is_output(letter_pdf) and not letters.is_output(cv_pdf),
+              f"{cv_pdf and cv_pdf.name} / {letter_pdf and letter_pdf.name}")
+
+        print("A file that is not a CV")
+        # Empty, comments only, or read while another program was writing it.
+        blank = ws / "profile" / "blank.yaml"
+        blank.write_text("# nothing yet\n", encoding="utf-8")
+        r = studio.apply_patches(blank, [{"path": ["cv", "name"], "value": "X"}])
+        check("an edit to it is reported as not made, and the file is left as it was",
+              not r["applied"] and r["missed"] and blank.read_text(encoding="utf-8") == "# nothing yet\n",
+              repr(blank.read_text(encoding="utf-8")))
+
+        print("Paths")
+        sibling = ws.parent / (ws.name + " backup")
+        try:
+            studio.safe_path(f"../{sibling.name}/x.yaml")
+            refused = False
+        except PermissionError:
+            refused = True
+        check("a folder beside the workspace whose name starts the same is outside it", refused)
+        check("the workspace and what is in it are inside", studio.safe_path("") == ws.resolve()
+              and studio.safe_path("profile/my-cv.yaml") == (ws / "profile" / "my-cv.yaml").resolve())
+
     print("Dates")
     day = dt.date(2026, 9, 23)
     for lang, want in (("en", "Lyon, 23 September 2026"), ("fr", "Lyon, le 23 septembre 2026"),

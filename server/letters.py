@@ -765,7 +765,10 @@ def render(meta: dict, body: str, head: dict, out: Path, stem: str,
     {ok, pdf, png_pages, pages, words} or {ok: False, log}."""
     import typst
     out.mkdir(parents=True, exist_ok=True)
+    # Only a letter's own files: a CV of the same name renders here too.
     for old in list(out.glob("*.pdf")) + list(out.glob("*.png")) + list(out.glob("*.typ")):
+        if not is_output(old):
+            continue
         try:
             old.unlink()
         except OSError:
@@ -788,6 +791,14 @@ def render(meta: dict, body: str, head: dict, out: Path, stem: str,
 
 def file_stem(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") + "_Cover_Letter"
+
+
+def is_output(f: Path) -> bool:
+    """Whether `f` is a letter's render (<stem>.pdf/.typ, <stem>_N.png)."""
+    name = f.stem
+    if f.suffix == ".png":
+        name = name.rsplit("_", 1)[0] if name.rsplit("_", 1)[-1].isdigit() else name
+    return name.endswith("_Cover_Letter")
 
 
 # --------------------------------------------------------------------------

@@ -25,7 +25,9 @@ import difflib
 import hashlib
 import io
 import json
+import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -46,10 +48,37 @@ def _read(ws: Path) -> dict:
     return data
 
 
+def write_whole(path: Path, text: str) -> None:
+    """Write `text` so a reader never sees half of it.
+
+    The app and the connector both read and write these files, and a read
+    caught mid-write parses as nothing: writing that back loses every entry.
+    In place as before when the file cannot be replaced (Windows refuses
+    while another program has it open, past the retries).
+    """
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        for attempt in range(40):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == 39:
+                    raise
+                time.sleep(0.05)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        path.write_text(text, encoding="utf-8")
+
+
 def _write(ws: Path, data: dict) -> None:
     # Bookkeeping never breaks a save: the documents are the record.
     try:
-        (ws / FILE).write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+        write_whole(ws / FILE, json.dumps(data, separators=(",", ":")))
     except OSError:
         pass
 
