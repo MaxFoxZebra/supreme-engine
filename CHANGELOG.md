@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.49.3
 
 - The CV page shows in the chat again. Claude had stopped showing it, and
   you only saw a small thumbnail of the page next to the tool call. CV
