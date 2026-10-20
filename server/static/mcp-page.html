@@ -359,12 +359,14 @@
     animation:shim 1.2s linear infinite}
   :root[data-mode=fullscreen] .sheet img:not([src]){width:calc((100vh - var(--chrome,96px)) / 1.414)}
   .btn.dl{display:inline-flex;align-items:center;gap:5px;flex:none}
-  .miss{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;
+  /* Its own class: "miss" is also a missing keyword's and an unmet
+     requirement's, which this rule stretched over the whole view. */
+  .pagemiss{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;
     justify-content:center;gap:6px;padding:24px;text-align:center;color:#3d3c39;font-size:13px;
     background:color-mix(in srgb,#f3f2ee 70%,transparent);animation:in .2s ease-out}
-  .miss b{font-weight:600;color:#1f1e1d}
-  .miss span{max-width:34ch;line-height:1.45}
-  .miss .btn{margin-top:6px;background:#1f1e1d;color:#fff}
+  .pagemiss b{font-weight:600;color:#1f1e1d}
+  .pagemiss span{max-width:34ch;line-height:1.45}
+  .pagemiss .btn{margin-top:6px;background:#1f1e1d;color:#fff}
   .btn.dl svg{width:13px;height:13px}
 
   /* ---- an earlier render of the same CV: one line, open on demand ---- */
@@ -724,7 +726,7 @@ window.cvsI18n = (function () {
       : m.tries < 2 ? "<b>Loading the page…</b>"
       : "<b>CV Studio is not answering.</b><span>It may still be starting, or the connector is off. " +
         "This view tries again on its own.</span>" + '<button class="btn" data-miss="retry">Try again</button>';
-    const el = box || Object.assign(document.createElement("div"), {id: "miss", className: "miss"});
+    const el = box || Object.assign(document.createElement("div"), {id: "miss", className: "pagemiss"});
     if (el.innerHTML !== html) el.innerHTML = html;
     if (!box) sheet.appendChild(el);
     const b = el.querySelector("[data-miss]");

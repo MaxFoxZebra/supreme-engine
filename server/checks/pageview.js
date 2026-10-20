@@ -363,6 +363,20 @@ async function main() {
   const panel = await b.evalJs(`(${doc}.querySelector(".match")||{}).textContent||""`);
   check("the view lists the requirements and the keywords", /Against Site Reliability Engineer at Monzo/.test(panel) &&
     /Comfortable in Go/.test(panel) && /keywords/.test(panel), panel.slice(0, 120));
+  /* Where a person clicks, not by script: the missing keywords and unmet
+     requirements once took the "page could not load" overlay's rule, each
+     stretched over the whole view, and caught every click on it. */
+  const hits = await b.evalJs(`(()=>{const d=${doc}, out=[];
+    for (const sel of ["[data-kw]", ".match .req", ".bar button"]) {
+      const el = d.querySelector(sel); if (!el) continue;
+      el.scrollIntoView({block: "center"});
+      const r = el.getBoundingClientRect(), at = d.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      out.push({sel, ok: !!at && (at === el || el.contains(at)), at: at ? at.tagName + "." + at.className : null});
+    }
+    const big = [...d.querySelectorAll("[data-miss], .st")].filter(x => x.getBoundingClientRect().height > 200).length;
+    return {out, big}})()`);
+  check("a click lands on what is under the pointer, chips and rows no bigger than themselves",
+    hits.out.length >= 2 && hits.out.every(h => h.ok) && hits.big === 0, JSON.stringify(hits));
   const miss = asc.match.missing.find(m => /kubernetes|terraform/i.test(m.term)) || asc.match.missing[0];
   if (miss) {
     await b.evalJs(`(()=>{const d=${doc}; [...d.querySelectorAll("[data-miss]")].find(x=>x.textContent===${JSON.stringify(miss.term)}).click()})()`);
