@@ -332,6 +332,15 @@ VC = {
     "Interview coming up": ("Entretien à venir", "Entrevista próxima", "Entrevista chegando"),
     "Not sent yet.": ("Pas encore envoyée.", "Aún sin enviar.", "Ainda não enviada."),
     "CV Studio did not answer": ("CV Studio n'a pas répondu", "CV Studio no respondió", "O CV Studio não respondeu"),
+    # --- words the views showed in English ------------------------------------
+    "Loading…": ("Chargement…", "Cargando…", "Carregando…"),
+    "Cancelled.": ("Annulé.", "Cancelado.", "Cancelado."),
+    "← Today": ("← Aujourd'hui", "← Hoy", "← Hoje"),
+    "No applications sent yet.": ("Aucune candidature envoyée pour l'instant.", "Aún no se ha enviado ninguna candidatura.",
+                                  "Nenhuma candidatura enviada ainda."),
+    "1 draft is waiting to be sent.": ("1 brouillon attend d'être envoyé.", "1 borrador espera ser enviado.",
+                                       "1 rascunho está esperando para ser enviado."),
+    "Reading it…": ("Lecture…", "Leyendo…", "Lendo…"),
 }
 
 VRX = [
@@ -416,6 +425,12 @@ VRX = [
     (r"^Show me (.+)$", "Montre-moi $1", "Muéstrame $1", "Mostre-me $1"),
     (r"^Moved to (.+)\.$", "Passée à : $1.", "Movida a: $1.", "Movida para: $1."),
     (r"^That did not work: (.+)$", "Cela n'a pas marché : $1", "No funcionó: $1", "Não deu certo: $1"),
+    (r"^No applications sent in the last (\d+) days\.$", "Aucune candidature envoyée ces $1 derniers jours.",
+     "Ninguna candidatura enviada en los últimos $1 días.", "Nenhuma candidatura enviada nos últimos $1 dias."),
+    (r"^Showing the first (\d+) of (\d+) pages\.$", "Les $1 premières pages sur $2 sont affichées.",
+     "Se muestran las primeras $1 de $2 páginas.", "Mostrando as primeiras $1 de $2 páginas."),
+    (r"^The PDF could not be downloaded: (.+)\.$", "Le PDF n'a pas pu être téléchargé : $1.",
+     "No se pudo descargar el PDF: $1.", "Não foi possível baixar o PDF: $1."),
     (r"^(\d+) interviews? coming up$", "$1 entretien(s) à venir", "$1 entrevista(s) próxima(s)", "$1 entrevista(s) chegando"),
     (r"^(\d+) decisions? to record$", "$1 décision(s) à enregistrer", "$1 decisión(es) por registrar", "$1 decisão(ões) para registrar"),
     (r"^(\d+) to follow up$", "$1 à relancer", "$1 por seguir", "$1 para acompanhar"),

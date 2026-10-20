@@ -397,7 +397,6 @@ INLINE_TOK = re.compile(
     r"|\*(?!\s)(.+?)(?<!\s)\*|(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)"         # 7, 8 italic
     r"|\[([^\]]+)\]\(([^)\s]+)\)"                    # 9, 10 link
     r"|(\n)")                                        # 11 hard break
-INLINE = INLINE_TOK
 
 
 def spans(text: str, st: frozenset = frozenset(), url: str | None = None) -> list:
@@ -861,8 +860,8 @@ def _w_runs(text: str, *, bold=False, italic=False, size=None, color=None, font=
 
 def _wp(runs: str, *, align=None, after=160, before=None, indent=None, hanging=None,
         left_border=None, bottom_border=None, shade=None, keep_next=False) -> str:
-    ppr = ((f'<w:keepNext/>' if keep_next else "")
-           + (f'<w:pBdr>' + (f'<w:left w:val="single" w:sz="12" w:space="8" w:color="{_hex(left_border)}"/>' if left_border else "")
+    ppr = (('<w:keepNext/>' if keep_next else "")
+           + ('<w:pBdr>' + (f'<w:left w:val="single" w:sz="12" w:space="8" w:color="{_hex(left_border)}"/>' if left_border else "")
               + (f'<w:bottom w:val="single" w:sz="6" w:space="1" w:color="{_hex(bottom_border)}"/>' if bottom_border else "")
               + '</w:pBdr>' if left_border or bottom_border else "")
            + (f'<w:shd w:val="clear" w:color="auto" w:fill="{shade}"/>' if shade else "")

@@ -175,7 +175,7 @@ def match(req: str, lines: list[tuple[str, str]]) -> tuple[str, str] | None:
     return best if score >= 2 else None
 
 
-def build(job: dict, cv: dict | None, round_kind: str = "", person_role: str = "") -> dict:
+def build(job: dict, cv: dict | None, round_kind: str = "") -> dict:
     """Prep for the next round, made here: questions, stories, asks."""
     lang = job.get("language") if job.get("language") in T else "en"
     tx = T[lang]

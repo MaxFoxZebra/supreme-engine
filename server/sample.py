@@ -387,7 +387,6 @@ def build(studio, applications: int = 64) -> dict:
         tp.write_text(text, encoding="utf-8")
         studio.mark_translation_current(tp)
         bases[code] = tp
-    frp = bases["fr"]
     studio.apply_patches(base, [{"path": ["cv", "headline"],
                                  "value": "Senior Platform Engineer · Kubernetes, Go"}])
 

@@ -1,6 +1,6 @@
 """A standing audit of the app: classes of mistake that are invisible without a
 browser but mechanical to find."""
-import re, pathlib, collections
+import re, pathlib, collections, sys
 
 # The server sits one level up from this folder, wherever the repo lives.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -97,15 +97,15 @@ P["route implemented but not in the openapi spec"] += sorted(routes - documented
 P["route documented but not implemented"] += sorted(documented - routes)
 
 # --- python ---------------------------------------------------------------
+# Used anywhere in the server counts: sample.py is the only caller of some.
+PY = {f.name: f.read_text(encoding="utf-8") for f in ROOT.glob("*.py")}
 for mod in ("studio.py", "cv_map.py", "cv_render.py", "jobs.py", "mcp_server.py"):
-    text = (ROOT / mod).read_text(encoding="utf-8")
+    text = PY[mod]
     for fn in re.findall(r"^def ([a-z_]\w*)", text, re.M):
         if fn.startswith("_") or fn == "main":
             continue
         others = len(re.findall(r"\b" + fn + r"\b", text))
-        cross = sum((ROOT / o).read_text(encoding="utf-8").count(fn)
-                    for o in ("studio.py", "cv_map.py", "cv_render.py",
-                              "jobs.py", "mcp_server.py") if o != mod)
+        cross = sum(t.count(fn) for o, t in PY.items() if o != mod)
         if others < 2 and cross == 0:
             P[f"{mod}: function never used"].append(fn)
 
@@ -118,3 +118,4 @@ for kind, items in P.items():
     for i in items:
         print("   ", i)
 print("\nclean" if not bad else f"\n{bad} finding(s)")
+sys.exit(1 if bad else 0)

@@ -42,8 +42,8 @@
 
 :root{
   /* chrome */
-  --c900:#161513; --c800:#1b1a17; --c700:#232220; --c650:#2b2a26; --c600:#33312b;
-  --c550:#343229; --c500:#3a3833; --c450:#3d3b34; --c400:#4a4842; --c300:#9d998b;
+  --c900:#161513; --c800:#1b1a17; --c700:#232220; --c600:#33312b;
+  --c500:#3a3833; --c400:#4a4842; --c300:#9d998b;
   --c200:#a5a091; --c100:#cfcabd; --c050:#f0ede5; --cw:#f5f2ea; --c-hover:#5c594f;
   /* paper */
   --app:#f7f6f3; --panel:#f2efe8; --bar:#efece4; --canvas:#e4e1d8; --row-alt:#fbfaf7;
@@ -58,14 +58,13 @@
   --acc-wash:rgba(192,138,62,.10); --acc-ring:rgba(192,138,62,.18);
   --acc-line:rgba(192,138,62,.6);
   /* the funnel, which is drawn rather than styled inline so it follows the theme */
-  --fn-total:#33312b; --fn-neutral:#7d7767; --fn-positive:#a8761f; --fn-label:#33312b;
-  --fn-offer:#3f8f76; --fn-lost-late:#7d2f3f;
+  --fn-positive:#a8761f;
+  --fn-offer:#3f8f76;
   /* the same, dark enough to be read as text (WCAG AA) */
   --fn-positive-text:#8a5a14; --fn-offer-text:#286b57; --fn-lost-text:#a83519; --fn-wait-text:#3a6ea5;
   --co-1:#6f6a60; --co-2:#7d766a; --co-3:#63605c; --co-4:#77706a;
   --co-5:#6a6660; --co-6:#807a70;
   --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
-  --fn-band:.34;
   --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
   --row-hover:#f1eee6; --spine:#c8c2b3; --bad-line:#e6cfc5;
   /* YAML syntax: the same muted ramp, retuned for a warm ground. Deliberately
@@ -95,13 +94,12 @@
   --rv-ins:#86d6b5; --rv-ins-bg:rgba(63,175,130,.18); --rv-del:#f2a197; --rv-del-bg:rgba(224,98,107,.16);
   --acc-text:#e8bc7c;
   --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
-  --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
-  --fn-offer:#4fae90; --fn-lost-late:#a8415a;
+  --fn-positive:#b8832f;
+  --fn-offer:#4fae90;
   --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#e0626b; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-  --fn-band:.42;
   --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
   --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
   --bad:#f27b82; --bad-bg:#2e1c15;
@@ -119,13 +117,12 @@
   --rv-ins:#86d6b5; --rv-ins-bg:rgba(63,175,130,.18); --rv-del:#f2a197; --rv-del-bg:rgba(224,98,107,.16);
     --acc-text:#e8bc7c;
     --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
-    --fn-total:#8f8877; --fn-neutral:#6e685a; --fn-positive:#b8832f; --fn-label:#c6c0b0;
-  --fn-offer:#4fae90; --fn-lost-late:#a8415a;
+    --fn-positive:#b8832f;
+  --fn-offer:#4fae90;
   --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
   --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
   --co-5:#857f78; --co-6:#9c958a;
   --fn-won:#189072; --fn-lost:#e0626b; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
-    --fn-band:.42;
     --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
     --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
     --bad:#f27b82; --bad-bg:#2e1c15;
@@ -559,10 +556,6 @@ body.dragging{cursor:col-resize;user-select:none}
   box-shadow:0 0 0 3px var(--acc-ring)}
 .fg input[readonly]{background:var(--bar);border-color:var(--rule);color:var(--t600)}
 
-/* ---------- inspector --------------------------------------------------- */
-.insp{flex:none;background:var(--panel);border-left:1px solid var(--rule-strong);
-  display:flex;flex-direction:column;min-height:0}
-
 /* ---------- the block editor -------------------------------------------
    Anchored beside the block it edits rather than parked in a column, so the
    page gets the whole pane and you edit at the thing you are looking at.
@@ -680,8 +673,6 @@ body.dragging{cursor:col-resize;user-select:none}
   padding:10px 12px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
   color:var(--t900);font-size:13px;line-height:1.55}
 .peek-grid textarea.notes:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
-.ap-iv input{min-height:32px;border-radius:8px;font-size:13px;width:100%;min-width:0}
-.ap-iv select{min-height:32px;border-radius:8px;font-size:13px}
 /* The posting is the long one, so it takes what is left and scrolls. */
 .peek-grid .block.grow{flex:1;min-height:0}
 .peek .posting{flex:1;min-height:80px;overflow-y:auto;white-space:pre-wrap;
@@ -695,13 +686,6 @@ body.dragging{cursor:col-resize;user-select:none}
 .peek-grid .foot-del .sbtn{align-self:flex-start}
 /* The posting and the documents read as one list, so they share a card. */
 .peek .tl{max-height:none}
-.insp-head{height:33px;flex:none;display:flex;align-items:center;justify-content:space-between;
-  gap:10px;padding:0 13px;background:var(--bar);border-bottom:1px solid var(--rule-strong)}
-.insp-head b{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
-.insp-head .mono{font-size:10.5px;color:var(--t500);flex:none}
-.insp-body{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;
-  flex-direction:column;gap:14px}
 .block{display:flex;flex-direction:column;gap:7px}
 .block.ruled{padding-top:12px;border-top:1px solid var(--rule)}
 /* Section labels read as headings, in the interface face, rather than as
@@ -732,10 +716,6 @@ body.dragging{cursor:col-resize;user-select:none}
 .board.lettered{background:var(--bar);color:var(--t700);font-size:8px;font-weight:600;
   box-shadow:inset 0 0 0 1px var(--bd-field)}
 .trow .role .via{flex:none;display:inline-flex;align-self:center}
-.posting-row{justify-content:flex-start}
-.posting-row>span:not(.board){flex:1;min-width:0;text-align:left}
-.posting-row .alink{white-space:nowrap}
-.posting-row>span i{font-style:normal;font-size:11.5px;margin-left:4px}
 /* What the CV changed from its base, under the CV it describes. */
 .bdiff{font-size:12px;color:var(--t700);line-height:1.45}
 .bd-head{margin:0;display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
@@ -1077,11 +1057,10 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .trow .docs.busy:hover,.trow .docs.make:hover{text-decoration:none}
 .trow .docs:hover{text-decoration:underline}
 .trow .st{display:flex;align-items:center;gap:8px;font-size:13px}
-.trow .money{font-size:12px}
 .trow .when{font-size:13px;color:var(--t600);font-variant-numeric:tabular-nums}
 .trow.dead{color:var(--t600)}
-.trow.dead .money,.trow.dead .when{color:var(--t600)}
-.trow .when.none,.trow .money.none{color:var(--t400)}
+.trow.dead .when{color:var(--t600)}
+.trow .when.none{color:var(--t400)}
 .trow .when.due{color:var(--bad);font-weight:600}
 .trow .when.iv{color:var(--t900);font-weight:500}
 .trow .when{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1328,17 +1307,6 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
    percentage off three applications at the same weight as one off fifty. */
 .kv.thin{margin-top:-6px}
 .kv.thin .v{font-size:10.5px;color:var(--t500)}
-.t-total{fill:var(--fn-total)} .t-neutral{fill:var(--fn-neutral)}
-.t-positive{fill:var(--fn-positive)}
-.t-won{fill:var(--fn-won)} .t-lost{fill:var(--fn-lost)}
-.t-live{fill:var(--fn-positive)} .t-draft{fill:var(--fn-neutral)}
-.t-offer{fill:var(--fn-offer)} .b-offer{stroke:var(--fn-offer)}
-.t-lost-late{fill:var(--fn-lost-late)} .b-lost-late{stroke:var(--fn-lost-late)}
-.t-waiting{fill:var(--fn-wait)} .t-closed{fill:var(--fn-closed)}
-.b-neutral{stroke:var(--fn-neutral)} .b-positive{stroke:var(--fn-positive)}
-.b-won{stroke:var(--fn-won)} .b-lost{stroke:var(--fn-lost)}
-.b-live{stroke:var(--fn-positive)} .b-draft{stroke:var(--fn-neutral)}
-.b-waiting{stroke:var(--fn-wait)} .b-closed{stroke:var(--fn-closed)}
 
 /* ---------- calendar ----------------------------------------------------- */
 .cal-page{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--app);overflow-y:auto}
@@ -1916,8 +1884,6 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .ap-fact select,.ap-fact input{width:100%;min-width:0;height:32px;border-radius:8px;font-size:13px}
 .ap-fact .statusctl{gap:6px}
 .ap-fact.wide{grid-column:1/-1}
-.ap-iv{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;max-width:520px}
-.ap-iv-say{font-size:12.5px;color:var(--t700)}
 .ap-src{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 10px;
   border:1px solid var(--bd-field);border-radius:8px;background:var(--field);color:var(--t900);
   font-size:13px;text-align:left;min-width:0}
@@ -2158,7 +2124,6 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
   background:var(--field);border:1px solid var(--bd-field);border-radius:9px}
 .ats-read .pua{font-style:normal;color:var(--bad);background:var(--bad-bg);border-radius:2px;
   padding:0 1px}
-.ats-link{margin-top:-6px}
 @media (max-width:900px){
   .ats-body{grid-template-columns:1fr}
   .ats-top{flex-direction:column}
@@ -2639,7 +2604,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover,
 input[type=datetime-local]::-webkit-calendar-picker-indicator:hover{opacity:1}
 input[type=date]:focus-visible,input[type=datetime-local]:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 textarea{resize:vertical}
-.insp textarea,.fg textarea{resize:none}
+.fg textarea{resize:none}
 .tgl{position:relative;display:inline-block;width:34px;height:20px;flex:none;cursor:pointer}
 .tgl input{opacity:0;width:0;height:0;position:absolute}
 .tgl i{position:absolute;inset:0;background:var(--rule);border-radius:99px;transition:background .16s}
@@ -2743,7 +2708,6 @@ textarea{resize:vertical}
   .rail-cvs{width:150px}
 }
 @media(max-width:880px){
-  .insp{display:none}
   .thead,.trow{grid-template-columns:minmax(0,2fr) minmax(0,1.4fr) 170px 90px}
   .thead>*:nth-child(n+5),.trow>*:nth-child(n+5){display:none}
   .set-inner{grid-template-columns:1fr;gap:16px}
@@ -2953,10 +2917,6 @@ textarea{resize:vertical}
   :root:not([data-theme=light]) .cal-md.l1{background:color-mix(in srgb,var(--acc) 30%,var(--field))}
   :root:not([data-theme=light]) .cal-md.l2{background:color-mix(in srgb,var(--acc) 55%,var(--field))}
   :root:not([data-theme=light]) .cal-md.l3{background:color-mix(in srgb,var(--acc) 85%,var(--field));color:#1b1a17}}
-.rd-cv{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;border-radius:10px;
-  background:var(--acc-wash);border:1px solid var(--acc-line);font-size:13px;color:var(--t900)}
-.rd-cv span{flex:1;min-width:0}
-.rd-cv .obtn{height:30px;padding:0 12px;border-radius:7px;font-size:12.5px;white-space:nowrap}
 /* The page behind a sheet or the palette goes further back in the dark. */
 :root[data-theme=dark] .scrim,:root[data-theme=dark] .pal-scrim{background:rgba(0,0,0,.58)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .scrim,:root:not([data-theme=light]) .pal-scrim{background:rgba(0,0,0,.58)}}

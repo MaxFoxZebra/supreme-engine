@@ -9,7 +9,6 @@ server as a client, the way an AI client's do.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import tempfile
@@ -22,7 +21,6 @@ sys.path.insert(0, str(HERE / "checks"))
 os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp()
 os.environ["LOCALAPPDATA"] = os.environ["XDG_DATA_HOME"]
 
-import history  # noqa: E402
 import studio  # noqa: E402
 
 fails = 0
@@ -175,7 +173,7 @@ def through_mcp() -> None:
         r = call("restore_version", {"path": cvp, "version_id": vid})
         check("a CV can be restored", not r.get("isError")
               and "Your Name" in (ws / cvp).read_text(encoding="utf-8"), r)
-        jobs = call("add_job", {"company": "Acme", "title": "Engineer"})
+        call("add_job", {"company": "Acme", "title": "Engineer"})
         path = next(f"tracker/{p.name}" for p in (ws / "tracker").glob("*.yaml"))
         jtext = call("file_history", {"path": path})["content"][0]["text"]
         vid = jtext.splitlines()[1].split()[1]

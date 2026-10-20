@@ -2614,8 +2614,7 @@ def interview_prep(job_id: str) -> dict:
             break
         except Exception:
             continue
-    who = next((x for x in job.get("people") or [] if x.get("name") and x.get("name") == rnd.get("with")), {})
-    made = prepmod.build(job, cv, rnd.get("kind") or "", who.get("role") or "")
+    made = prepmod.build(job, cv, rnd.get("kind") or "")
     # What you already did with it (notes, the CV re-read) survives a rebuild.
     if stored:
         made = prepmod.merge(stored, {k: made[k] for k in ("questions", "stories", "asks")})

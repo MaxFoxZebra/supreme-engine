@@ -118,7 +118,6 @@ def main() -> int:
                 check(f"{name}: the name comes first", bool(first) and base["name"] in first[0], repr(first))
                 if name in ATS_SAFE:
                     present = [h for h in SECTIONS if h in texts["pypdf"].lower()]
-                    companies = [e["company"] for e in base["sections"]["experience"]]
                     for reader, text in texts.items():
                         check(f"{name}: sections in order ({reader})",
                               order(text, SECTIONS) == present, repr(order(text, SECTIONS)))

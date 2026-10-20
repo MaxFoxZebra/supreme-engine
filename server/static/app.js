@@ -6803,11 +6803,6 @@ function moveSel(){
   return true;
 }
 
-const JOB_GRID=[
-  ["status","Status","status"],["followup_date","Follow-up","date"],
-  ["score","Fit","fit"],["source","Found on","text"],
-  ["language","Language","lang"],
-];
 /* Everything you set once when the application is created and rarely touch
    again. Company and Role are here rather than at the top because the peek's
    own header already prints them, and they used to be the first two fields
@@ -7537,9 +7532,6 @@ const FN_TONE={
   rejected:"lost", ghosted:"lost",
   rejected_iv:"lost-late", ghosted_iv:"lost-late",
 };
-const fnTone=id=>FN_TOTAL.has(id)?"t-total":"t-"+(FN_TONE[id]||"draft");
-/* A band takes the colour of where it lands: that is the outcome it reports. */
-const fnBand=id=>"b-"+(FN_TONE[id]||"draft");
 
 $$("#range button").forEach(b=>b.onclick=()=>{
   $$("#range button").forEach(x=>x.setAttribute("aria-selected",String(x===b)));

@@ -1,6 +1,6 @@
 """Interview prep: made here from the posting and the CV, saved with your
 notes, and rewritten by an AI client without losing them."""
-import json, sys, tempfile
+import sys, tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import prep

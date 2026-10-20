@@ -305,7 +305,7 @@ installer is `currentUser` mode, so there is no admin prompt.
 └── src-tauri/
     ├── Cargo.toml          release profile tuned for size (opt-level z, LTO, strip)
     ├── tauri.conf.json     bundle config, updater endpoint and public key
-    ├── icons/              generated for every platform incl. .icns
+    ├── icons/              the ones the bundle lists, incl. .icns
     ├── entitlements.plist  hardened-runtime exceptions the frozen Python needs
     ├── installer/          NSIS header and sidebar art, install hooks
     ├── server-dist/        gitignored; PyInstaller output, staged before bundling
