@@ -754,11 +754,16 @@ window.cvsI18n = (function () {
     const now = Date.now();
     if (!force && now - lastCheck < (docked() ? 4000 : 15000)) return;
     lastCheck = now;
+    /* A later render can arrive while this asks (a Keep, an edit on the
+       page): an answer about the render before is then no answer. */
+    const rid = data.rid;
     try {
       const r = await request("tools/call", {name: "page_view_data",
-        arguments: {what: "status", path: data.path, rid: data.rid}}, 20000);
+        arguments: {what: "status", path: data.path, rid}}, 20000);
+      if (!data || data.rid !== rid) return;
       const st = r && !r.isError && (r.structuredContent || r.structured_content);
       if (st && st.current === false && docked() && await follow()) return;
+      if (!data || data.rid !== rid) return;
       if (st && st.current === false && JSON.stringify(st) !== JSON.stringify(earlier)) {
         earlier = st; sel = null; sent = null; listOpen = false; showBefore = false; paint();
       }
@@ -1759,6 +1764,9 @@ window.cvsI18n = (function () {
   }).then(r => {
     host.caps = (r && r.hostCapabilities) || {};
     applyContext((r && r.hostContext) || {});
+    /* A result handed over before this answer was drawn without the
+       client's tools: draw it again with them, pages and all. */
+    if (data) { paint(); check(true); }
     notify("ui/notifications/initialized", {});
   }).catch(() => notify("ui/notifications/initialized", {}));
 })();

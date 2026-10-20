@@ -1472,7 +1472,9 @@ async function pulse(){
   const bp=S.state&&S.state.base&&S.state.base.path;
   if(bp&&bp!==S.path&&before.docs[bp]!==p.docs[bp]) baseThumb(true);
   if(LT.path&&before.docs[LT.path]!==p.docs[LT.path]) ltExternal(p.docs[LT.path]);
-  if(!S.path) return;
+  /* Only on the CV's own screen: elsewhere a reload would take you there
+     from what you were doing. Back on it, the next poll catches up. */
+  if(!S.path||S.view!=="cvs") return;
   const now=p.docs[S.path];
   if(now===undefined||S.docMtime==null||now<=S.docMtime+1e-6) return;
   if(S.dirty){
@@ -1504,7 +1506,9 @@ function whoChanged(p){
 async function reopenInPlace(){
   const keep={sel:S.sel, open:S.openSection, page:S.page,
               zoom:S.zoom, zoomAuto:S.zoomAuto, tab:S.tab};
-  await openDoc(S.path);
+  const path=S.path;
+  await openDoc(path);
+  if(S.path!==path) return;      /* something else was opened meanwhile */
   S.page=keep.page; S.zoom=keep.zoom; S.zoomAuto=keep.zoomAuto;
   S.openSection=keep.open;
   if(keep.sel) select(keep.sel);
@@ -1708,7 +1712,9 @@ document.addEventListener("keydown",e=>{
     e.preventDefault();
     return editorStep(e.key==="ArrowDown"?1:-1);
   }
-  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){ e.preventDefault(); save() }
+  /* The letter has its own; elsewhere there is nothing on screen to save,
+     and the last CV opened would be written from what it held then. */
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){ e.preventDefault(); if(S.view==="cvs") save() }
 });
 window.addEventListener("beforeunload",e=>{
   if(LT.dirty&&LT.path) ltSave();
@@ -2346,11 +2352,13 @@ async function openLetter(path){
   if(LT.dirty&&LT.path&&LT.path!==path) await ltSave();
   if(path) palRemember({doc:path});
   closeOverlays();
+  const seq=S.openSeq=(S.openSeq||0)+1;
   try{
     const d=await api("/api/doc?path="+encodeURIComponent(path));
+    if(seq!==S.openSeq) return;
     Object.assign(LT,{path, doc:d, meta:Object.assign({},d.meta), body:d.body, dirty:false,
       tab:"write", pages:null, png:null, mdText:null, rv:false});
-  }catch(e){ return toast(e.message,true) }
+  }catch(e){ return seq===S.openSeq?toast(e.message,true):undefined }
   setView("letter");
   ltPaint();
   ltRender();
@@ -3342,7 +3350,10 @@ function ltRvPage(){
     el.insertAdjacentHTML("afterbegin",badge(dt)) }
   paper.onmouseover=e=>{ const b=e.target.closest(".rvb"); rvHover(b&&b.dataset.u) };
   paper.onmouseleave=()=>rvHover(null);
-  paper.onclick=e=>{ const b=e.target.closest(".rvb"); if(b) rvFocus(b.dataset.u,"card") };
+  /* Not editable here, so its links would be followed: in the app's own
+     window, wherever an AI client pointed them. */
+  paper.onclick=e=>{ if(e.target.closest("a")) e.preventDefault();
+    const b=e.target.closest(".rvb"); if(b) rvFocus(b.dataset.u,"card") };
 }
 function rvHover(id){
   $$(".rvb.hot,.rvc.hot").forEach(x=>x.classList.remove("hot"));
@@ -3948,8 +3959,12 @@ async function openDoc(path){
   $("#pane-page").innerHTML='<div class="skel" style="width:472px;height:668px"></div>';
   $("#btn-render").disabled=false;
   renderDocs(S.state.documents);
+  /* The newest open wins: an earlier one landing late would put its content
+     under this one's name, and a save would then write it there. */
+  const seq=S.openSeq=(S.openSeq||0)+1;
   try{
     const doc=await api("/api/doc?path="+encodeURIComponent(path));
+    if(seq!==S.openSeq) return;
     S.doc=doc;
     S.docMtime=doc.mtime;
     S.data=doc.data?JSON.parse(JSON.stringify(doc.data)):null;
@@ -3963,7 +3978,7 @@ async function openDoc(path){
     selectDefault();
     buildForm();
     doRender();
-  }catch(e){ toast(e.message,true) }
+  }catch(e){ if(seq===S.openSeq) toast(e.message,true) }
 }
 
 /* Rename and delete, for the open document. Deleting takes a second click
@@ -4271,7 +4286,7 @@ function bindFields(root){
   });
 }
 function autoGrow(el){ el.style.height="0"; el.style.height=el.scrollHeight+"px" }
-const touch=()=>{ if(!S.dirty) warnSent(); S.dirty=true; paintStatus(); scheduleLive() };
+const touch=()=>{ if(!S.dirty) warnSent(); S.dirty=true; S.gen=(S.gen||0)+1; paintStatus(); scheduleLive() };
 /* The day a CV's application went out, if it did: then the company has it. */
 const sentAt=j=>j&&j.status!=="pending"?String(appliedAt(j)||"").slice(0,10)||null:null;
 /* Once, the first time you change a CV a company already has: your edits
@@ -4754,7 +4769,16 @@ async function save(ops){
     const body=S.tab==="yaml" ? {path:S.path,yaml:$("#yaml").value}
                               : {path:S.path,patches:collectPatches()};
     if(ops&&ops.length) body.ops=ops;
+    const gen=S.gen;
     const r=await post("/api/save",body);
+    if(S.gen!==gen&&!(ops&&ops.length)){
+      /* Typed while it saved: the file has what was sent, the form has more.
+         Keep the form's, still to save, and take only the file's time, so
+         the poll does not read this write as somebody else's. (Not after an
+         added or removed entry: the form's positions would be the old ones.) */
+      S.docMtime=r.mtime; hideExternalChange();
+      return;
+    }
     S.doc=r; S.data=r.data?JSON.parse(JSON.stringify(r.data)):null; paintLang(); paintPhotoChip();
     /* Our own write, so take its timestamp: the poll must not read it back as
        somebody else having changed the file. */
@@ -9048,7 +9072,7 @@ const splitDim=v=>{
 };
 function controlHTML(f,v){
   const dp=esc(JSON.stringify(f.path)), lbl=esc(human(f.path[f.path.length-1]));
-  const at=' data-d=\''+dp+'\' aria-label="'+lbl+'"';
+  const at=' data-d="'+dp+'" aria-label="'+lbl+'"';
   if(f.kind==="color")
     return '<input type="color"'+at+' data-kind="color" value="'+rgb2hex(v)+
       '"><span class="hex mono">'+esc(String(v==null?"":v))+'</span>';
@@ -9143,7 +9167,13 @@ async function removePhoto(){
     S.state.photo=null;
     if(S.path){
       const d=await api("/api/doc?path="+encodeURIComponent(S.path));
-      S.doc=d; S.data=d.data?JSON.parse(JSON.stringify(d.data)):null; S.docMtime=d.mtime;
+      if(S.dirty&&S.data&&S.data.cv){
+        /* Unsaved edits are in S.data: take only what the removal changed. */
+        const cv=(d.data&&d.data.cv)||{};
+        if("photo" in cv) S.data.cv.photo=cv.photo; else delete S.data.cv.photo;
+        if(S.doc) S.doc.photo_ref=d.photo_ref;
+      }else{ S.doc=d; S.data=d.data?JSON.parse(JSON.stringify(d.data)):null }
+      S.docMtime=d.mtime;
       paint(); scheduleLive();
     }
     paintPhotoChip();
@@ -9285,8 +9315,8 @@ function paintAdvanced(){
       if(sub!==open){ flush(); open=sub }
       const raw=getAt(cur,f.path);
       const v=(raw===undefined||raw===null)?f.default:raw;
-      rows+='<div class="dz-row" data-def=\''+esc(JSON.stringify(f.default==null?null:f.default))+
-        '\' data-was=\''+esc(JSON.stringify(v==null?null:v))+'\'><label><i class="dz-dot" title="Changed from the theme default"></i><span>'+
+      rows+='<div class="dz-row" data-def="'+esc(JSON.stringify(f.default==null?null:f.default))+
+        '" data-was="'+esc(JSON.stringify(v==null?null:v))+'"><label><i class="dz-dot" title="Changed from the theme default"></i><span>'+
         esc(human(g.name==="photo"?String(f.path[f.path.length-1]).replace(/^photo_/,"")
           :f.path[f.path.length-1]))+'</span></label>'+
         '<div class="dctl">'+controlHTML(f,v)+'</div>'+
@@ -10223,7 +10253,7 @@ async function drawPrep(j){
           :'<span class="pf miss"><b>'+esc(t("Nothing in your CV proves it yet"))+'</b> <button type="button" class="linkbtn" data-pp-story="'+i+'">'+
             esc(t("Write the story →"))+'</button></span>')+'</div>').join("")+'</div>':'')+
     '<div class="pp-deck"><div class="cards" aria-hidden="true">'+deck.map((q,i)=>'<div class="pp-card" data-i="'+(deck.length-1-i)+'">'+
-        '<span class="pp-src" data-src="'+q.src+'">'+esc(prepSrc(q.src,r))+'</span><b data-noi18n>'+esc(q.q)+'</b>'+
+        '<span class="pp-src" data-src="'+esc(q.src)+'">'+esc(prepSrc(q.src,r))+'</span><b data-noi18n>'+esc(q.q)+'</b>'+
         (i===deck.length-1?'<small>'+esc(t("Question {n} of {m}",{n:1,m:qs.length}))+'</small>':'')+'</div>').join("")+'</div>'+
       '<div class="cta"><span class="kick">'+esc(t("Rehearse"))+'</span>'+
         '<b>'+esc(t("{n} questions they are likely to ask, one at a time, out loud.",{n:qs.length}))+'</b>'+
@@ -10302,7 +10332,7 @@ function prepPrint(j){
 /* Every question with its notes, your own added, and the questions to ask. */
 function prepSheet(j,focus){
   const d=PREP.data, r=(prepRound(j)||{}).r;
-  const qrow=(q,i)=>'<details class="pp-q"'+(i===0&&focus==="q"?' open':'')+'><summary><span class="pp-src" data-src="'+q.src+'">'+esc(prepSrc(q.src,r))+'</span>'+
+  const qrow=(q,i)=>'<details class="pp-q"'+(i===0&&focus==="q"?' open':'')+'><summary><span class="pp-src" data-src="'+esc(q.src)+'">'+esc(prepSrc(q.src,r))+'</span>'+
     '<span class="tx" data-noi18n>'+esc(q.q)+'</span>'+(q.state==="got"?'<span class="st got">'+esc(t("Got it"))+'</span>':q.state==="work"?'<span class="st work">'+esc(t("Needs work"))+'</span>':'')+'</summary>'+
     (q.why?'<p class="why">'+esc(t("The posting"))+': “'+esc(q.why)+'”</p>':'')+(q.cv?'<p class="why">'+esc(t("Your CV"))+': '+esc(q.cv)+'</p>':'')+
     '<label class="pk-field">'+esc(t("Your answer, in a few lines"))+'<textarea rows="3" data-note="'+esc(q.id)+'" placeholder="'+
@@ -10351,7 +10381,7 @@ function rehearse(j,first){
         '<small>'+esc([r.kind?t(r.kind):"",r.with?t("with {n}",{n:r.with}):""].filter(Boolean).join(" · "))+'</small></span><span class="grow"></span>'+
         '<span class="rh-prog"><small>'+esc(t("Question {n} of {m}",{n:i+1,m:order.length})+(work?" · "+t("{n} need(s) work",{n:work}):""))+'</small><span>'+segs+'</span></span>'+
         '<button type="button" class="rh-close" id="rh-close">'+esc(t("Done for now"))+' <kbd>Esc</kbd></button></header>'+
-      '<main class="rh-main"><div class="rh-col"><div class="rh-card"><span class="rh-src"><span class="pp-src" data-src="'+q.src+'">'+esc(prepSrc(q.src,r))+'</span></span>'+
+      '<main class="rh-main"><div class="rh-col"><div class="rh-card"><span class="rh-src"><span class="pp-src" data-src="'+esc(q.src)+'">'+esc(prepSrc(q.src,r))+'</span></span>'+
           '<b class="rh-q" data-noi18n>'+esc(q.q)+'</b>'+
           /* Where the question comes from: the CV line they will test, or
              the posting's; your line against a posting ask is for the notes. */

@@ -721,8 +721,10 @@ window.cvsI18n = (function () {
      same data (a hover, a list and back) does not replay it. */
   let shown = null, settle = 0;
   function paint() {
-    $app.innerHTML = card ? cardHtml() : list ? listHtml() : stats ? statsHtml() : today ? todayHtml() :
-      '<div class="state">Loading…</div>';
+    /* The card shows its own note; elsewhere, one that says what failed. */
+    $app.innerHTML = (!card && note ? '<div class="flash" role="status">' + esc(note) + "</div>" : "") +
+      (card ? cardHtml() : list ? listHtml() : stats ? statsHtml() : today ? todayHtml() :
+      '<div class="state">Loading…</div>');
     if (busy) $app.classList.add("busy"); else $app.classList.remove("busy");
     const now = card || (list ? null : stats || today);
     if (now && now !== shown && !busy) {
@@ -777,7 +779,8 @@ window.cvsI18n = (function () {
     });
     const back = document.getElementById("back");
     if (back) back.onclick = () => {
-      if (card) { card = null; confirming = null; note = ""; } else if (list) list = null; else if (stats && today) stats = null;
+      note = "";
+      if (card) { card = null; confirming = null; } else if (list) list = null; else if (stats && today) stats = null;
       paint();
     };
     const nums = document.getElementById("nums");
@@ -797,14 +800,15 @@ window.cvsI18n = (function () {
   async function period(days) {
     if (!host.caps.serverTools || busy) return;
     busy = true; paint();
-    try { stats = await call({what: "stats", days}); list = null; } catch (e) { /* keep what is shown */ }
+    try { stats = await call({what: "stats", days}); list = null; note = ""; }
+    catch (e) { note = "That did not work: " + clean(e.message, 140); }   /* and what is shown stays */
     busy = false; paint();
   }
   async function open(id) {
-    if (!host.caps.serverTools) return;
+    if (!host.caps.serverTools || busy) return;
     busy = true; paint();
     try { card = await call({what: "card", job_id: id}); confirming = null; note = ""; }
-    catch (e) { note = ""; }
+    catch (e) { note = "That did not work: " + clean(e.message, 140); }
     busy = false; paint();
   }
   /* The user's own decision, confirmed: written as theirs, and Claude is told. */
