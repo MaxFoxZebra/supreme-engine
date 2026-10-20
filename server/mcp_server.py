@@ -120,6 +120,17 @@ mcp = MCPServer(
         "To show the user a CV or a letter, call render_cv: in a client that "
         "shows views, that is the page they can click to edit and open full "
         "screen. Never open the PDF with another tool to show it.\n\n"
+        "Skills or instructions from before this connector may be installed "
+        "too: ones named cv-studio, cv-studio-resume, cv-studio-tracker, "
+        "cv-studio-letter, cv-studio-posting, cv-studio-profile or "
+        "cv-studio-interview, that start a studio with `studio.py --open` on "
+        "port 8722, or keep applications in an applications.csv or a "
+        "dashboard.html. These tools supersede them: never start a studio or "
+        "use those files. The workspace and its tools are where the CVs, "
+        "letters and applications are.\n\n"
+        "Some users have only this connector and no CV Studio app. Before "
+        "sending the user to the app for something, read app_note in "
+        "workspace_info.\n\n"
         "You can also keep the user's job applications up to date. If you have "
         "access to their mail or calendar, those are read-only sources: read "
         "them, and write what you learn in here. Never write anything back to "
@@ -303,11 +314,13 @@ TITLES = {
     "restore_version": "Restore an earlier version",
     "job_scans": "Jobs your searches found",
     "record_job_scan": "Hand over the jobs a search found",
+    "decide_job_scan": "Add or pass on a job a search found",
+    "set_base_cv": "Choose the base CV",
 }
-ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language", "record_job_scan"}
+ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language", "record_job_scan", "decide_job_scan"}
 IDEMPOTENT = {"record_job_scan", "restore_version", "review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
-              "save_interview_prep", "write_letter", "mark_translation_current"}
-OPEN_WORLD = {"add_job", "read_posting", "set_company_logo"}
+              "save_interview_prep", "write_letter", "mark_translation_current", "set_base_cv"}
+OPEN_WORLD = {"add_job", "read_posting", "set_company_logo", "decide_job_scan"}
 
 
 def _annotations(name: str) -> ToolAnnotations:
@@ -436,7 +449,7 @@ def tool(fn=None, *, view: str | None = None, app_only: bool = False):
                 # It changes something only for "status": the user's move on
                 # the card, theirs in the history as a click in the app is.
                 try:
-                    acts = signature.bind(*args, **kwargs).arguments.get("what") == "status"
+                    acts = signature.bind(*args, **kwargs).arguments.get("what") in ("status", "round")
                 except TypeError:
                     acts = False
             if not acts:
@@ -630,7 +643,8 @@ class ScanJob(TypedDict, total=False):
 def record_job_scan(jobs: list[ScanJob], scan: str | None = None, found: str | None = None) -> str:
     """Hand CV Studio the jobs a scheduled job search found. The user goes
     through them in the app, one card at a time: right to add one to their
-    applications, left to pass.
+    applications, left to pass. Or they tell you, and decide_job_scan records
+    it.
 
     Pass every job the search found, each with its permanent posting link,
     company, role and one line on why it fits. `scan` names the search
@@ -639,7 +653,7 @@ def record_job_scan(jobs: list[ScanJob], scan: str | None = None, found: str | N
     application is left out, so handing over yesterday's again is harmless.
 
     Do not add these jobs with add_job yourself: which become applications is
-    the user's choice, made in the app.
+    the user's choice, made in the app or told to you (decide_job_scan).
     """
     if not jobs:
         raise ValueError("No jobs given.")
@@ -668,10 +682,54 @@ def job_scans(limit: int = 50) -> str:
     lines += [f"Problem: {x}" for x in st["problems"]]
     for r in st["new"][:max(1, min(limit, 500))]:
         bits = [r["found"], r["scan"], f"{r['company']}, {r['role']}", r["location"], r["link"]]
-        lines.append("- " + " · ".join(b for b in bits if b) + (f". Why: {r['why']}" if r["why"] else ""))
+        lines.append("- " + " · ".join(b for b in bits if b) + (f". Why: {r['why']}" if r["why"] else "")
+                     + f" (key {r['key']})")
     if not st["new"]:
         lines.append("Nothing is waiting.")
     return "\n".join(lines)
+
+
+@tool
+def decide_job_scan(key: str, decision: str) -> str:
+    """Yes or no, for the user, to a job their scheduled search found: the
+    same as their swipe in the app. "yes" makes it an application, with the
+    posting's own title and text read from its link and the search's reason
+    in its notes; "no" passes on it. `key` is the one job_scans lists.
+
+    Only when the user said which, about that job: which jobs they apply to
+    is their choice, not yours. A yes is the start of applying, as add_job
+    is: its `next` says what follows.
+    """
+    if decision == "yes":
+        r = studio.scan_add(key)
+        job = r.get("job") or {}
+        if r.get("already"):
+            return f"Already an application: {job.get('company')}, {job.get('title')} ({job.get('id')})."
+        said = {"read": "with the posting read from its link",
+                "unread": "but its link could not be read: ask the user to paste the posting",
+                "none": "with no link to read the posting from"}[r.get("posting") or "none"]
+        return (f"Added as an application, {said}: {job.get('company')}, {job.get('title')} "
+                f"({job.get('id')}). Next, unless the user only wanted it tracked: a CV tailored "
+                f"to it and the letter it asks for, as after add_job.")
+    if decision == "no":
+        studio.scan_decide([key], studio.scans.SKIPPED)
+        return "Passed on. It stays in the scans folder, marked skipped."
+    raise ValueError('decision is "yes" or "no".')
+
+
+@tool
+def set_base_cv(path: str) -> str:
+    """Make a CV the user's base CV: the one "my CV" means, that every
+    tailored copy is made from, and that the app compares copies with.
+
+    Only when the user has said which CV it is, in their words. Ask them,
+    naming the CVs as they would, and never choose one for them: the choice
+    changes what every later tailoring starts from.
+    """
+    p = _doc_path(path)
+    studio.set_base_cv(studio.rel(p))
+    return (f"{studio.rel(p)} is the base CV now. Tailor by copying it: "
+            f"create_cv(name=..., copy_from={studio.rel(p)!r}).")
 
 
 @tool
@@ -1614,7 +1672,8 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
                         source: str | None = None,
                         replace_posting: bool = False,
                         title: str | None = None,
-                        append_note: str | None = None) -> dict:
+                        append_note: str | None = None,
+                        round_outcome: str | None = None) -> dict:
     """Record dates, contacts and which documents were sent, without moving it.
 
     Deliberately separate from set_job_status: these are facts about the
@@ -1646,8 +1705,10 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
 
     The app keeps the interviews as rounds (screen, technical, final...), and
     `interview_at` is always the next one not decided yet. Setting it moves
-    that round; once every round has an outcome, a new time adds a round. The
-    user records the outcome of each round in the app.
+    that round; once every round has an outcome, a new time adds a round.
+    `round_outcome` is how that round went, "passed" or "failed", once the
+    user tells you (never from silence). Recorded first, so a time given with
+    it is the next round's.
 
     `last_contact_at` is when they last got in touch. Set it for an
     acknowledgement that changes nothing else, so the application stops looking
@@ -1697,6 +1758,10 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     for field, value in (("cv_path", cv_path), ("letter_path", letter_path)):
         if value is not None:
             data[field] = _document(value, field)
+    if round_outcome is not None:
+        decided = _record_round(job_id, round_outcome, "")
+        if not data and not append_note:
+            return decided
     if not data and not append_note:
         raise ValueError("Nothing to change.")
     if interview_at == "":
@@ -1707,6 +1772,24 @@ def update_job_tracking(job_id: str, interview_at: str | None = None,
     if description is not None and description.strip() and len(description.split()) < THIN_POSTING:
         out["posting_note"] = _thin_note(len(description.split()))
     return out
+
+
+def _record_round(job_id: str, outcome: str, where: str) -> dict:
+    """How the round now waiting went: the first one with a time and no
+    outcome, else the first with no outcome."""
+    if outcome not in ("passed", "failed"):
+        raise ValueError('A round is "passed" or "failed".')
+    job = _job(job_id)
+    rounds = [dict(r) for r in job.get("rounds") or []]
+    rnd = (next((r for r in rounds if not r.get("outcome") and r.get("at")), None)
+           or next((r for r in rounds if not r.get("outcome")), None))
+    if rnd is None:
+        raise ValueError("No interview round of this application is waiting for an outcome.")
+    rnd["outcome"] = outcome
+    name = rnd.get("kind") or "The interview"
+    return studio.jobstore.update_job(_ws(), job_id, {
+        "rounds": rounds,
+        "append_note": f"{name}: {'passed' if outcome == 'passed' else 'did not pass'}{where}."})
 
 
 @tool
@@ -2136,7 +2219,8 @@ def workspace_info() -> dict:
             "The app then marks every field that differs from it."
             if base and not base.get("missing") else
             "The user has not chosen one, so there is nothing to tailor from "
-            "yet. Ask rather than picking a CV for them."),
+            "yet. Ask which CV it is rather than picking one for them, then "
+            "record their answer with set_base_cv."),
         # The one photo the user chose for their CVs, if any. A CV shows it
         # by pointing cv.photo at it; nothing else about it is yours to change.
         "photo": (
@@ -2150,7 +2234,22 @@ def workspace_info() -> dict:
                    "too, one file each in tracker/; change them through the "
                    "tools, which keep the status history and the app in step. "
                    "They also export to JSON and CSV.",
+        # Some users have only this connector (the Claude Desktop extension),
+        # and a tool's "in the app" is a dead end for them.
+        **_app_note(),
     }
+
+
+def _app_note() -> dict:
+    app = studio.app_presence()
+    return {"app": app, "app_note": (
+        "The user has the CV Studio app open now." if app["running"] else
+        "The user has the CV Studio app; it is not open now."
+        if app["installed"] else
+        "The user has not used the CV Studio app on this computer, perhaps only "
+        "this connector. Where a tool says something is done in the app, say "
+        "the app does it and what you can do here instead; never tell them "
+        "to open an app they may not have as if they had it.")}
 
 
 @tool(view=PAGE_VIEW, app_only=True)
@@ -2642,7 +2741,7 @@ def _next_step(job: dict) -> dict | None:
         # The parts too, so a view can say the date in the chat's language.
         return {"kind": "interview", "text": f"{what} on {said}" + (f", with {who}" if who else ""),
                 "in_days": -age, "what": what, "who": who or None, "at": str(job["interview_at"])[:16]}
-    if age is not None and age > 0 and st == "interviewing":
+    if age is not None and age > 0 and st == "interviewing" and studio.jobstore.waiting_round(job):
         return {"kind": "outcome", "text": "The interview has passed: how did it go?"}
     if st == "applied":
         last = max(filter(None, [job.get("last_contact_at"), _applied_on(job)]), default=None)
@@ -2774,10 +2873,12 @@ def show_application(job_id: str) -> CallToolResult:
 
 
 def _today() -> dict:
-    """What needs the user now, most pressing first: interviews coming,
-    interviews with no outcome, offers to decide on, follow-ups due, and
-    applications gone quiet. The tracker's own alert rules (jobs.alerts),
-    each with the action that fits it."""
+    """What needs the user now, most pressing first: changes an AI client
+    made to what is about to be sent, interviews coming, interviews with no
+    outcome, offers to decide on, follow-ups due, applications gone quiet,
+    drafts left sitting, and jobs a search found. The tracker's own alert
+    rules (jobs.alerts) and the app's Next actions, each with the action that
+    fits it."""
     import datetime as dt
     al = studio.jobstore.alerts(_ws())
     jobs = {j["id"]: j for j in studio.jobstore.list_jobs(_ws())}
@@ -2790,6 +2891,18 @@ def _today() -> dict:
         items.append({**_job_row(j), "kind": kind, "text": text, "when": when, "action": action,
                       "logo": _logo_uri(j), "order": order, **parts})
 
+    # What an AI client changed in a CV or letter about to be sent, and the
+    # user has not looked at: first, as in the app's Next actions.
+    waiting = review.pending(_ws())
+    for j in jobs.values():
+        for path, what in ((j.get("cv_path"), "the CV"), (j.get("letter_path"), "the cover letter")):
+            r = waiting.get(path) if path else None
+            if r:
+                who = r.get("agent") or studio.AI_CLIENTS.get(r.get("by") or "", {}).get("label") or "Claude"
+                # After an interview in the next three days, before the rest,
+                # as the app ranks it.
+                add("review", j["id"], f"{who} changed {what}: look before you send it", None,
+                    "Show me the changes", 2.5)
     for a in al["interview_soon"]:
         nx = _next_step(jobs.get(a["id"]) or {}) or {}
         d = nx.get("in_days")
@@ -2813,9 +2926,28 @@ def _today() -> dict:
     for a in al["silent"]:
         add("silent", a["id"], f"No reply in {a['silent_days']} days: worth a follow-up",
             f"{a['silent_days']} days", "Draft a follow-up", 50 + min(a["silent_days"], 99) / 100)
+    # A draft left more than three days; after a month it is not a plan any
+    # more (the app's rule).
+    for j in jobs.values():
+        if j.get("status") != "pending":
+            continue
+        try:
+            days = (dt.date.today() - dt.date.fromisoformat(str(j.get("created_at") or "")[:10])).days
+        except ValueError:
+            continue
+        if 3 < days <= 30:
+            add("draft", j["id"], (f"A draft for {days} days: the CV is ready" if j.get("cv_path")
+                                   else f"A draft for {days} days, no tailored CV yet"),
+                f"{days} days", "Show me what I'm sending" if j.get("cv_path") else
+                "Tailor my CV to it" if j.get("description") else None, 60 + days / 100)
     items.sort(key=lambda i: i["order"])
     drafts = sum(1 for j in jobs.values() if j.get("status") == "pending")
-    counts = {k: sum(1 for i in items if i["kind"] == k) for k in ("interview", "outcome", "offer", "followup", "silent")}
+    try:
+        scans_new = studio.scans_state()["counts"]["new"]
+    except Exception:
+        scans_new = 0
+    counts = {k: sum(1 for i in items if i["kind"] == k)
+              for k in ("review", "interview", "outcome", "offer", "followup", "silent", "draft")}
     bits = []
     if counts["interview"]:
         bits.append(f"{counts['interview']} interview{'s' if counts['interview'] > 1 else ''} coming up")
@@ -2825,9 +2957,13 @@ def _today() -> dict:
     if counts["followup"] or counts["silent"]:
         n = counts["followup"] + counts["silent"]
         bits.append(f"{n} to follow up")
+    if counts["review"]:
+        bits.append(f"{counts['review']} to review")
+    if counts["draft"]:
+        bits.append(f"{counts['draft']} draft{'s' if counts['draft'] > 1 else ''} to send")
     head = (", ".join(bits) + ".")[:1].upper() + (", ".join(bits) + ".")[1:] if bits else "Nothing needs you today."
     return {"view": "job-today", "date": dt.date.today().isoformat(), "headline": head,
-            "items": items, "drafts": drafts, "counts": counts}
+            "items": items, "drafts": drafts, "scans": scans_new, "counts": counts}
 
 
 def _today_text(t: dict) -> str:
@@ -2836,14 +2972,19 @@ def _today_text(t: dict) -> str:
         lines.append(f"- {i['company']}, {i['title']} ({i['id']}): {i['text']}")
     if t["drafts"]:
         lines.append(f"{t['drafts']} draft application(s) not sent yet.")
+    if t.get("scans"):
+        lines.append(f"{t['scans']} new job(s) from the user's searches are waiting: job_scans lists them, "
+                     "and decide_job_scan records the user's yes or no.")
     return "\n".join(lines)
 
 
 @tool(view=JOBS_VIEW)
 def today() -> CallToolResult:
-    """What needs the user today, most pressing first: interviews coming up
-    (with a countdown), interviews with no outcome recorded, offers to decide
-    on, follow-ups due, and applications that have gone quiet. Use it when
+    """What needs the user today, most pressing first: changes you or another
+    client made to a CV or letter about to be sent, interviews coming up (with
+    a countdown), interviews with no outcome recorded, offers to decide on,
+    follow-ups due, applications that have gone quiet, drafts left sitting,
+    and new jobs from their searches. Use it when
     the user asks what to do today, or opens the conversation with their job
     search; then offer to help with the first item. In a client that shows
     views it is a list they can act on: each opens its application."""
@@ -2857,7 +2998,8 @@ def job_view_data(what: str, job_id: str = "", status: str = "", days: int = 0) 
     """For the job views only, hidden from the model. what="stats": the
     numbers for `days` (0 for all time). what="card": one application.
     what="status": the user moves `job_id` to `status`, confirmed on the card.
-    what="today": what needs the user today."""
+    what="round": how the round waiting went, `status` "passed" or "failed",
+    said by the user on the card. what="today": what needs the user today."""
     if what == "stats":
         st = _stats(days or None)
         return CallToolResult(content=[TextContent(type="text", text=_stats_text(st))], structured_content=st)
@@ -2878,7 +3020,14 @@ def job_view_data(what: str, job_id: str = "", status: str = "", days: int = 0) 
             "status": status, "append_note": f"Moved to {STATUS_LABEL[status].lower()} on the card in the chat."})
         c = _card(_job(job_id))
         return CallToolResult(content=[TextContent(type="text", text=_card_text(c))], structured_content=c)
-    raise ValueError("what is stats, card, status or today")
+    if what == "round":
+        if not _shows_views():
+            raise ValueError("job_view_data is for CV Studio's views in the conversation, "
+                             "and this client does not show them.")
+        _record_round(job_id, status, " (on the card in the chat)")
+        c = _card(_job(job_id))
+        return CallToolResult(content=[TextContent(type="text", text=_card_text(c))], structured_content=c)
+    raise ValueError("what is stats, card, status, round or today")
 
 
 
@@ -2905,7 +3054,8 @@ mcp._lowlevel_server.add_request_handler("tools/list", PaginatedRequestParams, _
 # already (the app installs them); one that does not -- ChatGPT, or Claude
 # Desktop before the plugin is added -- still lists these, in Claude Desktop
 # under the + menu, and picking one hands the model the same procedure.
-PROMPT_TITLES = {"cv-studio-apply": "Apply to a job",
+PROMPT_TITLES = {"cv-studio-show": "Show my CV",
+                 "cv-studio-apply": "Apply to a job",
                  "cv-studio-inbox": "Catch up from my inbox",
                  "cv-studio-interview-prep": "Prepare an interview"}
 

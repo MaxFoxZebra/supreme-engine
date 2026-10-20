@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -192,6 +193,22 @@ def through_mcp() -> None:
         listing = call("job_scans", {})["content"][0]["text"]
         check("what is waiting can be read", "Waiting: 2" in listing and "Scaleway" in listing, listing)
         check("nothing became an application", not list((ws / "tracker").glob("*.yaml")))
+        # The user's yes or no, told to Claude rather than swiped in the app.
+        call("record_job_scan", {"jobs": [{"company": "Qonto", "role": "Solutions Engineer", "why": "Fintech"}]})
+        listing = call("job_scans", {})["content"][0]["text"]
+        key = lambda company: next((m.group(1) for line in listing.splitlines() if company in line
+                                    for m in [re.search(r"\(key ([^)]+)\)$", line)] if m), None)
+        check("each waiting job is listed with the key to decide it by",
+              all(key(n) for n in ("Scaleway", "Datadog", "Qonto")), listing)
+        r = call("decide_job_scan", {"key": key("Datadog"), "decision": "no"})
+        check("a no passes on it", not r.get("isError") and "Waiting: 2" in call("job_scans", {})["content"][0]["text"],
+              r["content"][0]["text"])
+        r = call("decide_job_scan", {"key": key("Qonto"), "decision": "yes"})
+        made = list((ws / "tracker").glob("*.yaml"))
+        check("a yes makes it an application, and says what comes next",
+              not r.get("isError") and len(made) == 1 and "tailored" in r["content"][0]["text"], r["content"][0]["text"])
+        r = call("decide_job_scan", {"key": key("Scaleway"), "decision": "maybe"})
+        check("and nothing but yes or no is taken", bool(r.get("isError")))
         r = call("record_job_scan", {"jobs": []})
         check("no jobs is an error", bool(r.get("isError")), r)
     finally:

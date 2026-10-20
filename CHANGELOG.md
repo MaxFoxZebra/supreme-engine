@@ -8,6 +8,29 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- In the chat, Undo all, Keep and the rest of the page work again at the end
+  of a tailoring run. On the page that checks the CV against the posting, a
+  click anywhere opened "Add evidence for…" on a missing keyword instead.
+- "Show me my CV" gets you CV Studio's page in the chat, the one you can
+  click to change. A new skill claims it, and Claude is told that the older
+  CV Studio skills (cv-studio, cv-studio-resume, cv-studio-tracker and the
+  rest, from before the app) are superseded. If you still have those in
+  your Claude account, remove them.
+- What you start in the chat can finish there:
+  - Tell Claude how an interview went, or press Passed or Didn't pass on
+    the application's card in the chat.
+  - Say yes or no to jobs your morning searches found.
+  - Tell Claude which CV is your base CV.
+- Today in the chat lists what the app's Next actions does: changes Claude
+  made to a CV or letter you are about to send, drafts left sitting, and new
+  jobs from your searches.
+- Claude knows whether you have the CV Studio app, and no longer sends you
+  to it if you only have the connector.
+- An application whose interview round already has its outcome no longer
+  shows under "Interview, no outcome", in the app or in the chat.
+
 ## 0.49.4
 
 - Your own edits no longer count as Claude's. A field you change in the app

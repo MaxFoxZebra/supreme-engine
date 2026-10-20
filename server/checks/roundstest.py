@@ -75,6 +75,15 @@ def main() -> int:
 
     csv = jobs.export(ws, "csv")
     check("the CSV export lists the rounds", "Recruiter screen 2026-09-20 15:00 (passed)" in csv)
+
+    # "Interview, no outcome" is for a round still waiting for one: once the
+    # last has its outcome, the interview time stays on it and needs nothing.
+    k = jobs.add_job(ws, {"company": "Initech", "title": "SRE", "status": "interviewing"})
+    jobs.update_job(ws, k["id"], {"rounds": [{"kind": "Screen", "at": "2020-03-02T10:00"}]})
+    waiting = lambda: [a["id"] for a in jobs.alerts(ws)["interview_passed"]]
+    check("an interview gone by with no outcome asks for one", k["id"] in waiting())
+    jobs.update_job(ws, k["id"], {"rounds": [{"kind": "Screen", "at": "2020-03-02T10:00", "outcome": "passed"}]})
+    check("and stops asking once it has one", k["id"] not in waiting())
     print()
     print(f"{fails} failure(s)" if fails else "every rounds check passes")
     return 1 if fails else 0

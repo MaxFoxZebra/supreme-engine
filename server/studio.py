@@ -2921,6 +2921,46 @@ def prefs_path() -> Path:
     return cjkfonts.cache_dir().parent / "prefs.json"
 
 
+def app_file() -> Path:
+    """Where the desktop app says it is open: beside the preferences. The app
+    starts its server on a free port and nothing else would know which, so
+    the connector, a process an AI client runs, reads this to tell whether the
+    user has the app at all and whether it is open now."""
+    return cjkfonts.cache_dir().parent / "app.json"
+
+
+def note_app_open(port: int) -> None:
+    """Written by the server the desktop app starts, never by a connector."""
+    try:
+        f = app_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        review.write_whole(f, json.dumps({"port": port, "version": VERSION, "pid": os.getpid(),
+                                          "started": int(time.time())}))
+    except OSError:
+        pass
+
+
+def app_presence() -> dict:
+    """{"installed", "running"}: whether the desktop app has been used on
+    this computer, and whether it answers now. Running is its port taking a
+    connection: the app can close without a word (a crash, a shutdown), so the
+    file alone says only that it was."""
+    import socket
+    try:
+        info = json.loads(app_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"installed": False, "running": False}
+    port = info.get("port") if isinstance(info, dict) else None
+    running = False
+    if isinstance(port, int) and 0 < port < 65536:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                running = True
+        except OSError:
+            pass
+    return {"installed": True, "running": running}
+
+
 def log_path() -> Path:
     """Where the server writes what it would print, when there is no terminal
     to print it to: the desktop app. Beside the preferences, never in the
@@ -6507,6 +6547,9 @@ def main() -> int:
         OPEN_NETWORK = True
     if args.host in ("127.0.0.1", "localhost", "::1"):
         start_clip_listener()
+    if args.parent_pid:
+        # The desktop app's own server, so the connector can tell it is there.
+        note_app_open(args.port)
     # Loopback only: this reads and writes files and has no authentication.
     with Server((args.host, args.port), Handler) as httpd:
         # How long a start took, and where. Before "our code" is the system

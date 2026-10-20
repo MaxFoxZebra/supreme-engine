@@ -97,7 +97,8 @@ if __name__ == "__main__":
                  "create_cv", "render_cv", "ats_check", "design_options",
                  "workspace_info", "add_language", "translation_status",
                  "mark_translation_current", "create_letter", "write_letter",
-                 "file_history", "restore_version", "job_scans", "record_job_scan"}
+                 "file_history", "restore_version", "job_scans", "record_job_scan",
+                 "decide_job_scan", "set_base_cv"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
                     "get_interview_prep", "save_interview_prep",
@@ -144,6 +145,10 @@ if __name__ == "__main__":
     # the half of the app that writes CVs cannot see it.
     check("workspace_info names the CV to tailor from",
           "profile/my-cv.yaml" in info, "base_cv")
+    # Some users have only the connector: the model is told whether the app
+    # is there before it sends anyone to it.
+    check("and says whether the CV Studio app is there", '"app_note"' in info and '"installed"' in info,
+          info[-240:])
 
     # The document to edit has to be made first: this used to point at a
     # profile/hard.yaml that nothing ever creates, so every check below it
@@ -205,6 +210,15 @@ if __name__ == "__main__":
           if marked else "no record")
     check("nothing about any of it reached the YAML",
           "claude" not in text.lower() and "cvstudio" not in text.lower())
+
+    # The base CV, chosen in the chat once the user says which it is.
+    r = call("set_base_cv", {"path": doc})
+    now = call("workspace_info", {})["result"]["content"][0]["text"]
+    check("set_base_cv makes it the one to tailor from", '"base_cv": "' + doc + '"' in now,
+          r["result"]["content"][0]["text"][:120])
+    call("set_base_cv", {"path": "profile/my-cv.yaml"})
+    r = call("set_base_cv", {"path": "profile/nothing-here.yaml"})
+    check("and refuses a CV that is not there", r.get("result", {}).get("isError") is True or "error" in r)
 
     # The PDF an ATS receives, read back.
     r = call("ats_check", {"path": doc})
@@ -308,6 +322,19 @@ if __name__ == "__main__":
     check("clearing an interview also records that it happened",
           row["interview_at"] is None and "cleared" in (row["notes"] or "").lower(),
           (row["notes"] or "").splitlines()[-1] if row["notes"] else "no note")
+
+    # How a round went, said in the chat: it used to be the app's alone.
+    call("update_job_tracking", {"job_id": job_id, "interview_at": "2020-01-02T10:00:00"})
+    r = call("update_job_tracking", {"job_id": job_id, "round_outcome": "passed",
+                                     "interview_at": "2099-02-03T09:30:00"})
+    row = json.loads(text(r)) if not errored(r) else {}
+    outs = [x.get("outcome") for x in row.get("rounds") or []]
+    check("a round's outcome is recorded, and a time given with it is the next round's",
+          outs == ["passed", ""] and str(row.get("interview_at") or "").startswith("2099-02-03T09:30"),
+          text(r)[:200] if errored(r) else f"{outs} {row.get('interview_at')}")
+    r = call("update_job_tracking", {"job_id": job_id, "round_outcome": "maybe"})
+    check("and only passed or failed", errored(r))
+    call("update_job_tracking", {"job_id": job_id, "interview_at": ""})
 
     # Interview prep: made here until a client writes it, notes kept after.
     r = call("get_interview_prep", {"job_id": job_id})

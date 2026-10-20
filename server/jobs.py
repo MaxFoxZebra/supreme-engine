@@ -644,6 +644,11 @@ def clean_rounds(rounds) -> list[dict]:
     return out
 
 
+def waiting_round(job: dict) -> dict | None:
+    """The round with a time and no outcome yet, if there is one."""
+    return next((r for r in job.get("rounds") or [] if r.get("at") and not r.get("outcome")), None)
+
+
 def interview_of(rounds: list[dict]) -> tuple[str | None, str | None]:
     """The one interview time everything else reads (calendar, reminders, the
     countdown, an AI client): the first round not decided yet that has a time,
@@ -1053,8 +1058,10 @@ def alerts(workspace: Path) -> dict:
                              "interview_tz": job.get("interview_tz")}
             if -INTERVIEW_SOON_DAYS <= age <= 0:
                 out["interview_soon"].append(entry)
-            elif age > 0 and job["status"] == "interviewing":
+            elif age > 0 and job["status"] == "interviewing" and waiting_round(job):
                 # The interview has been and gone and nothing was recorded.
+                # (Once every round has an outcome, interview_at stays on the
+                # last one, which then needs nothing.)
                 # Either it needs an outcome, or the date is stale because it
                 # moved in a calendar nobody has re-read since.
                 out["interview_passed"].append(entry)

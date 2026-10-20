@@ -30,7 +30,7 @@ one rendered by clicking Save.
 | `find_job` | Which application a message or event belongs to. Reports what it found and refuses to choose |
 | `job_alerts` | The same list the Jobs view shows under Attention |
 | `set_job_status` | Move one along the funnel |
-| `update_job_tracking` | Interview time, follow-up date, who is writing to you, which CV or letter was sent, and the posting (link, text, place, source) |
+| `update_job_tracking` | Interview time, follow-up date, how a round went (passed or not), who is writing to you, which CV or letter was sent, and the posting (link, text, place, source) |
 | `save_person` | Record someone you are talking to about an application (recruiter, hiring manager, interviewer, referral), from an email thread or an invitation. Completes someone already listed, never removes anyone |
 | `get_interview_prep` | The prep for an application's next round as the user sees it: likely questions (with where each comes from and the user's notes), stories that back the posting's asks, questions to ask. `local` means the app made it from the posting alone |
 | `save_interview_prep` | Write better questions, stories and asks for that round. The user's notes, rehearsal marks and own questions are kept |
@@ -40,6 +40,8 @@ one rendered by clicking Save.
 | `set_company_logo` | Give a company a logo, from its website or an image on disk, and use it on every application to that company |
 | `record_job_scan` | Hand over the jobs a scheduled search found. They wait in the app as cards for you to say yes or no to; none becomes an application until you do. A job handed over before, decided, or already an application is left out |
 | `job_scans` | What the searches found that you have not decided on yet, and how many you added or passed on |
+| `decide_job_scan` | Your yes or no to a job a search found, when you tell Claude rather than swipe in the app: yes makes it an application, its posting read from its link |
+| `set_base_cv` | Make a CV your base CV, the one every tailored copy is made from, once you have said which it is |
 
 `render_cv` returning an image is the point of the whole thing. The model can
 *look* at the rendered page and catch what only shows up visually: a bullet
@@ -108,13 +110,17 @@ differ from what the model passed. `update_job_tracking` takes a `title` only
 to correct a row to the title its posting gives, checked against the link;
 any other rename is yours, in the app.
 
-**It cannot see the funnel or export.** The rates, the drop-off, the CSV and
-JSON exports are app-side only. It can list the applications and count them
-itself.
+**It cannot export.** The CSV and JSON exports are app-side only. The funnel
+it sees through `job_stats`, which draws it in the chat.
 
-**It cannot choose your base CV.** `workspace_info` reports which document the
-tailored copies start from, so it can copy the right one, but nominating a
-different one is a decision left with you.
+**It does not choose your base CV for you.** `workspace_info` reports which
+document the tailored copies start from, so it can copy the right one;
+`set_base_cv` changes it, and only once you have said which CV it is.
+
+**It knows whether you have the app.** Some people use only the connector
+(the Claude Desktop extension). `workspace_info` says whether the CV Studio
+app has been used on this computer and whether it is open, so the model does
+not send you to an app you do not have.
 
 Two things it *can* do that the tool names hide:
 
@@ -189,7 +195,8 @@ Monzo interview".
 A scheduled task can search for postings every morning and hand what it finds
 to CV Studio with `record_job_scan`. The model does not add them as
 applications: you go through them in the app, one card at a time, right to add
-one (its posting is then read from its link), left to pass. A job you passed on
+one (its posting is then read from its link), left to pass. Or tell Claude
+which ones, and `decide_job_scan` records it the same way. A job you passed on
 is remembered and not offered again, however many mornings a search finds it.
 
 The task has to run where CV Studio's connector does: in the Claude desktop app
@@ -448,12 +455,20 @@ connector stays in Claude Desktop's config, because a local server bundled in a
 plugin runs in Cowork and Claude Code but not in chat.
 
 If you uploaded CV Studio skills to Claude one at a time before, remove them
-under Customize → Skills: the plugin replaces them.
+under Customize → Skills: the plugin replaces them. Skills from before the app
+(`cv-studio`, `cv-studio-resume`, `cv-studio-tracker`, `cv-studio-letter`,
+`cv-studio-posting`, `cv-studio-profile`, `cv-studio-interview`) start a studio
+of their own on port 8722 and keep applications in a CSV. The connector tells
+Claude they are superseded, but remove them all the same.
+
+**Showing a CV is a skill too.** `cv-studio-show` claims "show me my CV" and
+its other wordings, so Claude answers with the page you can click to change,
+and not with a PDF viewer or an older skill.
 
 **The skills are prompts too.** The server offers each one as an MCP prompt
-(*Apply to a job*, *Catch up from my inbox*, *Prepare an interview*), so a
-client without skills still has them: in Claude Desktop under the **+** menu,
-and wherever else a client lists a server's prompts.
+(*Show my CV*, *Apply to a job*, *Catch up from my inbox*, *Prepare an
+interview*), so a client without skills still has them: in Claude Desktop
+under the **+** menu, and wherever else a client lists a server's prompts.
 
 ## The page, in the conversation
 

@@ -184,6 +184,51 @@ async function main() {
   check("the numbers open from Today, and come back to it",
     await b.evalJs(`!!${doc}.querySelector(".todo")`));
 
+  console.log("How an interview went");
+  /* Said on the card, as in the app, rather than "in the app" only. */
+  const ago = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 16) + ":00";
+  await c.send("tools/call", {name: "update_job_tracking", arguments: {job_id: job.id, interview_at: ago}});
+  const went = (await c.send("tools/call", {name: "show_application", arguments: {job_id: job.id}})).result;
+  check("an interview gone by asks how it went", (went.structuredContent.next || {}).kind === "outcome",
+    JSON.stringify(went.structuredContent.next));
+  await show(went);
+  const answers = await b.evalJs(`[...${doc}.querySelectorAll("[data-round]")].map(x=>x.dataset.round).join()`);
+  check("with the two answers on the card", answers === "passed,failed", answers);
+  await b.evalJs(`${doc}.querySelector('[data-round="passed"]').click()`);
+  await until(`/Recorded/.test((${doc}.querySelector(".flash")||{}).textContent||"")`);
+  read = JSON.parse((await c.send("tools/call", {name: "read_job", arguments: {job_id: job.id}})).result.content[0].text);
+  check("an answer is saved as the round's outcome, noted as made on the card",
+    (read.rounds || []).some(r => r.outcome === "passed") && /on the card in the chat/.test(read.notes || ""),
+    JSON.stringify(read.rounds));
+  const told3 = await b.evalJs(`(LOG.filter(m=>m.method==="ui/update-model-context").pop()||{params:{content:[{text:""}]}}).params.content[0].text`);
+  check("Claude is told, out of the chat", /recorded that their interview round/.test(told3) && /passed/.test(told3), told3);
+  check("and the card stops asking", !(await b.evalJs(`!!${doc}.querySelector("[data-round]")`)) &&
+    !((await c.send("tools/call", {name: "show_application", arguments: {job_id: job.id}})).result.structuredContent.next || {}).kind
+      ?.startsWith("outcome"));
+
+  console.log("Today, as the app's Next actions has it");
+  /* A CV Claude changed for an application, not looked at yet, and a job a
+     search found: both were on the app's list and missing from the chat's. */
+  await c.send("tools/call", {name: "create_cv", arguments: {name: "northwind-rail", copy_from: "profile/my-cv.yaml"}});
+  await c.send("tools/call", {name: "edit_cv_fields", arguments: {path: "profile/northwind-rail.yaml",
+    edits: [{path: ["cv", "headline"], value: "Platform Engineer, rail systems"}]}});
+  await c.send("tools/call", {name: "update_job_tracking", arguments: {job_id: job.id, cv_path: "profile/northwind-rail.yaml"}});
+  const scansBefore = (await c.send("tools/call", {name: "today", arguments: {}})).result.structuredContent.scans || 0;
+  await c.send("tools/call", {name: "record_job_scan", arguments: {jobs: [{company: "Trainline", role: "SRE", why: "Rail"}]}});
+  const td2 = (await c.send("tools/call", {name: "today", arguments: {}})).result;
+  const its = td2.structuredContent.items, at = its.findIndex(i => i.kind === "review" && i.id === job.id);
+  check("a change to what is about to be sent comes before all but an interview in the next three days",
+    at >= 0 && its[at].action === "Show me the changes" &&
+      its.slice(0, at).every(i => i.kind === "interview" && /Today|Tomorrow|In [12] days/.test(i.when || "")),
+    JSON.stringify(its.slice(0, at + 1).map(i => [i.kind, i.when])));
+  check("and the model hears of the new jobs searches found, and how to decide them",
+    td2.structuredContent.scans === scansBefore + 1 && /decide_job_scan/.test(td2.content[0].text),
+    td2.content[0].text.split("\n").slice(-1)[0]);
+  await show(td2);
+  const tail = await b.evalJs(`[...${doc}.querySelectorAll(".fact")].map(x=>x.textContent).join(" | ")`);
+  check("the view says it, with the question to ask", new RegExp((scansBefore + 1) + " new jobs? from your searches").test(tail) &&
+    await b.evalJs(`!!${doc}.querySelector('[data-ask="Show me the jobs my searches found"]')`), tail);
+
   b.close(); srv.close(); c.close();
   console.log();
   console.log(fails ? `${fails} failure(s)` : "every job view check passes");
