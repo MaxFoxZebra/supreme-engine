@@ -8,6 +8,23 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.49.7
+
+- Gemini CLI is in Settings → AI clients and on the first-run screen: one click
+  writes CV Studio's MCP connector to `~/.gemini/settings.json` and installs
+  its skills into `~/.gemini/skills`, and changes Gemini makes are marked with
+  its own badge in History and Changes.
+- On the base CV, a "Tailor a copy…" button in the document bar starts a
+  job-specific copy in one click, and the Base CV chip is highlighted so it is
+  always clear whether you are editing the master CV or a tailored fork.
+- Interviews on the Calendar and application rows in the Funnel now have an
+  "Open CV" action that jumps straight to that job's tailored CV in one click,
+  and `Alt+1`–`Alt+5` switch directly between views.
+- In Applications, the search box and "+ New Application…" stay reachable while
+  an application's detail pane is open, the CV editor's outline and document
+  switcher scroll independently, and MCP activity and background edits sync
+  live across every view.
+
 ## 0.49.6
 
 - The CV page shows in the chat in Claude on Windows. Claude Desktop for
