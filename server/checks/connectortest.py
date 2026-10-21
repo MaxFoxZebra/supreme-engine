@@ -8,7 +8,9 @@ from a copy per version under a name of its own, and the app points each client
 at the new copy after an update. This builds a pretend frozen app in a scratch
 folder and checks that: the copy, the re-pointing (only of entries that are
 ours, keeping their workspace and every other server in the file), and the
-removal of old copies. Then the skills: installed into the folder Codex, Vibe
+removal of old copies, and Claude Desktop's own copy of its config when it is
+installed as a Windows package. The connector's version with each call, so a
+client still running an older one is told apart. Then the skills: installed into the folder Codex, Vibe
 and Hermes read, kept current, never over a folder the user made; packed as one
 plugin for Claude Desktop; and the repository as a plugin marketplace. Last,
 what the MCP server tells a client about its tools and prompts. And the
@@ -22,6 +24,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import zipfile
@@ -112,6 +115,90 @@ def copies() -> None:
           str([p.name for p in studio.mcp_copy_root().iterdir()]))
     st = studio.ai_status("claude")
     check("and the app shows it as this copy", st["state"] in ("connected", "other-workspace"), st["state"])
+
+
+def package() -> None:
+    """Claude Desktop installed as a Windows package (MSIX) reads its own copy
+    of the config, in the package's private AppData, once it has written one,
+    and never the one in %APPDATA% again. An update that re-pointed only that
+    one left Claude starting an old connector, which showed no CV page."""
+    print("Claude Desktop as a Windows package")
+    # %APPDATA%'s config, in the scratch folder on every system: without the
+    # override the app would otherwise reach for the real one.
+    appdata = SCRATCH / "roaming" / "Claude" / "claude_desktop_config.json"
+    override = os.environ.pop("CVSTUDIO_CLAUDE_CONFIG")
+    real = getattr(studio, "_claude_appdata_config", None)
+    studio._claude_appdata_config = lambda: appdata
+    os.environ["XDG_CONFIG_HOME"] = str(SCRATCH / "roaming")
+    try:
+        pkg = (Path(os.environ["LOCALAPPDATA"]) / "Packages" / "Claude_pzs8sxrjxfjjc" / "LocalCache"
+               / "Roaming" / "Claude" / "claude_desktop_config.json")
+        pkg.parent.mkdir(parents=True)
+        check("with no copy of its own yet, Claude reads the one in AppData",
+              studio.ai_config_path("claude") == appdata, str(studio.ai_config_path("claude")))
+
+        old = studio.mcp_copy_root() / "0.9.0" / studio.MCP_COPY_EXE
+        args = ["--mcp", "--workspace", str(studio.WORKSPACE), "--client", "claude"]
+        for f in (appdata, pkg):
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps({"mcpServers": {
+                "cv-studio": {"command": str(old), "args": args},
+                "other": {"command": "npx", "args": ["other-server"]}},
+                "preferences": {"quickEntryShortcut": "off"}}), encoding="utf-8")
+        check("once it has one, that is the config the app reads and writes",
+              studio.ai_config_path("claude") == pkg, str(studio.ai_config_path("claude")))
+
+        r = studio.refresh_connectors()
+        target = studio.mcp_copy_target()
+        mine = json.loads(pkg.read_text(encoding="utf-8"))
+        check("an update re-points the package's own copy, the one Claude reads",
+              mine["mcpServers"]["cv-studio"]["command"] == str(target), mine["mcpServers"]["cv-studio"]["command"])
+        check("keeping its arguments, the other servers and Claude's own settings",
+              mine["mcpServers"]["cv-studio"]["args"] == args
+              and mine["mcpServers"]["other"] == {"command": "npx", "args": ["other-server"]}
+              and mine["preferences"] == {"quickEntryShortcut": "off"})
+        check("and the one in AppData too",
+              json.loads(appdata.read_text(encoding="utf-8"))["mcpServers"]["cv-studio"]["command"] == str(target))
+        check("said once", r["moved"].count("claude") == 1, str(r["moved"]))
+        st = studio.ai_status("claude")
+        check("the app shows the package's copy, connected",
+              st["config_path"] == str(pkg) and st["state"] == "connected", f"{st['config_path']} {st['state']}")
+    finally:
+        os.environ["CVSTUDIO_CLAUDE_CONFIG"] = override
+        os.environ.pop("XDG_CONFIG_HOME", None)
+        if real:
+            studio._claude_appdata_config = real
+        shutil.rmtree(SCRATCH / "data" / "Packages", ignore_errors=True)
+
+
+def stale() -> None:
+    """The connector says its version with each call, so the app can tell a
+    client that still runs an older one (not restarted since the update) from
+    one that runs this version's."""
+    print("The connector a client last ran")
+    was = studio.CLIENT_ID
+    studio.CLIENT_ID = "claude"
+    log = studio.WORKSPACE / studio.ACTIVITY_FILE
+    try:
+        log.unlink(missing_ok=True)
+        studio.note_mcp_activity("render_cv", "profile/my-cv.yaml")
+        st = studio.ai_status("claude")
+        check("a call notes the connector's version", st["connector_version"] == studio.VERSION,
+              str(st["connector_version"]))
+        check("this version's connector is not stale", st["stale"] is False)
+        entries = json.loads(log.read_text(encoding="utf-8"))
+        entries[-1]["version"] = "0.49.1"
+        log.write_text(json.dumps(entries), encoding="utf-8")
+        st = studio.ai_status("claude")
+        check("an older one is", st["stale"] is True and st["connector_version"] == "0.49.1")
+        del entries[-1]["version"]
+        log.write_text(json.dumps(entries), encoding="utf-8")
+        check("and so is one from before versions were noted", studio.ai_status("claude")["stale"] is True)
+        log.unlink()
+        check("a client never heard from is not", studio.ai_status("claude")["stale"] is False)
+    finally:
+        studio.CLIENT_ID = was
+        log.unlink(missing_ok=True)
 
 
 def skills() -> None:
@@ -277,6 +364,8 @@ def mcp() -> None:
 
 def main() -> int:
     copies()
+    package()
+    stale()
     skills()
     extension()
     mcp()

@@ -8,6 +8,19 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- The CV page shows in the chat in Claude on Windows. Claude Desktop for
+  Windows keeps its own copy of its settings, and every update of CV Studio
+  pointed the other copy at the new connector. So Claude kept starting the
+  connector of an older version, from before Claude was told about the page,
+  and you only saw a thumbnail beside "Used Cv-studio". CV Studio now updates
+  the copy Claude reads. After installing this version, open CV Studio once,
+  wait a minute, then quit Claude completely (right-click its icon by the
+  clock, Quit) and open it again.
+- Settings → AI clients says when Claude is still running an older
+  connector than this version's ("Restart needed"), and which version it is.
+
 ## 0.49.5
 
 - In the chat, Undo all, Keep and the rest of the page work again at the end

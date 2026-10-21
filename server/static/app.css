@@ -2499,7 +2499,7 @@ input[type=checkbox]{accent-color:var(--acc)}
   color:var(--t900)}
 .pill[data-state=connected] i{background:var(--fn-won)}
 .pill[data-state=elsewhere],.pill[data-state=other-workspace],
-.pill[data-state=unreadable]{background:var(--bad-bg);color:var(--bad)}
+.pill[data-state=unreadable],.pill[data-state=stale]{background:var(--bad-bg);color:var(--bad)}
 /* A client pointed at the wrong workspace is silently editing CVs the user is
    not looking at, which is the worst state in this pane and used to be the
    quietest: its pill sat at the same lightness as "Not set up", so the card
@@ -2507,7 +2507,7 @@ input[type=checkbox]{accent-color:var(--acc)}
 .client.wrong{border-color:var(--bad-line)}
 .client.wrong .badge{background:var(--bad-bg)}
 .pill[data-state=elsewhere] i,.pill[data-state=other-workspace] i,
-.pill[data-state=unreadable] i{background:var(--bad)}
+.pill[data-state=unreadable] i,.pill[data-state=stale] i{background:var(--bad)}
 
 /* ---------- what the model can do --------------------------------------- */
 .tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}

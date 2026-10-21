@@ -265,6 +265,13 @@ Files`, and not under `Programs`:
 Replace `YOU` with your Windows username. JSON has no environment-variable
 expansion, so `%LOCALAPPDATA%` will not work here: the path has to be literal.
 
+Claude Desktop for Windows installs as a package (MSIX), and once it has
+written its config it reads its own copy, in
+`%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude\claude_desktop_config.json`,
+rather than the one in `%APPDATA%\Claude` that its Edit Config opens. Where
+that copy exists, put the entry there. The app does: Settings → AI clients
+shows the file it wrote.
+
 **macOS**
 
 ```json
@@ -696,6 +703,15 @@ one's workspace and every other server in the file), and deletes old copies
 once nothing runs from them. A client picks up the new version the next time
 it starts. On macOS and Linux a running program's files can be replaced, so the
 connector runs from the app as it always did.
+
+For Claude Desktop installed as a Windows package, the config it reads is its
+package's own copy (see above), so that is re-pointed too, as well as the one in
+`%APPDATA%\Claude`. Before 0.49.6 only the second was, and Claude went on
+starting the copy of whatever version its own config named.
+
+Each tool call notes the connector's version in the workspace. A client still
+running another version's connector (it has not been quit since the update)
+shows as **Restart needed** in Settings → AI clients, with the version it runs.
 
 ## As a Claude Desktop extension
 

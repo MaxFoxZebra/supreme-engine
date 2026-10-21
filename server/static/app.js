@@ -930,9 +930,14 @@ const AI_PILL={
   "other-workspace":"Another workspace", unreadable:"Unreadable",
   extension:"Extension", unknown:"Checking",
 };
+/* The client last called in on a connector of another version: it has not
+   restarted since the update, or it reads a config the update did not reach.
+   Its tools still answer, so nothing else here would say so, and the CV page
+   in the chat is the first thing an old connector lacks. */
+const aiStale=c=>c.state==="connected"&&c.last_seen&&c.stale;
 /* "Configured" and "Connected" are different claims and the card should not
    make the second on the strength of the first. */
-const aiPill=c=>c.state==="connected"&&!c.last_seen?"Configured":AI_PILL[c.state];
+const aiPill=c=>aiStale(c)?"Restart needed":c.state==="connected"&&!c.last_seen?"Configured":AI_PILL[c.state];
 function aiSay(c){
   /* Installed in Claude Desktop as an extension: Claude Desktop starts it and
      updates it, and the app has nothing to write. */
@@ -949,6 +954,13 @@ function aiSay(c){
     /* A config file says a client has been *told* where the server is, not
        that it ever started it. A tool call is the only evidence the handshake
        actually happened, so the card reports that instead of implying it. */
+    if(aiStale(c))
+      return (c.connector_version
+        ? t("{c} is still running the connector from CV Studio {v}, not this version's.",{c:c.label,v:c.connector_version})
+        : t("{c} is still running a connector from an earlier version of CV Studio.",{c:c.label}))+" "+
+        (c.id==="claude"
+          ? t("Quit Claude Desktop completely (on Windows, right-click its icon by the clock and choose Quit), then open it again.")
+          : tx(c.restart));
     if(c.last_seen)
       return "Last heard from "+ago(c.last_seen*1000)+" ago"+
         (c.agent&&c.agent!==c.label?" ("+c.agent+")":"")+".";
@@ -1001,13 +1013,13 @@ function fillAIPanel(){
   const clients=S.ai||[];
   $("#s-ai-clients").innerHTML=clients.map(c=>{
     const st=c.state;
-    const wrong=st==="elsewhere"||st==="other-workspace"||st==="unreadable"||
+    const wrong=st==="elsewhere"||st==="other-workspace"||st==="unreadable"||aiStale(c)||
       (st==="extension"&&(c.also_in_config||c.other_workspace));
     return '<div class="client'+(wrong?" wrong":"")+'" data-client="'+c.id+'">'+
       '<span class="badge"><svg width="19" height="19" viewBox="0 0 24 24"'+
         ' aria-hidden="true"><use href="#'+c.id+'-mark"/></svg></span>'+
       '<div class="who"><b>'+esc(c.label)+'</b>'+
-        '<span class="pill" data-state="'+(st==="connected"&&!c.last_seen?"unknown":st)+
+        '<span class="pill" data-state="'+(aiStale(c)?"stale":st==="connected"&&!c.last_seen?"unknown":st)+
           '"><i></i>'+aiPill(c)+'</span></div>'+
       '<div class="say">'+esc(aiSay(c))+'</div>'+
       (st==="extension"?"":'<div class="go"><button class="obtn" data-connect="'+c.id+'">'+

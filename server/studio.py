@@ -172,7 +172,7 @@ EDITS_MAX_AGE = 60 * 60 * 24 * 30
 EDITS_VALUE_CHARS = 300     # how much of a before/after value is worth keeping
 
 
-def _claude_config_path() -> Path:
+def _claude_appdata_config() -> Path:
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
     elif sys.platform == "darwin":
@@ -180,6 +180,36 @@ def _claude_config_path() -> Path:
     else:
         base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     return base / "Claude" / "claude_desktop_config.json"
+
+
+def _claude_package_configs() -> list[Path]:
+    """Claude Desktop's config as its Windows package keeps it, newest first.
+
+    Claude Desktop for Windows installs as an MSIX package, and Windows gives
+    a packaged app a private AppData of its own, under
+    %LOCALAPPDATA%\\Packages\\Claude_<publisher id>\\LocalCache\\Roaming. Once
+    Claude has written its config there, that copy is the one it reads, and
+    %APPDATA%\\Claude, the file its own "Edit config" opens, is never read
+    again. Every update re-pointed that file only, so Claude went on starting
+    the connector of whatever version was in its copy, which was too old to
+    show the CV page in the chat. LOCALAPPDATA is only set on Windows.
+    """
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return []
+    try:
+        found = [f for d in (Path(local) / "Packages").glob("Claude_*")
+                 if (f := d / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json").is_file()]
+        return sorted(found, key=lambda f: f.stat().st_mtime, reverse=True)
+    except OSError:
+        return []
+
+
+def _claude_config_path() -> Path:
+    """The config Claude Desktop reads: its package's own copy where it has
+    one, else the one in AppData."""
+    package = _claude_package_configs()
+    return package[0] if package else _claude_appdata_config()
 
 
 def _openai_config_path() -> Path:
@@ -568,6 +598,19 @@ def ai_config_path(client: str) -> Path:
     return Path(override) if override else AI_CLIENTS[client]["path"]()
 
 
+def ai_config_paths(client: str) -> list[Path]:
+    """Every config file of a client's that can start this app's connector,
+    the one it reads first. One, except for Claude Desktop on Windows, where
+    both its package's copy and the one in AppData can: an update re-points
+    each, so the connector Claude starts is this version's whichever it reads."""
+    first = ai_config_path(client)
+    if client != "claude" or os.environ.get("CVSTUDIO_CLAUDE_CONFIG"):
+        return [first]
+    rest = [p for p in (*_claude_package_configs(), _claude_appdata_config())
+            if p.is_file() and not _same_file(str(p), str(first))]
+    return [first, *rest]
+
+
 def claude_extension() -> dict | None:
     """CV Studio installed in Claude Desktop as an extension (pack_mcpb.py),
     if it is: {path, version, enabled, workspace}.
@@ -620,6 +663,12 @@ def ai_status(client: str, seen: dict | None = None) -> dict:
            "config_exists": path.is_file(), "state": "absent",
            "workspace": None, "command": None, "error": None,
            "last_seen": heard.get("at"), "agent": heard.get("agent"),
+           # The connector it last ran, when that was not this version's: it
+           # has not restarted since the update, or it reads a config the
+           # update did not reach. None for a connector from before versions
+           # were noted, which is older than this one too.
+           "stale": bool(heard) and heard.get("version") != VERSION,
+           "connector_version": heard.get("version"),
            "restart": spec["restart"], "manual": spec["manual"],
            "snippet": spec["snippet"](want)}
     if not out["config_exists"]:
@@ -674,9 +723,9 @@ def ai_clients() -> list[dict]:
     return [_ai_status(client, seen) for client in AI_CLIENTS]
 
 
-def _write_entry(client: str, want: dict) -> dict | None:
-    """Put `want` in a client's config, leaving the rest alone, and return
-    what was there before.
+def _write_entry(client: str, want: dict, path: Path | None = None) -> dict | None:
+    """Put `want` in a client's config (`path`, else the one it reads),
+    leaving the rest alone, and return what was there before.
 
     People keep other servers in these files, so each is read, merged and
     written back rather than replaced -- and backed up first. A file that is
@@ -686,7 +735,7 @@ def _write_entry(client: str, want: dict) -> dict | None:
     allowed to stand.
     """
     spec = AI_CLIENTS[client]
-    path = ai_config_path(client)
+    path = path or ai_config_path(client)
     before, backup = None, None
     if path.is_file():
         try:
@@ -824,21 +873,24 @@ def refresh_connectors() -> dict:
     target = ensure_mcp_copy()
     moved, skills = [], {}
     for client, spec in AI_CLIENTS.items():
-        path = ai_config_path(client)
-        try:
-            entry = spec["read"](path) if path.is_file() else None
-        except Exception:
-            continue
-        if not entry or not entry.get("command") or not _ours(str(entry["command"])):
-            continue
-        if target is not None and not _same_file(str(entry["command"]), str(target)):
+        ours = False
+        for path in ai_config_paths(client):
             try:
-                _write_entry(client, {"command": str(target),
-                                      "args": [str(a) for a in entry.get("args") or []]})
-                moved.append(client)
-            except ValueError as exc:
-                print(f"could not re-point {client}: {exc}", file=sys.stderr)
-        if client_skills_dir(client):
+                entry = spec["read"](path) if path.is_file() else None
+            except Exception:
+                continue
+            if not entry or not entry.get("command") or not _ours(str(entry["command"])):
+                continue
+            ours = True
+            if target is not None and not _same_file(str(entry["command"]), str(target)):
+                try:
+                    _write_entry(client, {"command": str(target),
+                                          "args": [str(a) for a in entry.get("args") or []]}, path)
+                    if client not in moved:
+                        moved.append(client)
+                except ValueError as exc:
+                    print(f"could not re-point {client}: {exc}", file=sys.stderr)
+        if ours and client_skills_dir(client):
             skills[client] = install_skills(client, only_ours=True)
     pruned = []
     root = mcp_copy_root()
@@ -1089,6 +1141,8 @@ def note_mcp_activity(tool: str, path: str | None = None, ok: bool = True,
     `by` and `agent` are what let the app name the client rather than saying
     "an AI client". Until they existed the app could only name one when exactly
     one was configured, which stopped being true the moment anybody set up two.
+    `version` is this connector's: a client that has not restarted since an
+    update still runs the old one, and that is how the app can tell.
     """
     try:
         f = WORKSPACE / ACTIVITY_FILE
@@ -1100,6 +1154,7 @@ def note_mcp_activity(tool: str, path: str | None = None, ok: bool = True,
             log = []
         entry = {"tool": tool, "path": path, "at": time.time()}
         entry["by"] = CLIENT_ID or "ai"
+        entry["version"] = VERSION
         if CLIENT_AGENT:
             entry["agent"] = CLIENT_AGENT
         if not ok:
@@ -1130,7 +1185,7 @@ def mcp_activity() -> dict:
         who = entry.get("by")
         if who:
             seen[who] = {"at": entry.get("at"), "agent": entry.get("agent"),
-                         "tool": entry.get("tool")}
+                         "tool": entry.get("tool"), "version": entry.get("version")}
     return {"last": log[-1], "recent": log[-8:][::-1], "seen": seen}
 
 
