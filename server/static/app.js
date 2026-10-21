@@ -546,7 +546,7 @@ const matchBand=sc=>MATCH_BANDS.find(b=>sc>=b[1]);
 const matchKey=j=>hasMatch(j)?matchBand(j.match.score)[0]:"none";
 /* m-strong, m-good, m-fair, m-weak, m-none: the band's colours. */
 const bandCls=k=>"m-"+k;
-const matchNum=sc=>Number(sc).toLocaleString(uiLocale(),{minimumFractionDigits:1,maximumFractionDigits:1});
+const matchNum=sc=>Number(sc).toLocaleString(uiLocale(),{minimumFractionDigits:sc>=10?0:1,maximumFractionDigits:sc>=10?0:1});
 function matchStaleWords(m){
   const w=(m&&m.stale)||[];
   return w.includes("cv")&&w.includes("posting")?t("Out of date: your base CV and the posting changed since.")
@@ -649,7 +649,6 @@ function boardMark(b){
    has been marking these field by field since lineage was recorded; this is
    the same list said once, on the application, where the question "what did
    I send them" gets asked. */
-const DIFF_SHOWN=4;
 async function fillBaseDiff(el,path){
   let d;
   try{ d=await api("/api/basediff?path="+encodeURIComponent(path)) }
@@ -664,33 +663,19 @@ async function fillBaseDiff(el,path){
       'in the workspace, so there is nothing to compare it with.</p>';
     return;
   }
-  /* The same changes the Changes tab lists, so the two never give different
-     counts: an entry once, by what in it moved, rather than field by field,
-     where a bullet inserted above another read as every bullet below it
-     rewritten into the next one. */
   const units=d.units||[], n=units.length;
-  const brief=v=>{ const x=rvVal(v); return x.length>140?x.slice(0,137)+"…":x };
-  const obj=v=>v&&typeof v==="object"&&!Array.isArray(v);
-  const item=u=>{
-    const kind=u.tag==="ins"||u.label==="Section added"?"added":u.tag==="del"||u.label==="Section removed"?"removed":"";
-    const keys=obj(u.before)&&obj(u.after)?[...new Set([...Object.keys(u.before),...Object.keys(u.after)])]
-      .filter(k=>JSON.stringify(u.before[k])!==JSON.stringify(u.after[k])).map(k=>k.replace(/_/g," ")):null;
-    const where=u.kind==="field"?t("Header")+" › "+t(u.label):u.kind==="block"?t(u.label):u.where;
-    return '<li><span class="bd-where" data-noi18n>'+esc(where)+
-        (kind?' <em class="bd-kind '+kind+'">'+esc(t(kind==="added"?"Added":"Removed"))+'</em>':'')+'</span>'+
-      (keys?'<span class="bd-keys" data-noi18n>'+esc(t("Changed: {list}",{list:keys.join(", ")}))+'</span>'
-        :kind?'':(u.before!=null?'<del data-noi18n>'+esc(brief(u.before))+'</del>':'')+
-          (u.after!=null?'<ins data-noi18n>'+esc(brief(u.after))+'</ins>':''))+'</li>';
-  };
+  const secCounts=new Map();
+  for(const u of units){
+    const sec=u.kind==="field"?t("Header"):u.kind==="block"?t(u.label):String(u.where||"").split(" › ")[0]||t("CV");
+    secCounts.set(sec,(secCounts.get(sec)||0)+1);
+  }
+  const pills=[...secCounts.entries()].map(([s,c])=>'<span class="bd-pill" data-noi18n>'+esc(s)+(c>1?' <i>'+c+'</i>':'')+'</span>').join("");
   el.innerHTML=
-    '<p class="bd-head">'+(n
+    '<div class="bd-bar"><p class="bd-head">'+(n
       ?'<b>'+esc(t("{n} change(s)",{n}))+'</b> from <b>'+esc(base)+'</b>'
       :'Same as <b>'+esc(base)+'</b> so far. Nothing has been tailored yet.')+
-    '</p>'+
-    (n?'<ul class="bd-list">'+units.slice(0,DIFF_SHOWN).map(item).join("")+'</ul>':'')+
-    (n>DIFF_SHOWN?'<details class="bd-more"><summary>'+(n-DIFF_SHOWN)+' more</summary>'+
-      '<ul class="bd-list">'+units.slice(DIFF_SHOWN).map(item).join("")+'</ul></details>':'')+
-    (n?'<button class="linkbtn bd-open" type="button">'+esc(t("See every change beside the page"))+'</button>':'');
+    '</p>'+(n?'<button class="obtn bd-open" type="button">'+esc(t("See every change beside the page"))+'</button>':'')+'</div>'+
+    (pills?'<div class="bd-pills">'+pills+'</div>':'');
   const go=el.querySelector(".bd-open");
   if(go) go.onclick=async()=>{
     if(!await leaveEdits()) return;
@@ -7061,7 +7046,9 @@ function drawJobInspector(){
   const sub=[j.company,j.location].filter(Boolean).join(" \u00b7 ");
   $("#jinsp-sub").textContent=sub; $("#jinsp-sub").title=sub;
   $("#jinsp-logo").innerHTML=companyMark(j);
-  $("#jinsp-status").innerHTML='<span class="dot '+statusTone(j.status)+'"></span>'+esc(prettyStatus(j.status));
+  const sTone=statusTone(j.status);
+  $("#jinsp-status").className="ap-pill "+sTone;
+  $("#jinsp-status").innerHTML='<span class="dot '+sTone+'"></span>'+esc(prettyStatus(j.status));
 
   const rows=peekRows(), at=rows.findIndex(x=>x.id===j.id);
   $("#jpk-idx").textContent=at<0?"":(at+1)+" of "+rows.length;
@@ -7082,10 +7069,6 @@ function drawJobInspector(){
         ((S.state&&S.state.languages)||[]).map(l=>'<option value="'+l.code+'"'+
           (l.code===cur?" selected":"")+'>'+esc(l.native)+'</option>').join("")+'</select>';
     }
-    else if(kind==="fit") ctl='<div class="fit" role="group" aria-label="Fit">'+
-      [1,2,3,4,5].map(n=>'<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+
-      ' title="'+n+' of 5" aria-label="'+n+' of 5"></button>').join("")+
-      '<span class="fitv">'+(j.score?j.score+" / 5":"not rated")+'</span></div>';
     else ctl='<input data-j="'+k+'" aria-label="'+esc(label)+'"'+(kind==="date"?' type="date"':"")+
       (kind==="number"?' type="number" class="mono"':"")+' value="'+
       esc(j[k]==null?"":j[k])+'">';
@@ -7112,9 +7095,6 @@ function drawJobInspector(){
   const statusCtl='<span class="statusctl"><span class="dot '+statusTone(j.status)+'"></span>'+
     '<select data-j="status" aria-label="Status">'+S.statuses.map(s=>'<option value="'+s+'"'+
     (s===j.status?" selected":"")+'>'+esc(prettyStatus(s))+'</option>').join("")+'</select></span>';
-  const fitCtl='<div class="fit" role="group" aria-label="Fit">'+[1,2,3,4,5].map(n=>
-    '<button data-fit="'+n+'"'+((j.score||0)>=n?' class="on"':"")+' title="'+n+' of 5" aria-label="'+
-    n+' of 5"></button>').join("")+'<span class="fitv">'+(j.score?j.score+"/5":esc(t("not rated")))+'</span></div>';
   const guess=j.language_guess, curL=j.language||"";
   const langCtl='<span class="ap-lang">'+flag(curL||guess)+'<select data-j="language" aria-label="Language">'+
     '<option value=""'+(curL?"":" selected")+'>'+(guess?"Looks like "+esc(langOf(guess).native):"Not set")+'</option>'+
@@ -7137,9 +7117,10 @@ function drawJobInspector(){
         '<span>'+esc(t("{n} out of 10 against your base CV",{n:matchNum(m.score)}))+'</span></div></div>'+
       (m.summary?'<p class="mc-sum">'+esc(m.summary)+'</p>':'')+
       (stale?'<p class="mc-stale">'+esc(stale)+' <code data-noi18n>'+esc(matchAsk(j))+'</code><button type="button" class="linkbtn" data-match-copy>'+esc(t("Copy"))+'</button></p>':'')+
-      '<ul class="mc-crit">'+crit+'</ul>'+
-      '<div class="mc-lists">'+list("Strengths",m.strengths,"ok")+list("Gaps",m.gaps,"gap")+'</div>'+
-      '<div class="mc-foot">'+esc(t("Scored by {who} · {d}",{who:by,d:m.at?fmtKey(String(m.at).slice(0,10),{day:"numeric",month:"short"}):""}))+'</div>'+
+      '<details class="mc-fold"><summary class="mc-foot">'+esc(t("Scored by {who} · {d}",{who:by,d:m.at?fmtKey(String(m.at).slice(0,10),{day:"numeric",month:"short"}):""}))+'</summary>'+
+        '<ul class="mc-crit">'+crit+'</ul>'+
+        '<div class="mc-lists">'+list("Strengths",m.strengths,"ok")+list("Gaps",m.gaps,"gap")+'</div>'+
+      '</details>'+
     '</section>';
   }else{
     matchCard='<section class="ap-match none" aria-label="'+esc(t("Match"))+'">'+
@@ -7153,7 +7134,6 @@ function drawJobInspector(){
   const facts='<div class="ap-facts">'+
     fact("Status",statusCtl)+
     fact("Follow-up",'<input data-j="followup_date" type="date" aria-label="Follow-up" value="'+esc(j.followup_date||"")+'">')+
-    fact("Fit",fitCtl)+
     fact("Found on",'<button class="ap-src" id="ap-src" aria-haspopup="listbox" title="'+esc(j.source||"")+'">'+sourceMark(j)+
       '<span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button>')+
     fact("Language",langCtl)+'</div>';
@@ -7217,26 +7197,27 @@ function drawJobInspector(){
       '<button class="pbtn" id="ap-post-save">'+t(first?"Save the posting":"Save")+'</button></div>';
   const posting='<article class="ap-pcard" aria-label="'+esc(t("The posting"))+'">'+
     '<div class="ap-phead"><div class="tx"><b>'+t("The posting")+'</b><span>'+
-      esc(words?t("{n} words · kept here in case the advert comes down",{n:words})
+      esc(words?t("{n} words",{n:words})
         :t("Not saved yet · keep a copy before the advert comes down"))+
-      '</span></div>'+openLink+
-      (words?'<button class="obtn" id="ap-post-edit">'+t("Edit")+'</button>':'')+'</div>'+
+      '</span></div><div class="ap-pacts">'+openLink+
+      (words?'<button class="obtn" id="ap-post-edit">'+t("Edit")+'</button>':'')+'</div></div>'+
     '<div class="ap-pbody" id="ap-pbody">'+(words
       ? (chips.length?'<div class="ap-chips">'+chips.map(c=>'<span>'+esc(c)+'</span>').join("")+'</div>':'')+
-        '<div class="ap-post" id="ap-post">'+postingHTML(j.description)+'</div>'
+        '<details class="ap-post-fold"><summary><span>'+esc(t("The posting, as text"))+'</span><small>'+esc(t("{n} words",{n:words}))+'</small></summary>'+
+          '<div class="ap-post" id="ap-post">'+postingHTML(j.description)+'</div></details>'
       : pasteBox("",true))+'</div></article>';
 
   body.innerHTML=
     '<div id="ap-prep" hidden></div>'+
     '<div class="peek-grid">'+
       '<div class="col">'+
-        facts+matchCard+roundsHTML(j)+
+        facts+matchCard+
         '<div class="block"><div class="bhead"><span class="blabel">Documents</span>'+
           (j.cv_path||j.letter_path?'<button class="obtn" id="ap-pack" data-job="'+esc(j.id)+'">'+
             (j.cv_path&&j.letter_path?"Export both…":"Export…")+'</button>':'')+
           '</div><div class="ap-docs">'+cvCard+ltCard+'</div></div>'+
-        (j.cv_path?'<div class="block" id="jdiff-block" hidden><span class="blabel">'+
-          'Changed from the base</span><div class="bdiff" id="jdiff" data-path="'+
+        (j.cv_path?'<div class="block" id="jdiff-block" hidden><div class="bhead"><span class="blabel">'+
+          'Changed from the base</span></div><div class="bdiff" id="jdiff" data-path="'+
           esc(j.cv_path)+'"></div></div>':'')+
         '<div class="block"><div class="bhead"><span class="blabel">History</span>'+
           '<button class="linkbtn" id="ap-versions" data-job="'+esc(j.id)+'" data-name="'+esc(j.company+", "+j.title)+'">'+
@@ -7249,9 +7230,10 @@ function drawJobInspector(){
           'Delete this application</button></div>'+
       '</div>'+
       '<div class="col">'+
-        '<div class="block"><span class="blabel">Notes</span>'+
-          '<textarea data-j="notes" class="notes" aria-label="Notes">'+esc(j.notes||"")+'</textarea></div>'+
+        roundsHTML(j)+
         peopleHTML(j)+
+        '<div class="block"><div class="bhead"><span class="blabel">Notes</span></div>'+
+          '<textarea data-j="notes" class="notes" aria-label="Notes">'+esc(j.notes||"")+'</textarea></div>'+
         '<div class="block grow">'+posting+'</div>'+
       '</div>'+
     '</div>';
@@ -7299,10 +7281,6 @@ function drawJobInspector(){
     };
   });
   wireRounds(j);
-  body.querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>{
-    const n=+b.dataset.fit;
-    saveJob(j.id,{score:j.score===n?null:n});
-  });
   body.querySelectorAll("[data-open-doc]").forEach(b=>b.onclick=async ()=>{
     if(!await leaveEdits()) return;
     openDoc(b.dataset.openDoc);
