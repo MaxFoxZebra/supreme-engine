@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## 0.49.8
+## 0.49.9
 
 - Saving no longer fails at random when two things happen at once, like a
   save landing while the Design panel previews a theme, or Claude reading a CV
