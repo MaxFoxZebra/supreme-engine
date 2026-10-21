@@ -58,15 +58,15 @@ def the_rules() -> None:
     print("The rules")
     check("the weights add up to 100", sum(J.MATCH_CRITERIA.values()) == 100)
     check("all fives is 10", J.match_score(rated(5, 5, 5, 5, 5)) == 10.0)
-    check("all fours is 8, a strong match", J.match_score(rated(4, 4, 4, 4, 4)) == 8.0
-          and J.match_band(8.0) == "strong")
+    check("all fours is 9, a top match", J.match_score(rated(4, 4, 4, 4, 4)) == 9.0
+          and J.match_band(9.0) == "top")
     m = J.clean_match({"criteria": rated(5, 4, 4, 3, 3), "summary": "Close", "strengths": ["a", "", "b"],
                        "gaps": "not a list", "score": 9.9})
-    check("the score is worked out here, not taken", m["score"] == 8.3, m["score"])
+    check("the score is worked out here, not taken", m["score"] == 9.0, m["score"])
     check("in the criteria's own order", [c["key"] for c in m["criteria"]] == list(J.MATCH_CRITERIA))
     check("empty lines and a list that is not one are dropped", m["strengths"] == ["a", "b"] and m["gaps"] == [])
-    check("bands start at 8, 6.5 and 5",
-          [J.match_band(x) for x in (8.0, 7.9, 6.5, 6.4, 5.0, 4.9)] == ["strong", "good", "good", "fair", "fair", "weak"])
+    check("bands start at 9, 7, 5 and 3",
+          [J.match_band(x) for x in (9.0, 8.9, 7.0, 6.9, 5.0, 4.9, 3.0, 2.9)] == ["top", "strong", "strong", "good", "good", "fair", "fair", "weak"])
     check("every criterion has to be rated", refused({"criteria": rated(4, 4, 4, 4)}))
     check("from 0 to 5", refused({"criteria": rated(4, 4, 4, 4, 6)}))
     check("in whole numbers", refused({"criteria": [*rated(4, 4, 4, 4), {"key": "practical", "rating": "high"}]}))
@@ -89,9 +89,9 @@ def on_an_application() -> None:
     before = J.list_jobs(ws)[0]["updated_at"]
     m = studio.save_match(job["id"], {"criteria": rated(5, 4, 4, 3, 3), "summary": "Close"}, by="claude")
     check("it is stored with who scored it and against which CV",
-          m["score"] == 8.3 and m["by"] == "claude" and m["cv"] == "profile/my-cv.yaml" and m["stale"] == [], m)
+          m["score"] == 9.0 and m["by"] == "claude" and m["cv"] == "profile/my-cv.yaml" and m["stale"] == [], m)
     row = next(x for x in J.list_jobs(ws) if x["id"] == job["id"])
-    check("and read back with the application", row["match"]["score"] == 8.3 and row["match"]["summary"] == "Close")
+    check("and read back with the application", row["match"]["score"] == 9.0 and row["match"]["summary"] == "Close")
     text = next((ws / "tracker").glob("acme-*.yaml")).read_text(encoding="utf-8")
     check("in the application's own file", "match:" in text and "requirements" in text)
     base = studio._base_sig()
@@ -105,9 +105,9 @@ def on_an_application() -> None:
     check("and once the posting changes",
           studio.match_stale(row["match"], row, studio._base_sig()) == ["cv", "posting"])
     m = studio.save_match(job["id"], {"criteria": rated(3, 3, 3, 3, 3)}, by="claude")
-    check("scoring again replaces it, current again", m["score"] == 6.0 and m["stale"] == [], m)
+    check("scoring again replaces it, current again", m["score"] == 7.2 and m["stale"] == [], m)
     out = list(csv.DictReader(io.StringIO(J.export(ws, "csv"))))
-    check("the export carries the score", {r["company"]: r["match"] for r in out} == {"Acme": "6.0", "Initech": ""},
+    check("the export carries the score", {r["company"]: r["match"] for r in out} == {"Acme": "7.2", "Initech": ""},
           [(r["company"], r["match"]) for r in out])
     J.update_job(ws, job["id"], {"match": None})
     check("and it can be cleared", next(x for x in J.list_jobs(ws) if x["id"] == job["id"])["match"] is None)
@@ -126,18 +126,18 @@ def from_a_scan() -> None:
         {"company": "Globex", "role": "TAM", "link": "http://127.0.0.1:9/globex"},
     ], scan="Morning search", by="claude")
     check("a scored job comes back with its score and key",
-          [(x["company"], x["score"]) for x in r["scored"]] == [("Acme", 9.2)], r["scored"])
+          [(x["company"], x["score"]) for x in r["scored"]] == [("Acme", 9.6)], r["scored"])
     sheet = {x["company"]: x for x in scans.read_file(studio.scan_folder() / scans.FILE_NAME)}
-    check("the score is a column of the spreadsheet", sheet["Acme"]["extra"].get("Score") == "9.2"
+    check("the score is a column of the spreadsheet", sheet["Acme"]["extra"].get("Score") == "9.6"
           and not sheet["Globex"]["extra"].get("Score"), sheet["Acme"]["extra"])
     check("and the reasons are not", "Close" not in json.dumps(sheet["Acme"]))
     st = {x["company"]: x for x in studio.scans_state()["new"]}
     check("its card shows the match, not the column",
-          st["Acme"]["match"]["score"] == 9.2 and "Score" not in st["Acme"]["details"]
+          st["Acme"]["match"]["score"] == 9.6 and "Score" not in st["Acme"]["details"]
           and "match" not in st["Globex"], st["Acme"])
     added = studio.scan_add(st["Acme"]["key"])["job"]
     check("a yes carries the match onto the application",
-          (added.get("match") or {}).get("score") == 9.2 and added["match"]["by"] == "claude"
+          (added.get("match") or {}).get("score") == 9.6 and added["match"]["by"] == "claude"
           and added["match"]["stale"] == [], added.get("match"))
     stored = next(x for x in J.list_jobs(ws) if x["id"] == added["id"])
     check("where it stays", stored["match"]["gaps"] == ["Payments"])
@@ -173,10 +173,10 @@ def through_mcp() -> None:
                                "summary": "A close fit.", "strengths": ["Kubernetes"], "gaps": ["Payments"]})
         m = json.loads(text(r))
         check("score_job scores it out of 10 and names the band",
-              not r.get("isError") and m["score"] == 8.2 and m["band"] == "strong", text(r)[:200])
+              not r.get("isError") and m["score"] == 9.1 and m["band"] == "top", text(r)[:200])
         listed = call("list_jobs", {})["structuredContent"]["result"]
         check("and list_jobs shows the score, current",
-              listed[0].get("match") == {"score": 8.2, "stale": False}, listed[0].get("match"))
+              listed[0].get("match") == {"score": 9.1, "stale": False}, listed[0].get("match"))
         row = json.loads(text(call("read_job", {"job_id": made["id"]})))
         check("read_job has the reasons", row["match"]["gaps"] == ["Payments"] and row["match"]["stale"] == [])
         r = call("score_job", {"job_id": made["id"], "criteria": rated(4, 4), "summary": "?"})
@@ -184,7 +184,7 @@ def through_mcp() -> None:
         r = call("record_job_scan", {"jobs": [{"company": "Globex", "role": "SRE", "link": "https://globex.example/1",
                                                 "match": {"criteria": rated(5, 4, 4, 4, 4), "summary": "Close"}}]})
         check("a scan's score comes back with the key to add it by",
-              re.search(r"Globex, SRE: 8\.7 \(key [^)]+\)", text(r)) is not None, text(r))
+              re.search(r"Globex, SRE: 9\.4 \(key [^)]+\)", text(r)) is not None, text(r))
     finally:
         c.close()
 

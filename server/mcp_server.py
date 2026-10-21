@@ -2024,20 +2024,27 @@ def score_job(job_id: str, criteria: list[Criterion], summary: str,
 
     `criteria`: all five, each {"key", "rating", "why"}, rating a whole
     number 0 to 5 and `why` one sentence naming the evidence:
-      requirements (35%): the must-haves the posting lists, each shown on
-        the CV or not.
-      experience (25%): level and years of relevant work against what it
-        asks; far too senior costs too.
-      skills (20%): the tools, technologies and methods it names.
-      domain (10%): the industry, product and kind of customer.
-      practical (10%): location or remote, languages, work authorisation,
-        contract; 3 when neither side says.
-    5 is fully, 4 nearly all, 3 most with gaps, 2 partly, 1 barely, 0 not at
-    all. Judge only what the CV says; something missing from it is a gap,
-    not a guess in the user's favour.
+      requirements (35%): the core responsibilities and must-haves; credit
+        transferable and equivalent work on the base CV.
+      experience (25%): overall seniority and total years of relevant or
+        adjacent work (within a year or two of the ask, or equivalent scope
+        across related roles, is 4 or 5).
+      skills (20%): the core methods, craft and tools; credit transferable
+        skills and never penalise here for industry-specific tools that
+        belong under domain.
+      domain (10%): the industry, product type and kind of customer;
+        adjacent B2B, SaaS or technical sectors are 3 or 4, not 1 or 2.
+      practical (10%): location or remote and languages; 5 whenever
+        compatible (do not deduct for unstated contract type or work
+        authorisation).
+    5 is a strong fit (meets the core asks, even if minor nice-to-haves are
+    not written verbatim on the base CV), 4 solid fit with minor tailorable
+    gaps, 3 partial fit, 2 stretch, 1 barely, 0 not at all. Never
+    double-count the same gap across two criteria, and judge like a
+    pragmatic hiring manager reading a general base CV before tailoring.
 
     CV Studio works out the score out of 10 (one decimal) from the ratings
-    and their weights: strong from 8, good from 6.5, fair from 5. `summary`: one or two plain sentences, in the posting's
+    and their weights: top from 9, strong from 7, good from 5, fair from 3. `summary`: one or two plain sentences, in the posting's
     language, on the fit. `strengths` and `gaps`: up to six short lines
     each, the gaps what the user could address in a tailored CV or a letter.
 

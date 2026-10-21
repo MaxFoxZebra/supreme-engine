@@ -606,6 +606,9 @@ def _row(rec: dict) -> dict:
         d["prep"] = None
     if not isinstance(d["match"], dict):
         d["match"] = None
+    elif isinstance(d["match"].get("criteria"), list):
+        with contextlib.suppress(KeyError, IndexError, TypeError):
+            d["match"]["score"] = match_score(d["match"]["criteria"])
     # Before people, an application had one contact email. It is the first
     # person until someone is added.
     if not d["people"] and d.get("contact_email"):
@@ -700,12 +703,17 @@ def clean_prep(prep) -> dict | None:
 # thing and nobody can hand over a 9.7 the ratings do not add up to. `score`
 # in FIELDS stays the user's own fit, in stars; this is the model's reading.
 MATCH_CRITERIA = {"requirements": 35, "experience": 25, "skills": 20, "domain": 10, "practical": 10}
-# Where the bands start, as the app colours them and an AI client names them.
-MATCH_BANDS = (("strong", 8.0), ("good", 6.5), ("fair", 5.0), ("weak", 0.0))
+# Each 0..5 rating mapped to a 10-point curve so a solid base CV (3s and 4s
+# before tailoring) lands in a realistic band rather than being penalised as
+# if a base CV had to contain every word of the advert verbatim.
+RATING_POINTS = (0.0, 2.5, 5.0, 7.2, 9.0, 10.0)
+# Where the bands start, as the app colours them and an AI client names them:
+# 9+ top (popping), 7-9 strong (green), 5-7 good (blue), 3-5 fair (yellow), <3 weak (red).
+MATCH_BANDS = (("top", 9.0), ("strong", 7.0), ("good", 5.0), ("fair", 3.0), ("weak", 0.0))
 
 
 def match_score(criteria: list[dict]) -> float:
-    return round(sum(MATCH_CRITERIA[c["key"]] * c["rating"] / 5 for c in criteria) / 10, 1)
+    return round(sum(MATCH_CRITERIA[c["key"]] * RATING_POINTS[c["rating"]] for c in criteria) / 100, 1)
 
 
 def match_band(score: float) -> str:

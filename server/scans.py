@@ -638,6 +638,12 @@ def _row_out(r: dict, matches: dict | None = None) -> dict:
     out["has_description"] = bool((r.get("description") or "").strip())
     m = (matches or {}).get(r.get("key"))
     if isinstance(m, dict) and isinstance(m.get("score"), (int, float)):
+        if isinstance(m.get("criteria"), list):
+            try:
+                import jobs
+                m = {**m, "score": jobs.match_score(m["criteria"])}
+            except Exception:
+                pass
         out["details"].pop(SCORE, None)          # shown as the match instead
         out["match"] = {k: m.get(k) for k in ("score", "summary", "strengths", "gaps")}
     return out

@@ -1082,33 +1082,55 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
    and that it went out. Each band has its own hue, solved for AA as text on
    the panel in both themes. */
 :root{
-  --m-strong:#0b7a50; --m-strong-bg:rgba(11,122,80,.12);
-  --m-good:#2f69a6; --m-good-bg:rgba(47,105,166,.11);
-  --m-fair:#93600c; --m-fair-bg:rgba(192,138,62,.15);
-  --m-weak:#a83519; --m-weak-bg:rgba(168,53,25,.09);
+  --m-top:#7c22ce; --m-top-bg:rgba(168,85,247,.13);
+  --m-strong:#0b7a50; --m-strong-bg:rgba(16,185,129,.14);
+  --m-good:#1d5bbf; --m-good-bg:rgba(37,99,235,.12);
+  --m-fair:#8c5d00; --m-fair-bg:rgba(234,179,8,.17);
+  --m-weak:#b42b1d; --m-weak-bg:rgba(200,40,28,.11);
   --m-track:rgba(120,110,90,.2);
   --sent:#1d5c9b; --sent-bg:rgba(58,110,165,.12); --sent-line:rgba(58,110,165,.32);
 }
 :root[data-theme=dark]{
-  --m-strong:#4fd39a; --m-strong-bg:rgba(79,211,154,.15);
-  --m-good:#82b2ec; --m-good-bg:rgba(130,178,236,.14);
-  --m-fair:#e3b45e; --m-fair-bg:rgba(227,180,94,.14);
-  --m-weak:#f08a7a; --m-weak-bg:rgba(240,138,122,.12);
+  --m-top:#f0abfc; --m-top-bg:rgba(217,70,239,.16);
+  --m-strong:#34d399; --m-strong-bg:rgba(52,211,153,.16);
+  --m-good:#60a5fa; --m-good-bg:rgba(96,165,250,.15);
+  --m-fair:#facc15; --m-fair-bg:rgba(250,204,21,.15);
+  --m-weak:#f58474; --m-weak-bg:rgba(245,132,116,.14);
   --m-track:rgba(255,255,255,.11);
   --sent:#8fc2f6; --sent-bg:rgba(91,143,201,.2); --sent-line:rgba(143,194,246,.38);
 }
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){
-  --m-strong:#4fd39a; --m-strong-bg:rgba(79,211,154,.15);
-  --m-good:#82b2ec; --m-good-bg:rgba(130,178,236,.14);
-  --m-fair:#e3b45e; --m-fair-bg:rgba(227,180,94,.14);
-  --m-weak:#f08a7a; --m-weak-bg:rgba(240,138,122,.12);
+  --m-top:#f0abfc; --m-top-bg:rgba(217,70,239,.16);
+  --m-strong:#34d399; --m-strong-bg:rgba(52,211,153,.16);
+  --m-good:#60a5fa; --m-good-bg:rgba(96,165,250,.15);
+  --m-fair:#facc15; --m-fair-bg:rgba(250,204,21,.15);
+  --m-weak:#f58474; --m-weak-bg:rgba(245,132,116,.14);
   --m-track:rgba(255,255,255,.11);
   --sent:#8fc2f6; --sent-bg:rgba(91,143,201,.2); --sent-line:rgba(143,194,246,.38);
 }}
+.m-top{--mc:var(--m-top);--mbg:var(--m-top-bg)}
 .m-strong{--mc:var(--m-strong);--mbg:var(--m-strong-bg)}
 .m-good{--mc:var(--m-good);--mbg:var(--m-good-bg)}
 .m-fair{--mc:var(--m-fair);--mbg:var(--m-fair-bg)}
 .m-weak{--mc:var(--m-weak);--mbg:var(--m-weak-bg)}
+@keyframes mtop-shimmer{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+@keyframes mtop-pulse{0%,100%{filter:drop-shadow(0 0 3px rgba(217,70,239,.35))}50%{filter:drop-shadow(0 0 8px rgba(236,72,153,.65))}}
+.mring.m-top:not(.stale){animation:mtop-pulse 2.6s ease-in-out infinite}
+.mring.m-top:not(.stale)::before{
+  background:conic-gradient(#f59e0b 0%,#ec4899 28%,#8b5cf6 56%,#06b6d4 78%,#10b981 calc(var(--p,0)*1%),var(--m-track) 0)}
+.match.m-top:not(.stale) .mlab{
+  background:linear-gradient(115deg,rgba(245,158,11,.22),rgba(236,72,153,.24),rgba(139,92,246,.26),rgba(6,182,212,.22));
+  background-size:220% 220%;animation:mtop-shimmer 3.2s ease infinite;
+  box-shadow:inset 0 0 0 1px rgba(192,132,252,.45),0 0 10px -2px rgba(217,70,239,.3)}
+.mdot.m-top{background:linear-gradient(135deg,#f59e0b,#ec4899,#8b5cf6,#06b6d4);
+  box-shadow:0 0 6px rgba(217,70,239,.55)}
+.ap-match.m-top:not(.stale){
+  background:linear-gradient(135deg,rgba(245,158,11,.10),rgba(236,72,153,.12),rgba(139,92,246,.14),rgba(6,182,212,.10));
+  background-size:200% 200%;animation:mtop-shimmer 5s ease infinite;
+  border-color:rgba(192,132,252,.55);
+  box-shadow:0 2px 16px -4px rgba(217,70,239,.25),inset 0 0 0 1px rgba(236,72,153,.2)}
+.ap-match.m-top .mc-bar i.on{background:linear-gradient(90deg,#8b5cf6,#ec4899,#f59e0b)}
+@media(prefers-reduced-motion:reduce){.mring.m-top,.match.m-top .mlab,.ap-match.m-top{animation:none!important}}
 /* The score in a ring that fills as far as the score goes. */
 .mring{position:relative;display:inline-grid;place-items:center;flex:none;width:26px;height:26px;
   color:var(--mc,var(--t500));font-size:10px;font-weight:650;font-variant-numeric:tabular-nums;

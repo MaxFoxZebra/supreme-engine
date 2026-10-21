@@ -538,8 +538,8 @@ const statusTone=st=>STATUS_TONE[st]||"draft";
 /* How well the base CV matches the posting, as the AI client scored it, out
    of 10. Four bands with their own colour, so a strong one is seen from
    across the room; the bands start where the server's do (jobs.py). */
-const MATCH_BANDS=[["strong",8,"Strong","Strong match"],["good",6.5,"Good","Good match"],
-  ["fair",5,"Fair","Fair match"],["weak",0,"Weak","Weak match"]];
+const MATCH_BANDS=[["top",9,"Top","Top match"],["strong",7,"Strong","Strong match"],
+  ["good",5,"Good","Good match"],["fair",3,"Fair","Fair match"],["weak",0,"Weak","Weak match"]];
 const MATCH_CRIT={requirements:"Requirements",experience:"Experience",skills:"Skills",domain:"Domain",practical:"Practicalities"};
 const hasMatch=j=>!!(j&&j.match&&typeof j.match.score==="number");
 const matchBand=sc=>MATCH_BANDS.find(b=>sc>=b[1]);
@@ -5933,8 +5933,8 @@ function fillNotify(){
   };
 }
 
-const MATCH_RAIL=[["strong","Strong match · 8+"],["good","Good match · 6.5+"],["fair","Fair match · 5+"],
-  ["weak","Weak match"],["none","Not scored"]];
+const MATCH_RAIL=[["top","Top match · 9+"],["strong","Strong match · 7+"],["good","Good match · 5+"],
+  ["fair","Fair match · 3+"],["weak","Weak match"],["none","Not scored"]];
 function drawRail(){
   const c=statusCounts(), f=S.jfilter;
   /* The .mark span is what .row.sel paints ochre. Without it this rail marked
