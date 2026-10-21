@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.49.5
 
 - In the chat, Undo all, Keep and the rest of the page work again at the end
   of a tailoring run. On the page that checks the CV against the posting, a
