@@ -23,13 +23,18 @@ import inspect
 import json
 import os
 import re
+import secrets
+import socket
+import subprocess
+import sys
+import threading
 import time
 from pathlib import Path
 from typing import Annotated, TypedDict
 
 from pydantic import Field
 
-from mcp.server.apps import Apps, client_supports_apps
+from mcp.server.apps import Apps, ResourceCsp, client_supports_apps
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.prompts.base import Prompt
 from mcp.types import (BlobResourceContents, CallToolResult, EmbeddedResource, Icon, ImageContent,
@@ -81,6 +86,29 @@ apps.add_html_resource(
     description="How the job search is going, and one application as a card: "
                 "click through from a number to the applications behind it.")
 
+# CV Studio itself beside the chat (open_studio): the app's own page, served
+# from this computer by a copy of the server this connector starts when it is
+# first asked, on a port chosen now so the view can declare it, and with a key
+# of its own. The view frames it, which the client allows only for the
+# origins the view declares.
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+STUDIO_PORT = _free_port()
+STUDIO_KEY = secrets.token_urlsafe(24)
+STUDIO_VIEW = "ui://cv-studio/studio.html"
+apps.add_html_resource(
+    STUDIO_VIEW,
+    (Path(__file__).resolve().parent / "static" / "mcp-studio.html").read_text(encoding="utf-8"),
+    name="cv-studio-app", title="CV Studio",
+    csp=ResourceCsp(frame_domains=[f"http://127.0.0.1:{STUDIO_PORT}"]),
+    prefers_border=False,
+    description="CV Studio itself, beside the chat: the editor, design, history and the "
+                "applications, the same as the app.")
+
 # Views are negotiated: the client says it can show them, and the server says
 # it has them, under capabilities.extensions. The SDK puts the server's half
 # there and then drops it again on the way out to a client on a 2025 protocol
@@ -130,7 +158,9 @@ mcp = MCPServer(
         "letters and applications are.\n\n"
         "Some users have only this connector and no CV Studio app. Before "
         "sending the user to the app for something, read app_note in "
-        "workspace_info.\n\n"
+        "workspace_info. In a client that shows views, open_studio opens CV "
+        "Studio itself beside the chat, for anything they would rather do "
+        "by hand.\n\n"
         "You can also keep the user's job applications up to date. If you have "
         "access to their mail or calendar, those are read-only sources: read "
         "them, and write what you learn in here. Never write anything back to "
@@ -275,7 +305,7 @@ USER_ACTIONS = {"review_change", "page_view_data", "edit_on_page", "job_view_dat
 # Of those, the ones that change something, as if the user had clicked.
 ACTS_AS_USER = {"review_change", "edit_on_page"}   # and job_view_data's "status", in tool()
 
-READ_ONLY = {"list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
+READ_ONLY = {"open_studio", "list_cvs", "read_cv", "render_cv", "list_jobs", "read_job", "find_job",
              "job_alerts", "calendar", "get_interview_prep", "read_posting",
              "ats_check", "translation_status", "design_options", "workspace_info",
              "page_view_data", "job_stats", "show_application", "today", "file_history",
@@ -315,6 +345,7 @@ TITLES = {
     "job_scans": "Jobs your searches found",
     "record_job_scan": "Hand over the jobs a search found",
     "decide_job_scan": "Add or pass on a job a search found",
+    "open_studio": "Open CV Studio beside the chat",
     "set_base_cv": "Choose the base CV",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language", "record_job_scan", "decide_job_scan"}
@@ -2250,6 +2281,95 @@ def _app_note() -> dict:
         "this connector. Where a tool says something is done in the app, say "
         "the app does it and what you can do here instead; never tell them "
         "to open an app they may not have as if they had it.")}
+
+
+_STUDIO: dict = {"proc": None}
+_STUDIO_LOCK = threading.Lock()
+
+
+def _studio_answers() -> bool:
+    """Our page is up on STUDIO_PORT: it answers with our key. Something else
+    could have taken the port since it was chosen."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{STUDIO_PORT}/api/pulse",
+                                     headers={"X-API-Key": STUDIO_KEY})
+        with urllib.request.urlopen(req, timeout=1) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _studio_up(wait: float = 60) -> None:
+    """The page the view frames, started if it is not running: this same
+    program in its server mode, on this workspace, ended with this connector
+    (--parent-pid). A frozen first start can take a while to be scanned."""
+    with _STUDIO_LOCK:
+        proc = _STUDIO["proc"]
+        if proc is not None and proc.poll() is None and _studio_answers():
+            return
+        if proc is None or proc.poll() is not None:
+            here = Path(__file__).resolve().parent
+            cmd = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, str(here / "server_main.py")]
+            cmd += ["--port", str(STUDIO_PORT), "--token", STUDIO_KEY, "--workspace", str(_ws()),
+                    "--parent-pid", str(os.getpid()), "--embedded"]
+            # Never this process's stdout: that is the conversation with the client.
+            kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
+                  "cwd": str(Path(sys.executable).parent if getattr(sys, "frozen", False) else here)}
+            if sys.platform == "win32":
+                kw["creationflags"] = 0x08000000          # CREATE_NO_WINDOW
+            else:
+                kw["start_new_session"] = True
+            proc = _STUDIO["proc"] = subprocess.Popen(cmd, **kw)
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            if _studio_answers():
+                return
+            if proc.poll() is not None:
+                raise ValueError("CV Studio's page could not start.")
+            time.sleep(0.25)
+        raise ValueError("CV Studio's page did not start in time.")
+
+
+@tool(view=STUDIO_VIEW)
+def open_studio(path: str | None = None, job_id: str | None = None) -> CallToolResult:
+    """Open CV Studio itself beside the chat: the whole app, where the user
+    edits by hand, changes the design, goes back through the history, or works
+    through their applications. Use it when they ask to open CV Studio, the
+    app or the editor, or want to do something themselves that the tools here
+    do not.
+
+    `path` opens it on that CV or letter, `job_id` on that application, and
+    with neither it opens on their applications. What they do there is theirs,
+    saved to the same files: read a document again before changing it after
+    they have used it.
+    """
+    from urllib.parse import quote
+    if path:
+        p = _doc_path(path)
+        if not p.is_file():
+            raise ValueError(f"There is no document at {path}.")
+        rp = studio.rel(p)
+        where = ("#/letter/" if studio.is_letter(p) else "#/doc/") + quote(rp, safe="/")
+        label = next((d.get("label") for d in studio.list_documents() if d.get("path") == rp), None) or rp
+    elif job_id:
+        job = _job(job_id)
+        where = "#/jobs/" + quote(job["id"], safe="")
+        label = ", ".join(x for x in (_one_line(job.get("company"), 60), _one_line(job.get("title"), 80)) if x)
+    else:
+        where, label = "#/jobs", "Your applications"
+    if not _shows_views():
+        return CallToolResult(content=[TextContent(type="text", text=(
+            "This client does not show views, so CV Studio cannot open beside the chat. "
+            + _app_note()["app_note"]))])
+    _studio_up()
+    return CallToolResult(
+        content=[TextContent(type="text", text=(
+            f"CV Studio is open beside the chat, on {label}. What the user does there is saved "
+            "to the same files these tools read."))],
+        # The key is the view's alone: it never reaches the model.
+        structured_content={"view": "studio", "label": label,
+                            "url": f"http://127.0.0.1:{STUDIO_PORT}/?token={STUDIO_KEY}{where}"})
 
 
 @tool(view=PAGE_VIEW, app_only=True)

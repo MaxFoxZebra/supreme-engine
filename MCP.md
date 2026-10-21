@@ -645,6 +645,33 @@ shows views keeps them from its model. A client that does not (Codex, Vibe,
 Hermes) is not told about them at all, and a call to one from it is
 refused.
 
+## CV Studio itself, beside the chat
+
+`open_studio` opens the whole app in the conversation: the editor with its
+Form, YAML and Design, the history, the applications, Settings. Ask Claude to
+open CV Studio, or press **CV Studio** on a CV's page or an application's card
+in the chat. It opens on that CV, letter or application, or on your
+applications with nothing named, and asks to sit beside the chat (MCP Apps'
+`pip`), else full screen. Its bar moves it between beside the chat, full
+screen and inside the conversation, and opens it in your browser instead.
+
+It is the app's own page, not a view made for the chat. The connector starts
+a copy of CV Studio's server when it is first asked, on this computer only
+(`127.0.0.1`), on a port chosen when the connector starts and behind a key
+made then, which only the view gets; the model reads that it is open, never
+the key. The view declares that port as the one page it frames
+(`_meta.ui.csp.frameDomains`), which is what lets a client show it. The copy
+runs on the connector's workspace, does none of the desktop app's own work
+(backups, keeping connectors current, the Save to CV Studio button), and
+ends when the connector does. What you do in it is saved to the same files
+the tools read, as yours.
+
+So it works without the desktop app, for someone who installed only the
+Claude Desktop extension. A client that will not frame another page shows a
+note after a few seconds and the button to open it in the browser. Inside a
+view, a client's sandbox may stop downloads: export a PDF from the page
+view's own button, or from the browser.
+
 ## What a client is told about each tool
 
 Every tool has a title and the standard hints: whether it only reads, whether

@@ -54,7 +54,7 @@ views.append("};")
 views.append((HERE.parent / "static" / "mcp-i18n-run.js").read_text(encoding="utf-8"))
 block = "\n".join(views).replace("</", "<\\/")
 import re  # noqa: E402
-for name in ("mcp-page.html", "mcp-jobs.html"):
+for name in ("mcp-page.html", "mcp-jobs.html", "mcp-studio.html"):
     f = HERE.parent / "static" / name
     html = f.read_text(encoding="utf-8")
     new = re.sub(r"/\*cvs-i18n:start\*/.*?/\*cvs-i18n:end\*/",

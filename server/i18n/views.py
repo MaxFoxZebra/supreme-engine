@@ -355,6 +355,25 @@ VC = {
     "1 new job from your searches": ("1 nouvelle offre trouvée par vos recherches",
                                      "1 oferta nueva de tus búsquedas", "1 vaga nova das suas buscas"),
     "1 draft to send": ("1 brouillon à envoyer", "1 borrador por enviar", "1 rascunho para enviar"),
+    "Opening CV Studio…": ("Ouverture de CV Studio…", "Abriendo CV Studio…", "Abrindo o CV Studio…"),
+    "Beside the chat": ("À côté de la conversation", "Junto al chat", "Ao lado do chat"),
+    "In the chat": ("Dans la conversation", "En el chat", "No chat"),
+    "Open in your browser": ("Ouvrir dans le navigateur", "Abrir en el navegador", "Abrir no navegador"),
+    "Open in CV Studio": ("Ouvrir dans CV Studio", "Abrir en CV Studio", "Abrir no CV Studio"),
+    "Open it in CV Studio, beside the chat": ("Ouvre-le dans CV Studio, à côté de la conversation",
+                                              "Ábrelo en CV Studio, junto al chat", "Abra no CV Studio, ao lado do chat"),
+    "Open in CV Studio, beside the chat": ("Ouvrir dans CV Studio, à côté de la conversation",
+                                           "Abrir en CV Studio, junto al chat", "Abrir no CV Studio, ao lado do chat"),
+    "Your applications": ("Vos candidatures", "Tus candidaturas", "Suas candidaturas"),
+    "CV Studio did not open.": ("CV Studio ne s'est pas ouvert.", "CV Studio no se abrió.", "O CV Studio não abriu."),
+    "CV Studio did not load here.": ("CV Studio ne s'est pas chargé ici.", "CV Studio no se cargó aquí.",
+                                     "O CV Studio não carregou aqui."),
+    "This client may not show another page inside the chat.": (
+        "Ce client n'affiche peut-être pas d'autre page dans la conversation.",
+        "Puede que este cliente no muestre otra página dentro del chat.",
+        "Este cliente talvez não mostre outra página dentro do chat."),
+    "Open the CV Studio app instead.": ("Ouvrez plutôt l'application CV Studio.", "Abre la aplicación CV Studio en su lugar.",
+                                       "Abra o aplicativo CV Studio."),
 }
 
 VRX = [

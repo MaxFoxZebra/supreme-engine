@@ -1753,8 +1753,10 @@ async function boot(){
   let back=null; try{ back=sessionStorage.getItem("cvs.reopen"); sessionStorage.removeItem("cvs.reopen") }catch(e){}
   if(back) openSettings(back);
   /* Reloaded on a document or an application: back there. */
-  if(/^#\/(doc|letter|jobs\/|docs|funnel|cal)/.test(location.hash)) navGo(location.hash);
+  if(/^#\/(doc|letter|jobs(\/|$)|docs|funnel|cal)/.test(location.hash)) navGo(location.hash);
   else history.replaceState(null,"",location.pathname+location.search+navHere());
+  /* Framed beside the chat by CV Studio's view in Claude: say it is up. */
+  if(window.parent!==window) try{ window.parent.postMessage({cvsApp:"ready"},"*") }catch(e){}
 }
 /* Into the sample folder, or back to your own. Everything on screen belongs
    to one workspace, so the page starts over in the other one. */

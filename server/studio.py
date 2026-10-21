@@ -6511,6 +6511,10 @@ def main() -> int:
                     help="Exit when this process does, so we cannot be orphaned.")
     ap.add_argument("--spawned-at", type=int, default=None,
                     help="When the desktop app launched this, in ms since the epoch.")
+    ap.add_argument("--embedded", action="store_true",
+                    help="Serve the page for an AI client's view, started by the connector: "
+                         "the desktop app's own work (backups, connectors, the browser "
+                         "button) is left to the app.")
     args = ap.parse_args()
     imported = time.time()
 
@@ -6519,17 +6523,20 @@ def main() -> int:
     if args.parent_pid:
         # Run by the desktop app, which shows no terminal: what would be
         # printed goes to the log, so there is something to look at when a
-        # user reports a problem.
-        log_to_file()
+        # user reports a problem. Not by the connector: that log is the app's.
+        if not args.embedded:
+            log_to_file()
         watch_parent(args.parent_pid)
 
     WORKSPACE = Path(args.workspace).resolve() if args.workspace else DEFAULT_WORKSPACE
     FIRST_RUN = bootstrap(WORKSPACE)
     cjkfonts.register()
-    start_backups()
+    if not args.embedded:
+        start_backups()
     # Where history begins, or what changed while the app was closed.
     threading.Thread(target=note_history, args=("elsewhere",), daemon=True).start()
-    start_connector_refresh()
+    if not args.embedded:
+        start_connector_refresh()
     ready = time.time()
 
     API_TOKEN = args.token
@@ -6545,9 +6552,9 @@ def main() -> int:
         # Deliberately served beyond loopback, where it is reached by names
         # this cannot know: the token (made mandatory above) guards it.
         OPEN_NETWORK = True
-    if args.host in ("127.0.0.1", "localhost", "::1"):
+    if args.host in ("127.0.0.1", "localhost", "::1") and not args.embedded:
         start_clip_listener()
-    if args.parent_pid:
+    if args.parent_pid and not args.embedded:
         # The desktop app's own server, so the connector can tell it is there.
         note_app_open(args.port)
     # Loopback only: this reads and writes files and has no authentication.

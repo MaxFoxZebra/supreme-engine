@@ -18,6 +18,11 @@ tag, so a release is never published with nothing said about it.
   CV Studio skills (cv-studio, cv-studio-resume, cv-studio-tracker and the
   rest, from before the app) are superseded. If you still have those in
   your Claude account, remove them.
+- CV Studio itself opens beside the chat. Ask Claude to open CV Studio, or
+  press CV Studio on a CV's page or an application's card in the chat, and
+  the whole app is there, on that document: the editor, Design, history,
+  your applications. It works without the desktop app, so it is there too if
+  you only installed CV Studio's Claude extension.
 - What you start in the chat can finish there:
   - Tell Claude how an interview went, or press Passed or Didn't pass on
     the application's card in the chat.

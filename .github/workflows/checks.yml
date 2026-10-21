@@ -190,6 +190,9 @@ jobs:
       - name: The job search in the chat
         run: node checks/jobview.js
 
+      - name: CV Studio itself beside the chat
+        run: node checks/studioview.js
+
       - name: Server log, when something failed
         if: failure()
         run: cat "$RUNNER_TEMP/server.log" || true
