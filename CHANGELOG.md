@@ -8,6 +8,16 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.50.2
+
+- Match scores now use five colour bands: Top (`9+`) with an animated iridescent
+  ring and shimmer, Strong (`7–9`) in green, Good (`5–7`) in blue, Fair (`3–5`)
+  in yellow, and Weak (`< 3`) in red.
+- Base-CV match scoring uses a fairer curve and updated rubric so solid
+  real-world candidates aren't penalised for minor wishlist gaps.
+- The full five-criteria Match breakdown stays visible directly inside the Match
+  card on the application detail page.
+
 ## 0.50.1
 
 - The application detail page groups every section — status and dates, match
