@@ -1484,9 +1484,12 @@ C = {
     "Another workspace": ("Autre espace de travail", "Otro espacio de trabajo", "Outro espaço de trabalho"),
     "Point it at this workspace": ("Pointer vers cet espace de travail", "Apuntar a este espacio de trabajo", "Apontar para este espaço de trabalho"),
     "not started": ("non démarré", "no iniciado", "não iniciado"),
+    "Saved to Downloads: {name}": ("Enregistré dans Téléchargements : {name}", "Guardado en Descargas: {name}", "Salvo em Downloads: {name}"),
 }
 
 RX = [
+    ('^CV Studio only saves its own exports, not (.+) files\\.$', "CV Studio n'enregistre que ses propres exports, pas les fichiers $1.", 'CV Studio solo guarda sus propias exportaciones, no archivos $1.', 'O CV Studio só salva as próprias exportações, não arquivos $1.'),
+    ('^Downloads already has a thousand files called (.+)\\.$', 'Téléchargements contient déjà mille fichiers nommés $1.', 'Descargas ya tiene mil archivos llamados $1.', 'Downloads já tem mil arquivos chamados $1.'),
     ('^(.+): could not be read \\((.+)\\)\\.$', '$1 : illisible ($2).', '$1: no se pudo leer ($2).', '$1: não foi possível ler ($2).'),
     ('^(.+) is in the old Excel format\\. Save it as \\.xlsx \\(or \\.csv\\) to have it read\\.$', "$1 est dans l'ancien format Excel. Enregistrez-le en .xlsx (ou .csv) pour qu'il soit lu.", '$1 está en el formato antiguo de Excel. Guárdalo como .xlsx (o .csv) para que se lea.', '$1 está no formato antigo do Excel. Salve como .xlsx (ou .csv) para que seja lido.'),
     ("^(.+)'s config file cannot be read, so writing to it would lose whatever else is configured there\\. Fix it first: (.+)$", "Le fichier de configuration de $1 est illisible : y écrire effacerait tout ce qui y est configuré. Corrigez-le d'abord : $2", "No se puede leer el archivo de configuración de $1, así que escribir en él borraría todo lo demás que tenga configurado. Corrígelo primero: $2", "Não dá para ler o arquivo de configuração de $1, então escrever nele apagaria tudo o que mais estiver configurado. Corrija-o primeiro: $2"),

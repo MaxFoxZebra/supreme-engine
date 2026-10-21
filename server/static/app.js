@@ -686,6 +686,24 @@ document.addEventListener("click",e=>{
   e.preventDefault();
   post("/api/open",{url:href}).catch(err=>toast(err.message,true));
 });
+/* Files out of the app: a PDF, an export, a calendar file. A browser tab
+   downloads them itself. The desktop webview drops window.open on the floor
+   as it does target=_blank, so Export PDF did nothing there: the page fetches
+   the file and the server saves it in Downloads and shows it. `name` is for
+   a file the server does not name itself. */
+async function download(url,name){
+  if(!window.__TAURI__){ window.open(url); return }
+  try{
+    const r=await fetch(url);
+    if(!r.ok){ let m=""; try{ m=(await r.json()).error||"" }catch(e){} throw new Error(m||"HTTP "+r.status) }
+    const said=(r.headers.get("Content-Disposition")||"").match(/filename="([^"]+)"/);
+    const bytes=new Uint8Array(await r.arrayBuffer());
+    let bin="";
+    for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+    const s=await post("/api/download",{name:(said&&said[1])||name,data:btoa(bin)});
+    toast(t("Saved to Downloads: {name}",{name:s.name}));
+  }catch(e){ toast(e.message,true) }
+}
 
 const appliedAt=j=>{
   const h=j.status_history||[];
@@ -3155,7 +3173,7 @@ $("#lt-export").onclick=e=>{
   $("#lt-export").parentElement.append(m);
   m.onclick=async ev=>{ const b=ev.target.closest("[data-f]"); if(!b) return; m.remove();
     if(LT.dirty) await ltSave();
-    window.open("/api/letter/export?path="+encodeURIComponent(LT.path)+"&format="+b.dataset.f+tok()) };
+    download("/api/letter/export?path="+encodeURIComponent(LT.path)+"&format="+b.dataset.f+tok()) };
   setTimeout(()=>document.addEventListener("click",function off(){ m.remove();
     document.removeEventListener("click",off) }),0);
 };
@@ -5175,7 +5193,7 @@ async function runLive(){
 }
 
 $("#btn-pdf").onclick=()=>{ if(S.pdf)
-  window.open("/api/asset?path="+encodeURIComponent(S.pdf)+tok()) };
+  download("/api/asset?path="+encodeURIComponent(S.pdf)+tok(),S.pdf.split("/").pop()) };
 
 /* ---- YAML: highlighting painted behind a transparent-text textarea, so
    native undo, selection and IME keep working ---- */
@@ -7346,7 +7364,7 @@ function wireRounds(j){
       r.outcome=r.outcome===b.dataset.rdOut?"":b.dataset.rdOut;
       if(r.outcome) S.roundOpen=null }));
     const ics=el.querySelector("[data-rd-ics]");
-    if(ics) ics.onclick=()=>window.open("/api/calendar.ics?id="+encodeURIComponent(j.id)+tok());
+    if(ics) ics.onclick=()=>download("/api/calendar.ics?id="+encodeURIComponent(j.id)+tok(),"interview.ics");
     el.querySelector("[data-rd-del]").onclick=()=>{ const prev=rs(); S.roundOpen=null;
       save(prev.filter(x=>x.id!==id)).then(()=>toast(t("Round removed"),false,{label:t("Undo"),fn:()=>save(prev)})) };
   });
@@ -8147,7 +8165,7 @@ function drawRates(){
     'stroke="currentColor" stroke-width="2.2" aria-hidden="true">'+FN_ICON[k]+'</svg></span><p>'+txt+
     '</p></div>').join("");
 }
-$("#ex-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
+$("#ex-csv").onclick=()=>download("/api/jobs/export?format=csv"+tok(),"applications.csv");
 
 /* Re-lay on resize. Debounced, because a sankey layout on every pixel of a
    window drag is wasted work. */
@@ -8413,7 +8431,7 @@ $$("#cal-nav [data-step]").forEach(b=>b.onclick=()=>{
   S.calPop=null; drawCalendar(false);
 });
 $("#cal-today").onclick=()=>{ S.calAnchor=todayKey(); S.calPop=null; drawCalendar(false) };
-$("#cal-ics").onclick=()=>window.open("/api/calendar.ics"+tok());
+$("#cal-ics").onclick=()=>download("/api/calendar.ics"+tok(),"calendar.ics");
 const openJob=id=>{ S.jfilter={kind:"all",value:""}; setView("jobs"); selectJob(id) };
 
 /* ---- overview ------------------------------------------------------------ */
@@ -8752,7 +8770,7 @@ function wireCal(){
 
   $$("#cal-body [data-open-job]").forEach(el=>el.onclick=ev=>{ if(ev.target.closest("[data-pop]")) return; openJob(el.dataset.openJob) });
   $$("#cal-body [data-open-doc]").forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); openDoc(el.dataset.openDoc) });
-  $$("#cal-body [data-ics]").forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); window.open("/api/calendar.ics?id="+encodeURIComponent(el.dataset.ics)+tok()) });
+  $$("#cal-body [data-ics]").forEach(el=>el.onclick=ev=>{ ev.stopPropagation(); download("/api/calendar.ics?id="+encodeURIComponent(el.dataset.ics)+tok(),"interview.ics") });
   $$("#cal-body .cal-md[data-day]").forEach(el=>el.onclick=()=>{ if(el.classList.contains("out")) return;
     S.calView="month"; S.calAnchor=el.dataset.day; drawCalendar(false) });
 }
@@ -9667,8 +9685,8 @@ function fillSettings(){
   const sb=$("#s-sample");
   sb.textContent=st.sample?"Back to my workspace":"Open sample data";
   sb.onclick=()=>setSample(!st.sample,sb);
-  $("#s-exp").onclick=()=>window.open("/api/jobs/export?format=json"+tok());
-  $("#s-exp-csv").onclick=()=>window.open("/api/jobs/export?format=csv"+tok());
+  $("#s-exp").onclick=()=>download("/api/jobs/export?format=json"+tok(),"applications.json");
+  $("#s-exp-csv").onclick=()=>download("/api/jobs/export?format=csv"+tok(),"applications.csv");
   /* Revealing is deliberate and one click; copying never needs it. */
   const key=$("#s-key");
   key.hidden=!(S.state&&S.state.api_token);
@@ -10170,7 +10188,7 @@ async function packSheet(id){
     const q="job="+encodeURIComponent(id)+"&format="+fmt()+"&name="+encodeURIComponent($("#pk-name").value)+
       "&posting="+($("#pk-post")&&$("#pk-post").checked?1:0);
     const mark=$("#pk-applied")&&$("#pk-applied").checked;
-    window.open("/api/pack?"+q+tok());
+    download("/api/pack?"+q+tok());
     closeSheet();
     if(mark) statusWithUndo(j,"applied");
   };

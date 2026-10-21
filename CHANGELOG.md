@@ -10,6 +10,10 @@ tag, so a release is never published with nothing said about it.
 
 ## Unreleased
 
+- Export PDF… works in the app again: clicking it did nothing. It now saves
+  the PDF in your Downloads folder and shows it there, as a browser would.
+  The other exports do the same: a letter's Export, Export both, the
+  applications as CSV or JSON, and calendar files.
 - When the CV page does not show in the chat, CV Studio's connector now
   records how far it got: whether Claude said it can show the page, whether it
   fetched it, whether the page got your CV, and whether it started. It is in

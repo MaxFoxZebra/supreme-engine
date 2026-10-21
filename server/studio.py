@@ -21,6 +21,7 @@ Design notes:
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import http.server
 import io
@@ -3028,6 +3029,75 @@ def app_presence() -> dict:
     return {"installed": True, "running": running}
 
 
+# --------------------------------------------------------------------------
+# Files the desktop app hands you
+#
+# A browser tab downloads an export itself. The desktop webview does not: it
+# drops window.open on the floor as it does target=_blank, so Export PDF and
+# every other export did nothing there at all. The page fetches the file and
+# hands it here, and it goes where a browser would have put it, in Downloads,
+# under a name that takes nothing already there, and is shown. Only the kinds
+# of file the app exports, since this writes outside the workspace.
+# --------------------------------------------------------------------------
+
+DOWNLOAD_KINDS = (".pdf", ".docx", ".txt", ".md", ".zip", ".csv", ".json", ".ics")
+
+
+def downloads_dir() -> Path:
+    """The Downloads folder, wherever Windows has been told it is: it can be
+    moved, to another drive or into OneDrive."""
+    override = os.environ.get("CVSTUDIO_DOWNLOADS")
+    if override:
+        return Path(override)
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
+                where, _ = winreg.QueryValueEx(k, "{374DE290-123F-4565-9164-39C4925E467B}")
+            p = Path(os.path.expandvars(where))
+            if p.is_dir():
+                return p
+        except OSError:
+            pass
+    return Path.home() / "Downloads"
+
+
+def save_download(name: str, data: bytes) -> Path:
+    """`data` in Downloads as `name`, or `name (2)` and on if that is taken."""
+    clean = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", str(name or "")).strip(" .") or "export"
+    stem, suffix = os.path.splitext(clean)
+    if suffix.lower() not in DOWNLOAD_KINDS:
+        raise ValueError(f"CV Studio only saves its own exports, not {suffix or 'that'} files.")
+    folder = downloads_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    for n in range(1, 1000):
+        target = folder / (clean if n == 1 else f"{stem} ({n}){suffix}")
+        try:
+            with open(target, "xb") as f:
+                f.write(data)
+            return target
+        except FileExistsError:
+            continue
+    raise ValueError(f"Downloads already has a thousand files called {clean}.")
+
+
+def show_file(p: Path) -> None:
+    """The file, selected in the file manager, as a browser's "show in
+    folder" does."""
+    try:
+        if sys.platform == "win32":
+            # One string: explorer reads /select,"path" itself, and the quoting
+            # subprocess would put around the whole argument breaks it.
+            subprocess.Popen(f'explorer /select,"{p}"')  # noqa: S603
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(p)])
+        else:
+            subprocess.Popen(["xdg-open", str(p.parent)])
+    except OSError:
+        pass
+
+
 def log_path() -> Path:
     """Where the server writes what it would print, when there is no terminal
     to print it to: the desktop app. Beside the preferences, never in the
@@ -4638,6 +4708,10 @@ def openapi_spec() -> dict:
                 "Move a CV or a letter to the workspace's .trash folder. Refuses the base CV "
                 "and a document others are translated from",
                 "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
+            "/api/download": {"post": {"summary":
+                "Save an export (base64 `data`, as `name`) in the Downloads folder, and show it",
+                "requestBody": body({"name": {"type": "string"}, "data": {"type": "string"}}),
+                "responses": ok}},
             "/api/reveal": {"post": {"summary":
                 "Open the workspace, or one path inside it, in the file manager",
                 "requestBody": body({"path": {"type": "string"}}), "responses": ok}},
@@ -5356,7 +5430,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # Requests that never change a file history keeps: no need to look.
     QUIET_POSTS = ("/api/preview", "/api/theme-preview", "/api/prefs", "/api/open",
                    "/api/reveal", "/api/skills/package", "/api/skills/install",
-                   "/api/ai/connect", "/api/sample", "/api/ats")
+                   "/api/ai/connect", "/api/sample", "/api/ats", "/api/download")
 
     def do_POST(self):
         """Every write the app makes, with a look at the files on either side:
@@ -5448,7 +5522,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                           payload.get("yaml"),
                                           payload.get("patches")))
             if u.path == "/api/photo":
-                import base64
                 try:
                     saved = save_photo(
                         base64.b64decode(str(payload.get("data") or ""), validate=False))
@@ -5470,7 +5543,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # The file arrives as base64 in the JSON body, read here and
                 # never stored: the caller previews the result and writes it
                 # with /api/save once the person has looked at it.
-                import base64
                 raw = str(payload.get("data") or "")
                 if len(raw) > 56_000_000:
                     return self._json({"ok": False, "error": "That file is over 40 MB. LinkedIn's "
@@ -5520,6 +5592,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._json({"error": "Only web links can be opened."}, 400)
                 webbrowser.open(link)
                 return self._json({"ok": True})
+            if u.path == "/api/download":
+                # An export, saved where a browser would have saved it: the
+                # desktop webview will not download anything itself.
+                try:
+                    data = base64.b64decode(str(payload.get("data") or ""), validate=True)
+                    saved = save_download(str(payload.get("name") or ""), data)
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
+                show_file(saved)
+                return self._json({"ok": True, "name": saved.name, "path": str(saved)})
             if u.path == "/api/reveal":
                 target = WORKSPACE
                 sub_ = payload.get("path")

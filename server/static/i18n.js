@@ -919,6 +919,7 @@ window.I18N = {
     "Save zip…": "Enregistrer le zip…",
     "Saved": "Enregistré",
     "Saved to CV Studio": "Enregistrée dans CV Studio",
+    "Saved to Downloads: {name}": "Enregistré dans Téléchargements : {name}",
     "Saved views": "Vues enregistrées",
     "Say it in this order": "Dites-le dans cet ordre",
     "Say thank you": "Remercier",
@@ -2396,6 +2397,7 @@ window.I18N = {
     "Save zip…": "Guardar zip…",
     "Saved": "Guardado",
     "Saved to CV Studio": "Guardada en CV Studio",
+    "Saved to Downloads: {name}": "Guardado en Descargas: {name}",
     "Saved views": "Vistas guardadas",
     "Say it in this order": "Dilo en este orden",
     "Say thank you": "Dar las gracias",
@@ -3873,6 +3875,7 @@ window.I18N = {
     "Save zip…": "Salvar zip…",
     "Saved": "Salvo",
     "Saved to CV Studio": "Salva no CV Studio",
+    "Saved to Downloads: {name}": "Salvo em Downloads: {name}",
     "Saved views": "Visões salvas",
     "Say it in this order": "Diga nesta ordem",
     "Say thank you": "Agradecer",
@@ -4442,6 +4445,8 @@ window.I18N = {
 };
 window.I18N_RX = {
   fr: [
+    [new RegExp("^CV Studio only saves its own exports, not (.+) files\\.$"), "CV Studio n'enregistre que ses propres exports, pas les fichiers $1."],
+    [new RegExp("^Downloads already has a thousand files called (.+)\\.$"), "Téléchargements contient déjà mille fichiers nommés $1."],
     [new RegExp("^(.+): could not be read \\((.+)\\)\\.$"), "$1 : illisible ($2)."],
     [new RegExp("^(.+) is in the old Excel format\\. Save it as \\.xlsx \\(or \\.csv\\) to have it read\\.$"), "$1 est dans l'ancien format Excel. Enregistrez-le en .xlsx (ou .csv) pour qu'il soit lu."],
     [new RegExp("^(.+)'s config file cannot be read, so writing to it would lose whatever else is configured there\\. Fix it first: (.+)$"), "Le fichier de configuration de $1 est illisible : y écrire effacerait tout ce qui y est configuré. Corrigez-le d'abord : $2"],
@@ -4541,6 +4546,8 @@ window.I18N_RX = {
     [new RegExp("^Pointing at (.+), so it is editing CVs you are not looking at\\.$"), "Pointe vers $1 : il modifie donc des CV que vous ne regardez pas."],
   ],
   es: [
+    [new RegExp("^CV Studio only saves its own exports, not (.+) files\\.$"), "CV Studio solo guarda sus propias exportaciones, no archivos $1."],
+    [new RegExp("^Downloads already has a thousand files called (.+)\\.$"), "Descargas ya tiene mil archivos llamados $1."],
     [new RegExp("^(.+): could not be read \\((.+)\\)\\.$"), "$1: no se pudo leer ($2)."],
     [new RegExp("^(.+) is in the old Excel format\\. Save it as \\.xlsx \\(or \\.csv\\) to have it read\\.$"), "$1 está en el formato antiguo de Excel. Guárdalo como .xlsx (o .csv) para que se lea."],
     [new RegExp("^(.+)'s config file cannot be read, so writing to it would lose whatever else is configured there\\. Fix it first: (.+)$"), "No se puede leer el archivo de configuración de $1, así que escribir en él borraría todo lo demás que tenga configurado. Corrígelo primero: $2"],
@@ -4640,6 +4647,8 @@ window.I18N_RX = {
     [new RegExp("^Pointing at (.+), so it is editing CVs you are not looking at\\.$"), "Apunta a $1, así que está editando CV que no estás mirando."],
   ],
   pt: [
+    [new RegExp("^CV Studio only saves its own exports, not (.+) files\\.$"), "O CV Studio só salva as próprias exportações, não arquivos $1."],
+    [new RegExp("^Downloads already has a thousand files called (.+)\\.$"), "Downloads já tem mil arquivos chamados $1."],
     [new RegExp("^(.+): could not be read \\((.+)\\)\\.$"), "$1: não foi possível ler ($2)."],
     [new RegExp("^(.+) is in the old Excel format\\. Save it as \\.xlsx \\(or \\.csv\\) to have it read\\.$"), "$1 está no formato antigo do Excel. Salve como .xlsx (ou .csv) para que seja lido."],
     [new RegExp("^(.+)'s config file cannot be read, so writing to it would lose whatever else is configured there\\. Fix it first: (.+)$"), "Não dá para ler o arquivo de configuração de $1, então escrever nele apagaria tudo o que mais estiver configurado. Corrija-o primeiro: $2"],

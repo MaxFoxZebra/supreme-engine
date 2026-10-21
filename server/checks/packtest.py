@@ -1,4 +1,6 @@
-"""Application pack: the CV and the letter as one PDF, or a zip.
+"""Application pack: the CV and the letter as one PDF, or a zip. And an
+export saved where the desktop app puts it, since its webview downloads
+nothing itself.
 
     python checks/packtest.py
 """
@@ -16,6 +18,7 @@ HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp()
 os.environ["LOCALAPPDATA"] = os.environ["XDG_DATA_HOME"]
+os.environ["CVSTUDIO_DOWNLOADS"] = tempfile.mkdtemp()
 
 import studio  # noqa: E402
 from pypdf import PdfReader  # noqa: E402
@@ -64,6 +67,27 @@ def main() -> int:
     except ValueError as exc:
         check("nothing to export is said so", "no CV or letter" in str(exc), str(exc))
     studio.close_sample()
+
+    print("Saved for the desktop app")
+    down = Path(os.environ["CVSTUDIO_DOWNLOADS"])
+    first = studio.save_download("Alex Moreau CV.pdf", b"%PDF-1")
+    check("an export goes to Downloads under its own name",
+          first == down / "Alex Moreau CV.pdf" and first.read_bytes() == b"%PDF-1", str(first))
+    again = studio.save_download("Alex Moreau CV.pdf", b"%PDF-2")
+    check("a second one takes the next name and leaves the first alone",
+          again.name == "Alex Moreau CV (2).pdf" and first.read_bytes() == b"%PDF-1", again.name)
+    odd = studio.save_download('..\\../a:b*c?.CSV', b"x")
+    check("a name cannot leave the folder or carry characters Windows refuses",
+          odd.parent == down and odd.name == "_.._a_b_c_.CSV", odd.name)
+    for bad in ("run.exe", "start.bat", "noext"):
+        try:
+            studio.save_download(bad, b"x")
+            check(f"{bad} is refused: only the app's own kinds of export", False)
+        except ValueError:
+            pass
+    check("nothing but the exports was written",
+          sorted(f.name for f in down.iterdir()) == ["Alex Moreau CV (2).pdf", "Alex Moreau CV.pdf", "_.._a_b_c_.CSV"],
+          str(sorted(f.name for f in down.iterdir())))
     print()
     print(f"{fails} failure(s)" if fails else "every pack check passes")
     return 1 if fails else 0
