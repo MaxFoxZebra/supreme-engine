@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.49.6
 
 - The CV page shows in the chat in Claude on Windows. Claude Desktop for
   Windows keeps its own copy of its settings, and every update of CV Studio
