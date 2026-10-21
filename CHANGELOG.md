@@ -15,8 +15,7 @@ tag, so a release is never published with nothing said about it.
   notes, and the posting — into separated cards instead of one flat column.
 - Long blocks stay out of the way until you ask for them: "Changed from the
   base" shows which sections changed as compact chips with a one-click button
-  to open the side-by-side comparison, the five match criteria fold under the
-  strengths and gaps, and the saved job posting opens on click.
+  to open the side-by-side comparison, and the saved job posting opens on click.
 - The old five-point Fit bar is gone from the application header so the ten-point
   Match score is the single score everywhere.
 - The Applications table scales its columns dynamically across narrow and wide

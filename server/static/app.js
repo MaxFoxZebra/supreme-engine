@@ -7117,10 +7117,9 @@ function drawJobInspector(){
         '<span>'+esc(t("{n} out of 10 against your base CV",{n:matchNum(m.score)}))+'</span></div></div>'+
       (m.summary?'<p class="mc-sum">'+esc(m.summary)+'</p>':'')+
       (stale?'<p class="mc-stale">'+esc(stale)+' <code data-noi18n>'+esc(matchAsk(j))+'</code><button type="button" class="linkbtn" data-match-copy>'+esc(t("Copy"))+'</button></p>':'')+
-      '<details class="mc-fold"><summary class="mc-foot">'+esc(t("Scored by {who} · {d}",{who:by,d:m.at?fmtKey(String(m.at).slice(0,10),{day:"numeric",month:"short"}):""}))+'</summary>'+
-        '<ul class="mc-crit">'+crit+'</ul>'+
-        '<div class="mc-lists">'+list("Strengths",m.strengths,"ok")+list("Gaps",m.gaps,"gap")+'</div>'+
-      '</details>'+
+      '<ul class="mc-crit">'+crit+'</ul>'+
+      '<div class="mc-lists">'+list("Strengths",m.strengths,"ok")+list("Gaps",m.gaps,"gap")+'</div>'+
+      '<div class="mc-foot">'+esc(t("Scored by {who} · {d}",{who:by,d:m.at?fmtKey(String(m.at).slice(0,10),{day:"numeric",month:"short"}):""}))+'</div>'+
     '</section>';
   }else{
     matchCard='<section class="ap-match none" aria-label="'+esc(t("Match"))+'">'+
