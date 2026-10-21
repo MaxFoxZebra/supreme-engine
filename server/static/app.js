@@ -756,6 +756,11 @@ document.addEventListener("keydown",e=>{
   if(el&&(/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)||el.isContentEditable)) return;
   if(e.key==="ArrowLeft"){ e.preventDefault(); history.back() }
   else if(e.key==="ArrowRight"){ e.preventDefault(); history.forward() }
+  else if(e.key==="1"){ e.preventDefault(); closeOverlays(); setView("jobs") }
+  else if(e.key==="2"){ e.preventDefault(); closeOverlays(); setView("docs") }
+  else if(e.key==="3"){ e.preventDefault(); closeOverlays(); setView("funnel") }
+  else if(e.key==="4"){ e.preventDefault(); closeOverlays(); setView("cal") }
+  else if(e.key==="5"&&S.path){ e.preventDefault(); closeOverlays(); setView("cvs") }
 });
 
 function setView(v){
@@ -801,6 +806,13 @@ $$("#nav button").forEach(b=>b.onclick=()=>{ closeOverlays(); setView(b.dataset.
 /* ---- status bar --------------------------------------------------------- */
 function paintStatus(){
   const L=$("#st-left"), R=$("#st-right");
+  const last=S.pulse&&S.pulse.mcp&&S.pulse.mcp.last;
+  const mcpLine=last&&(Date.now()/1000-last.at)<900
+    ? clientName(last)+" · "+(last.ok===false?"refused ":"")+last.tool+(last.path?" · "+last.path:"")+
+      " · "+ago(last.at*1000)+" ago"
+    : null;
+  R.classList.remove("said");
+  R.classList.toggle("blocked",!!(mcpLine&&last.ok===false));
   if(S.view==="cvs"){
     const bits=[];
     if(S.live==="working") bits.push(t("rendering…"));
@@ -820,37 +832,31 @@ function paintStatus(){
     const done=S.resolved&&(Date.now()-S.resolved.at)<900000?S.resolved:null;
     if(done){
       R.classList.add("said");
+      R.classList.remove("blocked");
       R.textContent=done.kept==="mine"
         ? "You kept your version over "+done.who+"'s change"
         : "You took "+done.who+"'s version";
       R.title="";
       return;
     }
-    R.classList.remove("said");
-    R.classList.toggle("blocked",!!(S.pulse&&S.pulse.mcp&&
-      S.pulse.mcp.last&&S.pulse.mcp.last.ok===false));
-    const last=S.pulse&&S.pulse.mcp&&S.pulse.mcp.last;
-    R.textContent=last&&(Date.now()/1000-last.at)<900
-      ? clientName(last)+" · "+(last.ok===false?"refused ":"")+last.tool+(last.path?" · "+last.path:"")+
-        " · "+ago(last.at*1000)+" ago"
-      : shortPath((S.state&&S.state.workspace)||"");
+    R.textContent=mcpLine||shortPath((S.state&&S.state.workspace)||"");
     R.title=(S.state&&S.state.workspace)||"";
   }else if(S.view==="jobs"){
     L.className="mono";
     L.textContent=S.jobs.length+" application"+(S.jobs.length===1?"":"s")+
       (S.jsel?" · 1 selected":"");
-    R.textContent=""; R.title="";
+    R.textContent=mcpLine||""; R.title="";
   }else if(S.view==="docs"){
     /* Documents are files in the workspace folder: its short path says where. */
     const n=((S.state&&S.state.documents)||[]).length;
     L.className="mono";
     L.textContent=n+" document"+(n===1?"":"s");
-    R.textContent=shortPath((S.state&&S.state.workspace)||"");
+    R.textContent=mcpLine||shortPath((S.state&&S.state.workspace)||"");
     R.title=(S.state&&S.state.workspace)||"";
   }else if(S.view==="letter"){
     L.className="mono";
     L.textContent=LT.saving||LT.dirty?t("saving…"):LT.savedAt?t("saved {t} ago",{t:ago(LT.savedAt)}):t("all saved");
-    R.textContent=shortPath((S.state&&S.state.workspace)||"");
+    R.textContent=mcpLine||shortPath((S.state&&S.state.workspace)||"");
     R.title=(S.state&&S.state.workspace)||"";
   }else{
     /* The funnel and the calendar are drawn from the applications: the
@@ -858,7 +864,7 @@ function paintStatus(){
     const js=S.jobs||[], open=js.filter(j=>LIVE_ST.has(j.status)).length;
     L.className="mono";
     L.textContent=js.length?t("{n} applications · {m} open",{n:js.length,m:open}):"";
-    R.textContent=""; R.title="";
+    R.textContent=mcpLine||""; R.title="";
   }
 }
 function ago(t){
@@ -1150,7 +1156,7 @@ function paintAILog(){
    Field addresses are the dotted form of the same path the inspector already
    binds its inputs to, so a mark is a lookup rather than a search. */
 const PROV_LABEL={claude:"Claude",openai:"OpenAI",mistral:"Mistral",
-  hermes:"Hermes",ai:"An AI client",you:"You"};
+  hermes:"Hermes",gemini:"Gemini",ai:"An AI client",you:"You"};
 const provKey=path=>path.join(".");
 function provOf(path){
   const f=S.prov&&S.prov.fields;
@@ -1250,7 +1256,8 @@ function setProv(prov){
    from looked like any other file while you edited it. */
 const isBase=p=>!!(p&&S.state&&S.state.base&&S.state.base.path===p);
 function paintBaseChip(){
-  const chip=$("#basechip");
+  const chip=$("#basechip"), tb=$("#btn-tailor");
+  if(tb){ tb.hidden=!isBase(S.path); tb.onclick=()=>newDocumentSheet() }
   if(!chip) return;
   if(!isBase(S.path)){ chip.hidden=true; return }
   const n=((S.state&&S.state.documents)||[]).filter(d=>d.base===S.path).length;
@@ -1434,7 +1441,7 @@ async function pulse(){
   try{ p=await api("/api/pulse") }catch(e){ return }
   const before=S.pulse;
   S.pulse=p;
-  if(S.view==="cvs") paintStatus();
+  paintStatus();
   if(!$("#ovl-settings").hidden&&!$("#sp-ai").hidden) paintAILog();
   if(!before) return;
 
@@ -1484,11 +1491,13 @@ async function pulse(){
   const bp=S.state&&S.state.base&&S.state.base.path;
   if(bp&&bp!==S.path&&before.docs[bp]!==p.docs[bp]) baseThumb(true);
   if(LT.path&&before.docs[LT.path]!==p.docs[LT.path]) ltExternal(p.docs[LT.path]);
-  /* Only on the CV's own screen: elsewhere a reload would take you there
-     from what you were doing. Back on it, the next poll catches up. */
-  if(!S.path||S.view!=="cvs") return;
+  if(!S.path) return;
   const now=p.docs[S.path];
   if(now===undefined||S.docMtime==null||now<=S.docMtime+1e-6) return;
+  if(S.view!=="cvs"){
+    if(!S.dirty){ S.docMtime=now; await reopenInPlace() }
+    return;
+  }
   if(S.dirty){
     /* Fetch their version so the bar can say which fields moved rather than
        just that the file did. Failing that, still warn -- silently losing the
@@ -5258,8 +5267,11 @@ async function loadJobs(quiet){
       esc(e.message)+'</p></div>';
     return;
   }
+  S.funnel=null;
   if(S.view==="jobs") drawJobs();
   if(S.view==="docs") drawDocuments();
+  if(S.view==="funnel") loadFunnel("still");
+  if(S.view==="cal") drawCalendar(false);
   if(S.view==="cvs"&&S.path){
     paintTitle(); paintLink();
     if(!$("#ed").hidden) buildInspector();
@@ -5896,11 +5908,13 @@ function drawRail(){
      its selection with a background lift alone, at 1.28:1 -- the documents rail
      next door emits the span and gets the bar, so the two rails disagreed about
      what "selected" looks like. */
-  const row=(label,count,kind,value)=>
-    '<button class="row'+(f.kind===kind&&f.value===value?" sel":"")+'" data-k="'+kind+
-    '" data-v="'+esc(value)+'"><span class="mark"></span>'+
-    '<span class="lbl">'+esc(label)+'</span>'+
-    (count==null?"":'<span class="ct mono">'+count+'</span>')+'</button>';
+  const row=(label,count,kind,value)=>{
+    const on=f.kind===kind&&f.value===value;
+    return '<button class="row'+(on?" sel":"")+'" aria-current="'+(on?"true":"false")+
+      '" data-k="'+kind+'" data-v="'+esc(value)+'"><span class="mark"></span>'+
+      '<span class="lbl">'+esc(label)+'</span>'+
+      (count==null?"":'<span class="ct mono">'+count+'</span>')+'</button>';
+  };
   let h=row("All",S.jobs.length,"all","");
   S.statuses.forEach(s=>{ if(c[s]) h+=row(prettyStatus(s),c[s],"status",s) });
   /* The funnel hands over a node to filter by, and its label often matches a
@@ -7958,8 +7972,9 @@ function paintFunnelJobs(){
   const row=j=>'<button class="fn-jrow" data-id="'+esc(j.id)+'">'+companyMark(j)+
     '<span class="fj-who"><span class="con">'+esc(j.company)+'</span><span class="fj-role">'+
     esc(j.title)+'</span></span><span class="fj-st"><span class="st"><span class="dot '+
-    statusTone(j.status)+'"></span>'+esc(prettyStatus(j.status))+'</span><small>'+
-    esc(fnNext(j))+'</small></span></button>';
+    statusTone(j.status)+'"></span><span>'+esc(prettyStatus(j.status))+'</span>'+
+    (j.cv_path?'<span class="fj-cv" data-open-doc="'+esc(j.cv_path)+'">'+t("Open CV")+'</span>':'')+
+    '</span><small>'+esc(fnNext(j))+'</small></span></button>';
   if(!S.fnode){
     hint.textContent="Hover a stage to trace its path · click to list them";
     const live=fnJobs().filter(j=>["applied","interviewing","offer"].includes(j.status))
@@ -7990,7 +8005,9 @@ function paintFunnelJobs(){
     S.jfilter=S.fnode?{kind:"node",value:S.fnode}:{kind:"all",value:""}; S.jsel=null;
     $("#jobq").value=""; setView("jobs");
   };
-  host.querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>{
+  host.querySelectorAll("[data-id]").forEach(b=>b.onclick=ev=>{
+    const doc=ev.target.closest("[data-open-doc]");
+    if(doc){ ev.stopPropagation(); openDoc(doc.dataset.openDoc); return }
     S.jfilter={kind:"all",value:""};
     setView("jobs"); selectJob(b.dataset.id);
   });
@@ -8728,6 +8745,7 @@ function calPopHTML(ivs){
         :'<div><small>'+t("Status")+'</small><b>'+esc(prettyStatus(j.status))+'</b></div>')+'</div>'+
     (j.notes?'<p>'+esc(String(j.notes).slice(0,220))+'</p>':'')+
     '<div class="a"><button class="pbtn" data-open-job="'+esc(j.id)+'">'+t("Open application")+'</button>'+
+      (j.cv_path?'<button class="obtn" data-open-doc="'+esc(j.cv_path)+'">'+t("Open CV")+'</button>':'')+
       '<button class="obtn" data-ics="'+esc(j.id)+'">'+t("Add to my calendar")+'</button></div></div>';
 }
 function wireCal(){

@@ -258,6 +258,7 @@ CLIENT_NAMES = {
     "openai": "openai", "openai-codex": "openai",
     "vibe": "mistral", "mistral": "mistral", "mistral-vibe": "mistral",
     "hermes": "hermes", "hermes-agent": "hermes", "nous": "hermes",
+    "gemini": "gemini", "gemini-cli": "gemini", "google-gemini": "gemini",
 }
 
 

@@ -101,7 +101,7 @@ yaml_rt.indent(mapping=2, sequence=4, offset=2)
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
 API_TOKEN: str | None = None
-VERSION = "0.49.6"
+VERSION = "0.49.7"
 
 # Which AI client this process is serving, when it is serving one. The app
 # writes the client configs itself, so it can name the client in the args it
@@ -214,6 +214,10 @@ def _claude_config_path() -> Path:
 
 def _openai_config_path() -> Path:
     return Path.home() / ".codex" / "config.toml"
+
+
+def _gemini_config_path() -> Path:
+    return Path.home() / ".gemini" / "settings.json"
 
 
 def ai_entry(client: str | None = None) -> dict:
@@ -575,6 +579,14 @@ AI_CLIENTS = {
                   "rather than a named table. Le Chat cannot be set up here: "
                   "its custom connectors take an https URL to a remote server, "
                   "and this one is local and speaks stdio.",
+    },
+    "gemini": {
+        "label": "Gemini CLI",
+        "path": _gemini_config_path,
+        "read": _json_read, "write": _json_write, "snippet": _json_snippet,
+        "restart": "Start a new Gemini session, or run /mcp refresh, and the "
+                   "tools are there.",
+        "manual": "Gemini CLI and Gemini Code Assist share ~/.gemini/settings.json.",
     },
 }
 
@@ -1019,7 +1031,7 @@ def client_skills_dir(client: str) -> Path | None:
     read but on the way out), Vibe ~/.vibe/skills, and Hermes the skills/
     folder in its home, which is where its config is.
     """
-    if client not in ("openai", "mistral", "hermes"):
+    if client not in ("openai", "mistral", "hermes", "gemini"):
         return None
     override = os.environ.get(f"CVSTUDIO_{client.upper()}_SKILLS")
     if override:
@@ -5703,6 +5715,8 @@ const API_TOKEN=__API_TOKEN__;
     <image x="0" y="0" width="648" height="648"
       href="data:image/png;base64,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"/>
   </symbol>
+  <symbol id="gemini-mark" viewBox="0 0 24 24" fill="currentColor"><path
+    d="M12 1.5C12 7.3 7.3 12 1.5 12 7.3 12 12 16.7 12 22.5 12 16.7 16.7 12 22.5 12 16.7 12 12 7.3 12 1.5z"/></symbol>
 </svg>
 
 <header id="chrome" data-tauri-drag-region>
@@ -5749,6 +5763,9 @@ const API_TOKEN=__API_TOKEN__;
     <span class="aic" data-client="mistral" data-state="unknown"><svg width="13"
       height="13" viewBox="0 0 24 24" aria-hidden="true"
       ><use href="#mistral-mark"/></svg><i class="dot"></i></span>
+    <span class="aic" data-client="gemini" data-state="unknown"><svg width="13"
+      height="13" viewBox="0 0 24 24" aria-hidden="true"
+      ><use href="#gemini-mark"/></svg><i class="dot"></i></span>
   </button>
   <button class="cbtn icon" id="btn-settings" title="Settings, setup and help"
     aria-label="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -5794,6 +5811,7 @@ const API_TOKEN=__API_TOKEN__;
         <div class="langsw" id="langsw" role="group" aria-label="Language" hidden></div>
         <div class="grow"></div>
         <span class="acts" id="act-doc">
+          <button class="obtn" id="btn-tailor" title="Copy the base CV to tailor for an application" hidden>Tailor a copy&#8230;</button>
           <button class="obtn" id="btn-ats" title="What an applicant tracking system reads from this CV">ATS check</button>
           <button class="obtn" id="btn-design" title="Theme, typeface and page size">Design</button>
           <button class="obtn" id="btn-history" title="Every version of this CV, and who made it">History</button>

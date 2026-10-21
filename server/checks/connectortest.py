@@ -39,7 +39,8 @@ os.environ["CVSTUDIO_MCP_COPY"] = "1"
 for client, rel in (("claude", "claude/claude_desktop_config.json"),
                     ("openai", ".codex/config.toml"),
                     ("mistral", ".vibe/config.toml"),
-                    ("hermes", "hermes/config.yaml")):
+                    ("hermes", "hermes/config.yaml"),
+                    ("gemini", ".gemini/settings.json")):
     os.environ[f"CVSTUDIO_{client.upper()}_CONFIG"] = str(SCRATCH / rel)
     os.environ[f"CVSTUDIO_{client.upper()}_SKILLS"] = str(SCRATCH / client / "skills")
 
@@ -242,6 +243,11 @@ def skills() -> None:
     check("the update adds none where there were none",
           not studio.install_skills("hermes", only_ours=True)["installed"])
     check("Claude Desktop has no skills folder", studio.client_skills_dir("claude") is None)
+    rg = studio.ai_connect("gemini")
+    gd = studio.client_skills_dir("gemini")
+    check("connecting Gemini writes ~/.gemini/settings.json and installs skills",
+          rg["action"] == "added" and studio.ai_status("gemini")["state"] == "connected"
+          and gd is not None and all((gd / n / "SKILL.md").is_file() for n in names))
     del os.environ["CVSTUDIO_OPENAI_SKILLS"]
     check("Codex's is ~/.agents/skills, not the legacy ~/.codex/skills",
           studio.client_skills_dir("openai") == Path.home() / ".agents" / "skills")
@@ -342,6 +348,8 @@ def extension() -> None:
 
 def mcp() -> None:
     print("What the connector tells a client")
+    if hasattr(sys, "frozen"):
+        delattr(sys, "frozen")
     import mcp_server
     tools = asyncio.run(mcp_server.mcp.list_tools())
     check("every tool has a title", all(t.title for t in tools),

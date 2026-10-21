@@ -247,6 +247,7 @@ button:disabled{opacity:.4;cursor:default}
 .aic{position:relative;display:flex}
 .aic svg{flex:none;width:16px;height:16px}
 .aic[data-client=claude] svg{color:#D97757}
+.aic[data-client=gemini] svg{color:#4E82EE}
 /* The same tile as in the settings badge, at dot size. See the note there. */
 .aic[data-client=hermes] svg{padding:2px;box-sizing:border-box;background:#fff;
   color:#000;border-radius:3px}
@@ -268,7 +269,9 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .view{flex:1;display:flex;min-height:0;min-width:0;position:relative}
 .rail{flex:none;background:var(--panel);border-right:1px solid var(--rule);display:flex;
   flex-direction:column;min-height:0;overflow-y:auto}
-.rail-cvs{width:232px;padding-bottom:10px} .rail-jobs{width:220px;padding:14px 10px 12px;gap:1px}
+.rail-cvs{width:232px;padding-bottom:10px;overflow:hidden} .rail-jobs{width:220px;padding:14px 10px 12px;gap:1px}
+#outline{flex:0 1 auto;max-height:38%;overflow-y:auto}
+#doclist{flex:1 1 0;min-height:96px;overflow-y:auto}
 .rail-label{padding:16px 17px 6px;font-size:12px;font-weight:600;color:var(--t500)}
 .rail-jobs .rail-label{padding:4px 10px 6px}
 .rail-jobs .rail-label+.rail-label,.rail-jobs .rail-label:not(:first-child){padding-top:20px}
@@ -364,6 +367,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .pmark[data-by=openai]{color:var(--t700)}
 .pmark[data-by=mistral]{color:#FA520F}
 .pmark[data-by=hermes]{color:var(--t700)}
+.pmark[data-by=gemini]{color:#4E82EE}
 .pmark[data-by=ai]{color:var(--t600)}
 .pmark[data-by=you]{display:none}       /* your own edits are the default */
 /* Stands for something underneath rather than for the line it sits on. */
@@ -398,6 +402,7 @@ main{flex:1;min-height:0;display:flex;background:var(--app)}
 .pgmark[data-by=openai]{color:#5b5750}
 .pgmark[data-by=mistral]{color:#FA520F}
 .pgmark[data-by=hermes]{color:#5b5750}
+.pgmark[data-by=gemini]{color:#4E82EE}
 .pgmark[data-by=ai]{color:#8a877f;font-size:9px}
 .pgmark[data-by=you]{display:none}
 
@@ -607,6 +612,8 @@ body.dragging{cursor:col-resize;user-select:none}
   border-radius:4px;padding:1px 6px;line-height:1.5;flex:none;
   box-shadow:inset 0 0 0 1px var(--bd-field)}
 .row .btag{font-weight:500;padding:0 5px;margin-left:2px}
+#basechip{border-color:var(--acc-line)}
+#basechip .btag{background:var(--acc);color:var(--c800);box-shadow:none}
 
 /* ---------- the application peek ----------------------------------------
    Sized to the record rather than to a habit: wide enough for two columns of
@@ -645,7 +652,9 @@ body.dragging{cursor:col-resize;user-select:none}
 .peeking .tablewrap{margin-right:var(--peek-w)}
 @media(max-width:1100px){ .peeking .tablewrap{margin-right:0} }
 /* The compact list: company over role, and the status as its dot alone. */
-.peeking .phead .search,.peeking #btn-newjob,.peeking .thead{display:none}
+.peeking .thead{display:none}
+.peeking .phead{flex-wrap:wrap;gap:8px}
+.peeking .phead .search{flex:1 1 140px;min-width:0}
 .peeking .trow{grid-template-columns:minmax(0,1fr) 28px;grid-template-rows:auto auto;
   height:auto;padding:9px 0;row-gap:1px}
 .peeking .trow>:nth-child(1){grid-column:1;grid-row:1}
@@ -933,7 +942,7 @@ html.mono .langs,html.mono #langsw{display:none!important}
 .dcw .dmore{position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:8px;border:1px solid var(--rule);
   background:var(--field);color:var(--t700);font-size:17px;line-height:1;opacity:0;transition:opacity .12s;
   box-shadow:0 2px 8px rgba(27,26,23,.12)}
-.dcw:hover .dmore,.dcw .dmore:focus-visible{opacity:1}
+.dcw:hover .dmore,.dcw .dmore:focus-visible,.dcw .dmore:focus{opacity:1;transition:none}
 @media (hover:none){.dcw .dmore{opacity:1}}
 .dcard{display:flex;flex-direction:column;gap:10px;padding:0;border:0;background:none;
   text-align:left;color:var(--t900);cursor:pointer;font-family:inherit;min-width:0}
@@ -1234,6 +1243,8 @@ span.colog{display:grid;place-items:center;font-size:10.5px;font-weight:600;
 .fj-role{font-size:12px;color:var(--t500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fj-st{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
 .fn-jrow .st{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--t700);white-space:nowrap}
+.fj-cv{color:var(--t600);text-decoration:underline;text-underline-offset:2px}
+.fj-cv:hover{color:var(--t900)}
 .fj-st small{font-size:11.5px;color:var(--t500)}
 .fn-jlist{max-height:420px;overflow-y:auto}
 .fn-list .note{padding:12px 18px;margin:0}
@@ -2458,6 +2469,8 @@ input[type=checkbox]{accent-color:var(--acc)}
 .client[data-client=hermes] .badge svg{width:28px;height:28px}
 .client[data-client=mistral] .badge,.onb-client[data-client=mistral] .badge{
   background:rgba(250,80,15,.12)}
+.client[data-client=gemini] .badge,.onb-client[data-client=gemini] .badge{
+  background:rgba(78,130,238,.14);color:#4E82EE}
 .client .who{grid-column:2;grid-row:1;display:flex;align-items:center;gap:9px;
   min-width:0;flex-wrap:wrap}
 .client .who b{font-size:13.5px;font-weight:600;color:var(--t900)}

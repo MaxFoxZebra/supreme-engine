@@ -17,6 +17,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /* Names and codes that are the same in every language. */
 const SAME = new Set(["CV Studio", "LinkedIn", "Indeed", "Glassdoor", "Welcome to the Jungle", "Greenhouse",
   "Wellfound", "XING", "Claude", "Claude Desktop", "OpenAI", "ChatGPT", "Codex", "Hermes Agent", "Mistral Vibe",
+  "Gemini", "Gemini CLI",
   "YAML", "PDF", "JSON", "CSV", "API", "ATS", "Markdown", "MCP", "OK", "UTC", "English", "Français", "Español",
   "Português", "Português (Brasil)", "Deutsch", "Italiano", "Nederlands", "Typst", "RenderCV", "GitHub",
   ".zip", ".ics", "Export .ics", "h", "min", "s", "d", "j", "Notifications", "Documents", "Classic", "Ember",
@@ -117,7 +118,7 @@ async function main() {
   for (const [s, where] of en) {
     if (!fr.has(s) || known.has(s)) continue;      /* it changed, or is the same on purpose */
     /* Paths, links, tool names: every word has a slash, a dot or an underscore. */
-    if (s.split(/\s+/).every(w => /[_./…]/.test(w))) continue;
+    if (s.split(/\s+/).every(w => /[_./\\…]/.test(w)) || /^[A-Za-z]:\\/.test(s)) continue;
     /* Language names, written in themselves. */
     if (/^(Français|Español|Português|English|Deutsch|Italiano)$/.test(s)) continue;
     const words = (s.toLowerCase().match(/[a-zà-ÿ]{3,}/g) || []).filter(w => !data.has(w));
