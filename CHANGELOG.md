@@ -8,6 +8,15 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.50.3
+
+- Applications table rows display a minimalist country flag, country name, and
+  offer language code (`[🇫🇷 France · EN]`), and the detail header shows the full
+  location and language the job offer was written in.
+- The job posting is kept expanded by default in the application detail card.
+- User preferences for Applications table sorting (column and direction) are
+  remembered and restored across sessions.
+
 ## 0.50.2
 
 - Match scores now use five colour bands: Top (`9+`) with an animated iridescent

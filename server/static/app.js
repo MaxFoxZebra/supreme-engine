@@ -6233,7 +6233,75 @@ const FLAGS={
   pt:'<rect width="30" height="20" fill="#009B3A"/><path d="M15 2.2 27.6 10 15 17.8 2.4 10z" fill="#FEDF00"/>'+
     '<circle cx="15" cy="10" r="4.6" fill="#002776"/>',
 };
+Object.assign(FLAGS,{
+  br:FLAGS.pt,
+  pt_c:'<rect width="12" height="20" fill="#006600"/><rect x="12" width="18" height="20" fill="#FF0000"/><circle cx="12" cy="10" r="4.2" fill="#FFCC00"/>',
+  gb:'<rect width="30" height="20" fill="#012169"/><path d="M0 0 30 20M30 0 0 20" stroke="#fff" stroke-width="3.6"/><path d="M0 0 30 20M30 0 0 20" stroke="#C8102E" stroke-width="2"/><path d="M15 0v20M0 10h30" stroke="#fff" stroke-width="6"/><path d="M15 0v20M0 10h30" stroke="#C8102E" stroke-width="3.6"/>',
+  de:'<rect width="30" height="6.67" fill="#000"/><rect y="6.67" width="30" height="6.67" fill="#DD0000"/><rect y="13.33" width="30" height="6.67" fill="#FFCE00"/>',
+  nl:'<rect width="30" height="6.67" fill="#AE1C28"/><rect y="6.67" width="30" height="6.67" fill="#fff"/><rect y="13.33" width="30" height="6.67" fill="#21468B"/>',
+  be:'<rect width="10" height="20" fill="#000"/><rect x="10" width="10" height="20" fill="#FDDA24"/><rect x="20" width="10" height="20" fill="#EF3340"/>',
+  it:'<rect width="10" height="20" fill="#009246"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#CE2B37"/>',
+  ie:'<rect width="10" height="20" fill="#169B62"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#FF883E"/>',
+  ch:'<rect width="30" height="20" fill="#D52B1E"/><rect x="13" y="4" width="4" height="12" fill="#fff"/><rect x="9" y="8" width="12" height="4" fill="#fff"/>',
+  se:'<rect width="30" height="20" fill="#006AA7"/><rect x="9" width="4" height="20" fill="#FECC00"/><rect y="8" width="30" height="4" fill="#FECC00"/>',
+  dk:'<rect width="30" height="20" fill="#C8102E"/><rect x="9" width="3.5" height="20" fill="#fff"/><rect y="8.25" width="30" height="3.5" fill="#fff"/>',
+  no:'<rect width="30" height="20" fill="#BA0C2F"/><rect x="8.5" width="5" height="20" fill="#fff"/><rect y="7.5" width="30" height="5" fill="#fff"/><rect x="9.75" width="2.5" height="20" fill="#00205B"/><rect y="8.75" width="30" height="2.5" fill="#00205B"/>',
+  fi:'<rect width="30" height="20" fill="#fff"/><rect x="9" width="4.5" height="20" fill="#003580"/><rect y="7.75" width="30" height="4.5" fill="#003580"/>',
+  pl:'<rect width="30" height="10" fill="#fff"/><rect y="10" width="30" height="10" fill="#DC143C"/>',
+  at:'<rect width="30" height="6.67" fill="#ED2939"/><rect y="6.67" width="30" height="6.67" fill="#fff"/><rect y="13.33" width="30" height="6.67" fill="#ED2939"/>',
+  lu:'<rect width="30" height="6.67" fill="#EA141D"/><rect y="6.67" width="30" height="6.67" fill="#fff"/><rect y="13.33" width="30" height="6.67" fill="#51ADDA"/>',
+  ca:'<rect width="7.5" height="20" fill="#FF0000"/><rect x="7.5" width="15" height="20" fill="#fff"/><rect x="22.5" width="7.5" height="20" fill="#FF0000"/><path d="M15 4.5 17 8.5l3-.5-2 3 1.5 2.5h-3.8v3h-1.4v-3H10.5L12 11l-2-3 3 .5z" fill="#FF0000"/>',
+  mx:'<rect width="10" height="20" fill="#006847"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#CE1126"/><circle cx="15" cy="10" r="2.2" fill="#6b4e16"/>',
+  ar:'<rect width="30" height="6.67" fill="#74ACDF"/><rect y="6.67" width="30" height="6.67" fill="#fff"/><rect y="13.33" width="30" height="6.67" fill="#74ACDF"/><circle cx="15" cy="10" r="2.2" fill="#F6B40E"/>',
+  sg:'<rect width="30" height="10" fill="#EF3340"/><rect y="10" width="30" height="10" fill="#fff"/><circle cx="7" cy="5" r="3.2" fill="#fff"/><circle cx="8" cy="5" r="2.8" fill="#EF3340"/>',
+  jp:'<rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="6" fill="#BC002D"/>',
+  au:'<rect width="30" height="20" fill="#012169"/><path d="M0 0 14 10M14 0 0 10" stroke="#fff" stroke-width="2"/><path d="M7 0v10M0 5h14" stroke="#fff" stroke-width="3"/><path d="M7 0v10M0 5h14" stroke="#C8102E" stroke-width="1.8"/><circle cx="22" cy="6" r="1.1" fill="#fff"/><circle cx="25" cy="10" r="1.1" fill="#fff"/><circle cx="22" cy="15" r="1.1" fill="#fff"/><circle cx="18" cy="11" r="1.1" fill="#fff"/><circle cx="7" cy="15" r="1.6" fill="#fff"/>',
+  ae:'<rect x="7.5" width="22.5" height="6.67" fill="#00732F"/><rect x="7.5" y="6.67" width="22.5" height="6.67" fill="#fff"/><rect x="7.5" y="13.33" width="22.5" height="6.67" fill="#000"/><rect width="7.5" height="20" fill="#FF0000"/>',
+  in:'<rect width="30" height="6.67" fill="#FF9933"/><rect y="6.67" width="30" height="6.67" fill="#fff"/><rect y="13.33" width="30" height="6.67" fill="#138808"/><circle cx="15" cy="10" r="2.3" fill="none" stroke="#000080" stroke-width=".9"/>',
+});
+FLAGS.us=FLAGS.en; FLAGS.uk=FLAGS.gb;
 const flag=c=>FLAGS[c]?'<svg class="flg" viewBox="0 0 30 20" aria-hidden="true">'+FLAGS[c]+'</svg>':"";
+const COUNTRY_GUESS=[
+  [/paris|lyon|marseille|toulouse|bordeaux|lille|nantes|montpellier|strasbourg|rennes|nice|grenoble|france|\bfr\b/i,"fr","France"],
+  [/london|manchester|edinburgh|bristol|cambridge|oxford|birmingham|glasgow|leeds|belfast|\buk\b|united kingdom|england|scotland|wales|great britain/i,"gb","United Kingdom"],
+  [/dublin|cork|galway|ireland/i,"ie","Ireland"],
+  [/madrid|barcelona|valencia|sevilla|seville|bilbao|malaga|málaga|spain|españa/i,"es","Spain"],
+  [/lisbon|lisboa|porto|braga|portugal/i,"pt_c","Portugal"],
+  [/berlin|munich|münchen|hamburg|frankfurt|cologne|köln|stuttgart|düsseldorf|leipzig|germany|deutschland/i,"de","Germany"],
+  [/amsterdam|rotterdam|utrecht|eindhoven|the hague|den haag|netherlands|holland/i,"nl","Netherlands"],
+  [/brussels|bruxelles|antwerp|ghent|belgium|belgique/i,"be","Belgium"],
+  [/zurich|zürich|geneva|genève|lausanne|basel|bern|switzerland|suisse|schweiz/i,"ch","Switzerland"],
+  [/luxembourg/i,"lu","Luxembourg"],
+  [/vienna|wien|graz|linz|austria|österreich/i,"at","Austria"],
+  [/milan|milano|rome|roma|turin|torino|bologna|florence|firenze|italy|italia/i,"it","Italy"],
+  [/stockholm|gothenburg|göteborg|malmö|malmo|uppsala|sweden/i,"se","Sweden"],
+  [/copenhagen|københavn|aarhus|denmark/i,"dk","Denmark"],
+  [/oslo|bergen|trondheim|norway/i,"no","Norway"],
+  [/helsinki|espoo|tampere|finland/i,"fi","Finland"],
+  [/warsaw|warszawa|krakow|kraków|wroclaw|wrocław|gdansk|gdańsk|poland|polska/i,"pl","Poland"],
+  [/toronto|montreal|montréal|vancouver|ottawa|calgary|waterloo|canada/i,"ca","Canada"],
+  [/são paulo|sao paulo|rio de janeiro|belo horizonte|curitiba|florianópolis|brazil|brasil/i,"br","Brazil"],
+  [/mexico|méxico|guadalajara|monterrey/i,"mx","Mexico"],
+  [/buenos aires|cordoba|córdoba|argentina/i,"ar","Argentina"],
+  [/singapore/i,"sg","Singapore"],
+  [/tokyo|osaka|kyoto|yokohama|japan/i,"jp","Japan"],
+  [/sydney|melbourne|brisbane|perth|australia/i,"au","Australia"],
+  [/dubai|abu dhabi|\buae\b|emirates/i,"ae","UAE"],
+  [/bangalore|bengaluru|mumbai|delhi|hyderabad|pune|chennai|india/i,"in","India"],
+  [/new york|\bnyc\b|boston|miami|atlanta|washington|chicago|austin|dallas|houston|denver|boulder|san francisco|\bsf\b|bay area|seattle|los angeles|palo alto|mountain view|california|texas|\busa\b|\bu\.s\.a?\b|united states/i,"us","United States"],
+];
+function jobGeo(j){
+  const rawLoc=String(j.location||((String(j.description||"").match(/location\s*:\s*([^\n.]+)/i)||[])[1]||"")).trim();
+  const rawCountry=String(j.country||"").trim();
+  const probe=[rawCountry,rawLoc].filter(Boolean).join(", ");
+  const hit=probe?COUNTRY_GUESS.find(([re])=>re.test(probe)):null;
+  const code=hit?hit[1]:null, country=rawCountry||(hit?hit[2]:"");
+  const isRemote=!country&&/\b(remote|télétravail|teletrabajo|remoto)\b/i.test(rawLoc);
+  const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const city=rawLoc&&country?rawLoc.replace(new RegExp("\\s*[,·-]\\s*"+escRe(country)+"$","i"),"").trim():rawLoc;
+  const full=city&&country&&city.toLowerCase()!==country.toLowerCase()?city+", "+country:(city||country);
+  return {code,country,city,full,isRemote,flag:code?flag(code):""};
+}
 /* The flag beside an application's language follows the choice at once. */
 document.addEventListener("change",e=>{
   const sel=e.target.closest&&e.target.closest(".ap-lang select"); if(!sel) return;
@@ -6714,8 +6782,15 @@ function nextKey(j){
   if(j.status==="interviewing") return [4,0];
   return [5,0];
 }
+const JOB_SORT_KEYS=new Set(["company","title","match","status","applied","next"]);
+function savedJobSort(){
+  let s=prefs().jsort;
+  if(!s||typeof s!=="object"){ try{ s=JSON.parse(localStorage.getItem("cvs.jsort")||"null") }catch(e){} }
+  if(s&&JOB_SORT_KEYS.has(s.key)&&(s.dir===1||s.dir===-1)) return {key:s.key,dir:s.dir};
+  return {key:"next",dir:1};
+}
 function sortJobs(rows){
-  const {key,dir}=S.jsort||{key:"next",dir:1};
+  const {key,dir}=S.jsort||(S.jsort=savedJobSort());
   const upd=j=>String(j.updated_at||"");
   const by={
     company:j=>String(j.company||"").toLowerCase(), title:j=>String(j.title||"").toLowerCase(),
@@ -6733,7 +6808,7 @@ function sortJobs(rows){
   });
 }
 function drawSortHead(){
-  const {key,dir}=S.jsort||{key:"next",dir:1};
+  const {key,dir}=S.jsort||(S.jsort=savedJobSort());
   $$(".thead [data-sort]").forEach(b=>{
     const on=b.dataset.sort===key;
     b.classList.toggle("on",on);
@@ -6742,9 +6817,11 @@ function drawSortHead(){
   });
 }
 $$(".thead [data-sort]").forEach(b=>b.onclick=()=>{
-  const k=b.dataset.sort, cur=S.jsort||{key:"next",dir:1};
+  const k=b.dataset.sort, cur=S.jsort||savedJobSort();
   /* Dates read newest first on the first click, matches best first. */
   S.jsort={key:k,dir:cur.key===k?-cur.dir:(k==="applied"||k==="match"?-1:1)};
+  try{ localStorage.setItem("cvs.jsort",JSON.stringify(S.jsort)) }catch(e){}
+  setPref("jsort",S.jsort);
   drawJobs();
 });
 /* The next dated thing on an application: an interview coming, else the
@@ -6790,6 +6867,15 @@ function statusCell(j){
   return '<span class="st"><span class="stp '+pill+'">'+(j.status==="accepted"?TICK:'<span class="dot '+statusTone(j.status)+'"></span>')+
     '<b>'+esc(prettyStatus(j.status))+'</b></span></span>';
 }
+function rowOrigin(j){
+  const g=jobGeo(j), lc=j.language||j.language_guess, lg=lc?langOf(lc):null;
+  const place=g.country||g.city||"";
+  if(!place&&!lg) return "";
+  const tip=[g.full||place,lg?t("Written in {lang}",{lang:lg.native}):""].filter(Boolean).join(" · ");
+  return '<span class="jorig" title="'+esc(tip)+'">'+
+    (g.flag||"")+(place?'<span class="jc">'+esc(place)+'</span>':"")+
+    (lg?'<i class="jl">'+esc(lg.code.toUpperCase())+'</i>':"")+'</span>';
+}
 function drawJobs(){
   drawRail();
   drawSortHead();
@@ -6816,7 +6902,7 @@ function drawJobs(){
       '<span class="co">'+companyMark(j)+'<span class="con">'+
         esc(j.company)+'</span></span>'+
       '<span class="role"><b>'+esc(j.title)+'</b>'+
-        (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
+        (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+rowOrigin(j)+
       '</span>'+matchCell(j)+
       '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'" title="'+esc([cv,letter].filter(Boolean).join(" · "))+'">'+docs+'</span>'+rvPill(rvd)
                /* Sent without a CV linked: nothing to tailor any more, only
@@ -6909,7 +6995,7 @@ function moveSel(){
    you read -- restating the title one line below itself. */
 const JOB_MORE=[
   ["company","Company","text"],["title","Role","text"],
-  ["location","Location","text"],["url","Link","text"],
+  ["location","Location","text"],["country","Country","text"],["url","Link","text"],
   ["salary_expected","Salary","number"],
 ];
 /* The rows the arrows walk: what the table is currently showing, in the order
@@ -7044,7 +7130,15 @@ function drawJobInspector(){
   head.textContent=j.title||j.company;
   head.title=j.title||j.company;
   const sub=[j.company,j.location].filter(Boolean).join(" \u00b7 ");
-  $("#jinsp-sub").textContent=sub; $("#jinsp-sub").title=sub;
+  const geo=jobGeo(j), oLangCode=j.language||j.language_guess, oLang=oLangCode?langOf(oLangCode):null;
+  const subPlain=[j.company,geo.full||j.location,oLang?t("Written in {lang}",{lang:oLang.native}):""].filter(Boolean).join(" \u00b7 ");
+  $("#jinsp-sub").title=subPlain;
+  $("#jinsp-sub").innerHTML=[
+    j.company?'<span>'+esc(j.company)+'</span>':"",
+    (geo.full||j.location)?'<span class="ap-loc">'+(geo.flag||"")+esc(geo.full||j.location)+'</span>':"",
+    oLang?'<span class="ap-olang" title="'+esc(t("Written in {lang}",{lang:oLang.native}))+'">'+
+      '<i>'+esc(oLang.code.toUpperCase())+'</i>'+esc(oLang.native)+'</span>':""
+  ].filter(Boolean).join('<span class="sep" aria-hidden="true">\u00b7</span>');
   $("#jinsp-logo").innerHTML=companyMark(j);
   const sTone=statusTone(j.status);
   $("#jinsp-status").className="ap-pill "+sTone;
@@ -7196,14 +7290,14 @@ function drawJobInspector(){
       '<button class="pbtn" id="ap-post-save">'+t(first?"Save the posting":"Save")+'</button></div>';
   const posting='<article class="ap-pcard" aria-label="'+esc(t("The posting"))+'">'+
     '<div class="ap-phead"><div class="tx"><b>'+t("The posting")+'</b><span>'+
-      esc(words?t("{n} words",{n:words})
+      esc(words?t("{n} words · kept here in case the advert comes down",{n:words})
         :t("Not saved yet · keep a copy before the advert comes down"))+
       '</span></div><div class="ap-pacts">'+openLink+
       (words?'<button class="obtn" id="ap-post-edit">'+t("Edit")+'</button>':'')+'</div></div>'+
     '<div class="ap-pbody" id="ap-pbody">'+(words
       ? (chips.length?'<div class="ap-chips">'+chips.map(c=>'<span>'+esc(c)+'</span>').join("")+'</div>':'')+
-        '<details class="ap-post-fold"><summary><span>'+esc(t("The posting, as text"))+'</span><small>'+esc(t("{n} words",{n:words}))+'</small></summary>'+
-          '<div class="ap-post" id="ap-post">'+postingHTML(j.description)+'</div></details>'
+        '<div class="ap-post" id="ap-post">'+postingHTML(j.description)+'</div>'
+        /* posting expanded directly */
       : pasteBox("",true))+'</div></article>';
 
   body.innerHTML=

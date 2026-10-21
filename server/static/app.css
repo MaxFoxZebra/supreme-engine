@@ -916,10 +916,26 @@ body.dragging{cursor:col-resize;user-select:none}
 .lchip .flg{margin-right:4px}
 #dfilter .flg{margin-right:6px;vertical-align:-1px}
 /* One language: no tabs, flags, filters or language fields anywhere. */
-html.mono .btabs,html.mono #dfilter,html.mono .bflags,html.mono .ap-fact.lang,
+html.mono .btabs,html.mono #dfilter,html.mono .bflags,
 html.mono .langs,html.mono #langsw{display:none!important}
 .ap-lang{display:flex;align-items:center;gap:7px;min-width:0}
 .ap-lang .flg{width:18px;height:12px;border-radius:2px;flex:none;box-shadow:0 0 0 .5px rgba(0,0,0,.25)}
+.jorig{display:inline-flex;align-items:center;gap:5px;flex:none;align-self:center;font-size:11.5px;color:var(--t600);
+  padding:1px 6px;border-radius:6px;background:var(--row-alt);border:1px solid var(--bd-inner);line-height:1.35}
+.jorig .flg{width:14px;height:9.5px;border-radius:1.5px;box-shadow:0 0 0 .5px rgba(0,0,0,.22)}
+.jorig .jc{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jorig .jl{font-style:normal;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;font-weight:600;
+  letter-spacing:.03em;color:var(--t700);padding-left:4px;border-left:1px solid var(--bd-inner)}
+.jorig .flg:only-child+.jl,.jorig .jl:first-child{padding-left:0;border-left:0}
+.peeking .jorig{padding:0 5px;gap:4px;font-size:11px;background:transparent;border-color:transparent}
+.peeking .jorig .jc{display:none}
+#jinsp-sub{display:flex;align-items:center;gap:7px;flex-wrap:nowrap;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#jinsp-sub .sep{color:var(--t400);flex:none}
+.ap-loc{display:inline-flex;align-items:center;gap:5px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ap-loc .flg{width:15px;height:10px;border-radius:2px;flex:none;box-shadow:0 0 0 .5px rgba(0,0,0,.25)}
+.ap-olang{display:inline-flex;align-items:center;gap:5px;flex:none;font-size:12px;color:var(--t600)}
+.ap-olang i{font-style:normal;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;font-weight:600;
+  padding:1px 5px;border-radius:4px;background:var(--bar);color:var(--t800);box-shadow:inset 0 0 0 1px var(--bd-field)}
 :root[data-theme=dark] .lchip.on{background:var(--cw);color:var(--c800)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .lchip.on{
   background:var(--cw);color:var(--c800)}}
