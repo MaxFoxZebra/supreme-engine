@@ -8,6 +8,20 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.50.1
+
+- The application detail page groups every section — status and dates, match
+  score, documents, changes from the base CV, history, interviews, people,
+  notes, and the posting — into separated cards instead of one flat column.
+- Long blocks stay out of the way until you ask for them: "Changed from the
+  base" shows which sections changed as compact chips with a one-click button
+  to open the side-by-side comparison, the five match criteria fold under the
+  strengths and gaps, and the saved job posting opens on click.
+- The old five-point Fit bar is gone from the application header so the ten-point
+  Match score is the single score everywhere.
+- The Applications table scales its columns dynamically across narrow and wide
+  windows and sizes the score ring to sit cleanly beside the status dot.
+
 ## 0.50.0
 
 - Every application can have a match score out of 10: how well your base CV
