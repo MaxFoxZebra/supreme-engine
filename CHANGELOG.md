@@ -8,6 +8,30 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.50.0
+
+- Every application can have a match score out of 10: how well your base CV
+  fits the posting, as your AI client judges it. Ask it to "score my
+  applications against my base CV". It rates the posting's requirements, the
+  experience asked for, the skills, the domain and the practicalities (place,
+  languages, contract) from 0 to 5 with a reason for each, and CV Studio
+  weights them into the score, so two clients' scores mean the same thing.
+- Applications has a Match column, right after the role: the score in a ring
+  coloured by band (strong from 8, good from 6.5, fair from 5, weak below).
+  Click its header to sort the best first, or filter by band, or by "Not
+  scored", in the new Match group on the left. An application shows the
+  breakdown: each rating and why, what is strong and what is missing.
+- A score fades and says so when it is out of date: your base CV was edited,
+  or the posting changed, since it was scored.
+- Sent applications stand out: "Applied · awaiting reply" is a blue badge with
+  a tick, and interviews and offers have badges of their own colour, where a
+  draft stays a quiet dot.
+- A scheduled job scan can score every job it finds: the score shows on the
+  card and in a Score column of the scan spreadsheet, and comes along when
+  you add the job. To have the best ones added for you, say so in the task:
+  "add the ones scoring 8 or more with decide_job_scan, and leave the rest for
+  me". The task CV Studio gives you to copy has that line, in brackets.
+
 ## 0.49.9
 
 - Saving no longer fails at random when two things happen at once, like a
