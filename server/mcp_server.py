@@ -117,9 +117,64 @@ apps.add_html_resource(
 # sat in the tool call, and the page itself never appeared. So it is said
 # again here, after the SDK has shaped the answer.
 UI_EXTENSION = {"io.modelcontextprotocol/ui": {"mimeTypes": ["text/html;profile=mcp-app"]}}
+UI_EXTENSION_ID = next(iter(UI_EXTENSION))
+
+# What passed between the client and the views, for when a view does not show:
+# whether the client said it shows views, whether it fetched one, whether a
+# render sent the view its data, and whether the view, once running, asked for
+# its page. Claude Desktop's log stopped recording the calls themselves, so the
+# connector keeps the trail: on stderr, which that log keeps, and in the
+# workspace beside the activity log, per client.
+VIEWS_FILE = ".cvstudio-mcp-views.json"
+_VIEWS: dict = {}
+
+
+def _views_note(key: str, value, said: str) -> None:
+    _VIEWS[key] = {"at": time.time(), **value}
+    print(f"cv-studio views: {said}", file=sys.stderr, flush=True)
+    try:
+        f = studio.WORKSPACE / VIEWS_FILE
+        try:
+            trail = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            trail = {}
+        if not isinstance(trail, dict):
+            trail = {}
+        trail[studio.CLIENT_ID or "ai"] = {"version": studio.VERSION, **_VIEWS}
+        f.write_text(json.dumps(trail, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _views_handshake(params) -> None:
+    """What the client said about itself and views, as it said it: before the
+    SDK reads it, so a declaration the SDK would not recognise still shows."""
+    p = params if isinstance(params, dict) else {}
+    caps = p.get("capabilities")
+    caps = caps if isinstance(caps, dict) else {}
+    ext = caps.get("extensions")
+    ui = ext.get(UI_EXTENSION_ID) if isinstance(ext, dict) else None
+    info = p.get("clientInfo") if isinstance(p.get("clientInfo"), dict) else {}
+    who = " ".join(str(info[k]) for k in ("name", "version") if info.get(k)) or "a client"
+    _VIEWS.clear()
+    _views_note("handshake", {"client": who, "protocol": p.get("protocolVersion"),
+                              "capabilities": sorted(caps), "views": ui},
+                f"{who} on {p.get('protocolVersion')} "
+                + (f"says it shows views: {json.dumps(ui)}" if ui is not None else
+                   f"does not say it shows views (capabilities: {', '.join(sorted(caps)) or 'none'})"))
+
 
 
 async def _declare_views(ctx, call_next):
+    try:
+        if ctx.method == "initialize":
+            _views_handshake(ctx.params)
+        elif ctx.method == "resources/read":
+            uri = (ctx.params or {}).get("uri") if isinstance(ctx.params, dict) else None
+            if isinstance(uri, str) and uri.startswith("ui://"):
+                _views_note("read " + uri, {}, f"the client fetched {uri}")
+    except Exception:
+        pass    # the trail is never what fails a message
     result = await call_next(ctx)
     if ctx.method == "initialize" and isinstance(result, dict):
         caps = result.setdefault("capabilities", {})
@@ -1340,7 +1395,13 @@ def render_cv(path: str, page: int = 1) -> CallToolResult:
     show it through another tool (a PDF viewer, the file system, a shell):
     that is a picture they cannot edit.
     """
-    return _render(path, page, _shows_views())
+    r = _render(path, page, _shows_views())
+    sent = r.structured_content is not None
+    _views_note("render", {"path": path, "data": sent},
+                f"render_cv of {path} " + ("failed" if r.is_error else
+                                           "sent the page view its data" if sent else
+                                           "sent no data for a view, as the client did not say it shows views"))
+    return r
 
 
 def _render(path: str, page: int, views: bool) -> CallToolResult:
@@ -2398,6 +2459,8 @@ def page_view_data(what: str, path: str = "", page: str = "", rid: str = "",
     whether render `rid` of `path` is still its latest. what="latest": the
     view of the latest render of `path`. what="fields": the text of `block`
     of `path`, to edit on the page."""
+    if _VIEWS.get("asked", {}).get("at", 0) <= _VIEWS.get("render", {}).get("at", 0):
+        _views_note("asked", {"what": what}, f"the page view is running in the chat: it asked for {what}")
     if what == "fields":
         f = _block_fields(_doc_path(path), block or {})
         return CallToolResult(content=[TextContent(type="text", text="fields")], structured_content=f)

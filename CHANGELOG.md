@@ -8,6 +8,14 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## Unreleased
+
+- When the CV page does not show in the chat, CV Studio's connector now
+  records how far it got: whether Claude said it can show the page, whether it
+  fetched it, whether the page got your CV, and whether it started. It is in
+  Claude's log for CV Studio and in `.cvstudio-mcp-views.json` in your
+  workspace.
+
 ## 0.49.7
 
 - Gemini CLI is in Settings → AI clients and on the first-run screen: one click

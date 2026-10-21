@@ -197,6 +197,14 @@ if __name__ == "__main__":
     check("the activity log names the client that called",
           all(e.get("by") for e in log) and log[-1]["by"] == "claude",
           f"by={log[-1].get('by')} agent={log[-1].get('agent')}")
+    # When a view does not show, the trail says how far it got: this client
+    # said nothing about views, so the render sent none of the view's data.
+    trail = json.loads((ws / ".cvstudio-mcp-views.json").read_text()).get("claude") or {}
+    check("the views' trail says what the client said, and what a render sent",
+          (trail.get("handshake") or {}).get("client") == "claude-ai 1"
+          and "views" in (trail.get("handshake") or {}) and trail["handshake"]["views"] is None
+          and (trail.get("render") or {}).get("data") is False,
+          json.dumps({k: trail.get(k) for k in ("handshake", "render")}))
 
     edits = json.loads((ws / ".cvstudio-edits.json").read_text())["docs"].get(doc, {})
     check("the copy remembers what it was tailored from",

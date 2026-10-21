@@ -605,6 +605,18 @@ sends to a client that said it can show views. The view is
 `server/static/mcp-page.html`, one file with no network access, which follows
 the client's light or dark theme.
 
+When the page does not show, the connector's trail says how far it got. Each
+step is a line starting `cv-studio views:` on stderr, which Claude Desktop keeps
+in its log for the server (`mcp-server-cv-studio.log`), and the last of each is
+in `.cvstudio-mcp-views.json` in the workspace, per client:
+
+- `handshake`: the client's name, protocol version and capabilities, and what
+  it said about views (`views` is null when it said nothing);
+- `read ui://…`: when it fetched a view;
+- `render`: whether render_cv sent the view its data;
+- `asked`: when the view, running in the conversation, first asked for its page
+  after that render.
+
 ## The job search, in the conversation
 
 Two more tools show a view (`static/mcp-jobs.html`):
