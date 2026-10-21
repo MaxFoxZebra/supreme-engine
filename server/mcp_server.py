@@ -235,6 +235,12 @@ mcp = MCPServer(
         "sent with read_cv, then write better questions, stories and asks "
         "with save_interview_prep. Never invent experience: a story is a "
         "line of the CV, or a gap.\n\n"
+        "When the user asks how well they match a job, or to score their "
+        "applications, read the base CV (workspace_info names it; read_cv) "
+        "and each posting (read_job), then rate it with score_job. It is "
+        "scored against the base CV, not a tailored copy, so scores compare "
+        "across applications. list_jobs shows each one's match: none, or "
+        "stale, means score it (again).\n\n"
         "When a thread or an invitation names the recruiter, the hiring "
         "manager or an interviewer, record them with save_person: the app "
         "drafts follow-ups and thank-you notes to them.\n\n"
@@ -383,6 +389,7 @@ TITLES = {
     "set_job_status": "Change an application's status",
     "update_job_tracking": "Update an application", "save_person": "Save a contact",
     "get_interview_prep": "Read interview prep", "save_interview_prep": "Save interview prep",
+    "score_job": "Score an application against the base CV",
     "add_job": "Add an application", "read_posting": "Read a job posting",
     "ats_check": "Check how an ATS reads a CV", "create_letter": "Start a cover letter",
     "write_letter": "Write a cover letter", "add_language": "Translate a CV",
@@ -405,7 +412,7 @@ TITLES = {
     "set_base_cv": "Choose the base CV",
 }
 ADDITIVE = {"create_cv", "add_job", "create_letter", "add_language", "record_job_scan", "decide_job_scan"}
-IDEMPOTENT = {"record_job_scan", "restore_version", "review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
+IDEMPOTENT = {"score_job", "record_job_scan", "restore_version", "review_change", "edit_on_page", "write_cv", "edit_cv_fields", "set_company_logo", "set_job_status",
               "save_interview_prep", "write_letter", "mark_translation_current", "set_base_cv"}
 OPEN_WORLD = {"add_job", "read_posting", "set_company_logo", "decide_job_scan"}
 
@@ -712,6 +719,19 @@ def restore_version(path: str, version_id: str) -> str:
             f"Call render_cv to show it.")
 
 
+class Criterion(TypedDict):
+    key: Annotated[str, Field(description="requirements, experience, skills, domain or practical")]
+    rating: Annotated[int, Field(ge=0, le=5)]
+    why: Annotated[str, Field(description="One sentence naming the evidence")]
+
+
+class ScanMatch(TypedDict, total=False):
+    criteria: list[Criterion]
+    summary: str
+    strengths: list[str]
+    gaps: list[str]
+
+
 class ScanJob(TypedDict, total=False):
     company: str
     role: str
@@ -724,6 +744,8 @@ class ScanJob(TypedDict, total=False):
     description: Annotated[str, Field(description="The posting's text, when the link may not last")]
     details: Annotated[dict[str, str | bool], Field(
         description='Anything else for the card, a column each: {"Sector": "Cloud & data", "Top pick": true}')]
+    match: Annotated[ScanMatch, Field(
+        description="How the base CV matches it, rated as for score_job")]
 
 
 @tool
@@ -739,14 +761,26 @@ def record_job_scan(jobs: list[ScanJob], scan: str | None = None, found: str | N
     out). A job already handed over, already decided or already an
     application is left out, so handing over yesterday's again is harmless.
 
-    Do not add these jobs with add_job yourself: which become applications is
-    the user's choice, made in the app or told to you (decide_job_scan).
+    Score each against the base CV in `match`, exactly as score_job asks
+    (read the base CV first): the user sees the score out of 10 on its card,
+    it comes along when the job becomes an application, and the result lists
+    each score with the job's key.
+
+    Do not add these jobs yourself: which become applications is the user's
+    choice, made in the app or told to you (decide_job_scan). The one
+    exception is the user's own standing instruction, such as their
+    scheduled task saying to add the jobs scoring 8 or more: then call
+    decide_job_scan "yes" for exactly the keys listed at or above it.
     """
     if not jobs:
         raise ValueError("No jobs given.")
-    r = studio.scan_record([dict(j) for j in jobs], scan, found)
+    r = studio.scan_record([dict(j) for j in jobs], scan, found, by=studio.CLIENT_ID or "ai")
     out = (f"{r['added']} new job(s) waiting for the user in CV Studio; {r['already']} were "
            f"already there and {r['tracked']} are already applications. Saved in {r['file']}.")
+    if r["scored"]:
+        out += " Scores: " + "; ".join(
+            f"{x['company']}, {x['role']}: {x['score']:.1f} (key {x['key']})"
+            for x in sorted(r["scored"], key=lambda x: -x["score"])) + "."
     if not r["written"]:
         out += (" The spreadsheet is open in another program, so they are queued and written "
                 "as soon as it is closed; the app shows them already.")
@@ -783,9 +817,11 @@ def decide_job_scan(key: str, decision: str) -> str:
     posting's own title and text read from its link and the search's reason
     in its notes; "no" passes on it. `key` is the one job_scans lists.
 
-    Only when the user said which, about that job: which jobs they apply to
-    is their choice, not yours. A yes is the start of applying, as add_job
-    is: its `next` says what follows.
+    Only when the user said which, about that job, or their own standing
+    instruction says which (such as "add the ones scoring 8 or more" in their
+    scheduled task): which jobs they apply to is their choice, not yours. A
+    yes is the start of applying, as add_job is: its `next` says what
+    follows. A score the scan gave the job comes along to the application.
     """
     if decision == "yes":
         r = studio.scan_add(key)
@@ -1563,7 +1599,21 @@ def _brief(job: dict) -> dict:
     keep = ("id", "title", "company", "status", "location", "url", "source",
             "followup_date", "interview_at", "interview_tz", "contact_email",
             "last_contact_at", "cv_path", "letter_path", "updated_at")
-    return {k: job.get(k) for k in keep if job.get(k) is not None}
+    out = {k: job.get(k) for k in keep if job.get(k) is not None}
+    # The score alone, and whether it is out of date: enough to tell which
+    # ones to score (again) without the reasons for forty of them.
+    m = job.get("match")
+    out["match"] = {"score": m["score"], "stale": bool(m.get("stale"))} if m else None
+    return out
+
+
+def _with_stale(jobs: list[dict]) -> list[dict]:
+    """Each match marked with why it is out of date, as the app shows it."""
+    base = studio._base_sig() if any(j.get("match") for j in jobs) else (None, None)
+    for j in jobs:
+        if j.get("match"):
+            j["match"]["stale"] = studio.match_stale(j["match"], j, base)
+    return jobs
 
 
 @tool
@@ -1572,9 +1622,11 @@ def list_jobs(status: str | None = None, query: str | None = None) -> list[dict]
 
     `status` filters exactly. `query` matches the title, company or notes.
     Returns a trimmed view: call read_job for the full posting text.
+    `match` is the score score_job gave it out of 10, null when it has none,
+    with `stale` true when the base CV or the posting changed since.
     """
     return [_brief(j) for j in
-            studio.jobstore.list_jobs(_ws(), status=status, q=query)]
+            _with_stale(studio.jobstore.list_jobs(_ws(), status=status, q=query))]
 
 
 @tool
@@ -1582,11 +1634,12 @@ def read_job(job_id: str) -> dict:
     """One application in full, including the posting text and its history.
 
     The posting stored in `description` is what to write against when the user
-    asks you to tailor a CV for this job.
+    asks you to tailor a CV for this job. `match` is the last score_job, with
+    `stale` saying what changed since ("cv", "posting").
     """
     for job in studio.jobstore.list_jobs(_ws()):
         if job["id"] == job_id:
-            return job
+            return _with_stale([job])[0]
     raise ValueError("No such job.")
 
 
@@ -1961,6 +2014,43 @@ def save_interview_prep(job_id: str, questions: list[dict],
 
 
 @tool
+def score_job(job_id: str, criteria: list[Criterion], summary: str,
+              strengths: list[str] | None = None, gaps: list[str] | None = None) -> dict:
+    """Score how well the user's base CV matches an application's posting.
+
+    Read both first: the base CV (workspace_info names it, read_cv reads it)
+    and the posting (read_job). Score the base CV, never a tailored copy, so
+    the scores compare across applications.
+
+    `criteria`: all five, each {"key", "rating", "why"}, rating a whole
+    number 0 to 5 and `why` one sentence naming the evidence:
+      requirements (35%): the must-haves the posting lists, each shown on
+        the CV or not.
+      experience (25%): level and years of relevant work against what it
+        asks; far too senior costs too.
+      skills (20%): the tools, technologies and methods it names.
+      domain (10%): the industry, product and kind of customer.
+      practical (10%): location or remote, languages, work authorisation,
+        contract; 3 when neither side says.
+    5 is fully, 4 nearly all, 3 most with gaps, 2 partly, 1 barely, 0 not at
+    all. Judge only what the CV says; something missing from it is a gap,
+    not a guess in the user's favour.
+
+    CV Studio works out the score out of 10 (one decimal) from the ratings
+    and their weights: strong from 8, good from 6.5, fair from 5. `summary`: one or two plain sentences, in the posting's
+    language, on the fit. `strengths` and `gaps`: up to six short lines
+    each, the gaps what the user could address in a tailored CV or a letter.
+
+    Scoring again replaces the last score. The user sees it on the
+    application list and can sort and filter by it.
+    """
+    data = {"criteria": [dict(c) for c in criteria], "summary": summary,
+            "strengths": strengths or [], "gaps": gaps or []}
+    m = studio.save_match(job_id, data, by=studio.CLIENT_ID or "ai")
+    return {**m, "band": studio.jobstore.match_band(m["score"])}
+
+
+@tool
 def add_job(company: str, title: str, status: str = "pending",
             url: str | None = None, location: str | None = None,
             source: str | None = None, description: str | None = None,
@@ -2043,7 +2133,8 @@ def add_job(company: str, title: str, status: str = "pending",
     if description and words < THIN_POSTING and "posting_note" not in notes:
         notes["posting_note"] = _thin_note(words)
     job.update(notes)
-    job["next"] = ("Unless the user asked only to track it: tailor a CV for it "
+    job["next"] = ("Score it against the base CV with score_job once you have "
+                   "read both. Unless the user asked only to track it: tailor a CV for it "
                    "(create_cv copying the base CV in the posting's language, "
                    "edit_cv_fields, render_cv, ats_check with this job_id, then "
                    "update_job_tracking with cv_path), then the motivation text "

@@ -101,7 +101,7 @@ if __name__ == "__main__":
                  "decide_job_scan", "set_base_cv", "open_studio"}
     applications = {"list_jobs", "read_job", "find_job", "job_alerts", "calendar",
                     "set_job_status", "update_job_tracking", "add_job", "save_person",
-                    "get_interview_prep", "save_interview_prep",
+                    "get_interview_prep", "save_interview_prep", "score_job",
                     "set_company_logo", "read_posting", "job_stats", "show_application", "today"}
     # The views' own tools act as the user. This client shows no views, so it
     # is not told about them, and cannot call the ones that act by name either.

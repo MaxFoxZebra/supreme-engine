@@ -1615,8 +1615,30 @@ def scans_state() -> dict:
     return st
 
 
-def scan_record(found: list[dict], scan: str | None = None, day: str | None = None) -> dict:
-    return scans.record(scan_folder(), found, _all_jobs(), scan, day)
+def scan_record(found: list[dict], scan: str | None = None, day: str | None = None,
+                by: str = "") -> dict:
+    """Record what a scan found. A job handed over with a match is scored
+    here as an application would be: the score in the sheet's Score column,
+    the reasons beside it, and {scored: [{key, company, role, score}]}."""
+    folder, scored, matches = scan_folder(), [], {}
+    found = [dict(j) for j in found]
+    for j in found:
+        m = j.pop("match", None)
+        if not m or jobstore is None:
+            continue
+        m = jobstore.clean_match({**m, "by": by, "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+        key = scans.key_of({"link": j.get("link") or j.get("url"), "company": j.get("company"),
+                            "role": j.get("role") or j.get("title")})
+        if not key:
+            continue
+        j["details"] = {**(j.get("details") if isinstance(j.get("details"), dict) else {}),
+                        scans.SCORE: f"{m['score']:.1f}"}
+        matches[key] = m
+        scored.append({"key": key, "company": j.get("company") or "",
+                       "role": j.get("role") or j.get("title") or "", "score": m["score"]})
+    r = scans.record(folder, found, _all_jobs(), scan, day)
+    scans.save_matches(folder, matches)
+    return {**r, "scored": scored}
 
 
 def scan_decide(keys: list[str], status: str) -> dict:
@@ -1663,6 +1685,16 @@ def scan_add(key: str) -> dict:
         "source": row.get("scan") or "Job scan", "description": description, "notes": notes,
         "logo": stored_logo(company) if company else None})
     scans.set_status(folder, [key], scans.ADDED, jobs + [job])
+    # The score the scan gave it comes along, fingerprinted against the
+    # posting as saved now. No posting or no base CV: it stays on the card.
+    m = scans.load_matches(folder).get(key)
+    if m and description:
+        try:
+            job["match"] = save_match(job["id"], {k: v for k, v in m.items()
+                                                  if k in ("criteria", "summary", "strengths", "gaps")},
+                                      by=m.get("by") or "")
+        except ValueError:
+            pass
     return {"ok": True, "job": job, "already": False, "posting": read_how}
 
 
@@ -2723,6 +2755,55 @@ def save_interview_prep(job_id: str, prep_data: dict, by: str = "") -> dict:
                                   {**prep_data, "by": by, "at": time.strftime("%Y-%m-%d")})
     jobstore.update_job(WORKSPACE, job_id, {"prep": prep_data})
     return interview_prep(job_id)
+
+
+def _match_sig(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+
+def _base_sig() -> tuple[str | None, str | None]:
+    """The base CV and a fingerprint of its text, or (None, None)."""
+    base = base_cv()
+    if not base or base.get("missing"):
+        return None, None
+    try:
+        return base["path"], _match_sig(safe_path(base["path"]).read_text(encoding="utf-8"))
+    except OSError:
+        return base["path"], None
+
+
+def match_stale(match: dict | None, job: dict, base: tuple[str | None, str | None]) -> list[str]:
+    """Why a match no longer describes the application: the base CV is
+    another one or was edited ("cv"), or the posting changed ("posting")."""
+    if not match:
+        return []
+    why = []
+    path, sig = base
+    if path and (match.get("cv") != path or (sig and match.get("cv_sig") and match["cv_sig"] != sig)):
+        why.append("cv")
+    if match.get("posting_sig") and match["posting_sig"] != _match_sig(job.get("description") or ""):
+        why.append("posting")
+    return why
+
+
+def save_match(job_id: str, data: dict, by: str = "") -> dict:
+    """An AI client's reading of how the base CV matches one posting, stored
+    with fingerprints of both so the app can say when either has moved on."""
+    job = next((j for j in jobstore.list_jobs(WORKSPACE) if j["id"] == job_id), None) \
+        if jobstore is not None else None
+    if job is None:
+        raise ValueError("No such job.")
+    if not (job.get("description") or "").strip():
+        raise ValueError("This application has no posting saved to score against. Save it first "
+                         "(update_job_tracking with description, or read_posting on its link).")
+    path, sig = _base_sig()
+    if not path:
+        raise ValueError("There is no base CV to score against. Ask the user which CV it is, "
+                         "then set_base_cv.")
+    match = {**data, "by": by, "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "cv": path,
+             "cv_sig": sig or "", "posting_sig": _match_sig(job["description"])}
+    saved = jobstore.update_job(WORKSPACE, job_id, {"match": match})["match"]
+    return {**saved, "stale": []}
 
 
 def application_pack(job_id: str, fmt: str = "pdf", name: str | None = None,
@@ -5280,6 +5361,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # can put in an <img>, and None when the file has gone.
                 for j in jobs_out:
                     j["logo_url"] = logo_url(j.get("logo"))
+                # A match is out of date once the base CV or the posting
+                # it was read from has changed; the CV is read once for all.
+                base = _base_sig() if any(j.get("match") for j in jobs_out) else (None, None)
+                for j in jobs_out:
+                    if j.get("match"):
+                        j["match"]["stale"] = match_stale(j["match"], j, base)
                 return self._json({"jobs": jobs_out,
                                    "statuses": jobstore.STATUSES,
                                    "nodes": jobstore.NODE_STATUSES,
@@ -6029,6 +6116,10 @@ const API_TOKEN=__API_TOKEN__;
       </div>
       <div class="rail-label">Status</div>
       <div id="statuslist"></div>
+      <div id="matchwrap" hidden>
+        <div class="rail-label">Match</div>
+        <div id="matchlist"></div>
+      </div>
       <div class="rail-label">Views</div>
       <div id="savedlist"></div>
       <div class="grow"></div>
@@ -6056,6 +6147,7 @@ const API_TOKEN=__API_TOKEN__;
       <section class="na" id="nextup" aria-label="Next actions" hidden></section>
       <div class="tcard">
         <div class="thead"><button type="button" data-sort="company">Company</button><button type="button" data-sort="title">Role</button>
+          <button type="button" data-sort="match" title="How well your base CV matches the posting, scored by your AI client">Match</button>
           <span>Documents</span><button type="button" data-sort="status">Status</button>
           <button type="button" data-sort="applied">Sent</button><button type="button" data-sort="next">Next step</button></div>
         <div class="tbody" id="jobrows"></div>

@@ -584,30 +584,97 @@ def build(studio, applications: int = 64) -> dict:
                      encoding="utf-8")
         letters_made += 1
 
+    # How each application with a posting matches the base CV, as an AI
+    # client scored it: the Match column. One is out of date, the CV having
+    # moved on since; the ones without a posting are not scored.
+    M = random.Random(31)
+    path, sig = studio._base_sig()
+    scored = 0
+    for j in jobs.list_jobs(ws):
+        if not j.get("description"):
+            continue
+        fit = j.get("score") or 3
+        ratings = [max(0, min(5, fit + M.choice((-1, 0, 0, 1)))) for _ in jobs.MATCH_CRITERIA]
+        m = _match(ratings, M)
+        m.update(by="claude", at=_iso(now - dt.timedelta(days=M.randint(0, 20))), cv=path,
+                 cv_sig="0" * 12 if scored == 3 else sig,
+                 posting_sig=studio._match_sig(j["description"]))
+        jobs.set_stored(ws, j["id"], {"match": jobs.clean_match(m)})
+        scored += 1
+
     # What two morning searches found and nobody has looked at yet: the
     # cards in Applications > Review.
     day = lambda n: (now - dt.timedelta(days=n)).date().isoformat()
     found = []
-    for scan, company, role, where, posted, top, why in SCANS:
+    for scan, company, role, where, posted, top, why, ratings in SCANS:
         found.append({"company": company, "role": role, "location": where, "scan": scan,
                       "link": "https://example.com/scans/" + re.sub(r"[^a-z0-9]+", "-", f"{company} {role}".lower()),
                       "posted": day(posted), "why": why, "found": day(0 if posted < 4 else 1),
-                      "details": {"Top pick": True} if top else {}})
-    studio.scan_record(found)
+                      "details": {"Top pick": True} if top else {}, "match": _match(ratings, M)})
+    studio.scan_record(found, by="claude")
 
     return {"applications": len(made), "tailored": len(tailored), "letters": letters_made,
             "translations": len(TR), "scans": len(found)}
 
 
+# Ratings for requirements, experience, skills, domain and practicalities.
 SCANS = [
     ("Platform roles, Paris & remote", "Scaleway", "Infrastructure Engineer, GPU Cloud", "Paris", 2, True,
-     "Moving 140 services to Kubernetes at Northwind is the work this team does for its customers."),
+     "Moving 140 services to Kubernetes at Northwind is the work this team does for its customers.",
+     (5, 4, 4, 4, 5)),
     ("Platform roles, Paris & remote", "Datadog", "Senior SRE, Observability", "Paris (hybrid)", 1, False,
-     "The incident review practice that took pages from 14 to 3 a week is what this role is about."),
+     "The incident review practice that took pages from 14 to 3 a week is what this role is about.",
+     (4, 4, 3, 3, 4)),
     ("Platform roles, Paris & remote", "Hugging Face", "Cloud Infrastructure Engineer", "Remote (EU)", 5, False,
-     "Remote in the EU, with Terraform and Go, and the 31% cut in cloud cost to talk about."),
+     "Remote in the EU, with Terraform and Go, and the 31% cut in cloud cost to talk about.",
+     (3, 4, 4, 2, 4)),
     ("Lyon & Grenoble", "OVHcloud", "Kubernetes Platform Lead", "Lyon", 3, True,
-     "In Lyon, and the internal deploy pipeline used by 60 engineers is the platform this lead would own."),
+     "In Lyon, and the internal deploy pipeline used by 60 engineers is the platform this lead would own.",
+     (5, 5, 4, 4, 5)),
     ("Lyon & Grenoble", "Malt", "Principal Engineer, Developer Platform", "Lyon", 6, False,
-     "A developer platform for product teams: the line your CV's summary opens with."),
+     "A developer platform for product teams: the line your CV's summary opens with.",
+     (3, 2, 3, 3, 4)),
 ]
+
+# What the AI client said about each criterion, by rating: high, middling, low.
+MATCH_WHY = {
+    "requirements": ("Every must-have is on the CV, Kubernetes at scale first.",
+                     "Most must-haves are there; on-call for payments is not.",
+                     "Several must-haves have nothing on the CV behind them."),
+    "experience": ("Nine years, four of them doing exactly this job.",
+                   "The years are there; the leadership asked for is thinner.",
+                   "They want more seniority than the CV shows."),
+    "skills": ("Kubernetes, Terraform and Go, all named in the posting.",
+               "The core tools match; their observability stack does not appear.",
+               "Few of the tools they name appear on the CV."),
+    "domain": ("Logistics platforms at the same scale as theirs.",
+               "Infrastructure, but not their industry.",
+               "A different industry and a different kind of customer."),
+    "practical": ("Paris or remote in the EU, English and French.",
+                  "Hybrid, three days a week in the office.",
+                  "Relocation needed, and a language the CV does not list."),
+}
+MATCH_SUMMARY = (
+    "A close fit: the migration and on-call work on the CV is the job, nearly line for line.",
+    "A good fit on the platform work, with a gap in the observability tooling to cover in a letter.",
+    "The core of the job is there; the seniority and the domain are the stretch.",
+    "More of a stretch: half of what they ask for has nothing on the CV behind it.",
+)
+MATCH_STRENGTHS = ("140 services moved to Kubernetes with no downtime",
+                   "Deploys cut from three hours to eleven minutes",
+                   "The incident review practice: pages from 14 to 3 a week",
+                   "31% cut in cloud cost", "Terraform and Go, both asked for")
+MATCH_GAPS = ("No payments or PCI work on the CV", "Their observability stack (Prometheus, Grafana) is not named",
+              "No people management", "No GPU or ML infrastructure")
+
+
+def _match(ratings, M: random.Random) -> dict:
+    """A plausible match for the sample, from five ratings."""
+    import jobs
+    crit = [{"key": k, "rating": r, "why": MATCH_WHY[k][0 if r >= 4 else 1 if r == 3 else 2]}
+            for k, r in zip(jobs.MATCH_CRITERIA, ratings)]
+    score = jobs.match_score(crit)
+    return {"criteria": crit,
+            "summary": MATCH_SUMMARY[0 if score >= 8 else 1 if score >= 6.5 else 2 if score >= 5 else 3],
+            "strengths": M.sample(MATCH_STRENGTHS, 2 if score < 6.5 else 3),
+            "gaps": M.sample(MATCH_GAPS, 1 if score >= 8 else 2)}

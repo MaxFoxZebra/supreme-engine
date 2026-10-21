@@ -535,6 +535,31 @@ const STATUS_TONE={
   rejected_interviewing:"lost", ghosted_interviewing:"lost",
 };
 const statusTone=st=>STATUS_TONE[st]||"draft";
+/* How well the base CV matches the posting, as the AI client scored it, out
+   of 10. Four bands with their own colour, so a strong one is seen from
+   across the room; the bands start where the server's do (jobs.py). */
+const MATCH_BANDS=[["strong",8,"Strong","Strong match"],["good",6.5,"Good","Good match"],
+  ["fair",5,"Fair","Fair match"],["weak",0,"Weak","Weak match"]];
+const MATCH_CRIT={requirements:"Requirements",experience:"Experience",skills:"Skills",domain:"Domain",practical:"Practicalities"};
+const hasMatch=j=>!!(j&&j.match&&typeof j.match.score==="number");
+const matchBand=sc=>MATCH_BANDS.find(b=>sc>=b[1]);
+const matchKey=j=>hasMatch(j)?matchBand(j.match.score)[0]:"none";
+/* m-strong, m-good, m-fair, m-weak, m-none: the band's colours. */
+const bandCls=k=>"m-"+k;
+const matchNum=sc=>Number(sc).toLocaleString(uiLocale(),{minimumFractionDigits:1,maximumFractionDigits:1});
+function matchStaleWords(m){
+  const w=(m&&m.stale)||[];
+  return w.includes("cv")&&w.includes("posting")?t("Out of date: your base CV and the posting changed since.")
+    :w.includes("cv")?t("Out of date: your base CV changed since.")
+    :w.includes("posting")?t("Out of date: the posting changed since."):"";
+}
+function matchRing(m,cls){
+  const b=matchBand(m.score), stale=((m.stale||[]).length>0);
+  return '<span class="mring '+bandCls(b[0])+(stale?' stale':'')+(cls?' '+cls:'')+'" style="--p:'+
+    Math.max(0,Math.min(100,Math.round(m.score*10)))+'"><b>'+esc(matchNum(m.score))+'</b></span>';
+}
+/* The prompt that gets a score, for when there is none yet. */
+const matchAsk=j=>j?t("score my {co} application against my base CV",{co:j.company}):t("score my applications against my base CV");
 const DEAD_STATUS=new Set(Object.keys(STATUS_TONE).filter(
   k=>["lost","closed","draft"].includes(STATUS_TONE[k])));
 
@@ -5508,10 +5533,13 @@ function scanCard(r,depth){
     (top?'<span class="sc-stamp yes" aria-hidden="true">'+esc(t("Add"))+'</span>'+
       '<span class="sc-stamp no" aria-hidden="true">'+esc(t("Pass"))+'</span>':'')+
     '<header class="sc-co">'+companyMark(known||{company:co})+
-      '<span><b>'+esc(co)+'</b>'+(r.location?'<small>'+esc(r.location)+'</small>':'')+'</span></header>'+
+      '<span><b>'+esc(co)+'</b>'+(r.location?'<small>'+esc(r.location)+'</small>':'')+'</span>'+
+      (hasMatch(r)?matchRing(r.match):'')+'</header>'+
     '<h2 class="sc-role">'+esc(r.role||t("A job"))+'</h2>'+
     (chips.length?'<div class="sc-chips">'+chips.join("")+'</div>':'')+
     (r.why?'<div class="sc-why"><small>'+esc(t("Why it fits"))+'</small><p>'+esc(r.why)+'</p></div>':'')+
+    (hasMatch(r)&&r.match.summary?'<div class="sc-fact"><small>'+esc(t(matchBand(r.match.score)[3])+" · "+t("{n} out of 10",{n:matchNum(r.match.score)}))+
+      '</small><p>'+esc(r.match.summary)+'</p></div>':'')+
     (r.notes?'<div class="sc-fact"><small>'+esc(t("Notes"))+'</small><p>'+esc(r.notes)+'</p></div>':'')+
     facts.join("")+
     '<footer class="sc-foot">'+(r.link?'<a class="sc-link" href="'+esc(r.link)+'" target="_blank" rel="noopener"'+
@@ -5705,8 +5733,8 @@ What I am looking for: [the roles, the places, remote or not, and anything to le
 
 1. Read my base CV with CV Studio's tools (workspace_info names it, read_cv reads it), so you know what I have done.
 2. Search job boards and companies' own career pages for postings from the last few days that fit what I am looking for and that CV. Keep only postings with a permanent link to the posting itself: not a search page, not a tracking link.
-3. Call CV Studio's record_job_scan with every job you kept: company, role, link, location, the day it was posted, and one line on why it fits me, true to my CV. Name this search in "scan".
-4. Do not add them as applications: I go through them in CV Studio and choose.
+3. Call CV Studio's record_job_scan with every job you kept: company, role, link, location, the day it was posted, one line on why it fits me, true to my CV, and its match against my base CV (the five ratings score_job describes). Name this search in "scan".
+4. Do not add them as applications: I go through them in CV Studio and choose. [Or, to have the best ones added: add the ones scoring 8 or more with decide_job_scan, and leave the rest for me.]
 
 End with one line saying how many jobs you handed over.`;
 function fillScans(){
@@ -5920,16 +5948,18 @@ function fillNotify(){
   };
 }
 
+const MATCH_RAIL=[["strong","Strong match · 8+"],["good","Good match · 6.5+"],["fair","Fair match · 5+"],
+  ["weak","Weak match"],["none","Not scored"]];
 function drawRail(){
   const c=statusCounts(), f=S.jfilter;
   /* The .mark span is what .row.sel paints ochre. Without it this rail marked
      its selection with a background lift alone, at 1.28:1 -- the documents rail
      next door emits the span and gets the bar, so the two rails disagreed about
      what "selected" looks like. */
-  const row=(label,count,kind,value)=>{
+  const row=(label,count,kind,value,lead)=>{
     const on=f.kind===kind&&f.value===value;
     return '<button class="row'+(on?" sel":"")+'" aria-current="'+(on?"true":"false")+
-      '" data-k="'+kind+'" data-v="'+esc(value)+'"><span class="mark"></span>'+
+      '" data-k="'+kind+'" data-v="'+esc(value)+'"><span class="mark"></span>'+(lead||"")+
       '<span class="lbl">'+esc(label)+'</span>'+
       (count==null?"":'<span class="ct mono">'+count+'</span>')+'</button>';
   };
@@ -5953,7 +5983,19 @@ function drawRail(){
 
   $("#savedlist").innerHTML=Object.keys(SAVED).map(k=>
     row(k,S.jobs.filter(SAVED[k]).length,"saved",k)).join("");
-  $$("#statuslist [data-k],#attentionlist [data-k],#savedlist [data-k]").forEach(b=>b.onclick=()=>{
+
+  /* By match: the bands with something in them, then what is not scored,
+     with the words that get it scored. */
+  const mc={};
+  S.jobs.forEach(j=>{ const k=matchKey(j); mc[k]=(mc[k]||0)+1 });
+  $("#matchwrap").hidden=!S.jobs.length;
+  $("#matchlist").innerHTML=MATCH_RAIL.filter(([k])=>mc[k]).map(([k,label])=>
+    row(label,mc[k],"match",k,'<i class="mdot '+bandCls(k)+'" aria-hidden="true"></i>')).join("")+
+    (mc.none?'<button type="button" class="rail-ask" id="match-ask" title="'+esc(t("Copies the words to say to your AI client"))+'">'+
+      esc(mc.none===S.jobs.length?t("Ask your AI client to score them"):t("Ask your AI client to score the rest"))+'</button>':'');
+  const ma=$("#match-ask");
+  if(ma) ma.onclick=()=>{ try{ navigator.clipboard.writeText(matchAsk()).then(()=>toast(t("Copied. Paste it into your AI client."))) }catch(e){} };
+  $$("#statuslist [data-k],#attentionlist [data-k],#savedlist [data-k],#matchlist [data-k]").forEach(b=>b.onclick=()=>{
     S.jfilter={kind:b.dataset.k,value:b.dataset.v};
     if(b.dataset.k!=="node") S.fnode=null;
     drawJobs();
@@ -5968,6 +6010,7 @@ function visibleJobs(){
     const want=new Set(S.nodes[f.value]||[]);
     rows=rows.filter(j=>want.has(j.status));
   }else if(f.kind==="saved"&&SAVED[f.value]) rows=rows.filter(SAVED[f.value]);
+  else if(f.kind==="match") rows=rows.filter(j=>matchKey(j)===f.value);
   else if(f.kind==="alert"){
     /* Filter against the server's answer rather than re-deriving the rule
        here, which is the whole point of computing it in one place. */
@@ -6665,6 +6708,7 @@ function filterTitle(){
   if(f.kind==="status") return prettyStatus(f.value);
   if(f.kind==="node") return (S.labels&&S.labels[f.value])||"Applications";
   if(f.kind==="saved") return f.value;
+  if(f.kind==="match") return MATCH_RAIL.find(([k])=>k===f.value)?.[1]||"Applications";
   if(f.kind==="alert"){
     const a=ATTENTION.find(([k])=>k===f.value);
     return a?a[1]:"Applications";
@@ -6691,11 +6735,15 @@ function sortJobs(rows){
   const by={
     company:j=>String(j.company||"").toLowerCase(), title:j=>String(j.title||"").toLowerCase(),
     status:j=>(S.statuses||[]).indexOf(j.status), applied:j=>String(appliedAt(j)||""),
+    match:j=>j.match.score,
   };
   const cmp=(a,b)=>a<b?-1:a>b?1:0;
   return rows.slice().sort((a,b)=>{
     if(key==="next"){ const x=nextKey(a), y=nextKey(b);
       return dir*(cmp(x[0],y[0])||cmp(x[1],y[1]))||cmp(upd(b),upd(a)) }
+    /* Not scored yet sinks, whichever way the scores run. */
+    if(key==="match"&&hasMatch(a)!==hasMatch(b)) return hasMatch(a)?-1:1;
+    if(key==="match"&&!hasMatch(a)) return cmp(upd(b),upd(a));
     return dir*cmp(by[key](a),by[key](b))||cmp(upd(b),upd(a));
   });
 }
@@ -6710,8 +6758,8 @@ function drawSortHead(){
 }
 $$(".thead [data-sort]").forEach(b=>b.onclick=()=>{
   const k=b.dataset.sort, cur=S.jsort||{key:"next",dir:1};
-  /* Dates read newest first on the first click. */
-  S.jsort={key:k,dir:cur.key===k?-cur.dir:(k==="applied"?-1:1)};
+  /* Dates read newest first on the first click, matches best first. */
+  S.jsort={key:k,dir:cur.key===k?-cur.dir:(k==="applied"||k==="match"?-1:1)};
   drawJobs();
 });
 /* The next dated thing on an application: an interview coming, else the
@@ -6734,6 +6782,28 @@ function nextStep(j,due){
     return '<span class="when'+(due?" due":"")+'">'+esc(t("Follow up"))+' · '+esc(shortDate(j.followup_date))+'</span>';
   if(j.status==="interviewing") return '<span class="when">'+esc(t("Book the next round"))+'</span>';
   return '<span class="when none">–</span>';
+}
+/* The match column: the ring and the band, or a dash until it is scored. */
+function matchCell(j){
+  if(!hasMatch(j)) return '<span class="match none" title="'+esc(t("Not scored yet. Ask your AI client to score it against your base CV."))+'">–</span>';
+  const m=j.match, b=matchBand(m.score);
+  const tip=[t(b[3])+" · "+t("{n} out of 10",{n:matchNum(m.score)}),m.summary,matchStaleWords(m)].filter(Boolean).join("\n");
+  return '<span class="match '+bandCls(b[0])+((m.stale||[]).length?' stale':'')+'" title="'+esc(tip)+'">'+matchRing(m)+
+    '<span class="mlab">'+esc(t(b[2]))+'</span></span>';
+}
+/* Sent is the step that matters most, so from there on the status is a
+   coloured badge: a tick and "Applied" once it is out, the stage's colour
+   after. A draft stays a quiet dot, and so does an application that ended. */
+const STATUS_PILL={applied:"sent",interviewing:"live",offer:"won",accepted:"won"};
+const TICK='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+function statusCell(j){
+  const pill=STATUS_PILL[j.status];
+  if(!pill) return '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+esc(prettyStatus(j.status))+'</span>';
+  if(j.status==="applied")
+    return '<span class="st"><span class="stp sent" title="'+esc(t("Awaiting reply"))+'">'+TICK+'<b>'+esc(t("Applied"))+'</b>'+
+      '<i>'+esc(t("awaiting reply"))+'</i></span></span>';
+  return '<span class="st"><span class="stp '+pill+'">'+(j.status==="accepted"?TICK:'<span class="dot '+statusTone(j.status)+'"></span>')+
+    '<b>'+esc(prettyStatus(j.status))+'</b></span></span>';
 }
 function drawJobs(){
   drawRail();
@@ -6762,7 +6832,7 @@ function drawJobs(){
         esc(j.company)+'</span></span>'+
       '<span class="role"><b>'+esc(j.title)+'</b>'+
         (jb?'<span class="via" title="Found on '+esc(jb.label)+'">'+boardMark(jb)+'</span>':'')+
-      '</span>'+
+      '</span>'+matchCell(j)+
       '<span>'+(docs?'<span class="docs" data-open="'+esc(openable)+'" title="'+esc([cv,letter].filter(Boolean).join(" · "))+'">'+docs+'</span>'+rvPill(rvd)
                /* Sent without a CV linked: nothing to tailor any more, only
                   a CV to name, on the application. */
@@ -6778,8 +6848,7 @@ function drawJobs(){
                  :'<span class="docs make" data-tailor="'+esc(j.id)+'" title="'+
                   'Copy the base CV, name it after this application, and open it'+
                   '"><i class="nt">Not tailored</i><u class="tl">Tailor a CV</u></span>')+'</span>'+
-      '<span class="st"><span class="dot '+statusTone(j.status)+'"></span>'+
-        esc(prettyStatus(j.status))+'</span>'+
+      statusCell(j)+
       '<span class="when'+(ap?"":" none")+'">'+(ap?esc(shortDate(ap)):"–")+'</span>'+
       nextStep(j,due)+
       '</button>';
@@ -7051,6 +7120,36 @@ function drawJobInspector(){
     '<option value=""'+(curL?"":" selected")+'>'+(guess?"Looks like "+esc(langOf(guess).native):"Not set")+'</option>'+
     ((S.state&&S.state.languages)||[]).map(l=>'<option value="'+l.code+'"'+(l.code===curL?" selected":"")+'>'+
       esc(l.native)+'</option>').join("")+'</select></span>';
+  /* The match, read out: the ring, the band, the five ratings with why,
+     what is strong and what is missing. Or how to get one. */
+  const aiOn=(S.ai||[]).some(c=>c.state==="connected");
+  let matchCard;
+  if(hasMatch(j)){
+    const m=j.match, b=matchBand(m.score), stale=matchStaleWords(m);
+    const crit=(m.criteria||[]).map(c=>'<li><span class="mc-k">'+esc(t(MATCH_CRIT[c.key]||c.key))+'</span>'+
+      '<span class="mc-bar" role="img" aria-label="'+esc(t("{n} of 5",{n:c.rating}))+'">'+[1,2,3,4,5].map(n=>'<i'+(n<=c.rating?' class="on"':'')+'></i>').join("")+'</span>'+
+      '<span class="mc-why">'+esc(c.why||"")+'</span></li>').join("");
+    const list=(title,xs,cls)=>xs&&xs.length?'<div class="mc-list '+cls+'"><small>'+esc(t(title))+'</small><ul>'+
+      xs.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul></div>':'';
+    const by=clientName({by:m.by||"ai"});
+    matchCard='<section class="ap-match '+bandCls(b[0])+(stale?' stale':'')+'" aria-label="'+esc(t("Match"))+'">'+
+      '<div class="mc-head">'+matchRing(m,"big")+'<div class="mc-tx"><b>'+esc(t(b[3]))+'</b>'+
+        '<span>'+esc(t("{n} out of 10 against your base CV",{n:matchNum(m.score)}))+'</span></div></div>'+
+      (m.summary?'<p class="mc-sum">'+esc(m.summary)+'</p>':'')+
+      (stale?'<p class="mc-stale">'+esc(stale)+' <code data-noi18n>'+esc(matchAsk(j))+'</code><button type="button" class="linkbtn" data-match-copy>'+esc(t("Copy"))+'</button></p>':'')+
+      '<ul class="mc-crit">'+crit+'</ul>'+
+      '<div class="mc-lists">'+list("Strengths",m.strengths,"ok")+list("Gaps",m.gaps,"gap")+'</div>'+
+      '<div class="mc-foot">'+esc(t("Scored by {who} · {d}",{who:by,d:m.at?fmtKey(String(m.at).slice(0,10),{day:"numeric",month:"short"}):""}))+'</div>'+
+    '</section>';
+  }else{
+    matchCard='<section class="ap-match none" aria-label="'+esc(t("Match"))+'">'+
+      '<div class="mc-head"><span class="mring none big"><b>?</b></span><div class="mc-tx"><b>'+esc(t("Not scored yet"))+'</b>'+
+      '<span>'+esc(j.description?t("Your AI client can score how well your base CV matches this posting, out of 10."):
+        t("Save the posting first: the score is read from it and your base CV."))+'</span></div></div>'+
+      (aiOn?'<p class="mc-ask"><code data-noi18n>'+esc(matchAsk(j))+'</code><button type="button" class="obtn" data-match-copy>'+esc(t("Copy"))+'</button></p>'
+        :'<p class="mc-ask"><button type="button" class="linkbtn" id="ap-match-ai">'+esc(t("Connect an AI client to score it"))+'</button></p>')+
+    '</section>';
+  }
   const facts='<div class="ap-facts">'+
     fact("Status",statusCtl)+
     fact("Follow-up",'<input data-j="followup_date" type="date" aria-label="Follow-up" value="'+esc(j.followup_date||"")+'">')+
@@ -7131,7 +7230,7 @@ function drawJobInspector(){
     '<div id="ap-prep" hidden></div>'+
     '<div class="peek-grid">'+
       '<div class="col">'+
-        facts+roundsHTML(j)+
+        facts+matchCard+roundsHTML(j)+
         '<div class="block"><div class="bhead"><span class="blabel">Documents</span>'+
           (j.cv_path||j.letter_path?'<button class="obtn" id="ap-pack" data-job="'+esc(j.id)+'">'+
             (j.cv_path&&j.letter_path?"Export both…":"Export…")+'</button>':'')+
@@ -7160,6 +7259,9 @@ function drawJobInspector(){
   if(PREP.job!==j.id) PREP.data=null;
   drawPrep(j);
   $("#ap-src").onclick=e=>{ e.stopPropagation(); sourceMenu(j,$("#ap-src")) };
+  body.querySelectorAll("[data-match-copy]").forEach(b=>b.onclick=()=>{
+    try{ navigator.clipboard.writeText(matchAsk(j)).then(()=>toast(t("Copied. Paste it into your AI client."))) }catch(e){} });
+  const mai=$("#ap-match-ai"); if(mai) mai.onclick=()=>openSettings("ai");
   const wr=$("#ap-write");
   if(wr) wr.onclick=async()=>{
     wr.disabled=true;

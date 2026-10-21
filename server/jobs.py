@@ -118,7 +118,7 @@ ORDER = [
     "language", "score", "salary_expected", "salary_offered", "salary_currency",
     "followup_date", "interview_at", "interview_tz", "contact_email",
     "last_contact_at", "cv_path", "letter_path", "logo", "people", "rounds",
-    "status_history", "prep", "notes", "description",
+    "status_history", "prep", "match", "notes", "description",
     "id", "created_at", "updated_at",
 ]
 
@@ -151,7 +151,7 @@ TERMINAL = {"accepted", "refused", "rejected", "ghosted",
 
 # What is kept on disk besides FIELDS. Everything a list returns, so a row
 # read back is the row that was written.
-STORED = ["id", *FIELDS, "people", "rounds", "prep", "status_history",
+STORED = ["id", *FIELDS, "people", "rounds", "prep", "match", "status_history",
           "created_at", "updated_at"]
 
 
@@ -604,6 +604,8 @@ def _row(rec: dict) -> dict:
             d[k] = []
     if not isinstance(d["prep"], dict):
         d["prep"] = None
+    if not isinstance(d["match"], dict):
+        d["match"] = None
     # Before people, an application had one contact email. It is the first
     # person until someone is added.
     if not d["people"] and d.get("contact_email"):
@@ -690,6 +692,58 @@ def clean_prep(prep) -> dict | None:
                          "keep": bool(a.get("keep"))})
     return {"questions": qs, "stories": stories, "asks": asks, "by": cut(prep.get("by"), 60),
             "at": cut(prep.get("at"), 10), "cv_read": bool(prep.get("cv_read"))}
+
+
+# How well the base CV matches a posting, as an AI client judged it: five
+# criteria rated 0 to 5, each with why, weighted (in percent) into a score out
+# of 10 here rather than by the client, so two clients' scores mean the same
+# thing and nobody can hand over a 9.7 the ratings do not add up to. `score`
+# in FIELDS stays the user's own fit, in stars; this is the model's reading.
+MATCH_CRITERIA = {"requirements": 35, "experience": 25, "skills": 20, "domain": 10, "practical": 10}
+# Where the bands start, as the app colours them and an AI client names them.
+MATCH_BANDS = (("strong", 8.0), ("good", 6.5), ("fair", 5.0), ("weak", 0.0))
+
+
+def match_score(criteria: list[dict]) -> float:
+    return round(sum(MATCH_CRITERIA[c["key"]] * c["rating"] / 5 for c in criteria) / 10, 1)
+
+
+def match_band(score: float) -> str:
+    return next(name for name, low in MATCH_BANDS if score >= low)
+
+
+def clean_match(match) -> dict | None:
+    """The match as it may be stored: every criterion rated once, whole
+    numbers 0 to 5, the score worked out from them, short lists of strengths
+    and gaps. None clears it."""
+    if not match:
+        return None
+    if not isinstance(match, dict):
+        raise ValueError("A match must be an object.")
+    cut = lambda v, n: str(v or "").strip()[:n]
+    rated = {}
+    for c in match.get("criteria") or []:
+        if not isinstance(c, dict) or c.get("key") not in MATCH_CRITERIA:
+            raise ValueError(f"Unknown criterion: {c.get('key') if isinstance(c, dict) else c}. "
+                             f"Use {', '.join(MATCH_CRITERIA)}.")
+        try:
+            rating = int(c.get("rating"))
+        except (TypeError, ValueError):
+            raise ValueError(f"Rate {c['key']} with a whole number from 0 to 5.") from None
+        if not 0 <= rating <= 5:
+            raise ValueError(f"Rate {c['key']} from 0 to 5, not {rating}.")
+        rated[c["key"]] = {"key": c["key"], "rating": rating, "why": cut(c.get("why"), 300)}
+    missing = [k for k in MATCH_CRITERIA if k not in rated]
+    if missing:
+        raise ValueError(f"Rate every criterion; missing {', '.join(missing)}.")
+    criteria = [rated[k] for k in MATCH_CRITERIA]
+    lines = lambda v: [cut(x, 200) for x in (v if isinstance(v, list) else []) if cut(x, 200)][:6]
+    return {"score": match_score(criteria), "criteria": criteria,
+            "summary": cut(match.get("summary"), 400),
+            "strengths": lines(match.get("strengths")), "gaps": lines(match.get("gaps")),
+            "by": cut(match.get("by"), 60), "at": cut(match.get("at"), 19),
+            "cv": cut(match.get("cv"), 300), "cv_sig": cut(match.get("cv_sig"), 16),
+            "posting_sig": cut(match.get("posting_sig"), 16)}
 
 
 PERSON_FIELDS = {"name": 120, "role": 80, "email": 200, "link": 400, "last": 10}
@@ -819,6 +873,10 @@ def update_job(workspace: Path, job_id: str, data: dict) -> dict:
             prep = clean_prep(data["prep"]) or None
             if not _same(prep, cur.get("prep")):
                 put("prep", prep)
+        if "match" in data:
+            match = clean_match(data["match"])
+            if not _same(match, cur.get("match")):
+                put("match", match)
         if "people" in data:
             people = clean_people(data["people"])
             if not _same(people, cur.get("people")):
@@ -1184,12 +1242,12 @@ def export(workspace: Path, fmt: str = "json") -> str:
     rows = list_jobs(workspace)
     if fmt == "csv":
         buf = io.StringIO()
-        cols = ["id", *FIELDS, "people", "rounds", "created_at", "updated_at"]
+        cols = ["id", *FIELDS, "match", "people", "rounds", "created_at", "updated_at"]
         w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for r in rows:
             # One cell a spreadsheet can show: "Name (Role) <email>; ...".
-            r = dict(r, people="; ".join(
+            r = dict(r, match=(r.get("match") or {}).get("score"), people="; ".join(
                 " ".join(x for x in (p.get("name"), f"({p['role']})" if p.get("role") else "",
                                      f"<{p['email']}>" if p.get("email") else "") if x)
                 for p in r.get("people") or []),

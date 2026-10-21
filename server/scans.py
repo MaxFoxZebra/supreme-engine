@@ -82,6 +82,10 @@ SYNONYMS = {
 ORDER = ["link", "role", "company", "location", "posted", "found", "why", "status",
          "notes", "scan", "description"]
 PENDING = ".cvstudio-pending.json"
+# What an AI client made of each job against the base CV, by key: the score is
+# in the sheet as a column anyone can sort by, the reasons here beside it.
+MATCHES = ".cvstudio-matches.json"
+SCORE = "Score"
 READABLE = (".xlsx", ".csv", ".tsv")
 MAX_ROWS = 5000
 MAX_PART = 32 * 1024 * 1024
@@ -606,11 +610,36 @@ def _queue(folder: Path, op: dict) -> None:
     (folder / PENDING).write_text(json.dumps(ops, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
-def _row_out(r: dict) -> dict:
+def load_matches(folder: Path) -> dict:
+    try:
+        data = json.loads((folder / MATCHES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_matches(folder: Path, found: dict) -> None:
+    """Add matches by key, the newest of each kept; at most MAX_ROWS."""
+    if not found:
+        return
+    data = load_matches(folder)
+    data.update(found)
+    keep = dict(list(data.items())[-MAX_ROWS:])
+    folder.mkdir(parents=True, exist_ok=True)
+    tmp = folder / f".{MATCHES}.{os.getpid()}.{threading.get_ident()}.tmp"
+    tmp.write_text(json.dumps(keep, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, folder / MATCHES)
+
+
+def _row_out(r: dict, matches: dict | None = None) -> dict:
     out = {k: r.get(k) or "" for k in ("key", "found", "scan", "company", "role", "location",
                                       "link", "why", "posted", "status", "notes", "file")}
     out["details"] = {k: v for k, v in (r.get("extra") or {}).items() if v}
     out["has_description"] = bool((r.get("description") or "").strip())
+    m = (matches or {}).get(r.get("key"))
+    if isinstance(m, dict) and isinstance(m.get("score"), (int, float)):
+        out["details"].pop(SCORE, None)          # shown as the match instead
+        out["match"] = {k: m.get(k) for k in ("score", "summary", "strengths", "gaps")}
     return out
 
 
@@ -630,6 +659,7 @@ def state(folder: Path, jobs: list[dict]) -> dict:
     """What the folder holds, and the jobs in it still to look at: New, not in
     the tracker. Reads only; statuses catch up on the next write."""
     data = load(folder)
+    matches = load_matches(folder)
     index = tracked_index(jobs)
     new = [r for r in data["rows"] if r.get("status") == NEW and not is_tracked(r, index)]
     new.sort(key=_order, reverse=True)
@@ -645,7 +675,7 @@ def state(folder: Path, jobs: list[dict]) -> dict:
     return {"folder": str(folder), "exists": folder.is_dir(), "file": data["own"].name,
             "file_exists": data["own"].exists(), "files": data["files"],
             "problems": data["problems"], "rows": len(data["rows"]),
-            "new": [_row_out(r) for r in new],
+            "new": [_row_out(r, matches) for r in new],
             "counts": {"new": counts[NEW], "added": counts[ADDED], "skipped": counts[SKIPPED]},
             "scans": [{"name": k, "new": v} for k, v in scans.items()],
             "latest": max((str(r.get("found") or "") for r in new), default=""),
