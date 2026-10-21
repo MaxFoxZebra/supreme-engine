@@ -10,6 +10,11 @@ tag, so a release is never published with nothing said about it.
 
 ## 0.49.8
 
+- Saving no longer fails at random when two things happen at once, like a
+  save landing while the Design panel previews a theme, or Claude reading a CV
+  while you edit it. The app read and wrote every CV through one shared
+  object that two requests at the same moment broke for each other, and the
+  edit or the preview was lost.
 - Export PDF… works in the app again: clicking it did nothing. It now saves
   the PDF in your Downloads folder and shows it there, as a browser would.
   The other exports do the same: a letter's Export, Export both, the

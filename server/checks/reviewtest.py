@@ -11,12 +11,15 @@ letter the model created can be taken back, and a request made against a
 document that has since changed is refused. A CV the model tailored from the
 base is reviewed against the base as it copied it, each change kept or put back
 as the base has it, and undoing all of it leaves the copy rather than deleting it.
+And the YAML every one of those reads and writes through, used by many threads
+at once, as the server's requests and the connector's tools use it.
 """
 
 from __future__ import annotations
 
 import sys
 import tempfile
+import threading
 import io
 from pathlib import Path
 
@@ -338,6 +341,29 @@ def main() -> int:
         print("Only the app's own process writes nothing")
         studio.save_letter(lt, {"meta": {"place": "Nantes"}})
         check("a save from the app is not an AI change", studio.review_payload(lt) is None)
+
+    print("Many requests at once")
+    # The server answers each request on a thread of its own. A save landing
+    # during a theme preview used to fail both, inside the YAML library.
+    failed = []
+
+    def work() -> None:
+        for _ in range(25):
+            try:
+                data = studio.yaml_rt.load(studio.STARTER_CV)
+                buf = io.StringIO()
+                studio.yaml_rt.dump(data, buf)
+                studio.yaml_rt.load(buf.getvalue())
+            except Exception as exc:
+                failed.append(type(exc).__name__)
+
+    threads = [threading.Thread(target=work) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check("eight threads loading and dumping at once all succeed", not failed,
+          f"{len(failed)} of 200 failed: {sorted(set(failed))}")
 
     print("\nevery review check passes" if not fails else f"\n{fails} failure(s)")
     return 1 if fails else 0

@@ -94,10 +94,34 @@ DEFAULT_WORKSPACE = Path.home() / "Documents" / "CV Studio"
 # When the process started, set by server_main before this module was imported.
 STARTED: float | None = None
 
-yaml_rt = YAML(typ="rt")
-yaml_rt.preserve_quotes = True
-yaml_rt.width = 4096  # stop ruamel re-wrapping bullet text into hard breaks
-yaml_rt.indent(mapping=2, sequence=4, offset=2)
+class _OneAtATime:
+    """A YAML object that one thread uses at a time.
+
+    ruamel keeps the state of a load or a dump on the YAML object itself, and
+    the server answers each request on a thread of its own (the connector runs
+    tools on worker threads too). Two at once broke each other: a save landing
+    during a theme preview failed with "expected NodeEvent, but got
+    DocumentStartEvent", and eight threads loading and dumping the starter CV
+    together failed 310 times in 320."""
+
+    def __init__(self, yaml: YAML):
+        self._yaml = yaml
+        self._lock = threading.RLock()
+
+    def load(self, stream):
+        with self._lock:
+            return self._yaml.load(stream)
+
+    def dump(self, data, stream=None, **kw):
+        with self._lock:
+            return self._yaml.dump(data, stream, **kw)
+
+
+_yaml_rt = YAML(typ="rt")
+_yaml_rt.preserve_quotes = True
+_yaml_rt.width = 4096  # stop ruamel re-wrapping bullet text into hard breaks
+_yaml_rt.indent(mapping=2, sequence=4, offset=2)
+yaml_rt = _OneAtATime(_yaml_rt)
 
 WORKSPACE: Path = DEFAULT_WORKSPACE
 FIRST_RUN = False
