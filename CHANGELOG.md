@@ -8,7 +8,7 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
-## Unreleased
+## 0.49.8
 
 - Export PDF… works in the app again: clicking it did nothing. It now saves
   the PDF in your Downloads folder and shows it there, as a browser would.
