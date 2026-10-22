@@ -7,6 +7,15 @@ name: Build desktop apps
 # Releases are signed with the updater key so installed copies will accept them.
 # Without the signing secrets the build still succeeds, but the artifacts cannot
 # be used as updates.
+#
+# Each platform uploads into a draft, and the publish job makes it public only
+# once all three have. A release that went public as each job finished was
+# "latest" with whichever platforms had made it: v0.50.3 shipped without Apple
+# Silicon because macos-14 never got a runner, and every Apple Silicon install
+# then failed its update check with "None of the fallback platforms
+# darwin-aarch64-app, darwin-aarch64 were found". A draft is never "latest",
+# so until it is complete every install keeps being offered the last release
+# that is.
 
 on:
   push:
@@ -385,7 +394,8 @@ jobs:
           # note. Kept out of this file so the same text can be read by the
           # step that builds the notes rather than duplicated here.
           releaseBody: ${{ env.RELEASE_NOTES }}
-          releaseDraft: false
+          # Published by the publish job below, once every platform is in.
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
@@ -456,3 +466,41 @@ jobs:
             src-tauri/target/**/release/bundle/dmg/*.dmg
             dist-mcpb/*.mcpb
           if-no-files-found: warn
+
+  # Runs only when every build above succeeded, so a platform that failed or
+  # never got a runner leaves the release a draft rather than publishing it
+  # without that platform. "Re-run failed jobs" re-runs this one too, so
+  # finishing a release that stalled is one click.
+  publish:
+    needs: build
+    if: github.event_name == 'push' || inputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # The jobs succeeding is not quite the same as the manifest being whole:
+      # each one merges its own platform into latest.json, and the updater
+      # reads nothing else. Check the keys an installed copy will ask for.
+      - name: Every platform is in latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE_TAG" --pattern latest.json --dir manifest
+          missing=0
+          for p in windows-x86_64 darwin-x86_64 darwin-aarch64; do
+            if jq -e --arg p "$p" '.platforms[$p]' manifest/latest.json >/dev/null; then
+              echo "latest.json has $p"
+            else
+              echo "::error::latest.json has no $p entry, so installs on it could not update."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ]
+
+      - name: Publish the release
+        shell: bash
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest

@@ -76,11 +76,19 @@ git push origin v0.4.0
 macOS runners. Each freezes the server with PyInstaller, stages it at
 `src-tauri/server-dist`, **smoke-tests that the packaged server can actually
 render a CV**, because a build that ships but cannot render is worse than a
-failed build, then builds, signs with the updater key, and publishes a GitHub release
-including `latest.json`.
+failed build, then builds, signs with the updater key, and uploads into a draft
+GitHub release including `latest.json`. A final `publish` job makes the draft
+public, and only once all three platforms are in it.
 
 Existing installs pick it up through the updater, which polls
 `releases/latest/download/latest.json` and installs in `passive` mode.
+
+If one platform fails, or never gets a runner, the release stays a draft and
+nobody is offered it yet. Open the run and choose **Re-run failed jobs**: that
+rebuilds the platform that is missing and then publishes. A release published
+without a platform is worse than a late one, because installs on that platform
+cannot even tell there is nothing for them: the update check fails with
+*None of the fallback platforms … were found*.
 
 ### Releasing without pushing a tag
 
