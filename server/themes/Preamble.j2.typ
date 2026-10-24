@@ -35,7 +35,7 @@
 // ATS reads only the text beside them.
 {% set cvs_ic = (cvstudio_band_ink(design.colors.section_titles) if cvs_band else design.colors.connections.as_hex()) %}
 #let cvstudio-icons = (
-{% for name in ["envelope", "phone", "location-dot", "link", "linkedin", "github", "x-twitter", "calendar"] %}
+{% for name in ["envelope", "phone", "whatsapp", "location-dot", "link", "linkedin", "github", "x-twitter", "calendar"] %}
   "{{ name }}": bytes("{{ cvstudio_icon(name, cvs_ic)|replace('"', '\\"') }}"),
 {% endfor %}
 )
