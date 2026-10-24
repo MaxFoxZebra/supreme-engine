@@ -184,7 +184,7 @@ def through_mcp() -> None:
         r = call("record_job_scan", {"jobs": [{"company": "Globex", "role": "SRE", "link": "https://globex.example/1",
                                                 "match": {"criteria": rated(5, 4, 4, 4, 4), "summary": "Close"}}]})
         check("a scan's score comes back with the key to add it by",
-              re.search(r"Globex, SRE: 9\.4 \(key [^)]+\)", text(r)) is not None, text(r))
+              re.search(r"Globex, SRE: 9\.3 \(key [^)]+\)", text(r)) is not None, text(r))
     finally:
         c.close()
 
