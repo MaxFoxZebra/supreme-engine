@@ -8,6 +8,10 @@ release notes on GitHub and the text the app shows when an update is waiting.
 A version with no section here falls back to the commit subjects since the last
 tag, so a release is never published with nothing said about it.
 
+## 0.50.4
+
+- The contact phone SVG icon in theme headers is now the WhatsApp logo.
+
 ## 0.50.3
 
 - Applications table rows display a minimalist country flag, country name, and
