@@ -35,6 +35,7 @@ sys.path.insert(0, str(HERE))
 SCRATCH = Path(tempfile.mkdtemp())
 os.environ["XDG_DATA_HOME"] = str(SCRATCH / "data")
 os.environ["LOCALAPPDATA"] = os.environ["XDG_DATA_HOME"]
+os.environ["CVSTUDIO_DATA_DIR"] = str(SCRATCH / "data" / "cv-studio")
 os.environ["CVSTUDIO_MCP_COPY"] = "1"
 for client, rel in (("claude", "claude/claude_desktop_config.json"),
                     ("openai", ".codex/config.toml"),
@@ -283,11 +284,16 @@ def extension() -> None:
     (frozen / "cv-studio-server").write_bytes(b"#!/bin/sh\n")
     (frozen / "cv-studio-server").chmod(0o755)
     (frozen / "_internal" / "lib" / "real.so").write_bytes(b"lib")
+    # As in the macOS build's Python.framework: a link to a file, which the
+    # bootloader loads, and a link to a folder.
     os.symlink("lib/real.so", frozen / "_internal" / "link.so")
+    os.symlink("lib", frozen / "_internal" / "current")
     out = pack_mcpb.pack(frozen, "darwin", SCRATCH / "mcpb", studio.VERSION)
     with zipfile.ZipFile(out) as z:
         m = json.loads(z.read("manifest.json"))
         infos = {i.filename: i for i in z.infolist()}
+        linked = {n: z.read(n) for n in ("server/_internal/link.so", "server/_internal/current/real.so")
+                  if n in infos}
     cfg = m["server"]["mcp_config"]
     check("one file, named for the version and the computer",
           out.suffix == ".mcpb" and studio.VERSION in out.name and "macos" in out.name, out.name)
@@ -301,8 +307,23 @@ def extension() -> None:
           and m["user_config"]["workspace"]["default"] == "${DOCUMENTS}/CV Studio", json.dumps(cfg))
     exe = infos["server/cv-studio-server"]
     check("the server stays executable", (exe.external_attr >> 16) & 0o111 == 0o111, oct(exe.external_attr >> 16))
-    link = infos.get("server/_internal/link.so")
-    check("and a symlink stays a symlink", link is not None and st_.S_ISLNK(link.external_attr >> 16))
+    # Claude Desktop unpacks a symlink as a text file holding its target, so
+    # the bundle must carry what each link points to instead.
+    check("no symlink in it, which Claude Desktop would unpack as text",
+          not any(st_.S_ISLNK(i.external_attr >> 16) for i in infos.values()),
+          " ".join(n for n, i in infos.items() if st_.S_ISLNK(i.external_attr >> 16)))
+    check("a link to a file is stored as that file",
+          linked.get("server/_internal/link.so") == b"lib", repr(linked.get("server/_internal/link.so")))
+    check("and a link to a folder as that folder's files",
+          linked.get("server/_internal/current/real.so") == b"lib", " ".join(sorted(infos)))
+    os.symlink("../..", frozen / "_internal" / "lib" / "loop")
+    try:
+        pack_mcpb.pack(frozen, "darwin", SCRATCH / "mcpb", studio.VERSION)
+        refused = False
+    except SystemExit:
+        refused = True
+    (frozen / "_internal" / "lib" / "loop").unlink()
+    check("a link back into its own parents is refused, not walked forever", refused)
     check("with the icon", "icon.png" in infos and m["icon"] == "icon.png")
     win = SCRATCH / "frozen-win"
     win.mkdir()

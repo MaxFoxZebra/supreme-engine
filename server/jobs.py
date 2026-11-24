@@ -46,13 +46,65 @@ import unicodedata
 import uuid
 from pathlib import Path
 
-# The status vocabulary. `rejected_interviewing` and `ghosted_interviewing`
-# exist so the funnel can tell a rejection after a first application apart from
-# one after interviews, which are very different signals about an application.
-STATUSES = [
-    "pending", "applied", "interviewing", "offer", "accepted",
-    "refused", "rejected", "ghosted", "rejected_interviewing", "ghosted_interviewing",
-]
+# The application lifecycle: every status, how far an application in it got,
+# whether it can still turn into a job, and the moves expected from it.
+# Everything else that knows about statuses is derived from this table, here
+# and in the MCP server, and the app reads it from /api/jobs; adding a status
+# is one row, and checks/lifecycletest.py lists what still has to name it (a
+# label, a colour, a translation).
+#
+# `rejected_interviewing` and `ghosted_interviewing` exist so the funnel can
+# tell a rejection after a first application apart from one after interviews,
+# which are very different signals about an application.
+#
+#   stage  how far it got: 0 not sent, 1 sent, 2 interviewed, 3 an offer.
+#   live   their move or yours is still to come. What is neither live nor a
+#          draft is over, and nothing reminds you about it.
+#   next   the usual moves from here: what the card in the chat offers, what
+#          the app lists first, what an AI client is told to expect. Any
+#          other move is still allowed, because records get corrected and
+#          mail arrives out of order. A ghosted application can come back to
+#          life; one that ended with an answer does not.
+#
+#   pending -> applied -> interviewing -> offer -> accepted | refused
+#                 |            '-> rejected_interviewing | ghosted_interviewing
+#                 '-> rejected | ghosted
+LIFECYCLE: dict[str, dict] = {
+    "pending":      {"stage": 0, "live": False, "next": ["applied"]},
+    "applied":      {"stage": 1, "live": True,  "next": ["interviewing", "rejected", "ghosted"]},
+    "interviewing": {"stage": 2, "live": True,
+                     "next": ["offer", "rejected_interviewing", "ghosted_interviewing"]},
+    "offer":        {"stage": 3, "live": True,  "next": ["accepted", "refused"]},
+    "accepted":     {"stage": 3, "live": False, "next": []},
+    "refused":      {"stage": 3, "live": False, "next": []},
+    "rejected":     {"stage": 1, "live": False, "next": []},
+    "ghosted":      {"stage": 1, "live": False, "next": ["interviewing", "rejected"]},
+    "rejected_interviewing": {"stage": 2, "live": False, "next": []},
+    "ghosted_interviewing":  {"stage": 2, "live": False, "next": ["offer", "rejected_interviewing"]},
+}
+
+# The status vocabulary, in the order a list of them is shown.
+STATUSES = list(LIFECYCLE)
+# What can come next from each status.
+NEXT: dict[str, list[str]] = {s: list(v["next"]) for s, v in LIFECYCLE.items()}
+LIVE = {s for s, v in LIFECYCLE.items() if v["live"]}
+
+
+def reached(stage: int) -> list[str]:
+    """The statuses of an application that got at least this far."""
+    return [s for s, v in LIFECYCLE.items() if v["stage"] >= stage]
+
+
+def unexpected_move(was: str | None, to: str) -> str | None:
+    """What to tell whoever made a move the lifecycle does not expect, or
+    None when it is one of the usual ones. Said, never refused: see `next`."""
+    was = was or "pending"
+    if was == to or was not in NEXT or to in NEXT[was]:
+        return None
+    usual = ", ".join(NEXT[was]) or "none, it is closed"
+    return (f"Saved, but {was} to {to} is not a usual move (from {was}: {usual}). "
+            "If it was a mistake, set it back.")
+
 
 # Each funnel node is the set of statuses that have reached that stage, so the
 # chart shows cumulative progress rather than only where things sit right now.
@@ -64,13 +116,11 @@ STATUSES = [
 NODE_STATUSES: dict[str, list[str]] = {
     "all":         STATUSES,
     "pending":     ["pending"],
-    "applied_s":   ["applied", "interviewing", "offer", "accepted", "refused",
-                    "rejected", "ghosted", "rejected_interviewing", "ghosted_interviewing"],
+    "applied_s":   reached(1),
     "awaiting":    ["applied"],
-    "interview_s": ["interviewing", "offer", "accepted", "refused",
-                    "rejected_interviewing", "ghosted_interviewing"],
+    "interview_s": reached(2),
     "still_iv":    ["interviewing"],
-    "offer_s":     ["offer", "accepted", "refused"],
+    "offer_s":     reached(3),
     "deciding":    ["offer"],
     "accepted":    ["accepted"],
     "refused":     ["refused"],
@@ -142,10 +192,9 @@ INTERVIEW_SOON_DAYS = 7
 SILENT_DAYS = 14
 
 # Statuses where nothing is expected to happen again, derived rather than
-# hand-written so that adding a status to STATUSES cannot silently create a
+# hand-written so that adding a status to LIFECYCLE cannot silently create a
 # terminal one the alerts keep nagging about.
-TERMINAL = {"accepted", "refused", "rejected", "ghosted",
-            "rejected_interviewing", "ghosted_interviewing"}
+TERMINAL = {s for s, v in LIFECYCLE.items() if v["stage"] and not v["live"]}
 
 
 

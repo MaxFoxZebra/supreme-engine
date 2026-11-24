@@ -1,0 +1,64 @@
+/* Responsive layout adjustments and motion preferences. */
+
+@media(max-width:1100px){
+  .rail-cvs{width:200px}
+  .peek{width:auto;left:0}
+  .dz-pane{width:440px}
+}
+/* Phones: the two-up tiles and the card's third column both stop making
+   sense well before the app itself does. */
+@media(max-width:680px){
+  .tools{grid-template-columns:1fr}
+  .client{grid-template-columns:34px 1fr}
+  .client .badge{width:34px;height:34px}
+  .client .go{grid-column:1/3;grid-row:3;margin-top:12px}
+  .client .go .obtn{width:100%}
+  .client .path{grid-column:1/3;grid-row:4}
+  .rail-cvs{width:150px}
+}
+@media(max-width:880px){
+  .thead,.trow{grid-template-columns:minmax(0,2fr) minmax(0,1.4fr) 62px 140px}
+  .thead>*:nth-child(4),.trow>*:nth-child(4),
+  .thead>*:nth-child(n+6),.trow>*:nth-child(n+6){display:none}
+  .trow .match .mlab,.trow .stp i{display:none}
+  .set-inner{grid-template-columns:1fr;gap:16px}
+  .set-rail{flex-direction:row;flex-wrap:wrap;position:static}
+}
+
+
+/* ---------- narrower windows --------------------------------------------
+   Below about 1280px the title bar ran out of room and pushed the gear off
+   the edge. It gives up, in order: the search box's width, the sample pill's
+   wording, and the space between the AI clients' marks. */
+@media (max-width:1280px){
+  #chrome{gap:16px}
+  .tsearch{width:200px}
+  .samp-pill{white-space:nowrap;margin-right:4px}
+  .samp-pill b{padding:0 8px}
+  .cbtn.ai{gap:6px;padding:0 9px}
+}
+@media (max-width:1140px){
+  .tsearch{width:150px}
+  .tsearch kbd{display:none}
+  .samp-pill{font-size:0;gap:0;padding:0 4px 0 8px}
+  .samp-pill i{margin-right:6px}
+  .samp-pill b{font-size:11.5px}
+}
+/* Onboarding: below this the aside was crushed to one word per line beside
+   the form; it goes under it instead. */
+@media (max-width:1240px){
+  .onb-rail{width:240px;padding:32px 22px 22px}
+  .onb-step{flex-direction:column;gap:28px;padding:40px 40px 0}
+  .onb-main{width:auto;max-width:620px}
+  .onb-side{align-items:stretch;flex:none;padding-bottom:28px}
+  .onb-drop{min-height:260px;max-width:none}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

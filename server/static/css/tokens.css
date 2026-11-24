@@ -1,0 +1,203 @@
+/* Design tokens, fonts, light/dark themes, accent themes, and base resets. */
+
+/* ---------------------------------------------------------------------------
+   Workbench: dark chrome around warm paper.
+
+   Two grounds and one accent. Everything that is *about* the work -- window
+   chrome, navigation, the document list -- is dark. Everything that *is* the
+   work -- the page, the form, the table -- sits on warm paper. Ochre marks
+   exactly one thing at a time per region: the selected item, the primary
+   action, or the live metric. Nothing else is coloured.
+
+   Fonts are served from /static/fonts rather than Google, because the app is
+   offline-first and a webview with no network should not fall back to Arial.
+--------------------------------------------------------------------------- */
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400 600;font-display:swap;
+  src:url(/static/fonts/ibm-plex-sans-latin-var.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,
+  U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400 600;font-display:swap;
+  src:url(/static/fonts/ibm-plex-sans-latin-ext-var.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,
+  U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,
+  U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;
+  src:url(/static/fonts/ibm-plex-mono-latin-400.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,
+  U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;
+  src:url(/static/fonts/ibm-plex-mono-latin-ext-400.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,
+  U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,
+  U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;
+  src:url(/static/fonts/ibm-plex-mono-latin-500.woff2) format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,
+  U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;
+  src:url(/static/fonts/ibm-plex-mono-latin-ext-500.woff2) format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,
+  U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,
+  U+2C60-2C7F,U+A720-A7FF}
+
+:root{
+  /* chrome */
+  --c900:#161513; --c800:#1b1a17; --c700:#232220; --c600:#33312b;
+  --c500:#3a3833; --c400:#4a4842; --c300:#9d998b;
+  --c200:#a5a091; --c100:#cfcabd; --c050:#f0ede5; --cw:#f5f2ea; --c-hover:#5c594f;
+  /* paper */
+  --app:#f7f6f3; --panel:#f2efe8; --bar:#efece4; --canvas:#e4e1d8; --row-alt:#fbfaf7;
+  --field:#ffffff; --page:#fffefc;
+  --rule:#ddd8cc; --rule-strong:#d3cfc3; --bd-field:#cfcabd; --bd-inner:#e6e2d8;
+  --t900:#1b1a17; --t800:#33302a; --t700:#4a463d; --t600:#5b574d; --t500:#686459;
+  --t400:#70695b; --dot-idle:#8f8878; --dot-dead:#b3ad9d; --paper-hover:#e9e5da;
+  /* review: what an AI client put in, and took out */
+  --rv-ins:#1d6a4b; --rv-ins-bg:rgba(47,143,104,.14); --rv-del:#a2382f; --rv-del-bg:rgba(200,70,60,.10);
+  /* accent -- used sparingly */
+  --acc:#c08a3e; --acc-hover:#d09a4c; --acc-text:#8a5316; --acc-text-dark:#e8bc7c;
+  --acc-wash:rgba(192,138,62,.10); --acc-ring:rgba(192,138,62,.18);
+  --acc-line:rgba(192,138,62,.6);
+  /* the funnel, which is drawn rather than styled inline so it follows the theme */
+  --fn-positive:#a8761f;
+  --fn-offer:#3f8f76;
+  /* the same, dark enough to be read as text (WCAG AA) */
+  --fn-positive-text:#8a5a14; --fn-offer-text:#286b57; --fn-lost-text:#a83519; --fn-wait-text:#3a6ea5;
+  --co-1:#6f6a60; --co-2:#7d766a; --co-3:#63605c; --co-4:#77706a;
+  --co-5:#6a6660; --co-6:#807a70;
+  --fn-won:#007a5e; --fn-lost:#a83519; --fn-wait:#3a6ea5; --fn-closed:#7a5cb8;
+  --seg-track:#dedbd0; --seg-on:#ffffff; --knob:#ffffff;
+  --row-hover:#f1eee6; --spine:#c8c2b3; --bad-line:#e6cfc5;
+  /* YAML syntax: the same muted ramp, retuned for a warm ground. Deliberately
+     not ochre -- the accent already means "selected" everywhere else. */
+  --tk-key:#33506b; --tk-str:#3d5f42; --tk-num:#5d3f6d; --tk-bool:#8f3f21;
+  --tk-com:#70695b; --tk-punc:#8b8578; --tk-blk:#7a4f19; --tk-sel:rgba(192,138,62,.22);
+  --bad:#8f3119; --bad-bg:#f7ece7;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark.
+
+   The chrome barely moves -- it was already dark. What inverts is the content:
+   paper becomes a warm near-black and the text ramp climbs instead of falling.
+   Each rung is solved against the *lightest* content surface, so a value that
+   passes on the panel still passes on an input.
+
+   The rendered CV page stays white. It is a document, not a surface: darkening
+   it would misrepresent what the PDF actually looks like.
+--------------------------------------------------------------------------- */
+:root[data-theme=dark]{
+  --app:#22211d; --panel:#1d1c19; --bar:#282621; --canvas:#141310; --row-alt:#26241f;
+  --field:#2b2924; --page:#fffefc;
+  --rule:#38352e; --rule-strong:#454239; --bd-field:#4a473e; --bd-inner:#322f2a;
+  --t900:#f4f2ef; --t800:#dad6cc; --t700:#c6c0b0; --t600:#b6af9b; --t500:#a79e86;
+  --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
+  --rv-ins:#86d6b5; --rv-ins-bg:rgba(63,175,130,.18); --rv-del:#f2a197; --rv-del-bg:rgba(224,98,107,.16);
+  --acc-text:#e8bc7c;
+  --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
+  --fn-positive:#b8832f;
+  --fn-offer:#4fae90;
+  --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
+  --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
+  --co-5:#857f78; --co-6:#9c958a;
+  --fn-won:#189072; --fn-lost:#e0626b; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
+  --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
+  --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
+  --bad:#f27b82; --bad-bg:#2e1c15;
+  --seg-track:#141310; --seg-on:#413d34; --knob:#e8e4da;
+  --row-hover:#2c2a24; --spine:#5c574b; --bad-line:#4a2a1e;
+  --c-hover:#6f6b60;
+}
+@media(prefers-color-scheme:dark){
+  :root:not([data-theme=light]){
+    --app:#22211d; --panel:#1d1c19; --bar:#282621; --canvas:#141310; --row-alt:#26241f;
+    --field:#2b2924; --page:#fffefc;
+    --rule:#38352e; --rule-strong:#454239; --bd-field:#4a473e; --bd-inner:#322f2a;
+    --t900:#f4f2ef; --t800:#dad6cc; --t700:#c6c0b0; --t600:#b6af9b; --t500:#a79e86;
+    --t400:#9b9175; --dot-idle:#8a8371; --dot-dead:#5c574b; --paper-hover:#302e28;
+  --rv-ins:#86d6b5; --rv-ins-bg:rgba(63,175,130,.18); --rv-del:#f2a197; --rv-del-bg:rgba(224,98,107,.16);
+    --acc-text:#e8bc7c;
+    --acc-wash:rgba(192,138,62,.16); --acc-ring:rgba(192,138,62,.32);
+    --fn-positive:#b8832f;
+  --fn-offer:#4fae90;
+  --fn-positive-text:#d9a54f; --fn-offer-text:#6cc4a6; --fn-lost-text:#ea8466; --fn-wait-text:#7aa6dc;
+  --co-1:#8b857a; --co-2:#98907f; --co-3:#7e7a74; --co-4:#928a82;
+  --co-5:#857f78; --co-6:#9c958a;
+  --fn-won:#189072; --fn-lost:#e0626b; --fn-wait:#5b8fc9; --fn-closed:#9b7ad6;
+    --tk-key:#8fb4d9; --tk-str:#9ac4a4; --tk-num:#c3a4dc; --tk-bool:#e09070;
+    --tk-com:#9b9175; --tk-punc:#7a7364; --tk-blk:#d0a468; --tk-sel:rgba(192,138,62,.3);
+    --bad:#f27b82; --bad-bg:#2e1c15;
+    --seg-track:#141310; --seg-on:#413d34; --knob:#e8e4da;
+    --row-hover:#2c2a24; --spine:#5c574b; --bad-line:#4a2a1e;
+    --c-hover:#6f6b60;
+  }
+}
+:root{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark;--edge:rgba(255,255,255,.14)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--edge:rgba(255,255,255,.14)}}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--c700); color:var(--t900); overflow:hidden;
+  display:flex; flex-direction:column;
+  font:400 13px/1.5 'IBM Plex Sans',ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Consolas,monospace}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;color:inherit;padding:0}
+button:disabled{opacity:.4;cursor:default}
+/* A filled accent button at 40% fades its label and its fill together and
+   lands around 1.7:1 -- unreadable, while still shaped like the app's primary
+   action, so it reads as broken rather than as unavailable. Disabled means
+   "not now", so it drops to a plain outline instead. */
+.obtn.primary:disabled,.sbtn.primary:disabled,.pbtn:disabled{opacity:1;
+  background:var(--field);border:1px solid var(--bd-field);color:var(--t500);
+  font-weight:400}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px;border-radius:3px}
+.grow{flex:1}
+[hidden]{display:none!important}
+
+
+/* The swatch colours, named once so the picker and the themes cannot drift. */
+:root{--sw-ochre:#c08a3e;--sw-indigo:#7095dc;--sw-teal:#0aaab5;
+  --sw-rose:#d27782;--sw-moss:#6aa867}
+/* ---------- accent themes ------------------------------------------------
+   Each is the default ochre rotated in hue at the same OKLCH lightness and
+   chroma, so every contrast pairing the interface already depends on holds
+   whichever one is chosen. Only the accent family changes; the warm greys
+   the app is built from stay put. */
+:root[data-accent="indigo"]{--acc:#7095dc;--acc-hover:#82a8f0;
+  --acc-line:rgba(112,149,220,.6);--acc-ring:rgba(112,149,220,.18);
+  --acc-wash:rgba(112,149,220,.10);--acc-text:#325293;--acc-text-dark:#a3c4ff}
+@media(prefers-color-scheme:dark){:root[data-accent="indigo"]:not([data-theme=light]){--acc-wash:rgba(112,149,220,.16);--acc-ring:rgba(112,149,220,.32);--acc-text:#a3c4ff}}
+:root[data-theme=dark][data-accent="indigo"]{--acc-wash:rgba(112,149,220,.16);--acc-ring:rgba(112,149,220,.32);--acc-text:#a3c4ff}
+:root[data-accent="teal"]{--acc:#0aaab5;--acc-hover:#34bdc8;
+  --acc-line:rgba(10,170,181,.6);--acc-ring:rgba(10,170,181,.18);
+  --acc-wash:rgba(10,170,181,.10);--acc-text:#006671;--acc-text-dark:#70d7e0}
+@media(prefers-color-scheme:dark){:root[data-accent="teal"]:not([data-theme=light]){--acc-wash:rgba(10,170,181,.16);--acc-ring:rgba(10,170,181,.32);--acc-text:#70d7e0}}
+:root[data-theme=dark][data-accent="teal"]{--acc-wash:rgba(10,170,181,.16);--acc-ring:rgba(10,170,181,.32);--acc-text:#70d7e0}
+:root[data-accent="rose"]{--acc:#d27782;--acc-hover:#e68a94;
+  --acc-line:rgba(210,119,130,.6);--acc-ring:rgba(210,119,130,.18);
+  --acc-wash:rgba(210,119,130,.10);--acc-text:#883643;--acc-text-dark:#fcaab2}
+@media(prefers-color-scheme:dark){:root[data-accent="rose"]:not([data-theme=light]){--acc-wash:rgba(210,119,130,.16);--acc-ring:rgba(210,119,130,.32);--acc-text:#fcaab2}}
+:root[data-theme=dark][data-accent="rose"]{--acc-wash:rgba(210,119,130,.16);--acc-ring:rgba(210,119,130,.32);--acc-text:#fcaab2}
+:root[data-accent="moss"]{--acc:#6aa867;--acc-hover:#7dbb79;
+  --acc-line:rgba(106,168,103,.6);--acc-ring:rgba(106,168,103,.18);
+  --acc-wash:rgba(106,168,103,.10);--acc-text:#286426;--acc-text-dark:#9fd59b}
+@media(prefers-color-scheme:dark){:root[data-accent="moss"]:not([data-theme=light]){--acc-wash:rgba(106,168,103,.16);--acc-ring:rgba(106,168,103,.32);--acc-text:#9fd59b}}
+:root[data-theme=dark][data-accent="moss"]{--acc-wash:rgba(106,168,103,.16);--acc-ring:rgba(106,168,103,.32);--acc-text:#9fd59b}
+
+
+/* Subtle, warm scrollbars that stay out of the way of the document. */
+* { scrollbar-width: thin; scrollbar-color: var(--bd-field) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bd-field); border-radius: 99px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--t400); border: 2px solid transparent; background-clip: content-box; }
+
+/* Crisp tactile micro-interactions on buttons & surfaces. */
+.obtn,.sbtn,.pbtn,.cbtn{transition:background-color .14s ease,border-color .14s ease,color .14s ease,transform .08s ease,box-shadow .14s ease}
+.obtn:not(:disabled):active,.sbtn:not(:disabled):active,.pbtn:not(:disabled):active{transform:translateY(.5px)}
+

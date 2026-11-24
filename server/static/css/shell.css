@@ -1,0 +1,352 @@
+/* Window chrome, navigation shell, status bar, sheets, toasts, dialogs, and command palette. */
+
+/* ---------- title bar (52px) -------------------------------------------
+   The one dark surface left. It frames the window; everything under it is
+   paper. It holds only what is true on every screen -- the mark, the three
+   tabs, the AI clients and the gear -- so its shape never changes. */
+#chrome{
+  position:relative;
+  height:52px; flex:none; display:flex; align-items:center; gap:24px; padding:0 16px;
+  background:var(--c800); border-bottom:1px solid #000;
+  -webkit-app-region:drag; user-select:none;
+}
+#chrome button,#chrome input,#chrome .tabs{-webkit-app-region:no-drag}
+.lights{display:flex;gap:7px;padding-right:5px}
+.lights button{width:11px;height:11px;border-radius:50%;background:var(--c400);
+  transition:background .12s}
+.lights button:hover{background:#6c6960}
+.lights #w-close:hover{background:#c0392b}
+.brand{display:flex;align-items:center;gap:9px;flex:none;font-size:14px;
+  font-weight:600;color:var(--cw)}
+.brand img{display:block}
+/* Tabs, underlined. A pill track here read as one more control among the
+   buttons; an underline reads as where you are. */
+.tabs{display:flex;align-self:stretch;gap:2px}
+.tabs button{padding:0 12px;font-size:13.5px;color:var(--c200);
+  box-shadow:inset 0 -2px 0 transparent}
+.tabs button:hover{color:var(--c050)}
+.tabs button[aria-selected=true]{color:var(--cw);font-weight:500;
+  box-shadow:inset 0 -2px 0 var(--acc)}
+
+/* segmented control, dark */
+.seg{display:flex;gap:1px;background:var(--c900);border-radius:5px;padding:2px}
+.seg button{padding:4px 13px;border-radius:4px;color:var(--c200);font-size:12.5px;
+  white-space:nowrap}
+.seg button:hover{color:var(--c050)}
+.seg button[aria-selected=true]{background:var(--c500);color:var(--c050);font-weight:500}
+
+/* A screen's own header: what it is, how many, and what you can do there. */
+.phead{flex:none;display:flex;align-items:center;gap:12px;padding:20px 24px 14px}
+.phead h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em;
+  color:var(--t900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcount{font-size:14px;color:var(--t500);font-variant-numeric:tabular-nums}
+
+/* The editor's header: the crumb back to the list, the document, its actions. */
+.docbar{height:52px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
+  background:var(--app);border-bottom:1px solid var(--rule)}
+.crumb{font-size:14px;color:var(--t600);flex:none}
+.crumb:hover{color:var(--t900);text-decoration:underline}
+.crumb-sep{color:var(--t400);font-size:14px}
+.doctitle{display:flex;align-items:baseline;gap:9px;min-width:0;overflow:hidden}
+.doctitle .t{font-size:14px;font-weight:600;color:var(--t900);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.doctitle .f{font-size:11.5px;color:var(--t500);white-space:nowrap;flex:none}
+.acts{display:flex;align-items:center;gap:8px;flex:none}
+.acts button{white-space:nowrap}
+.doctitle{min-width:120px;flex:0 1 auto}
+.docbar .more{flex:none;width:30px;height:30px;border:0;border-radius:7px;background:none;color:var(--t500);
+  font-size:18px;line-height:1}
+.docbar .more:hover{background:var(--paper-hover);color:var(--t900)}
+/* On a narrower window the language switch keeps its flags and drops the
+   names, so the title and the buttons keep their room. */
+@media (max-width:1500px){ #langsw .ln{display:none} #langsw button{padding:0 6px} }
+@media (max-width:1180px){ .doctitle .f{display:none} }
+/* Every screen header's secondary buttons, one height with its primary. */
+.docbar .obtn,.phead .obtn{height:34px;padding:0 13px;font-size:13px;font-weight:500;
+  color:var(--t900);border-radius:8px}
+
+.search{display:flex;align-items:center;gap:8px;width:240px;height:34px;padding:0 11px;
+  border:1px solid var(--bd-field);border-radius:8px;background:var(--field);color:var(--t500)}
+.search input{border:0;background:none;font-size:13px;color:var(--t900);width:100%;padding:0}
+.search input::placeholder{color:var(--t500)}
+.search:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
+
+.cbtn{font-size:12px;color:var(--c100);padding:4px 11px;border:1px solid var(--c500);
+  border-radius:5px;white-space:nowrap}
+.cbtn:hover:not(:disabled){border-color:var(--c-hover);color:#fff}
+.cbtn.icon{width:32px;height:32px;padding:0;border:0;border-radius:8px;
+  display:grid;place-items:center}
+.cbtn.icon:hover:not(:disabled){background:var(--c600)}
+
+/* The AI clients sit in the chrome because whether they are connected is a
+   running state of the app, not a setting you visit once. One mark each, and
+   the state rides on the mark: a green dot on its corner when connected, a
+   red one when something is wrong, and a faded mark with no dot when it is
+   not set up. Claude's mark keeps its own colour so it reads as Claude's. */
+.cbtn.ai{display:flex;align-items:center;gap:13px;height:32px;padding:0 13px;
+  border-radius:16px}
+.aic{position:relative;display:flex}
+.aic svg{flex:none;width:16px;height:16px}
+.aic[data-client=claude] svg{color:#D97757}
+.aic[data-client=gemini] svg{color:#4E82EE}
+/* The same tile as in the settings badge, at dot size. See the note there. */
+.aic[data-client=hermes] svg{padding:2px;box-sizing:border-box;background:#fff;
+  color:#000;border-radius:3px}
+.aic .dot{position:absolute;right:-3px;bottom:-3px;width:7px;height:7px;
+  border-radius:50%;background:var(--dot-idle);box-shadow:0 0 0 2px var(--c800);
+  transition:background .15s}
+.aic[data-state=connected] .dot{background:var(--fn-won)}
+.aic[data-state=elsewhere] .dot,
+.aic[data-state=other-workspace] .dot,
+.aic[data-state=unreadable] .dot{background:var(--bad)}
+.aic:not([data-state=connected]) svg{opacity:.45}
+.aic[data-state=absent] .dot,.aic[data-state=unknown] .dot{display:none}
+.pbtn{display:inline-flex;align-items:center;height:34px;padding:0 15px;border-radius:8px;
+  font-size:13px;font-weight:600;color:var(--c800);background:var(--acc);white-space:nowrap}
+.pbtn:hover:not(:disabled){background:var(--acc-hover)}
+
+/* ---------- shell ------------------------------------------------------ */
+main{flex:1;min-height:0;display:flex;background:var(--app)}
+.view{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+.rail{flex:none;background:var(--panel);border-right:1px solid var(--rule);display:flex;
+  flex-direction:column;min-height:0;overflow-y:auto}
+.rail-cvs{width:232px;padding-bottom:10px;overflow:hidden} .rail-jobs{width:220px;padding:14px 10px 12px;gap:1px}
+#outline{flex:0 1 auto;max-height:38%;overflow-y:auto}
+#doclist{flex:1 1 0;min-height:96px;overflow-y:auto}
+.rail-label{padding:16px 17px 6px;font-size:12px;font-weight:600;color:var(--t500)}
+.rail-jobs .rail-label{padding:4px 10px 6px}
+.rail-jobs .rail-label+.rail-label,.rail-jobs .rail-label:not(:first-child){padding-top:20px}
+.rail-list{display:flex;flex-direction:column;padding:0 7px}
+/* group headings inside a rail list: quieter than the rail's own label, so
+   the documents stay the thing you read and the kinds just separate them */
+.rail-sub{padding:12px 10px 4px;font-size:11.5px;color:var(--t500)}
+.rail-list>.rail-sub:first-child{padding-top:2px}
+/* a document that belongs to an application shows a small link */
+.row .tie{display:flex;flex:none;color:var(--t500)}
+
+
+/* A sidebar row. Selected lifts onto the field colour, the way a chosen card
+   sits on a desk, in both rails alike. */
+.row{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;
+  text-align:left;width:100%}
+/* A translation of the base CV, hung under it. */
+#doclist .row.tr{padding-left:24px;position:relative}
+#doclist .row.tr::before{content:"";position:absolute;left:13px;top:-2px;bottom:50%;width:7px;
+  border-left:1px solid var(--rule);border-bottom:1px solid var(--rule);border-bottom-left-radius:4px}
+#doclist .row.tr .lbl{font-size:13px;color:var(--t500)}
+.flg-only{display:flex;flex:none;opacity:.85}
+.row:hover{background:var(--paper-hover)}
+.row .mark{display:none}
+.row .lbl{font-size:13.5px;color:var(--t700);flex:1;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.rail-jobs .row .lbl{white-space:normal;line-height:1.3}
+.row .ct{font-size:12px;color:var(--t500);flex:none;font-variant-numeric:tabular-nums}
+/* Attention borrows the ochre already used for an overdue follow-up rather
+   than introducing a second warning colour. The section hides itself when
+   every bucket is empty, so its presence is the signal and it does not need
+   to shout. The count carries the colour; the labels stay ordinary text. */
+.rail-label.attn{color:var(--acc-text)}
+#attentionlist .row .ct{color:var(--acc-text);font-variant-numeric:tabular-nums}
+.row.sel,.row.sel:hover{background:var(--field);
+  box-shadow:0 1px 2px rgba(27,26,23,.08),0 0 0 1px var(--bd-inner)}
+.row.sel .lbl{color:var(--t900);font-weight:600}
+.row.sel .ct{color:var(--t600)}
+
+/* outline rows sit one level in; the active section shows its entries */
+.orow{display:flex;justify-content:space-between;gap:8px;padding:6px 10px 6px 20px;
+  border-radius:7px;font-size:13px;color:var(--t700);text-align:left;width:100%}
+.orow:hover{background:var(--paper-hover)}
+.orow.sel{background:var(--field);color:var(--t900);font-weight:600;
+  box-shadow:0 1px 2px rgba(27,26,23,.08),0 0 0 1px var(--bd-inner)}
+.orow .ct{font-size:11.5px;color:var(--t500);flex:none;font-weight:400}
+.orow.sel .ct{color:var(--t600)}
+.okids{display:flex;flex-direction:column;padding:2px 0}
+.okid{padding:5px 8px 5px 32px;font-size:12.5px;color:var(--t600);text-align:left;width:100%;
+  border-radius:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.okid:hover{background:var(--paper-hover)}
+.okid.sel{color:var(--acc-text);font-weight:500}
+
+/* page budget */
+.budget{padding:13px 17px;border-top:1px solid var(--rule);display:flex;flex-direction:column;
+  gap:7px;flex:none}
+.budget .brow{display:flex;justify-content:space-between;align-items:baseline}
+.budget .pp{font-size:13px;font-weight:500;color:var(--t900)}
+.budget .ww{font-size:11px;color:var(--t500)}
+.budget .bar{display:flex;gap:2px}
+.budget .bar i{height:5px;flex:1;background:var(--bd-field);border-radius:1px}
+.budget .bar i.on{background:var(--acc)}
+.budget .cap{font-size:12px;color:var(--t600);line-height:1.4}
+
+/* ---------- centre column ---------------------------------------------- */
+.centre{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;
+  background:var(--canvas)}
+.subbar{height:33px;flex:none;display:flex;align-items:center;gap:11px;padding:0 12px;
+  background:var(--bar);border-bottom:1px solid var(--rule-strong)}
+.seg.light{background:var(--seg-track)}
+.seg.light button{color:var(--t600);padding:3px 12px;font-size:12px}
+.seg.light button:hover{color:var(--t900)}
+.seg.light button[aria-selected=true]{background:var(--seg-on);color:var(--t900);font-weight:500}
+.meta{font-size:11px;color:var(--t500);display:flex;align-items:center;gap:6px}
+.meta button{font-size:12px;color:var(--t500);padding:0 3px;line-height:1}
+.meta button:hover:not(:disabled){color:var(--t900)}
+
+
+/* ---------- status bar (23px) ------------------------------------------- */
+/* On paper, under a hairline: it reports on the work, so it sits with it
+   rather than closing a dark frame around it. */
+#status{height:24px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;
+  background:var(--panel);border-top:1px solid var(--rule);font-size:11px;
+  color:var(--t500);user-select:none}
+/* a decision you just took about someone else's edit, not routine chatter */
+#st-right.said{color:var(--acc-text);font-weight:500}
+/* the MCP boundary having just stopped something */
+#st-right.blocked{color:var(--bad);font-weight:500}
+#status .warn{color:var(--acc-text)}
+
+
+/* ---------- sheets and overlays ------------------------------------------ */
+/* Above the full-screen overlays too: a sheet opened from Design or Settings
+   has to land on top of them. */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.34);z-index:46}
+.sheet{position:fixed;left:50%;top:72px;transform:translateX(-50%);width:620px;
+  max-width:calc(100% - 40px);max-height:calc(100% - 96px);overflow-y:auto;
+  background:var(--app);border-radius:12px;box-shadow:0 22px 48px rgba(0,0,0,.45);
+  padding:22px 24px;display:flex;flex-direction:column;gap:16px;z-index:47}
+.sheet h3{margin:0;font-size:15px;font-weight:600}
+.sheet p{margin:4px 0 0;font-size:12.5px;color:var(--t600);line-height:1.45}
+.sheet .foot{display:flex;justify-content:flex-end;gap:8px;padding-top:2px;
+  align-items:center}
+/* What a new version says about itself. Capped and scrolling: a release with
+   twenty lines of notes should not push the install button off the screen. */
+.relnotes{max-height:230px;overflow-y:auto;font-size:12.5px;line-height:1.55;
+  color:var(--t700);border-top:1px solid var(--rule);padding-top:11px}
+.relnotes p{margin:0 0 8px}
+.relnotes ul{margin:0 0 8px;padding-left:18px}
+.relnotes li{margin:0 0 5px}
+.relnotes b{color:var(--t900);font-weight:600}
+.relnotes code{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:11.5px;background:var(--field);
+  border:1px solid var(--bd-field);border-radius:3px;padding:1px 4px}
+/* Left of the buttons rather than crowded against them. */
+#u-say{margin-right:auto;font-size:11px;color:var(--t500)}
+.sheet .foot .left{margin-right:auto}
+.sheet .foot .sbtn{white-space:nowrap}
+/* What an import read, before it is made into a document. */
+.imp-found{margin:0;padding:0;list-style:none;border:1px solid var(--rule);border-radius:7px;
+  background:var(--field)}
+.imp-found li{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;font-size:12.5px}
+.imp-found li+li{border-top:1px solid var(--bd-inner)}
+.imp-found b{font-weight:500;color:var(--t900)}
+.imp-found span{color:var(--t600)}
+.imp-notes{font-size:12.5px;line-height:1.5;color:var(--t800);background:var(--acc-wash);
+  border:1px solid var(--acc-line);border-radius:7px;padding:9px 12px}
+.imp-notes b{font-weight:600}
+.imp-notes ul{margin:4px 0 0;padding-left:18px}
+.sbtn{font-size:13px;height:34px;padding:0 16px;border:1px solid var(--bd-field);border-radius:8px;
+  background:var(--field);color:var(--t900)}
+.sbtn:hover:not(:disabled){background:var(--paper-hover)}
+.sbtn.primary{background:var(--acc);color:var(--c800);font-weight:500;border-color:var(--acc);
+  padding:0 18px}
+.sbtn.primary:hover:not(:disabled){background:var(--acc-hover);border-color:var(--acc-hover)}
+.sbtn.danger{border-color:transparent;color:var(--bad);background:none}
+.sbtn.danger:hover{background:var(--bad-bg)}
+
+
+/* ---------- states -------------------------------------------------------- */
+.empty{padding:56px 26px;color:var(--t600);max-width:54ch}
+.empty h3{margin:0 0 6px;font-size:13.5px;color:var(--t900);font-weight:600}
+.empty p{margin:0;font-size:13px;line-height:1.7}
+.empty p+p{margin-top:11px}
+.empty .cta{margin-top:18px}
+.err{margin:20px;background:var(--bad-bg);border-left:2px solid var(--bad);padding:14px 16px;
+  color:var(--bad);max-width:70ch}
+.err h4{margin:0 0 6px;font-size:12.5px;font-weight:600}
+.err .hint{color:var(--t900);margin:8px 0 0;font-size:12.5px;line-height:1.65}
+.err pre{margin:10px 0 0;white-space:pre-wrap;font:11px/1.55 'IBM Plex Mono',Consolas,monospace;
+  max-height:190px;overflow:auto;color:var(--t600)}
+.spin{display:inline-block;width:9px;height:9px;border:1.5px solid var(--rule);
+  border-top-color:var(--t500);border-radius:50%;animation:sp .8s linear infinite}
+
+
+
+@keyframes sp{to{transform:rotate(360deg)}}
+.skel{background:var(--canvas);border-radius:4px;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+#toasts{position:fixed;bottom:33px;right:14px;z-index:60;display:flex;flex-direction:column;
+  gap:6px;align-items:flex-end;pointer-events:none}
+.toast{background:var(--c700);color:var(--c050);border-radius:5px;padding:7px 12px;
+  font-size:12.5px;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,.3);animation:rise .16s ease-out}
+.toast.bad{background:var(--bad);color:#fff}
+.toast.has-act{pointer-events:auto;display:flex;align-items:center;gap:14px}
+.toast .act{border:0;background:none;padding:0;color:inherit;font-size:12.5px;font-weight:600;
+  text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+
+/* ---- Search: everything, from anywhere (Ctrl K) --------------------------- */
+.pal-scrim{position:fixed;inset:0;background:rgba(27,26,23,.42);z-index:60}
+.pal{position:fixed;left:50%;top:84px;transform:translateX(-50%);width:640px;
+  max-width:calc(100% - 32px);max-height:calc(100% - 120px);display:flex;flex-direction:column;
+  background:var(--field);color:var(--t900);border-radius:14px;overflow:hidden;z-index:61;
+  box-shadow:0 30px 80px -24px rgba(27,26,23,.6),0 0 0 1px var(--bd-inner)}
+.pal-q{height:58px;flex:none;display:flex;align-items:center;gap:12px;padding:0 18px;
+  border-bottom:1px solid var(--bd-inner);color:var(--t500)}
+.pal-q input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:inherit;
+  font-size:17px;color:var(--t900)}
+.pal-q input::-webkit-search-cancel-button{display:none}
+.pal kbd{font-family:var(--mono,ui-monospace,monospace);font-size:11.5px;color:var(--t500)}
+.pal-q kbd{padding:3px 7px;border-radius:5px;border:1px solid var(--bd-inner)}
+.pal-list{flex:1;min-height:0;overflow-y:auto;padding-bottom:6px}
+.pal-h{display:flex;align-items:baseline;gap:8px;padding:12px 18px 6px;font-size:11.5px;
+  font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--t500)}
+.pal-h span{font-weight:400;letter-spacing:0;text-transform:none}
+.pal-it{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:7px 18px;
+  border:0;background:transparent;color:var(--t900);text-align:left;font:inherit;cursor:pointer}
+.pal-it[aria-selected=true]{background:var(--acc-wash);box-shadow:inset 3px 0 0 var(--acc)}
+.pal-it:focus-visible{outline-offset:-2px}
+.pal-it .ic{width:30px;height:30px;flex:none;border-radius:8px;background:var(--panel);
+  color:var(--t700);display:flex;align-items:center;justify-content:center}
+.pal-it .ic .colog{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:none}
+.pal-it .tx{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.pal-it .tx b{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-it .tx small{font-size:12px;color:var(--t600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-it .kd{flex:none;font-size:12px;color:var(--t600)}
+.pal-it mark{background:color-mix(in srgb,var(--acc) 30%,transparent);color:var(--t900);border-radius:2px;padding:0 1px}
+.pal-none{padding:22px 18px;font-size:13.5px;color:var(--t600)}
+.pal-foot{height:38px;flex:none;display:flex;align-items:center;gap:18px;padding:0 18px;
+  border-top:1px solid var(--bd-inner);background:var(--panel);font-size:12px;color:var(--t500)}
+
+
+/* The other documents scroll in their own space under the outline. */
+#doclist{max-height:36vh;overflow-y:auto;flex:none}
+
+/* a date field with no styles of its own looks like the app's other fields */
+:where(.dfx>.dfx-t){min-height:32px;padding:0 34px 0 9px;border:1px solid var(--bd-field);border-radius:8px;
+  background:var(--field);color:var(--t900);font:inherit;font-size:13px}
+:where(.dfx>.dfx-t):focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
+/* the empty base thumbnail's words clear the "Base CV" tag over it */
+.bthumb.empty span{padding-top:26px;text-align:center}
+.empty .cta{display:flex;flex-wrap:wrap;gap:10px}
+
+
+/* ---------- the app's own confirm and prompt ------------------------------ */
+.dlg-back{position:fixed;inset:0;z-index:90;background:rgba(20,19,16,.42)}
+.dlg{position:fixed;left:50%;top:22vh;transform:translateX(-50%);z-index:91;width:460px;max-width:calc(100% - 32px);
+  padding:20px 22px 18px;border-radius:12px;background:var(--app);color:var(--t900);
+  box-shadow:0 24px 56px rgba(0,0,0,.42);display:flex;flex-direction:column;gap:10px;
+  animation:dlgin .14s ease-out}
+@keyframes dlgin{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+.dlg h3{margin:0;font-size:15px;font-weight:600;line-height:1.35}
+.dlg p{margin:0;font-size:13px;line-height:1.5;color:var(--t600)}
+.dlg-in{height:36px;padding:0 10px;border:1px solid var(--bd-field);border-radius:8px;background:var(--field);
+  color:var(--t900);font:inherit;font-size:13.5px}
+.dlg-in:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}
+.dlg-in[aria-invalid=true]{border-color:var(--bad)}
+.dlg-err{min-height:0;font-size:12px;color:var(--bad)}
+.dlg-err:empty{display:none}
+.dlg-foot{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:6px}
+.dlg-foot .sbtn{white-space:nowrap}
+.sbtn.danger:not(.primary){color:var(--bad)}
+.sbtn.primary.danger{background:var(--bad);border-color:var(--bad);color:var(--app)}
+

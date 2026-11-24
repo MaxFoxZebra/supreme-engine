@@ -1,0 +1,136 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CV Studio API</title>
+<style>
+:root{--paper:#f4f3ef;--card:#fbfaf7;--sunk:#eeece6;--ink:#15141a;--ink-2:#514f4a;
+ --ink-3:#6d6a62;--rule:#e2dfd7;--rule-2:#eceae4;--ok:#3f7d52;--bad:#a33a22;--r:5px}
+@media(prefers-color-scheme:dark){:root{--paper:#0f0f10;--card:#161617;--sunk:#1c1c1e;
+ --ink:#e8e6e1;--ink-2:#a5a29a;--ink-3:#8a877f;--rule:#262628;--rule-2:#1f1f21;
+ --ok:#7fb08c;--bad:#d98166}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);letter-spacing:-.004em;
+ font:13.5px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:52px 28px 90px}
+h1{font-size:21px;font-weight:560;margin:0 0 6px;letter-spacing:-.015em}
+.lede{color:var(--ink-3);margin:0 0 8px;max-width:62ch}
+.base{font:11.5px ui-monospace,Consolas,monospace;color:var(--ink-3);margin:0 0 40px}
+.base b{color:var(--ink);font-weight:500}
+section{border-top:1px solid var(--rule-2);padding:22px 0}
+.row{display:flex;align-items:baseline;gap:12px;cursor:pointer}
+.verb{font:10.5px ui-monospace,Consolas,monospace;font-weight:600;letter-spacing:.04em;
+ color:var(--ink-3);width:44px;flex:none;text-transform:uppercase}
+.verb.post{color:var(--ok)}
+.path{font:12.5px ui-monospace,Consolas,monospace;color:var(--ink);font-weight:500}
+.sum{color:var(--ink-3);font-size:12.5px;margin-left:auto;text-align:right}
+.body{margin:16px 0 0 56px;display:none}
+section.open .body{display:block}
+h4{font-size:11.5px;font-weight:560;color:var(--ink-3);margin:0 0 7px}
+table{width:100%;border-collapse:collapse;margin:0 0 16px}
+td{padding:5px 0;border-bottom:1px solid var(--rule-2);vertical-align:top;font-size:12.5px}
+td:first-child{width:150px;font:11.5px ui-monospace,Consolas,monospace;color:var(--ink)}
+td:last-child{color:var(--ink-3)}
+.req{color:var(--bad);font-size:10.5px;margin-left:5px}
+textarea,input{width:100%;border:1px solid var(--rule);border-radius:var(--r);padding:8px 10px;
+ background:var(--sunk);color:var(--ink);font:11.5px/1.6 ui-monospace,Consolas,monospace;
+ resize:vertical}
+textarea:focus,input:focus{background:var(--card);border-color:var(--ink-3);outline:none}
+button{cursor:pointer;border:0;border-radius:var(--r);background:var(--ink);color:var(--paper);
+ font:inherit;font-size:12.5px;font-weight:530;padding:6px 13px;margin:10px 0 0}
+button:hover{opacity:.86}
+button:disabled{opacity:.4;cursor:default}
+pre.out{background:var(--sunk);border-radius:var(--r);padding:12px 14px;margin:12px 0 0;
+ font:11.5px/1.65 ui-monospace,Consolas,monospace;max-height:340px;overflow:auto;white-space:pre-wrap}
+.status{font:11.5px ui-monospace,Consolas,monospace;margin-left:10px}
+.s-ok{color:var(--ok)} .s-bad{color:var(--bad)}
+a{color:var(--ink)}
+footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--rule-2);
+ color:var(--ink-3);font-size:12px}
+</style></head><body><div class="wrap">
+<h1>CV Studio API</h1>
+<p class="lede">Read, edit and render CVs over HTTP. Everything runs on your machine;
+the server accepts local connections only unless you start it with a token.</p>
+<p class="base">Base <b id="base"></b> &nbsp;·&nbsp; <a href="/api/openapi.json">openapi.json</a></p>
+<div id="eps"></div>
+<footer id="foot"></footer>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const TOKEN=new URLSearchParams(location.search).get("token");
+$("#base").textContent=location.origin;
+
+/* A plausible body built from the schema, so Run works on the first click
+   instead of making you author JSON before you can see anything. */
+function sample(schema){
+  const props=(schema&&schema.properties)||{};
+  const out={};
+  for(const k of Object.keys(props)){
+    if(k==="path") out[k]="profile/my-cv.yaml";
+    else if(props[k].type==="array") out[k]=[];
+    else if(props[k].type==="string") out[k]="";
+  }
+  if("yaml" in out) delete out.yaml;
+  if("patches" in out) delete out.patches;
+  return out;
+}
+
+fetch("/api/openapi.json"+(TOKEN?"?token="+encodeURIComponent(TOKEN):""))
+ .then(r=>r.json()).then(spec=>{
+  $("#foot").textContent=spec.info.title+" v"+spec.info.version;
+  const host=$("#eps");
+  Object.entries(spec.paths).forEach(([path,ops])=>{
+    Object.entries(ops).forEach(([verb,op])=>{
+      const sec=document.createElement("section");
+      const params=op.parameters||[];
+      const bodySchema=((op.requestBody||{}).content||{})["application/json"];
+      const props=bodySchema?bodySchema.schema.properties:null;
+      sec.innerHTML=
+        '<div class="row"><span class="verb '+verb+'">'+verb+'</span>'+
+        '<span class="path">'+esc(path)+'</span>'+
+        '<span class="sum">'+esc(op.summary||"")+'</span></div>'+
+        '<div class="body">'+
+        (params.length?'<h4>Query parameters</h4><table>'+params.map(p=>
+          '<tr><td>'+esc(p.name)+(p.required?'<span class="req">required</span>':'')+
+          '</td><td>'+esc((p.schema||{}).type||"")+'</td></tr>').join("")+'</table>':'')+
+        (props?'<h4>Request body</h4><table>'+Object.entries(props).map(([k,v])=>
+          '<tr><td>'+esc(k)+'</td><td>'+esc(v.description||v.type||"")+'</td></tr>').join("")+
+          '</table><textarea rows="4">'+esc(JSON.stringify(sample(bodySchema.schema),null,2))+
+          '</textarea>':'')+
+        (params.length?'<h4>Try it</h4>'+params.map(p=>
+          '<input data-p="'+esc(p.name)+'" placeholder="'+esc(p.name)+'" value="'+
+          (p.name==="path"?"profile/my-cv.yaml":"")+'">').join(""):'')+
+        '<div><button>Run</button><span class="status"></span></div>'+
+        '<pre class="out" hidden></pre></div>';
+      sec.querySelector(".row").onclick=()=>sec.classList.toggle("open");
+      const btn=sec.querySelector("button"), out=sec.querySelector(".out"),
+            st=sec.querySelector(".status"), ta=sec.querySelector("textarea");
+      btn.onclick=async e=>{
+        e.stopPropagation(); btn.disabled=true; st.textContent="…"; st.className="status";
+        let url=location.origin+path, opts={method:verb.toUpperCase(),headers:{}};
+        const qs=new URLSearchParams();
+        sec.querySelectorAll("[data-p]").forEach(i=>{ if(i.value) qs.set(i.dataset.p,i.value) });
+        if(TOKEN) opts.headers["X-API-Key"]=TOKEN;
+        if(ta){ opts.headers["Content-Type"]="application/json"; opts.body=ta.value }
+        if([...qs].length) url+="?"+qs.toString();
+        const t0=performance.now();
+        try{
+          const r=await fetch(url,opts);
+          const ms=Math.round(performance.now()-t0);
+          const ct=r.headers.get("content-type")||"";
+          let text;
+          if(ct.includes("json")) text=JSON.stringify(await r.json(),null,2);
+          else text="("+ct+", "+(r.headers.get("content-length")||"?")+" bytes)";
+          st.textContent=r.status+" · "+ms+"ms";
+          st.className="status "+(r.ok?"s-ok":"s-bad");
+          out.hidden=false; out.textContent=text.slice(0,20000);
+        }catch(err){
+          st.textContent="failed"; st.className="status s-bad";
+          out.hidden=false; out.textContent=String(err);
+        }finally{ btn.disabled=false }
+      };
+      host.append(sec);
+    });
+  });
+ })
+ .catch(e=>{ $("#eps").textContent="Could not load the spec: "+e });
+</script></body></html>

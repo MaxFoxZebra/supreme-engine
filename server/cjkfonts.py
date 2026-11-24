@@ -58,14 +58,26 @@ _failed_at: dict[str, float] = {}
 RETRY_AFTER = 300
 
 
-def cache_dir() -> Path:
+def app_data_dir() -> Path:
+    """Platform app data directory for preferences, font cache, and logs.
+
+    Honors CVSTUDIO_DATA_DIR on every platform so tests and portable runs never
+    touch the user's real settings on macOS or Windows.
+    """
+    override = os.environ.get("CVSTUDIO_DATA_DIR")
+    if override:
+        return Path(override)
     if sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-        return base / "CV Studio" / "fonts"
+        return base / "CV Studio"
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "CV Studio" / "fonts"
+        return Path.home() / "Library" / "Application Support" / "CV Studio"
     base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    return base / "cv-studio" / "fonts"
+    return base / "cv-studio"
+
+
+def cache_dir() -> Path:
+    return app_data_dir() / "fonts"
 
 
 def _files(code: str) -> list[str]:

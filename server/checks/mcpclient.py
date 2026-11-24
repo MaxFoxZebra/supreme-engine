@@ -65,7 +65,7 @@ def brief_keeps() -> str:
     tuple. Read rather than copied: a copy here would only agree with itself.
     """
     import re
-    src = (pathlib.Path(__file__).resolve().parent.parent / "mcp_server.py"
+    src = (pathlib.Path(__file__).resolve().parent.parent / "mcp_app" / "applications.py"
            ).read_text(encoding="utf-8")
     found = re.search(r"\n    keep = \(([^)]*)\)", src)
     return found.group(1) if found else ""
@@ -305,6 +305,9 @@ if __name__ == "__main__":
     check("append_note wrote a dated line, keeping nothing else",
           row["notes"].startswith("[") and row["notes"].endswith("Invite arrived."),
           row["notes"])
+    check("and says what usually comes next, with nothing to remark on a usual move",
+          row.get("next_statuses") == ["offer", "rejected_interviewing", "ghosted_interviewing"]
+          and "note" not in row, f"{row.get('next_statuses')} {row.get('note')}")
 
     r = call("set_job_status", {"job_id": job_id, "status": "not_a_status"})
     check("an invented status is refused", errored(r))

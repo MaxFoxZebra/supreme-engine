@@ -561,6 +561,7 @@ C = {
     "Next match": ("Résultat suivant", "Resultado siguiente", "Próximo resultado"),
     "Next page": ("Page suivante", "Página siguiente", "Próxima página"),
     "Next step": ("Prochaine étape", "Siguiente paso", "Próximo passo"),
+    "Other statuses": ("Autres statuts", "Otros estados", "Outros status"),
     "Next up": ("À venir", "Próximamente", "A seguir"),
     "Next: follow up with {co}, {day}.": ("Prochaine étape : relancer {co}, {day}.", "Siguiente: seguimiento con {co}, {day}.", "Próximo: retorno com {co}, {day}."),
     "Night now": ("Nuit en ce moment", "Noche ahora", "Noite agora"),

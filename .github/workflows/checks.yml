@@ -103,8 +103,14 @@ jobs:
       - name: Applications as files
         run: python checks/trackertest.py
 
+      - name: The application lifecycle
+        run: python checks/lifecycletest.py
+
       - name: The connector and the skills
         run: python checks/connectortest.py
+
+      - name: Desktop-MCP bridge and actor isolation
+        run: python checks/bridgetest.py
 
       - name: Search
         run: python checks/searchtest.py

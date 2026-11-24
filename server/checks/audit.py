@@ -5,11 +5,19 @@ import re, pathlib, collections, sys
 # The server sits one level up from this folder, wherever the repo lives.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 src = (ROOT / "studio.py").read_text(encoding="utf-8")
-html = re.search(r'INDEX_HTML = r"""(.*?)"""', src, re.S).group(1)
-# The page as the browser assembles it: its styles and its script live in
-# static/, and are read here as if they were still inline.
-html += ("<style>" + (ROOT / "static" / "app.css").read_text(encoding="utf-8") + "</style>"
-         "<script>" + (ROOT / "static" / "app.js").read_text(encoding="utf-8") + "</script>")
+html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+# The page as the browser assembles it: read every stylesheet and app script
+# linked from static/index.html in load order (excluding generated/vendored
+# bundles like i18n.js, worldmap.js, and *.min.js).
+SKIP_SCRIPTS = {"i18n.js", "worldmap.js"}
+linked_css = re.findall(r'<link\s+rel="stylesheet"\s+href="/static/([^"]+)"', html)
+linked_js = [
+    p for p in re.findall(r'<script\s+src="/static/([^"]+)"', html)
+    if p not in SKIP_SCRIPTS and not p.endswith(".min.js")
+]
+css_text = "\n".join((ROOT / "static" / p).read_text(encoding="utf-8") for p in linked_css)
+js_text = "\n".join((ROOT / "static" / p).read_text(encoding="utf-8") for p in linked_js)
+html += "<style>" + css_text + "</style><script>" + js_text + "</script>"
 js = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
 css = "\n".join(re.findall(r"<style>(.*?)</style>", html, re.S))
 markup = re.sub(r"<script>.*?</script>|<style>.*?</style>", "", html, flags=re.S)
@@ -90,16 +98,27 @@ P["S.<prop> declared but never read"] += sorted(
     declared - {m for m in re.findall(r"(?<![A-Za-z0-9_])S\.(\w+)", js)})
 
 # --- API surface ----------------------------------------------------------
-routes = set(re.findall(r'u\.path == "(/api/[\w/]+)"', src)) | set(
-    re.findall(r'u\.path\.startswith\("(/api/[\w/]+)"\)', src))
-documented = set(re.findall(r'"(/api/[\w/]+)": \{', src))
+http_src = (ROOT / "studio_core" / "http_server.py").read_text(encoding="utf-8")
+openapi_src = (ROOT / "studio_core" / "openapi.py").read_text(encoding="utf-8")
+routes = set(re.findall(r'@(?:get|post)\("(/api/[\w/]+)"\)', http_src))
+documented = set(re.findall(r'"(/api/[\w/]+)": \{', openapi_src))
 P["route implemented but not in the openapi spec"] += sorted(routes - documented - {"/api/"})
 P["route documented but not implemented"] += sorted(documented - routes)
 
 # --- python ---------------------------------------------------------------
 # Used anywhere in the server counts: sample.py is the only caller of some.
-PY = {f.name: f.read_text(encoding="utf-8") for f in ROOT.glob("*.py")}
-for mod in ("studio.py", "cv_map.py", "cv_render.py", "jobs.py", "mcp_server.py"):
+py_files = [
+    *ROOT.glob("*.py"),
+    *(ROOT / "studio_core").glob("*.py"),
+    *((ROOT / "mcp_app").glob("*.py") if (ROOT / "mcp_app").is_dir() else []),
+]
+PY = {f.relative_to(ROOT).as_posix(): f.read_text(encoding="utf-8") for f in py_files}
+check_mods = [
+    k for k in PY
+    if k in ("studio.py", "cv_map.py", "cv_render.py", "jobs.py", "mcp_server.py")
+    or k.startswith("studio_core/") or k.startswith("mcp_app/")
+]
+for mod in sorted(check_mods):
     text = PY[mod]
     for fn in re.findall(r"^def ([a-z_]\w*)", text, re.M):
         if fn.startswith("_") or fn == "main":

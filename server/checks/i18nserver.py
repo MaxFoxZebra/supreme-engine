@@ -23,7 +23,11 @@ HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE / "i18n"))
 from catalogue import C, RX  # noqa: E402
 
-FILES = ["studio.py", "jobs.py", "importer.py", "letters.py", "languages.py", "backups.py", "scans.py"]
+FILES = [
+    "studio.py",
+    *(f"studio_core/{p.name}" for p in sorted((HERE / "studio_core").glob("*.py"))),
+    "jobs.py", "importer.py", "letters.py", "languages.py", "backups.py", "scans.py",
+]
 FILL = "Engineering"   # what a run-time part looks like, for matching a pattern
 
 # For a programmer, never shown in the interface.

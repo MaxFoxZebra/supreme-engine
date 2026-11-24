@@ -10,9 +10,17 @@ desktop app never closes the connector under Claude: no per-version copy is
 needed. An updated extension replaces the old one when it is installed.
 
 The server is the same PyInstaller build the desktop app ships, so the bundle
-is per platform. Unix modes are kept (the binary must stay executable) and
-symlinks are stored as symlinks, which the macOS build has inside its
-frameworks.
+is per platform. Unix modes are kept (the binary must stay executable).
+
+The bundle holds no symlinks. Claude Desktop's unpacker does not restore them:
+it writes each one as a small text file holding the link's target. The macOS
+build has links in Python.framework, and PyInstaller's bootloader loads
+_internal/Python, which is one of them. Unpacked as text, that fails with "slice
+is not valid mach-o file" and the server never starts. So every link is stored
+as a copy of what it points to: a file for a link to a file, the folder's
+contents for a link to a folder. Nothing in the build loads libpython by name,
+so a copy behaves exactly like the link did. The cost is a few duplicate
+megabytes in the zip.
 """
 
 from __future__ import annotations
@@ -87,6 +95,18 @@ def _icon() -> bytes:
     raise SystemExit("no icon found")
 
 
+def _check_link(link: Path, server: Path) -> None:
+    """A link is stored as what it points to, so it must point inside the
+    build, and a link to a folder must not point at one of its own parents (a
+    walk that follows it would never end)."""
+    target = link.resolve()
+    root = server.resolve()
+    if not target.exists() or not target.is_relative_to(root):
+        raise SystemExit(f"{link} -> {os.readlink(link)} does not point inside {server}")
+    if target.is_dir() and link.parent.resolve().is_relative_to(target):
+        raise SystemExit(f"{link} -> {os.readlink(link)} points at one of its own parents")
+
+
 def pack(server: Path, platform: str, out: Path, version: str) -> Path:
     exe = server / (EXE + (".exe" if platform == "win32" else ""))
     if not exe.is_file():
@@ -99,18 +119,18 @@ def pack(server: Path, platform: str, out: Path, version: str) -> Path:
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         z.writestr("manifest.json", json.dumps(manifest(version, platform), indent=2))
         z.writestr("icon.png", _icon())
-        for root, dirs, files in os.walk(server, followlinks=False):
+        # Links are followed, folders included, so each one is stored as a copy
+        # of its target (see the module's docstring for why).
+        for root, dirs, files in os.walk(server, followlinks=True):
             dirs.sort()
-            for name_ in sorted(files) + sorted(d for d in dirs if (Path(root) / d).is_symlink()):
+            for name_ in dirs + files:
+                if (Path(root) / name_).is_symlink():
+                    _check_link(Path(root) / name_, server)
+            for name_ in sorted(files):
                 f = Path(root) / name_
                 arc = "server/" + f.relative_to(server).as_posix()
-                st = f.lstat()
+                st = f.stat()
                 info = zipfile.ZipInfo(arc, date_time=(2024, 1, 1, 0, 0, 0))
-                if stat.S_ISLNK(st.st_mode):
-                    info.create_system = 3
-                    info.external_attr = (stat.S_IFLNK | 0o777) << 16
-                    z.writestr(info, os.readlink(f))
-                    continue
                 info.create_system = 3
                 mode = st.st_mode & 0o777
                 if f == exe or platform != "win32" and mode & 0o111:
@@ -120,8 +140,6 @@ def pack(server: Path, platform: str, out: Path, version: str) -> Path:
                 with open(f, "rb") as src, z.open(info, "w") as dst:
                     while chunk := src.read(1 << 20):
                         dst.write(chunk)
-            # Symlinked folders were stored as links; do not walk into them.
-            dirs[:] = [d for d in dirs if not (Path(root) / d).is_symlink()]
     return target
 
 

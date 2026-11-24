@@ -13,8 +13,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
-os.environ["XDG_DATA_HOME"] = tempfile.mkdtemp()
-os.environ["LOCALAPPDATA"] = os.environ["XDG_DATA_HOME"]
+_DATA = tempfile.mkdtemp()
+os.environ["XDG_DATA_HOME"] = _DATA
+os.environ["LOCALAPPDATA"] = _DATA
+os.environ["CVSTUDIO_DATA_DIR"] = str(Path(_DATA) / "cv-studio")
 
 import studio  # noqa: E402
 

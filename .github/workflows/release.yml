@@ -190,6 +190,8 @@ jobs:
             --collect-all mcp \
             --collect-all pydantic \
             --collect-all tzdata \
+            --collect-submodules studio_core \
+            --collect-submodules mcp_app \
             --hidden-import cv_render \
             --hidden-import cv_map \
             --hidden-import studio \

@@ -174,6 +174,8 @@ PYTHONIOENCODING=utf-8 pyinstaller --onedir --noconfirm --clean \
   --collect-all ruamel.yaml \
   --collect-all mcp \
   --collect-all pydantic \
+  --collect-submodules studio_core \
+  --collect-submodules mcp_app \
   --hidden-import cv_render \
   --hidden-import cv_map \
   --hidden-import studio \

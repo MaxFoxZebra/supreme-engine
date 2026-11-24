@@ -28,6 +28,7 @@ def main() -> int:
     # Save to CV Studio's window, and the bookmark itself.
     clip = studio.CLIP_HTML.replace("__PREFS__", "null").replace("__API_TOKEN__", '"t"')
     scripts += re.findall(r"<script>(.*?)</script>", clip, re.S)
+    scripts += re.findall(r"<script>(.*?)</script>", studio.DOCS_HTML, re.S)
     # The views an AI client shows (MCP Apps): one file each, script inline.
     for view in sorted((HERE / "static").glob("mcp-*.html")):
         scripts += re.findall(r"<script>(.*?)</script>", view.read_text(encoding="utf-8"), re.S)
@@ -44,11 +45,12 @@ def main() -> int:
             if not ok:
                 bad += 1
                 print("        " + r.stderr.strip().replace("\n", "\n        ")[:1200])
-    for f in sorted((HERE / "static").glob("*.js")):
+    for f in sorted([*(HERE / "static").glob("*.js"), *(HERE / "static" / "js").glob("*.js")]):
         if f.name.endswith(".min.js"):
             continue
+        rel = f.relative_to(HERE).as_posix()
         r = subprocess.run(["node", "--check", str(f)], capture_output=True, text=True)
-        print(f"  {'ok  ' if r.returncode == 0 else 'FAIL'}  static/{f.name}")
+        print(f"  {'ok  ' if r.returncode == 0 else 'FAIL'}  {rel}")
         bad += r.returncode != 0
     print()
     print(f"{bad} script(s) do not parse" if bad else "every script parses")
