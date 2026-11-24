@@ -56,15 +56,31 @@ async function main() {
   const H = { "X-API-Key": info.token, "Content-Type": "application/json" };
   const api = async (p, o = {}) => (await fetch(API + p, { ...o, headers: H })).json();
 
+  const net = require("net");
+  const freePort = () => new Promise((res, rej) => {
+    const s = net.createServer();
+    s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)) });
+    s.on("error", rej);
+  });
   const prof = fs.mkdtempSync(path.join(require("os").tmpdir(), "clipflow-"));
-  const port = 9000 + Math.floor(Math.random() * 500);
-  const br = spawn(chrome, ["--headless=new", "--no-sandbox", "--disable-gpu", `--remote-debugging-port=${port}`,
+  const port = await freePort();
+  const br = spawn(chrome, ["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
+    "--disable-background-networking", "--no-default-browser-check", `--remote-debugging-port=${port}`,
     `--user-data-dir=${prof}`, `--proxy-server=http://127.0.0.1:${info.pages}`,
-    "--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable", "--no-first-run", "about:blank"], { stdio: "ignore" });
+    "--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable", "--no-first-run", "about:blank"],
+    { stdio: ["ignore", "ignore", "pipe"] });
+  let brErr = "";
+  br.stderr.on("data", d => { if (brErr.length < 4000) brErr += d.toString() });
   const done = code => { try { br.kill("SIGKILL") } catch (e) {} try { sim.kill("SIGKILL") } catch (e) {} process.exit(code) };
   let list = null;
-  for (let i = 0; i < 60 && !list; i++) { try { list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() } catch (e) { await sleep(250) } }
-  if (!list) { console.log("Chrome did not start."); done(1) }
+  for (let i = 0; i < 180 && !list; i++) {
+    if (br.exitCode !== null) break;
+    try { list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() } catch (e) { await sleep(250) }
+  }
+  if (!list) {
+    console.log("Chrome did not start." + (brErr.trim() ? "\n" + brErr.trim() : ""));
+    done(1);
+  }
   const tab = await attach(list.find(t => t.type === "page").webSocketDebuggerUrl);
   await tab.send("Page.enable");
 

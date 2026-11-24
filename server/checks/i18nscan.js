@@ -21,7 +21,8 @@ const SAME = new Set(["CV Studio", "LinkedIn", "Indeed", "Glassdoor", "Welcome t
   "YAML", "PDF", "JSON", "CSV", "API", "ATS", "Markdown", "MCP", "OK", "UTC", "English", "Français", "Español",
   "Português", "Português (Brasil)", "Deutsch", "Italiano", "Nederlands", "Typst", "RenderCV", "GitHub",
   ".zip", ".ics", "Export .ics", "h", "min", "s", "d", "j", "Notifications", "Documents", "Classic", "Ember",
-  "Engineering", "Engineering résumés", "Harvard", "Ink", "Sb2nov", "Moderncv", "Engineeringclassic", "Base CV"]);
+  "Engineering", "Engineering résumés", "Harvard", "Ink", "Sb2nov", "Moderncv", "Engineeringclassic", "Base CV",
+  "France", "Portugal"]);
 
 async function main() {
   const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
@@ -107,7 +108,7 @@ async function main() {
   /* Words that come from the data, not the interface: companies, roles,
      places, sources, document names. */
   const data = new Set((await evalJs(`(() => { const w = [];
-    for (const j of S.jobs) for (const k of ["company","title","location","source","notes"]) if (j[k]) w.push(String(j[k]));
+    for (const j of S.jobs) for (const k of ["company","title","location","country","source","notes"]) if (j[k]) w.push(String(j[k]));
     for (const d of S.state.documents) w.push(d.label, d.path);
     w.push(...Object.values(TZ_NAMES||{}), ...(S.state.themes||[]));
     return w.join(" ").toLowerCase().match(/[a-zà-ÿ]{3,}/g) || [] })()`)));

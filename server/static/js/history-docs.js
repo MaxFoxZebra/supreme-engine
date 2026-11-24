@@ -497,15 +497,25 @@ const COUNTRY_GUESS=[
   [/bangalore|bengaluru|mumbai|delhi|hyderabad|pune|chennai|india/i,"in","India"],
   [/new york|\bnyc\b|boston|miami|atlanta|washington|chicago|austin|dallas|houston|denver|boulder|san francisco|\bsf\b|bay area|seattle|los angeles|palo alto|mountain view|california|texas|\busa\b|\bu\.s\.a?\b|united states/i,"us","United States"],
 ];
+const _regionNames={};
+function regionName(code,fallback){
+  if(!code) return fallback||"";
+  const lang=typeof uiLang==="function"?uiLang():"en";
+  try{
+    if(!_regionNames[lang]) _regionNames[lang]=new Intl.DisplayNames([lang],{type:"region"});
+    return _regionNames[lang].of(code.toUpperCase())||fallback||"";
+  }catch(e){ return fallback||"" }
+}
 function jobGeo(j){
   const rawLoc=String(j.location||((String(j.description||"").match(/location\s*:\s*([^\n.]+)/i)||[])[1]||"")).trim();
   const rawCountry=String(j.country||"").trim();
   const probe=[rawCountry,rawLoc].filter(Boolean).join(", ");
   const hit=probe?COUNTRY_GUESS.find(([re])=>re.test(probe)):null;
-  const code=hit?hit[1]:null, country=rawCountry||(hit?hit[2]:"");
+  const code=hit?hit[1]:null, country=rawCountry||(hit?regionName(hit[1],hit[2]):"");
   const isRemote=!country&&/\b(remote|télétravail|teletrabajo|remoto)\b/i.test(rawLoc);
   const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-  const city=rawLoc&&country?rawLoc.replace(new RegExp("\\s*[,·-]\\s*"+escRe(country)+"$","i"),"").trim():rawLoc;
+  const rawName=hit?hit[2]:country;
+  const city=rawLoc&&rawName?rawLoc.replace(new RegExp("\\s*[,·-]\\s*(?:"+escRe(rawName)+"|"+escRe(country)+")$","i"),"").trim():rawLoc;
   const full=city&&country&&city.toLowerCase()!==country.toLowerCase()?city+", "+country:(city||country);
   return {code,country,city,full,isRemote,flag:code?flag(code):""};
 }

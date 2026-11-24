@@ -1534,6 +1534,8 @@ C = {
     'This application has no posting saved to score against. Save it first (update_job_tracking with description, or read_posting on its link).': ("Cette candidature n'a pas d'annonce enregistrée à laquelle se comparer. Enregistrez-la d'abord (update_job_tracking avec description, ou read_posting sur son lien).", 'Esta candidatura no tiene ningún anuncio guardado con el que comparar. Guárdalo primero (update_job_tracking con description, o read_posting en su enlace).', 'Esta candidatura não tem nenhuma vaga salva para comparar. Salve-a primeiro (update_job_tracking com description, ou read_posting no link dela).'),
     'There is no base CV to score against. Ask the user which CV it is, then set_base_cv.': ("Il n'y a pas de CV de base auquel se comparer. Demandez à l'utilisateur lequel c'est, puis set_base_cv.", 'No hay ningún CV base con el que comparar. Pregunta al usuario cuál es y luego set_base_cv.', 'Não há CV base para comparar. Pergunte ao usuário qual é e depois set_base_cv.'),
     'A match must be an object.': ('Une correspondance doit être un objet.', 'Una coincidencia debe ser un objeto.', 'Uma compatibilidade deve ser um objeto.'),
+    "Country": ("Pays", "País", "País"),
+    "Written in {lang}": ("Rédigée en {lang}", "Redactada en {lang}", "Escrita em {lang}"),
 }
 
 RX = [
